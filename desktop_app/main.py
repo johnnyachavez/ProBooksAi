@@ -30,12 +30,14 @@ from PySide6.QtWidgets import (
     QFormLayout, QFrame, QGroupBox, QHBoxLayout, QLabel,
     QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit,
     QPushButton, QScrollArea, QSizePolicy, QSplitter,
-    QStatusBar, QTableWidget, QTableWidgetItem, QToolBar,
-    QVBoxLayout, QWidget,
+    QStatusBar, QTabWidget, QTableWidget, QTableWidgetItem,
+    QToolBar, QVBoxLayout, QWidget,
 )
 
 from probooksai.database import DocumentDatabase
 from probooksai.coa import coa_display_list, load_coa
+from probooksai.bank_register import BankRegisterDatabase
+from desktop_app.register_tab import RegisterTab
 
 # Accepted MIME types / file extensions
 ACCEPTED_MIMES = {"application/pdf", "image/jpeg", "image/png"}
@@ -431,11 +433,12 @@ class DetailPane(QScrollArea):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("ProBooksAi – Document Intake")
+        self.setWindowTitle("ProBooksAi")
         self.resize(1100, 700)
 
-        self._db   = DocumentDatabase()
-        self._coa  = load_coa()
+        self._db      = DocumentDatabase()
+        self._bank_db = BankRegisterDatabase()
+        self._coa     = load_coa()
         self._worker: AIWorker | None = None
 
         self._build_ui()
@@ -460,9 +463,17 @@ class MainWindow(QMainWindow):
         act_refresh.triggered.connect(self._refresh_inbox)
         toolbar.addAction(act_refresh)
 
-        # Central splitter
+        # ── Tab widget ───────────────────────────────────────────────────────
+        self._tabs = QTabWidget()
+        self.setCentralWidget(self._tabs)
+
+        # Tab 1 – Document Intake (original splitter UI)
+        intake_widget = QWidget()
+        intake_layout = QVBoxLayout(intake_widget)
+        intake_layout.setContentsMargins(0, 0, 0, 0)
+
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        self.setCentralWidget(splitter)
+        intake_layout.addWidget(splitter)
 
         # Left: inbox
         left = QWidget()
@@ -494,6 +505,12 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self._detail)
 
         splitter.setSizes([380, 720])
+
+        self._tabs.addTab(intake_widget, "\U0001f4c4 Document Intake")
+
+        # Tab 2 – Bank Account Register
+        self._register_tab = RegisterTab(self._bank_db)
+        self._tabs.addTab(self._register_tab, "\U0001f4d2 Register")
 
         # Status bar
         self._status_bar = QStatusBar()
@@ -637,6 +654,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self._db.close()
+        self._bank_db.close()
         super().closeEvent(event)
 
 
