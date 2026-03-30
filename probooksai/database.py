@@ -50,6 +50,33 @@ def get_docs_dir() -> Path:
 _DDL = """
 PRAGMA foreign_keys = ON;
 
+CREATE TABLE IF NOT EXISTS bank_import_batches (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_filename TEXT    NOT NULL,
+    imported_at     TEXT    NOT NULL,
+    format_meta     TEXT
+);
+
+CREATE TABLE IF NOT EXISTS bank_transactions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id        INTEGER NOT NULL REFERENCES bank_import_batches(id) ON DELETE CASCADE,
+    posted_date     TEXT,
+    description     TEXT    NOT NULL DEFAULT '',
+    amount          REAL,
+    currency        TEXT    NOT NULL DEFAULT 'USD',
+    source_row      INTEGER,
+    fingerprint     TEXT    NOT NULL DEFAULT '',
+    coa_account     TEXT,
+    status          TEXT    NOT NULL DEFAULT 'Imported',
+    is_duplicate    INTEGER NOT NULL DEFAULT 0,
+    parse_errors    TEXT,
+    created_at      TEXT    NOT NULL,
+    updated_at      TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_bank_txn_batch  ON bank_transactions (batch_id);
+CREATE INDEX IF NOT EXISTS idx_bank_txn_finger ON bank_transactions (fingerprint);
+
 CREATE TABLE IF NOT EXISTS documents (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     filename    TEXT    NOT NULL,
@@ -314,6 +341,183 @@ class DocumentDatabase:
             "INSERT INTO status_log (document_id, old_status, new_status, changed_at) VALUES (?, ?, ?, ?)",
             (doc_id, old_status, new_status, _now()),
         )
+
+    # -- bank import batches -------------------------------------------------
+
+    def create_batch(self, source_filename: str, format_meta: str = "") -> int:
+        """Create a new import batch and return its ``id``."""
+        cur = self._conn.execute(
+            "INSERT INTO bank_import_batches (source_filename, imported_at, format_meta) VALUES (?, ?, ?)",
+            (source_filename, _now(), format_meta or None),
+        )
+        self._conn.commit()
+        return cur.lastrowid
+
+    def get_batch(self, batch_id: int) -> Optional[sqlite3.Row]:
+        return self._conn.execute(
+            "SELECT * FROM bank_import_batches WHERE id = ?", (batch_id,)
+        ).fetchone()
+
+    def list_batches(self) -> list:
+        return self._conn.execute(
+            "SELECT * FROM bank_import_batches ORDER BY imported_at DESC"
+        ).fetchall()
+
+    # -- bank transactions ---------------------------------------------------
+
+    _VALID_TXN_STATUSES = {"Imported", "Reviewed", "Posted"}
+
+    def insert_transaction(
+        self,
+        batch_id: int,
+        posted_date: Optional[str],
+        description: str,
+        amount: Optional[float],
+        currency: str = "USD",
+        source_row: Optional[int] = None,
+        fingerprint: str = "",
+        coa_account: Optional[str] = None,
+        status: str = "Imported",
+        is_duplicate: bool = False,
+        parse_errors: Optional[str] = None,
+    ) -> int:
+        """Insert one bank transaction row and return its ``id``."""
+        now = _now()
+        cur = self._conn.execute(
+            """
+            INSERT INTO bank_transactions
+                (batch_id, posted_date, description, amount, currency,
+                 source_row, fingerprint, coa_account, status,
+                 is_duplicate, parse_errors, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                batch_id,
+                posted_date,
+                description,
+                amount,
+                currency,
+                source_row,
+                fingerprint,
+                coa_account,
+                status,
+                1 if is_duplicate else 0,
+                parse_errors,
+                now,
+                now,
+            ),
+        )
+        self._conn.commit()
+        return cur.lastrowid
+
+    def get_transaction(self, txn_id: int) -> Optional[sqlite3.Row]:
+        return self._conn.execute(
+            "SELECT * FROM bank_transactions WHERE id = ?", (txn_id,)
+        ).fetchone()
+
+    def list_transactions(
+        self,
+        batch_id: Optional[int] = None,
+        status: Optional[str] = None,
+        search: Optional[str] = None,
+        needs_review_only: bool = False,
+    ) -> list:
+        """
+        Return bank transactions, optionally filtered.
+
+        *needs_review_only* selects rows that are missing a COA account OR are
+        flagged as duplicates.
+        """
+        clauses: list[str] = []
+        params: list = []
+
+        if batch_id is not None:
+            clauses.append("batch_id = ?")
+            params.append(batch_id)
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        if search:
+            clauses.append("description LIKE ?")
+            params.append(f"%{search}%")
+        if needs_review_only:
+            clauses.append("(coa_account IS NULL OR coa_account = '' OR is_duplicate = 1)")
+
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        return self._conn.execute(
+            f"SELECT * FROM bank_transactions {where} ORDER BY posted_date ASC, id ASC",
+            params,
+        ).fetchall()
+
+    def update_transaction(
+        self,
+        txn_id: int,
+        posted_date: Optional[str] = None,
+        description: Optional[str] = None,
+        amount: Optional[float] = None,
+        coa_account: Optional[str] = None,
+        status: Optional[str] = None,
+    ):
+        """Patch one or more fields on a bank transaction row."""
+        updates: list[str] = []
+        params: list = []
+
+        if posted_date is not None:
+            updates.append("posted_date = ?")
+            params.append(posted_date)
+        if description is not None:
+            updates.append("description = ?")
+            params.append(description)
+        if amount is not None:
+            updates.append("amount = ?")
+            params.append(amount)
+        if coa_account is not None:
+            updates.append("coa_account = ?")
+            params.append(coa_account)
+        if status is not None:
+            if status not in self._VALID_TXN_STATUSES:
+                raise ValueError(f"Unknown transaction status: {status!r}")
+            updates.append("status = ?")
+            params.append(status)
+
+        if not updates:
+            return
+
+        updates.append("updated_at = ?")
+        params.append(_now())
+        params.append(txn_id)
+
+        self._conn.execute(
+            f"UPDATE bank_transactions SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+        self._conn.commit()
+
+    def mark_transactions_reviewed(self, txn_ids: list[int]):
+        """Bulk-set status = 'Reviewed' for the given transaction IDs."""
+        if not txn_ids:
+            return
+        now = _now()
+        placeholders = ",".join("?" * len(txn_ids))
+        self._conn.execute(
+            f"UPDATE bank_transactions SET status = 'Reviewed', updated_at = ? WHERE id IN ({placeholders})",
+            [now, *txn_ids],
+        )
+        self._conn.commit()
+
+    def fingerprint_exists(self, fingerprint: str, exclude_batch_id: Optional[int] = None) -> bool:
+        """Return True if *fingerprint* already exists in bank_transactions."""
+        if exclude_batch_id is not None:
+            row = self._conn.execute(
+                "SELECT 1 FROM bank_transactions WHERE fingerprint = ? AND batch_id != ? LIMIT 1",
+                (fingerprint, exclude_batch_id),
+            ).fetchone()
+        else:
+            row = self._conn.execute(
+                "SELECT 1 FROM bank_transactions WHERE fingerprint = ? LIMIT 1",
+                (fingerprint,),
+            ).fetchone()
+        return row is not None
 
 
 # ---------------------------------------------------------------------------
