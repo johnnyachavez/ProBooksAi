@@ -30,12 +30,13 @@ from PySide6.QtWidgets import (
     QFormLayout, QFrame, QGroupBox, QHBoxLayout, QLabel,
     QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit,
     QPushButton, QScrollArea, QSizePolicy, QSplitter,
-    QStatusBar, QTableWidget, QTableWidgetItem, QToolBar,
+    QStatusBar, QTabWidget, QTableWidget, QTableWidgetItem, QToolBar,
     QVBoxLayout, QWidget,
 )
 
 from probooksai.database import DocumentDatabase
 from probooksai.coa import coa_display_list, load_coa
+from desktop_app.bank_import_tab import BankImportTab
 
 # Accepted MIME types / file extensions
 ACCEPTED_MIMES = {"application/pdf", "image/jpeg", "image/png"}
@@ -460,9 +461,17 @@ class MainWindow(QMainWindow):
         act_refresh.triggered.connect(self._refresh_inbox)
         toolbar.addAction(act_refresh)
 
-        # Central splitter
+        # Tab widget – holds Document Intake + Bank Import
+        tabs = QTabWidget()
+        self.setCentralWidget(tabs)
+
+        # ---- Tab 0: Document Intake (original splitter layout) -------------
+        doc_intake_widget = QWidget()
+        doc_intake_layout = QVBoxLayout(doc_intake_widget)
+        doc_intake_layout.setContentsMargins(0, 0, 0, 0)
+
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        self.setCentralWidget(splitter)
+        doc_intake_layout.addWidget(splitter)
 
         # Left: inbox
         left = QWidget()
@@ -494,6 +503,12 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self._detail)
 
         splitter.setSizes([380, 720])
+
+        tabs.addTab(doc_intake_widget, "📄  Document Intake")
+
+        # ---- Tab 1: Bank Import --------------------------------------------
+        self._bank_import_tab = BankImportTab(self._db)
+        tabs.addTab(self._bank_import_tab, "🏦  Bank Import")
 
         # Status bar
         self._status_bar = QStatusBar()
