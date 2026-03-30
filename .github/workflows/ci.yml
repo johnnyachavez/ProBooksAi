@@ -27,4 +27,4 @@ jobs:
         run: python generate_workbook.py
 
       - name: Run tests
-        run: python -m pytest test_workbook.py -v
+        run: python -m pytest test_workbook.py test_documents.py -v

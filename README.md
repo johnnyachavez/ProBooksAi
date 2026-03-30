@@ -137,7 +137,65 @@ Each invoice and bill also carries its own `Accounting Basis` field so you can t
 |------|---------|
 | `generate_workbook.py` | Main script – generates the entire Excel workbook |
 | `test_workbook.py` | pytest test suite (69 tests) validating all sheets and data integrity |
-| `ProBooksAi_Accounting.xlsx` | Generated workbook (re-created each run) |
+| `test_documents.py` | pytest test suite (18 tests) for the Documents API |
+| `app/main.py` | FastAPI application entry point |
+| `app/documents.py` | Document upload / approval / bundle router |
+| `app/ai_extraction.py` | AI extraction placeholder (stub – replace with real AI later) |
+| `app/bundle.py` | ZIP bundling utility for invoice + attachments |
+| `requirements.txt` | Python dependencies |
+
+---
+
+## 📄 Additional Documents (Issue #2)
+
+The **Documents** feature lets you upload PDFs or other files, track their approval
+state, and eventually combine them with generated invoices.
+
+### Upload a document
+
+```bash
+curl -X POST http://127.0.0.1:8000/documents/ \
+  -F "file=@/path/to/invoice.pdf"
+```
+
+### List documents (all, or filtered by status)
+
+```bash
+curl http://127.0.0.1:8000/documents/
+curl "http://127.0.0.1:8000/documents/?status=pending"
+curl "http://127.0.0.1:8000/documents/?status=approved"
+```
+
+### Approve or reject a document
+
+```bash
+# Approve
+curl -X POST http://127.0.0.1:8000/documents/<doc_id>/approve
+
+# Reject
+curl -X POST http://127.0.0.1:8000/documents/<doc_id>/reject
+```
+
+### Download a bundle (ZIP) for a document
+
+```bash
+curl -OJ http://127.0.0.1:8000/documents/<doc_id>/bundle
+```
+
+### Document states
+
+| State | Meaning |
+|-------|---------|
+| `pending` | Uploaded; waiting for approval before sending/processing |
+| `approved` | Approved; ready to be processed or sent |
+| `rejected` | Rejected; will not be processed further |
+
+Uploaded files are stored locally under `uploads/` (gitignored).
+Metadata is tracked in `uploads/metadata.json`.
+
+> **AI extraction**: `app/ai_extraction.py` provides a placeholder stub.
+> Replace the `extract()` function body with a real AI provider call
+> (e.g. OpenAI, Google Document AI, AWS Textract) once chosen.
 
 ---
 

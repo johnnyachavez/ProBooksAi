@@ -1,7 +1,11 @@
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
+from app.documents import router as documents_router
+
 app = FastAPI(title="ProBooksAi", version="0.1.0")
+
+app.include_router(documents_router)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -24,6 +28,7 @@ def home():
   <p>AI-powered accounting software — local dev server is running.</p>
   <ul>
     <li><a href="/health">/health</a> — service health check</li>
+    <li><a href="/documents">/documents</a> — list uploaded documents</li>
     <li><a href="/docs">/docs</a> — interactive API documentation (Swagger UI)</li>
     <li><a href="/redoc">/redoc</a> — alternative API docs (ReDoc)</li>
   </ul>
@@ -34,3 +39,4 @@ def home():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
