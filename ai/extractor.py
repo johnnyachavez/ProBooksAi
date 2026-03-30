@@ -252,7 +252,7 @@ def _messages_for_scanned_pdf(path: str) -> list[dict]:
         if images:
             img_data = images[0].data
             b64 = base64.b64encode(img_data).decode()
-            # Guess mime from data
+            # Detect image type from SOI (Start of Image) marker: JPEG is \xff\xd8, else assume PNG
             mime = "image/jpeg" if img_data[:2] == b"\xff\xd8" else "image/png"
             data_url = f"data:{mime};base64,{b64}"
             return [

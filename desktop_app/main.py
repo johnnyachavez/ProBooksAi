@@ -50,6 +50,8 @@ STATUS_COLORS = {
     "Error":        "#F44336",   # red
 }
 
+INBOX_HEADER_COLOR = "#1F3864"  # dark navy – matches ProBooksAi branding
+
 
 # ---------------------------------------------------------------------------
 # Background worker – runs AI extraction off the UI thread
@@ -470,7 +472,7 @@ class MainWindow(QMainWindow):
 
         lbl_inbox = QLabel("  Document Inbox")
         lbl_inbox.setStyleSheet(
-            "background: #1F3864; color: white; font-weight: bold; "
+            f"background: {INBOX_HEADER_COLOR}; color: white; font-weight: bold; "
             "font-size: 13px; padding: 6px;"
         )
         left_layout.addWidget(lbl_inbox)
