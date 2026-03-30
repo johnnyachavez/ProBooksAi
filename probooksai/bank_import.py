@@ -390,3 +390,59 @@ def flag_duplicates(transactions: list[ParsedTransaction]) -> dict[str, list[int
     for txn in transactions:
         seen.setdefault(txn.fingerprint, []).append(txn.source_row)
     return {fp: rows for fp, rows in seen.items() if len(rows) > 1}
+
+
+# ---------------------------------------------------------------------------
+# Reconciliation
+# ---------------------------------------------------------------------------
+
+#: Maximum absolute difference (inclusive) that is considered "balanced".
+#: Set to 0.00 for strict reconciliation; increase for lenient tolerance.
+RECONCILE_TOLERANCE: float = 0.00
+
+
+class ReconciliationResult:
+    """Computed reconciliation totals for a statement period."""
+
+    __slots__ = (
+        "beginning_balance",
+        "ending_balance",
+        "sum_transactions",
+        "expected_ending",
+        "difference",
+        "is_balanced",
+    )
+
+    def __init__(
+        self,
+        beginning_balance: float,
+        ending_balance: float,
+        sum_transactions: float,
+    ):
+        self.beginning_balance = beginning_balance
+        self.ending_balance = ending_balance
+        self.sum_transactions = round(sum_transactions, 2)
+        self.expected_ending = round(beginning_balance + self.sum_transactions, 2)
+        self.difference = round(ending_balance - self.expected_ending, 2)
+        self.is_balanced = abs(self.difference) <= RECONCILE_TOLERANCE
+
+
+def compute_reconciliation(
+    beginning_balance: float,
+    ending_balance: float,
+    amounts: list[Optional[float]],
+) -> ReconciliationResult:
+    """
+    Compute reconciliation for a statement period.
+
+    *amounts* is a list of signed transaction amounts (money-in positive,
+    money-out negative).  ``None`` entries are treated as zero.
+
+    Returns a :class:`ReconciliationResult` with all computed fields.
+    """
+    total = round(sum(a for a in amounts if a is not None), 2)
+    return ReconciliationResult(
+        beginning_balance=beginning_balance,
+        ending_balance=ending_balance,
+        sum_transactions=total,
+    )

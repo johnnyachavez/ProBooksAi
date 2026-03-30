@@ -50,11 +50,30 @@ def get_docs_dir() -> Path:
 _DDL = """
 PRAGMA foreign_keys = ON;
 
+CREATE TABLE IF NOT EXISTS bank_accounts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT    NOT NULL,
+    institution TEXT,
+    last4       TEXT,
+    external_id TEXT,
+    created_at  TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_bank_accounts_name ON bank_accounts (name);
+
 CREATE TABLE IF NOT EXISTS bank_import_batches (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    source_filename TEXT    NOT NULL,
-    imported_at     TEXT    NOT NULL,
-    format_meta     TEXT
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_filename     TEXT    NOT NULL,
+    imported_at         TEXT    NOT NULL,
+    format_meta         TEXT,
+    bank_account_id     INTEGER REFERENCES bank_accounts(id) ON DELETE SET NULL,
+    statement_start_date TEXT,
+    statement_end_date   TEXT,
+    beginning_balance    REAL,
+    ending_balance       REAL,
+    is_reconciled        INTEGER NOT NULL DEFAULT 0,
+    reconciled_at        TEXT,
+    reconciled_difference REAL
 );
 
 CREATE TABLE IF NOT EXISTS bank_transactions (
@@ -148,8 +167,44 @@ def _connect(db_path: Optional[str] = None) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.executescript(_DDL)
+    _migrate(conn)
     conn.commit()
     return conn
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Apply additive migrations for databases created before Issue #12."""
+    # Add new columns to bank_import_batches if they are missing (SQLite
+    # does not support IF NOT EXISTS for ALTER TABLE ADD COLUMN, so we check
+    # the column list first).
+    existing = {
+        row[1]
+        for row in conn.execute("PRAGMA table_info(bank_import_batches)").fetchall()
+    }
+    _add_column_if_missing = [
+        ("bank_account_id",      "INTEGER REFERENCES bank_accounts(id) ON DELETE SET NULL"),
+        ("statement_start_date", "TEXT"),
+        ("statement_end_date",   "TEXT"),
+        ("beginning_balance",    "REAL"),
+        ("ending_balance",       "REAL"),
+        ("is_reconciled",        "INTEGER NOT NULL DEFAULT 0"),
+        ("reconciled_at",        "TEXT"),
+        ("reconciled_difference","REAL"),
+    ]
+    for col, col_def in _add_column_if_missing:
+        if col not in existing:
+            conn.execute(
+                f"ALTER TABLE bank_import_batches ADD COLUMN {col} {col_def}"
+            )
+
+    # Indexes that reference new columns must be created after migration
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_batch_account ON bank_import_batches (bank_account_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_batch_dates ON bank_import_batches "
+        "(statement_start_date, statement_end_date)"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -342,13 +397,103 @@ class DocumentDatabase:
             (doc_id, old_status, new_status, _now()),
         )
 
+    # -- bank accounts -------------------------------------------------------
+
+    def create_bank_account(
+        self,
+        name: str,
+        institution: Optional[str] = None,
+        last4: Optional[str] = None,
+        external_id: Optional[str] = None,
+    ) -> int:
+        """Create a new bank account and return its ``id``."""
+        cur = self._conn.execute(
+            """
+            INSERT INTO bank_accounts (name, institution, last4, external_id, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (name, institution, last4, external_id, _now()),
+        )
+        self._conn.commit()
+        return cur.lastrowid
+
+    def get_bank_account(self, account_id: int) -> Optional[sqlite3.Row]:
+        return self._conn.execute(
+            "SELECT * FROM bank_accounts WHERE id = ?", (account_id,)
+        ).fetchone()
+
+    def list_bank_accounts(self) -> list:
+        return self._conn.execute(
+            "SELECT * FROM bank_accounts ORDER BY name ASC"
+        ).fetchall()
+
+    def update_bank_account(
+        self,
+        account_id: int,
+        name: Optional[str] = None,
+        institution: Optional[str] = None,
+        last4: Optional[str] = None,
+        external_id: Optional[str] = None,
+    ):
+        """Patch one or more fields on a bank account row."""
+        updates: list[str] = []
+        params: list = []
+        if name is not None:
+            updates.append("name = ?")
+            params.append(name)
+        if institution is not None:
+            updates.append("institution = ?")
+            params.append(institution)
+        if last4 is not None:
+            updates.append("last4 = ?")
+            params.append(last4)
+        if external_id is not None:
+            updates.append("external_id = ?")
+            params.append(external_id)
+        if not updates:
+            return
+        params.append(account_id)
+        self._conn.execute(
+            f"UPDATE bank_accounts SET {', '.join(updates)} WHERE id = ?", params
+        )
+        self._conn.commit()
+
+    def delete_bank_account(self, account_id: int):
+        """Delete a bank account (batches become unlinked via SET NULL)."""
+        self._conn.execute("DELETE FROM bank_accounts WHERE id = ?", (account_id,))
+        self._conn.commit()
+
     # -- bank import batches -------------------------------------------------
 
-    def create_batch(self, source_filename: str, format_meta: str = "") -> int:
+    def create_batch(
+        self,
+        source_filename: str,
+        format_meta: str = "",
+        bank_account_id: Optional[int] = None,
+        statement_start_date: Optional[str] = None,
+        statement_end_date: Optional[str] = None,
+        beginning_balance: Optional[float] = None,
+        ending_balance: Optional[float] = None,
+    ) -> int:
         """Create a new import batch and return its ``id``."""
         cur = self._conn.execute(
-            "INSERT INTO bank_import_batches (source_filename, imported_at, format_meta) VALUES (?, ?, ?)",
-            (source_filename, _now(), format_meta or None),
+            """
+            INSERT INTO bank_import_batches
+                (source_filename, imported_at, format_meta, bank_account_id,
+                 statement_start_date, statement_end_date,
+                 beginning_balance, ending_balance)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                source_filename,
+                _now(),
+                format_meta or None,
+                bank_account_id,
+                statement_start_date,
+                statement_end_date,
+                beginning_balance,
+                ending_balance,
+            ),
         )
         self._conn.commit()
         return cur.lastrowid
@@ -358,10 +503,78 @@ class DocumentDatabase:
             "SELECT * FROM bank_import_batches WHERE id = ?", (batch_id,)
         ).fetchone()
 
-    def list_batches(self) -> list:
+    def list_batches(self, bank_account_id: Optional[int] = None) -> list:
+        if bank_account_id is not None:
+            return self._conn.execute(
+                "SELECT * FROM bank_import_batches WHERE bank_account_id = ? ORDER BY imported_at DESC",
+                (bank_account_id,),
+            ).fetchall()
         return self._conn.execute(
             "SELECT * FROM bank_import_batches ORDER BY imported_at DESC"
         ).fetchall()
+
+    def update_batch_statement(
+        self,
+        batch_id: int,
+        bank_account_id: Optional[int] = None,
+        statement_start_date: Optional[str] = None,
+        statement_end_date: Optional[str] = None,
+        beginning_balance: Optional[float] = None,
+        ending_balance: Optional[float] = None,
+    ):
+        """Update statement period and balance fields for a batch."""
+        updates: list[str] = []
+        params: list = []
+        if bank_account_id is not None:
+            updates.append("bank_account_id = ?")
+            params.append(bank_account_id)
+        if statement_start_date is not None:
+            updates.append("statement_start_date = ?")
+            params.append(statement_start_date)
+        if statement_end_date is not None:
+            updates.append("statement_end_date = ?")
+            params.append(statement_end_date)
+        if beginning_balance is not None:
+            updates.append("beginning_balance = ?")
+            params.append(beginning_balance)
+        if ending_balance is not None:
+            updates.append("ending_balance = ?")
+            params.append(ending_balance)
+        if not updates:
+            return
+        params.append(batch_id)
+        self._conn.execute(
+            f"UPDATE bank_import_batches SET {', '.join(updates)} WHERE id = ?", params
+        )
+        self._conn.commit()
+
+    def mark_batch_reconciled(
+        self,
+        batch_id: int,
+        reconciled_difference: float,
+    ):
+        """Mark a batch as reconciled and persist the difference."""
+        self._conn.execute(
+            """
+            UPDATE bank_import_batches
+            SET is_reconciled = 1, reconciled_at = ?, reconciled_difference = ?
+            WHERE id = ?
+            """,
+            (_now(), reconciled_difference, batch_id),
+        )
+        self._conn.commit()
+
+    def unmark_batch_reconciled(self, batch_id: int):
+        """Remove reconciliation status from a batch."""
+        self._conn.execute(
+            """
+            UPDATE bank_import_batches
+            SET is_reconciled = 0, reconciled_at = NULL, reconciled_difference = NULL
+            WHERE id = ?
+            """,
+            (batch_id,),
+        )
+        self._conn.commit()
 
     # -- bank transactions ---------------------------------------------------
 
