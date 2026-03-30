@@ -27,3 +27,11 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# PyInstaller
+*.spec
+dist/
+build/
+
+# Generated workbook outputs (keep only the sample)
+!ProBooksAi_Accounting.xlsx
