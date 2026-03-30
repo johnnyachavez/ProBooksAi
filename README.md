@@ -1,7 +1,7 @@
 # ProBooksAi – AI-Powered Accounting Software
 
-> **A complete, double-entry accounting framework delivered as a richly formatted Excel workbook.**  
-> Available as a **native desktop app (PySide6/Qt)** and as a **CLI script**, both generating a ready-to-use `.xlsx` file compatible with **Microsoft Excel**, **Google Sheets**, and **LibreOffice Calc**.
+> **A complete, double-entry accounting framework delivered as a richly formatted Excel workbook,  
+> plus a native Windows desktop application for AI-assisted document intake (PDF & images).**
 
 ---
 
@@ -20,6 +20,72 @@
 | 9 | **General Ledger** | Double-entry Journal Entries with automatic debit = credit balance check |
 | 10 | **Trial Balance** | SUMIF-powered aggregation of every account's debit and credit totals |
 | 11 | **Dashboard** | KPI cards (AR, AP, Cash, Net Income) and a full sheet navigator |
+| 12 | **Document Intake Desktop App** | Drag-and-drop PDF/image import → AI extraction → human review → approve & post |
+
+---
+
+## 🖥️ Desktop Application (Document Intake)
+
+### Prerequisites
+
+```bash
+pip install -r requirements.txt
+```
+
+### Set AI API keys via environment variables
+
+The application uses OpenAI (or any OpenAI-compatible provider) for document extraction.
+**Never hard-code secrets** – set them via environment variables before launching the app:
+
+**Windows (Command Prompt):**
+```cmd
+set OPENAI_API_KEY=sk-your-key-here
+```
+
+**Windows (PowerShell):**
+```powershell
+$env:OPENAI_API_KEY = "sk-your-key-here"
+```
+
+Optional environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENAI_API_KEY` | *(required)* | Your OpenAI API key |
+| `OPENAI_MODEL` | `gpt-4o` | Model to use (must support vision for images) |
+| `AI_BASE_URL` | *(OpenAI default)* | Override for Azure OpenAI, Ollama, or other compatible endpoints |
+| `AI_PROVIDER` | `openai` | Provider name (currently only `openai` is supported) |
+
+### Run the desktop app
+
+```bash
+python -m desktop_app.main
+```
+
+### Where local data is stored
+
+All imported documents and the SQLite database are stored in:
+
+| Platform | Location |
+|----------|----------|
+| **Windows** | `%APPDATA%\ProBooksAi\` |
+| Other | `~\ProBooksAi\` |
+
+The database file is `probooksai.db` inside that directory.  
+Imported document copies are stored in the `documents/` subdirectory.
+
+These paths are excluded from git via `.gitignore`.
+
+### Basic workflow
+
+1. **Import** – Click "📂 Import Documents…" or drag & drop PDF/image files onto the inbox.
+2. **Run AI** – Select a document and click "⚡ Run AI" to extract fields via the cloud AI.
+3. **Review** – Check the extracted fields (vendor, total, date, etc.) and edit as needed.
+4. **Categorise** – Confirm or adjust the suggested Chart of Accounts mapping.
+5. **Approve** – Click "✅ Approve" to save the reviewed values.
+6. **Post** – Click "📤 Mark Posted" to finalise the document.
+
+Document statuses: `New → Extracted → Needs Review → Approved → Posted` (or `Error`)
 
 ---
 
@@ -54,22 +120,29 @@ ProBooksAi_Accounting.xlsx
 ProBooksAi/
 ├── probooksai/               ← Core library (importable)
 │   ├── __init__.py
-│   └── generator.py          ← Workbook generation logic
+│   ├── generator.py          ← Workbook generation logic
+│   ├── database.py           ← SQLite document intake storage
+│   └── coa.py                ← Chart of Accounts loading helpers
+├── ai/                       ← Cloud AI modules
+│   ├── __init__.py           ← ExtractionResult, CategorySuggestions
+│   ├── extractor.py          ← extract_document() via cloud AI
+│   └── categorizer.py        ← suggest_categories() via cloud AI
 ├── desktop_app/              ← PySide6 desktop GUI
 │   ├── __init__.py
-│   └── main.py
+│   └── main.py               ← Document intake / review UI
+├── tests/                    ← Unit tests (database, AI, categorisation)
 ├── scripts/                  ← PyInstaller build helpers
 │   ├── build_desktop.sh      ← macOS / Linux
 │   └── build_desktop.ps1     ← Windows PowerShell
 ├── generate_workbook.py      ← CLI entry-point (thin wrapper)
-├── test_workbook.py          ← pytest test suite
+├── test_workbook.py          ← Workbook pytest test suite
 ├── requirements.txt
 └── ProBooksAi_Accounting.xlsx ← Sample generated workbook
 ```
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start (Workbook Generator)
 
 ### Prerequisites
 
@@ -77,16 +150,13 @@ ProBooksAi/
 pip install -r requirements.txt
 ```
 
-### Run the Desktop App
+### Run the Desktop App (Document Intake)
 
 ```bash
 python -m desktop_app.main
 ```
 
-A window will open.  
-1. Choose an output path with **Browse…** (defaults to `ProBooksAi_Accounting.xlsx` in the current directory).  
-2. Click **Generate Workbook**.  
-3. The status log will confirm the file location when complete.
+See the **Desktop Application** section above for AI key setup and workflow.
 
 ### Run the CLI Generator
 
@@ -100,8 +170,11 @@ Open it with Excel, Google Sheets *(File → Import)*, or LibreOffice Calc.
 ### Run Tests
 
 ```bash
-python -m pytest test_workbook.py -v
+pip install -r requirements.txt
+python -m pytest -v
 ```
+
+All tests should pass.
 
 ---
 
@@ -169,6 +242,8 @@ In the **Settings** sheet, change `Accounting Basis` from `Accrual` to `Cash`.
 - [ ] Bank reconciliation worksheet
 - [ ] Multi-currency support
 - [ ] Budget vs. Actual comparison report
+- [ ] PyInstaller packaging for Windows (.exe)
+- [ ] PDF export of combined invoice + attachments
 
 ---
 

@@ -35,3 +35,12 @@ build/
 
 # Generated workbook outputs (keep only the sample)
 !ProBooksAi_Accounting.xlsx
+
+# ProBooksAi local data (SQLite DB + imported documents)
+ProBooksAi/
+*.db
+*.db-shm
+*.db-wal
+
+# PyInstaller build artifacts
+*.exe
