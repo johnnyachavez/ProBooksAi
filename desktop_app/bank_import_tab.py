@@ -10,12 +10,12 @@ Public classes:
 
 from __future__ import annotations
 
+import csv
 import json
-import os
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, QThread, Signal, QSortFilterProxyModel, QRegularExpression
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QColor, QBrush
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -550,7 +550,7 @@ class BankImportTab(QWidget):
 
         try:
             headers, preview = read_csv_preview(path, max_rows=10)
-        except Exception as exc:  # noqa: BLE001
+        except (OSError, UnicodeDecodeError, csv.Error) as exc:
             QMessageBox.critical(self, "Read Error", f"Could not read file:\n{exc}")
             return
 

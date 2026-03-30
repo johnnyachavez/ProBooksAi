@@ -215,7 +215,7 @@ class TestReadCsvPreview:
     def test_preview_limited_to_max_rows(self, tmp_path):
         lines = "Date,Description,Amount\n"
         for i in range(20):
-            lines += f"0{i+1}/01/2025,Item {i},-{i}.00\n"
+            lines += f"{i+1:02d}/01/2025,Item {i},-{i}.00\n"
         path = str(tmp_path / "big.csv")
         Path(path).write_text(lines, encoding="utf-8")
         _, rows = read_csv_preview(path, max_rows=10)
