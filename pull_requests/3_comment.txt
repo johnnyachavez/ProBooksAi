@@ -1,0 +1,1 @@
+Closing this pull request because we are pivoting to a desktop-first approach using PySide6 and will be replacing the current web/FastAPI path.
