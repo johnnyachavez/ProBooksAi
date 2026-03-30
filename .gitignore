@@ -27,3 +27,15 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# ProBooksAi local data (SQLite DB + imported documents)
+ProBooksAi/
+*.db
+*.db-shm
+*.db-wal
+
+# PyInstaller build artifacts
+*.spec
+dist/
+build/
+*.exe
