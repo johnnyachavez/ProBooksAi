@@ -53,10 +53,30 @@ ProBooksAi_Accounting.xlsx
 ### Prerequisites
 
 ```bash
-pip install openpyxl
+python -m venv .venv
+# macOS / Linux
+source .venv/bin/activate
+# Windows PowerShell
+# .\.venv\Scripts\Activate.ps1
+
+pip install -r requirements.txt
 ```
 
-### Generate the workbook
+### Run the local web server
+
+```bash
+uvicorn app.main:app --reload
+```
+
+Open your browser at **http://127.0.0.1:8000** to see the ProBooksAi home page.
+
+| URL | Description |
+|-----|-------------|
+| http://127.0.0.1:8000/ | Home page |
+| http://127.0.0.1:8000/health | Health check (`{"status":"ok"}`) |
+| http://127.0.0.1:8000/docs | Interactive API docs (Swagger UI) |
+
+### Generate the Excel workbook
 
 ```bash
 python generate_workbook.py
@@ -68,7 +88,6 @@ Open it with Excel, Google Sheets *(File → Import)*, or LibreOffice Calc.
 ### Run tests
 
 ```bash
-pip install pytest
 python -m pytest test_workbook.py -v
 ```
 
