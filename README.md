@@ -50,13 +50,39 @@ ProBooksAi_Accounting.xlsx
 
 ## 🚀 Quick Start
 
-### Prerequisites
+### 1. Set up a virtual environment
 
 ```bash
-pip install openpyxl
+python -m venv .venv
+
+# macOS / Linux
+source .venv/bin/activate
+
+# Windows PowerShell
+# .\.venv\Scripts\Activate.ps1
 ```
 
-### Generate the workbook
+### 2. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Run the local web server
+
+```bash
+uvicorn app.main:app --reload
+```
+
+Then open **`http://127.0.0.1:8000`** in your browser.
+
+| URL | Description |
+|-----|-------------|
+| `http://127.0.0.1:8000/` | Home page |
+| `http://127.0.0.1:8000/health` | Health check (`{"status":"ok"}`) |
+| `http://127.0.0.1:8000/docs` | Interactive API docs (Swagger UI) |
+
+### 4. Generate the Excel workbook
 
 ```bash
 python generate_workbook.py
@@ -65,10 +91,9 @@ python generate_workbook.py
 This creates **`ProBooksAi_Accounting.xlsx`** in the current directory.  
 Open it with Excel, Google Sheets *(File → Import)*, or LibreOffice Calc.
 
-### Run tests
+### 5. Run tests
 
 ```bash
-pip install pytest
 python -m pytest test_workbook.py -v
 ```
 
@@ -116,8 +141,10 @@ Each invoice and bill also carries its own `Accounting Basis` field so you can t
 
 | File | Purpose |
 |------|---------|
+| `app/main.py` | FastAPI web server (home page, health endpoint, API docs) |
 | `generate_workbook.py` | Main script – generates the entire Excel workbook |
 | `test_workbook.py` | pytest test suite (69 tests) validating all sheets and data integrity |
+| `requirements.txt` | Python dependencies |
 | `ProBooksAi_Accounting.xlsx` | Generated workbook (re-created each run) |
 
 ---
