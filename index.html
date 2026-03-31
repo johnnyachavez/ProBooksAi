@@ -104,8 +104,6 @@
       display: flex;
       align-items: center;
       gap: 0.65rem;
-      min-width: 0;
-      flex: 1;
     }
     .sidebar-toggle {
       flex-shrink: 0;
@@ -132,28 +130,6 @@
     .sidebar-toggle .icon-panel-open { display: none; }
     .sidebar-toggle[aria-expanded="true"] .icon-panel-close { display: block; }
     .sidebar-toggle[aria-expanded="false"] .icon-panel-open { display: block; }
-    .search {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 0.45rem 0.85rem;
-      width: min(360px, 100%);
-      max-width: min(360px, 50vw);
-      color: var(--muted);
-      font-size: 0.85rem;
-    }
-    .search kbd {
-      margin-left: auto;
-      font-family: "JetBrains Mono", monospace;
-      font-size: 0.7rem;
-      padding: 0.15rem 0.4rem;
-      background: var(--bg);
-      border-radius: 4px;
-      border: 1px solid var(--border);
-    }
     .header-actions {
       display: flex;
       align-items: center;
@@ -385,10 +361,6 @@
           <svg class="icon-panel-close" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/></svg>
           <svg class="icon-panel-open" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
         </button>
-        <div class="search">
-          Search transactions, clients…
-          <kbd>⌘K</kbd>
-        </div>
       </div>
       <div class="header-actions">
         <div class="avatar">JD</div>
