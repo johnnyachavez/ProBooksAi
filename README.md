@@ -236,14 +236,33 @@ In the **Settings** sheet, change `Accounting Basis` from `Accrual` to `Cash`.
 
 ## 🗺️ Roadmap
 
-- [ ] Google Apps Script version (native Google Sheets integration)
-- [ ] Payroll module (payroll journal entries, tax calculations)
-- [ ] Fixed asset depreciation schedule
-- [ ] Bank reconciliation worksheet
-- [ ] Multi-currency support
-- [ ] Budget vs. Actual comparison report
-- [ ] PyInstaller packaging for Windows (.exe)
-- [ ] PDF export of combined invoice + attachments
+The full, ordered implementation plan lives in **[docs/ROADMAP.md](docs/ROADMAP.md)**.
+
+Phases at a glance:
+
+| Phase | Focus | Key references |
+|---|---|---|
+| 1 | Data foundations (COA, bank accounts, bank txns) | baseline |
+| 2 | CSV import with column mapping & dedupe | [PR #10](https://github.com/johnnyachavez/ProBooksAi/pull/10) |
+| 3 | Bank register UI (date, #, payee, debit, credit, balance) | [PR #14](https://github.com/johnnyachavez/ProBooksAi/pull/14) |
+| 4 | Reconciliation (statement periods + begin/end + diff + mark reconciled) | [Issue #12](https://github.com/johnnyachavez/ProBooksAi/issues/12), [PR #13](https://github.com/johnnyachavez/ProBooksAi/pull/13) |
+| 5 | Posting bank transactions to the General Ledger | — |
+| 6 | Rules engine & AI category hints | — |
+| 7 | PDF / OCR intake from bank statement images | [Issue #9](https://github.com/johnnyachavez/ProBooksAi/issues/9), [Issue #11](https://github.com/johnnyachavez/ProBooksAi/issues/11) |
+
+---
+
+## 🏦 Banking Workflow (current)
+
+The intended end-to-end flow for managing bank transactions in ProBooksAi:
+
+1. **Select bank account** – choose or create the bank account (e.g., "Chase Checking 4521") in the account manager.
+2. **Import CSV** – export a CSV from your bank's website and drag it into the "Bank Import" tab.
+3. **Map columns** – a one-time column-mapping dialog lets you specify which column is Date, Description, Amount, etc.; the mapping is saved per account.
+4. **Review transactions** – the imported transactions appear in an editable table; assign a COA category to each row; duplicates are automatically flagged and skipped.
+5. **Open the Register** – switch to the "Register" tab to see all transactions for the selected account in a check-register layout (Date, #, Payee, Memo, Debit, Credit, Running Balance).
+6. **Reconcile** – open the reconciliation panel, enter the statement's start/end dates and beginning/ending balances; the system computes the difference and enables "Mark Reconciled" when it reaches zero.
+7. **Post to GL** – once reconciled, post transactions to the General Ledger to keep double-entry books in sync.
 
 ---
 
