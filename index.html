@@ -191,27 +191,30 @@
     main {
       flex: 1;
       padding: 1.5rem;
-      padding-bottom: calc(1.5rem + var(--menubar-h));
       overflow: auto;
     }
     .menubar {
       flex-shrink: 0;
-      height: var(--menubar-h);
+      min-height: var(--menubar-h);
       display: flex;
       align-items: center;
+      flex-wrap: nowrap;
       padding: 0 0.5rem 0 0.65rem;
       background: #141b24;
-      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
       font-size: 0.75rem;
       font-weight: 500;
       color: var(--muted);
       gap: 0;
       user-select: none;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
     }
     .menubar-group {
       display: flex;
       align-items: center;
       gap: 0.15rem;
+      flex-shrink: 0;
     }
     .menubar-group + .menubar-group::before {
       content: "";
@@ -248,9 +251,11 @@
     }
     .menubar-status {
       margin-left: auto;
-      padding-right: 0.5rem;
+      padding: 0 0.5rem 0 1rem;
       font-size: 0.7rem;
       opacity: 0.85;
+      flex-shrink: 0;
+      white-space: nowrap;
     }
     .page-title {
       margin: 0 0 0.35rem;
@@ -338,6 +343,25 @@
   </style>
 </head>
 <body>
+  <nav class="menubar" aria-label="Menu bar">
+    <div class="menubar-group">
+      <span class="menubar-label">File</span>
+      <button type="button">New</button>
+      <button type="button">Open</button>
+      <button type="button">Save</button>
+    </div>
+    <div class="menubar-group">
+      <span class="menubar-label">View</span>
+      <button type="button" id="menubar-toggle-sidebar">Sidebar</button>
+      <button type="button">Refresh</button>
+    </div>
+    <div class="menubar-group">
+      <span class="menubar-label">Edit</span>
+      <button type="button">Undo</button>
+      <button type="button">Redo</button>
+    </div>
+    <span class="menubar-status" id="menubar-status">ProBooks+ai</span>
+  </nav>
   <div class="app-body">
   <aside id="app-sidebar" aria-label="Main navigation">
     <div class="logo">
@@ -446,25 +470,6 @@
     </main>
   </div>
   </div>
-  <nav class="menubar" aria-label="Menu bar">
-    <div class="menubar-group">
-      <span class="menubar-label">File</span>
-      <button type="button">New</button>
-      <button type="button">Open</button>
-      <button type="button">Save</button>
-    </div>
-    <div class="menubar-group">
-      <span class="menubar-label">View</span>
-      <button type="button" id="menubar-toggle-sidebar">Sidebar</button>
-      <button type="button">Refresh</button>
-    </div>
-    <div class="menubar-group">
-      <span class="menubar-label">Edit</span>
-      <button type="button">Undo</button>
-      <button type="button">Redo</button>
-    </div>
-    <span class="menubar-status" id="menubar-status">ProBooks+ai</span>
-  </nav>
   <script>
 (function () {
   var KEY = "probooks-sidebar-collapsed";
