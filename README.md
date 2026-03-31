@@ -142,6 +142,22 @@ ProBooksAi/
 
 ---
 
+## 📸 Automatic UI Screenshots (Pull Requests)
+
+Every pull request automatically captures a screenshot of the ProBooksAi main window and uploads it as a GitHub Actions artifact.
+
+**To view a PR screenshot:**
+1. Open the PR on GitHub, then navigate to the repository's **Actions** tab and find the **UI Screenshot** run for that PR.
+2. Click the workflow run.
+3. Scroll to the **Artifacts** section and download **`ui-screenshots`**.
+4. The archive contains `main_window.png` — a full screenshot of the base UI shell.
+
+The screenshot step is non-blocking: if GUI rendering fails in CI the workflow will still pass.
+
+You can also trigger a screenshot manually via **Actions → UI Screenshot → Run workflow**.
+
+---
+
 ## 🚀 Quick Start (Workbook Generator)
 
 ### Prerequisites
