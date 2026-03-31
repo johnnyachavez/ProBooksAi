@@ -20,7 +20,11 @@
       --success: #34c759;
       --radius: 10px;
       --sidebar-w: 144px;
-      --menubar-h: 36px;
+      --chrome-bg: #f8f9fa;
+      --chrome-border: #dadce0;
+      --chrome-title: #3c4043;
+      --chrome-menu: #1a73e8;
+      --chrome-menu-hover: rgba(26, 115, 232, 0.1);
     }
     *, *::before, *::after { box-sizing: border-box; }
     body {
@@ -108,7 +112,7 @@
       flex-direction: column;
       min-width: 0;
     }
-    header {
+    .main-wrap > header {
       height: 56px;
       border-bottom: 1px solid var(--border);
       display: flex;
@@ -193,73 +197,94 @@
       padding: 1.5rem;
       overflow: auto;
     }
-    nav.menubar {
-      display: flex;
+    .app-chrome-top {
       flex: 0 0 auto;
+      background: var(--chrome-bg);
+      border-bottom: 1px solid var(--chrome-border);
+      user-select: none;
+    }
+    .chrome-doc-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.45rem 0.65rem 0.5rem 0.75rem;
+      border-bottom: 1px solid #e8eaed;
+      min-height: 44px;
+    }
+    .chrome-app-icon {
+      flex-shrink: 0;
+      width: 28px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+    }
+    .chrome-app-icon svg {
+      width: 28px;
+      height: 28px;
+    }
+    .chrome-doc-title {
+      font-size: 1.05rem;
+      font-weight: 400;
+      color: var(--chrome-title);
+      letter-spacing: 0.01em;
+    }
+    .chrome-star {
+      flex-shrink: 0;
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border: none;
+      border-radius: 50%;
+      background: transparent;
+      color: #5f6368;
+      cursor: pointer;
+    }
+    .chrome-star:hover {
+      background: rgba(60, 64, 67, 0.08);
+    }
+    .chrome-star svg {
+      width: 20px;
+      height: 20px;
+    }
+    .chrome-menu-bar {
+      display: flex;
       flex-direction: row;
       flex-wrap: nowrap;
       align-items: center;
-      height: var(--menubar-h);
-      min-height: var(--menubar-h);
-      max-height: var(--menubar-h);
-      padding: 0 0.5rem 0 0.65rem;
-      background: #141b24;
-      border-bottom: 1px solid var(--border);
-      font-size: 0.75rem;
-      font-weight: 500;
-      color: var(--muted);
-      gap: 0;
-      user-select: none;
+      gap: 0.1rem;
+      padding: 0 0.35rem 0 0.5rem;
+      min-height: 34px;
       overflow-x: auto;
       overflow-y: hidden;
       -webkit-overflow-scrolling: touch;
     }
-    .menubar-group {
-      display: flex;
-      align-items: center;
-      gap: 0.15rem;
-      flex-shrink: 0;
-    }
-    .menubar-group + .menubar-group::before {
-      content: "";
-      width: 1px;
-      height: 14px;
-      background: var(--border);
-      margin: 0 0.5rem 0 0.35rem;
-    }
-    .menubar button {
+    .chrome-menu-bar button {
       font: inherit;
-      color: inherit;
+      font-size: 0.8125rem;
+      font-weight: 400;
+      color: var(--chrome-menu);
       background: transparent;
       border: none;
-      padding: 0.35rem 0.55rem;
+      padding: 0.35rem 0.65rem;
       border-radius: 4px;
       cursor: pointer;
-      letter-spacing: 0.04em;
-      text-transform: capitalize;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
-    .menubar button:hover {
-      background: var(--surface-hover);
-      color: var(--text);
+    .chrome-menu-bar button:hover {
+      background: var(--chrome-menu-hover);
     }
-    .menubar button:focus-visible {
-      outline: 2px solid var(--accent);
+    .chrome-menu-bar button:focus-visible {
+      outline: 2px solid var(--chrome-menu);
       outline-offset: 1px;
     }
-    .menubar .menubar-label {
-      font-weight: 700;
-      color: var(--text);
-      padding: 0.35rem 0.45rem 0.35rem 0.25rem;
-      letter-spacing: 0.06em;
-      font-size: 0.7rem;
-    }
-    .menubar-status {
-      margin-left: auto;
-      padding: 0 0.5rem 0 1rem;
-      font-size: 0.7rem;
-      opacity: 0.85;
+    .chrome-menu-bar .chrome-menu-sep {
+      width: 1px;
+      height: 14px;
+      background: var(--chrome-border);
+      margin: 0 0.25rem;
       flex-shrink: 0;
-      white-space: nowrap;
     }
     .page-title {
       margin: 0 0 0.35rem;
@@ -347,25 +372,34 @@
   </style>
 </head>
 <body>
-  <nav class="menubar" aria-label="Menu bar">
-    <div class="menubar-group">
-      <span class="menubar-label">File</span>
-      <button type="button">New</button>
-      <button type="button">Open</button>
-      <button type="button">Save</button>
+  <header class="app-chrome-top">
+    <div class="chrome-doc-bar">
+      <span class="chrome-app-icon" aria-hidden="true">
+        <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="4" y="4" width="40" height="40" rx="6" fill="#0d7d4d"/>
+          <path d="M14 16h20M14 24h20M14 32h12" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+          <path d="M14 16v16M26 16v16M38 16v8" stroke="#fff" stroke-opacity="0.35" stroke-width="1.5"/>
+        </svg>
+      </span>
+      <span class="chrome-doc-title">ProBooks+ai</span>
+      <button type="button" class="chrome-star" aria-label="Star" title="Star">
+        <svg fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/></svg>
+      </button>
     </div>
-    <div class="menubar-group">
-      <span class="menubar-label">View</span>
+    <nav class="chrome-menu-bar" aria-label="Main menu">
+      <button type="button">File</button>
+      <button type="button">Edit</button>
+      <button type="button">View</button>
+      <button type="button">Insert</button>
+      <button type="button">Format</button>
+      <button type="button">Data</button>
+      <button type="button">Tools</button>
+      <button type="button">Extensions</button>
+      <button type="button">Help</button>
+      <span class="chrome-menu-sep" aria-hidden="true"></span>
       <button type="button" id="menubar-toggle-sidebar">Sidebar</button>
-      <button type="button">Refresh</button>
-    </div>
-    <div class="menubar-group">
-      <span class="menubar-label">Edit</span>
-      <button type="button">Undo</button>
-      <button type="button">Redo</button>
-    </div>
-    <span class="menubar-status" id="menubar-status">ProBooks+ai</span>
-  </nav>
+    </nav>
+  </header>
   <div class="app-body">
   <aside id="app-sidebar" aria-label="Main navigation">
     <div class="logo">
