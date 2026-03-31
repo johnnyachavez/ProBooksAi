@@ -19,7 +19,8 @@
       --accent-soft: rgba(61, 156, 245, 0.12);
       --success: #34c759;
       --radius: 10px;
-      --sidebar-w: 240px;
+      --sidebar-w: 144px;
+      --menubar-h: 36px;
     }
     *, *::before, *::after { box-sizing: border-box; }
     body {
@@ -29,20 +30,37 @@
       background: var(--bg);
       color: var(--text);
       display: flex;
+      flex-direction: column;
+    }
+    .app-body {
+      display: flex;
+      flex: 1;
+      min-height: 0;
     }
     aside {
       width: var(--sidebar-w);
-      min-height: 100vh;
+      flex-shrink: 0;
+      min-height: 0;
       background: var(--surface);
       border-right: 1px solid var(--border);
-      padding: 1.25rem 0;
+      padding: 1rem 0;
       display: flex;
       flex-direction: column;
+      overflow: hidden;
+      transition: width 0.22s ease, padding 0.22s ease, border-width 0.22s ease, opacity 0.18s ease;
+    }
+    body.sidebar-collapsed aside {
+      width: 0;
+      padding-left: 0;
+      padding-right: 0;
+      border-right-width: 0;
+      opacity: 0;
+      pointer-events: none;
     }
     .logo {
-      padding: 0 1.25rem 1.5rem;
+      padding: 0 0.75rem 1rem;
       border-bottom: 1px solid var(--border);
-      margin-bottom: 1rem;
+      margin-bottom: 0.75rem;
     }
     .logo h1 {
       margin: 0;
@@ -62,17 +80,17 @@
       display: flex;
       flex-direction: column;
       gap: 2px;
-      padding: 0 0.75rem;
+      padding: 0 0.45rem;
     }
     nav a {
       display: flex;
       align-items: center;
-      gap: 0.65rem;
-      padding: 0.65rem 0.85rem;
+      gap: 0.45rem;
+      padding: 0.5rem 0.5rem;
       border-radius: 8px;
       color: var(--muted);
       text-decoration: none;
-      font-size: 0.9rem;
+      font-size: 0.78rem;
       font-weight: 500;
       transition: background 0.15s, color 0.15s;
     }
@@ -84,7 +102,7 @@
       background: var(--accent-soft);
       color: var(--accent);
     }
-    nav a svg { width: 18px; height: 18px; opacity: 0.85; }
+    nav a svg { width: 16px; height: 16px; flex-shrink: 0; opacity: 0.85; }
     .main-wrap {
       flex: 1;
       display: flex;
@@ -97,10 +115,43 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 0.75rem;
       padding: 0 1.5rem;
       background: rgba(15, 20, 25, 0.85);
       backdrop-filter: blur(8px);
     }
+    .header-start {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      min-width: 0;
+      flex: 1;
+    }
+    .sidebar-toggle {
+      flex-shrink: 0;
+      width: 40px;
+      height: 40px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .sidebar-toggle:hover {
+      background: var(--surface-hover);
+      border-color: var(--muted);
+    }
+    .sidebar-toggle svg {
+      width: 20px;
+      height: 20px;
+    }
+    .sidebar-toggle .icon-panel-close,
+    .sidebar-toggle .icon-panel-open { display: none; }
+    .sidebar-toggle[aria-expanded="true"] .icon-panel-close { display: block; }
+    .sidebar-toggle[aria-expanded="false"] .icon-panel-open { display: block; }
     .search {
       display: flex;
       align-items: center;
@@ -109,7 +160,8 @@
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 0.45rem 0.85rem;
-      width: min(360px, 40vw);
+      width: min(360px, 100%);
+      max-width: min(360px, 50vw);
       color: var(--muted);
       font-size: 0.85rem;
     }
@@ -140,7 +192,66 @@
     main {
       flex: 1;
       padding: 1.5rem;
+      padding-bottom: calc(1.5rem + var(--menubar-h));
       overflow: auto;
+    }
+    .menubar {
+      flex-shrink: 0;
+      height: var(--menubar-h);
+      display: flex;
+      align-items: center;
+      padding: 0 0.5rem 0 0.65rem;
+      background: #141b24;
+      border-top: 1px solid var(--border);
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--muted);
+      gap: 0;
+      user-select: none;
+    }
+    .menubar-group {
+      display: flex;
+      align-items: center;
+      gap: 0.15rem;
+    }
+    .menubar-group + .menubar-group::before {
+      content: "";
+      width: 1px;
+      height: 14px;
+      background: var(--border);
+      margin: 0 0.5rem 0 0.35rem;
+    }
+    .menubar button {
+      font: inherit;
+      color: inherit;
+      background: transparent;
+      border: none;
+      padding: 0.35rem 0.55rem;
+      border-radius: 4px;
+      cursor: pointer;
+      letter-spacing: 0.04em;
+      text-transform: capitalize;
+    }
+    .menubar button:hover {
+      background: var(--surface-hover);
+      color: var(--text);
+    }
+    .menubar button:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+    .menubar .menubar-label {
+      font-weight: 700;
+      color: var(--text);
+      padding: 0.35rem 0.45rem 0.35rem 0.25rem;
+      letter-spacing: 0.06em;
+      font-size: 0.7rem;
+    }
+    .menubar-status {
+      margin-left: auto;
+      padding-right: 0.5rem;
+      font-size: 0.7rem;
+      opacity: 0.85;
     }
     .page-title {
       margin: 0 0 0.35rem;
@@ -228,7 +339,8 @@
   </style>
 </head>
 <body>
-  <aside>
+  <div class="app-body">
+  <aside id="app-sidebar" aria-label="Main navigation">
     <div class="logo">
       <span>ProBooks+ai</span>
       <h1>Dashboard</h1>
@@ -258,9 +370,22 @@
   </aside>
   <div class="main-wrap">
     <header>
-      <div class="search">
-        Search transactions, clients…
-        <kbd>⌘K</kbd>
+      <div class="header-start">
+        <button
+          type="button"
+          class="sidebar-toggle"
+          id="sidebar-toggle"
+          aria-expanded="true"
+          aria-controls="app-sidebar"
+          title="Hide or show sidebar"
+        >
+          <svg class="icon-panel-close" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/></svg>
+          <svg class="icon-panel-open" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
+        </button>
+        <div class="search">
+          Search transactions, clients…
+          <kbd>⌘K</kbd>
+        </div>
       </div>
       <div class="header-actions">
         <div class="avatar">JD</div>
@@ -321,5 +446,61 @@
       </div>
     </main>
   </div>
+  </div>
+  <nav class="menubar" aria-label="Menu bar">
+    <div class="menubar-group">
+      <span class="menubar-label">File</span>
+      <button type="button">New</button>
+      <button type="button">Open</button>
+      <button type="button">Save</button>
+    </div>
+    <div class="menubar-group">
+      <span class="menubar-label">View</span>
+      <button type="button" id="menubar-toggle-sidebar">Sidebar</button>
+      <button type="button">Refresh</button>
+    </div>
+    <div class="menubar-group">
+      <span class="menubar-label">Edit</span>
+      <button type="button">Undo</button>
+      <button type="button">Redo</button>
+    </div>
+    <span class="menubar-status" id="menubar-status">ProBooks+ai</span>
+  </nav>
+  <script>
+(function () {
+  var KEY = "probooks-sidebar-collapsed";
+  var body = document.body;
+  var toggle = document.getElementById("sidebar-toggle");
+  var viewSidebar = document.getElementById("menubar-toggle-sidebar");
+
+  function apply(collapsed) {
+    body.classList.toggle("sidebar-collapsed", collapsed);
+    if (toggle) toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  }
+
+  function load() {
+    try {
+      if (localStorage.getItem(KEY) === "1") apply(true);
+    } catch (e) {}
+  }
+
+  function persist(collapsed) {
+    try {
+      if (collapsed) localStorage.setItem(KEY, "1");
+      else localStorage.removeItem(KEY);
+    } catch (e) {}
+  }
+
+  function flip() {
+    var collapsed = !body.classList.contains("sidebar-collapsed");
+    apply(collapsed);
+    persist(collapsed);
+  }
+
+  load();
+  if (toggle) toggle.addEventListener("click", flip);
+  if (viewSidebar) viewSidebar.addEventListener("click", flip);
+})();
+  </script>
 </body>
 </html>
