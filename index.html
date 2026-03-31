@@ -19,12 +19,7 @@
       --accent-soft: rgba(61, 156, 245, 0.12);
       --success: #34c759;
       --radius: 10px;
-      --sidebar-w: 144px;
-      --chrome-bg: #f8f9fa;
-      --chrome-border: #dadce0;
-      --chrome-title: #3c4043;
-      --chrome-menu: #1a73e8;
-      --chrome-menu-hover: rgba(26, 115, 232, 0.1);
+      --sidebar-w: 120px;
     }
     *, *::before, *::after { box-sizing: border-box; }
     body {
@@ -47,7 +42,7 @@
       min-height: 0;
       background: var(--surface);
       border-right: 1px solid var(--border);
-      padding: 1rem 0;
+      padding: 0.75rem 0 1rem;
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -60,23 +55,6 @@
       border-right-width: 0;
       opacity: 0;
       pointer-events: none;
-    }
-    .logo {
-      padding: 0 0.75rem 1rem;
-      border-bottom: 1px solid var(--border);
-      margin-bottom: 0.75rem;
-    }
-    .logo h1 {
-      margin: 0;
-      font-size: 1.125rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-    }
-    .logo span {
-      font-size: 0.72rem;
-      font-weight: 600;
-      color: var(--accent);
-      letter-spacing: 0.04em;
     }
     aside nav {
       flex: 1;
@@ -113,15 +91,14 @@
       min-width: 0;
     }
     .main-wrap > header {
-      height: 56px;
+      height: 52px;
       border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 0.75rem;
-      padding: 0 1.5rem;
-      background: rgba(15, 20, 25, 0.85);
-      backdrop-filter: blur(8px);
+      padding: 0 1.25rem;
+      background: var(--bg);
     }
     .header-start {
       display: flex;
@@ -197,93 +174,87 @@
       padding: 1.5rem;
       overflow: auto;
     }
-    .app-chrome-top {
+    .app-menu-strip {
       flex: 0 0 auto;
-      background: var(--chrome-bg);
-      border-bottom: 1px solid var(--chrome-border);
-      user-select: none;
-    }
-    .chrome-doc-bar {
       display: flex;
       align-items: center;
-      gap: 0.5rem;
-      padding: 0.45rem 0.65rem 0.5rem 0.75rem;
-      border-bottom: 1px solid #e8eaed;
-      min-height: 44px;
+      min-height: 40px;
+      padding: 0 0.65rem 0 0.75rem;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      user-select: none;
+      gap: 0.35rem;
     }
-    .chrome-app-icon {
+    .brand-tray {
+      display: flex;
+      align-items: baseline;
+      gap: 0.35rem;
+      flex: 0 1 auto;
+      min-width: 0;
+      margin-right: 0.25rem;
+      line-height: 1.2;
+    }
+    .brand-name {
+      color: var(--accent);
+      font-weight: 700;
+      font-size: clamp(0.62rem, 1.65vw + 0.35rem, 0.82rem);
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+    }
+    .brand-dash {
+      color: var(--muted);
+      font-weight: 500;
+      font-size: clamp(0.62rem, 1.5vw + 0.35rem, 0.78rem);
       flex-shrink: 0;
-      width: 28px;
-      height: 36px;
-      display: grid;
-      place-items: center;
     }
-    .chrome-app-icon svg {
-      width: 28px;
-      height: 28px;
-    }
-    .chrome-doc-title {
-      font-size: 1.05rem;
-      font-weight: 400;
-      color: var(--chrome-title);
-      letter-spacing: 0.01em;
-    }
-    .chrome-star {
-      flex-shrink: 0;
-      width: 36px;
-      height: 36px;
-      display: grid;
-      place-items: center;
-      border: none;
-      border-radius: 50%;
-      background: transparent;
-      color: #5f6368;
-      cursor: pointer;
-    }
-    .chrome-star:hover {
-      background: rgba(60, 64, 67, 0.08);
-    }
-    .chrome-star svg {
-      width: 20px;
-      height: 20px;
+    .brand-page {
+      color: var(--text);
+      font-weight: 600;
+      font-size: clamp(0.65rem, 1.75vw + 0.35rem, 0.85rem);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
     }
     .chrome-menu-bar {
       display: flex;
       flex-direction: row;
       flex-wrap: nowrap;
       align-items: center;
-      gap: 0.1rem;
-      padding: 0 0.35rem 0 0.5rem;
-      min-height: 34px;
+      gap: 0.05rem;
+      flex: 1 1 auto;
+      min-width: 0;
+      justify-content: flex-start;
       overflow-x: auto;
       overflow-y: hidden;
       -webkit-overflow-scrolling: touch;
     }
     .chrome-menu-bar button {
       font: inherit;
-      font-size: 0.8125rem;
-      font-weight: 400;
-      color: var(--chrome-menu);
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: var(--accent);
       background: transparent;
       border: none;
-      padding: 0.35rem 0.65rem;
+      padding: 0.35rem 0.55rem;
       border-radius: 4px;
       cursor: pointer;
       white-space: nowrap;
       flex-shrink: 0;
     }
     .chrome-menu-bar button:hover {
-      background: var(--chrome-menu-hover);
+      background: var(--surface-hover);
+      color: #b8d9ff;
     }
     .chrome-menu-bar button:focus-visible {
-      outline: 2px solid var(--chrome-menu);
+      outline: 2px solid var(--accent);
       outline-offset: 1px;
     }
     .chrome-menu-bar .chrome-menu-sep {
       width: 1px;
       height: 14px;
-      background: var(--chrome-border);
-      margin: 0 0.25rem;
+      background: var(--border);
+      margin: 0 0.2rem;
       flex-shrink: 0;
     }
     .page-title {
@@ -371,20 +342,12 @@
     .badge-open { background: var(--accent-soft); color: var(--accent); }
   </style>
 </head>
-<body>
-  <header class="app-chrome-top">
-    <div class="chrome-doc-bar">
-      <span class="chrome-app-icon" aria-hidden="true">
-        <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect x="4" y="4" width="40" height="40" rx="6" fill="#0d7d4d"/>
-          <path d="M14 16h20M14 24h20M14 32h12" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
-          <path d="M14 16v16M26 16v16M38 16v8" stroke="#fff" stroke-opacity="0.35" stroke-width="1.5"/>
-        </svg>
-      </span>
-      <span class="chrome-doc-title">ProBooks+ai</span>
-      <button type="button" class="chrome-star" aria-label="Star" title="Star">
-        <svg fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/></svg>
-      </button>
+<body class="sidebar-collapsed">
+  <header class="app-menu-strip">
+    <div class="brand-tray" title="ProBooks+ai Dashboard">
+      <span class="brand-name">ProBooks+ai</span>
+      <span class="brand-dash" aria-hidden="true">·</span>
+      <span class="brand-page">Dashboard</span>
     </div>
     <nav class="chrome-menu-bar" aria-label="Main menu">
       <button type="button">File</button>
@@ -402,10 +365,6 @@
   </header>
   <div class="app-body">
   <aside id="app-sidebar" aria-label="Main navigation">
-    <div class="logo">
-      <span>ProBooks+ai</span>
-      <h1>Dashboard</h1>
-    </div>
     <nav>
       <a class="active" href="#">
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
@@ -436,7 +395,7 @@
           type="button"
           class="sidebar-toggle"
           id="sidebar-toggle"
-          aria-expanded="true"
+          aria-expanded="false"
           aria-controls="app-sidebar"
           title="Hide or show sidebar"
         >
@@ -510,33 +469,42 @@
   </div>
   <script>
 (function () {
-  var KEY = "probooks-sidebar-collapsed";
+  var KEY = "probooks-sidebar-expanded";
   var body = document.body;
   var toggle = document.getElementById("sidebar-toggle");
   var viewSidebar = document.getElementById("menubar-toggle-sidebar");
 
-  function apply(collapsed) {
+  function applyCollapsed(collapsed) {
     body.classList.toggle("sidebar-collapsed", collapsed);
     if (toggle) toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
   }
 
   function load() {
     try {
-      if (localStorage.getItem(KEY) === "1") apply(true);
-    } catch (e) {}
+      var legacy = localStorage.getItem("probooks-sidebar-collapsed");
+      if (legacy === "1") {
+        localStorage.removeItem("probooks-sidebar-collapsed");
+        applyCollapsed(true);
+        return;
+      }
+      if (localStorage.getItem(KEY) === "1") applyCollapsed(false);
+      else applyCollapsed(true);
+    } catch (e) {
+      applyCollapsed(true);
+    }
   }
 
-  function persist(collapsed) {
+  function persistCollapsed(collapsed) {
     try {
-      if (collapsed) localStorage.setItem(KEY, "1");
+      if (!collapsed) localStorage.setItem(KEY, "1");
       else localStorage.removeItem(KEY);
     } catch (e) {}
   }
 
   function flip() {
     var collapsed = !body.classList.contains("sidebar-collapsed");
-    apply(collapsed);
-    persist(collapsed);
+    applyCollapsed(collapsed);
+    persistCollapsed(collapsed);
   }
 
   load();
