@@ -1,0 +1,15 @@
+# Generated local / AI context (refresh with scripts/sync-workspace.ps1)
+integrations/work-context.json
+
+# OS / editor
+Thumbs.db
+Desktop.ini
+*.swp
+*~
+
+# Secrets
+.env
+.env.*
+
+# Optional tooling
+node_modules/

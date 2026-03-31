@@ -1,0 +1,27 @@
+{
+  "generatedAt": "2026-03-31T12:00:00.0000000Z",
+  "repository": "your-org/ProBooksAi",
+  "repositoryUrl": "https://github.com/your-org/ProBooksAi",
+  "localWorkFiles": [
+    { "path": "index.html", "lastWriteUtc": "2026-03-31T12:00:00.0000000Z" }
+  ],
+  "pullRequests": [
+    {
+      "number": 1,
+      "title": "Example PR",
+      "url": "https://github.com/your-org/ProBooksAi/pull/1",
+      "state": "OPEN",
+      "headRefName": "feature/example",
+      "baseRefName": "main"
+    }
+  ],
+  "issues": [
+    {
+      "number": 2,
+      "title": "Example issue",
+      "url": "https://github.com/your-org/ProBooksAi/issues/2",
+      "state": "OPEN"
+    }
+  ],
+  "warnings": []
+}

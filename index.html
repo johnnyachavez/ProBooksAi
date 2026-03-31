@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ProBooks AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a222c;
+      --surface-hover: #232d3a;
+      --border: #2d3a4a;
+      --text: #e8edf4;
+      --muted: #8b9cb3;
+      --accent: #3d9cf5;
+      --accent-soft: rgba(61, 156, 245, 0.12);
+      --success: #34c759;
+      --radius: 10px;
+      --sidebar-w: 240px;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "DM Sans", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+    }
+    aside {
+      width: var(--sidebar-w);
+      min-height: 100vh;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 1.25rem 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .logo {
+      padding: 0 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 1rem;
+    }
+    .logo h1 {
+      margin: 0;
+      font-size: 1.125rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .logo span {
+      font-size: 0.7rem;
+      font-weight: 500;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+    }
+    nav {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 0 0.75rem;
+    }
+    nav a {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      padding: 0.65rem 0.85rem;
+      border-radius: 8px;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: background 0.15s, color 0.15s;
+    }
+    nav a:hover {
+      background: var(--surface-hover);
+      color: var(--text);
+    }
+    nav a.active {
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+    nav a svg { width: 18px; height: 18px; opacity: 0.85; }
+    .main-wrap {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    header {
+      height: 56px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1.5rem;
+      background: rgba(15, 20, 25, 0.85);
+      backdrop-filter: blur(8px);
+    }
+    .search {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.45rem 0.85rem;
+      width: min(360px, 40vw);
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    .search kbd {
+      margin-left: auto;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.7rem;
+      padding: 0.15rem 0.4rem;
+      background: var(--bg);
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), #6366f1);
+      display: grid;
+      place-items: center;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    main {
+      flex: 1;
+      padding: 1.5rem;
+      overflow: auto;
+    }
+    .page-title {
+      margin: 0 0 0.35rem;
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+    .page-sub {
+      margin: 0 0 1.5rem;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.1rem 1.15rem;
+    }
+    .card label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 0.35rem;
+    }
+    .card strong {
+      font-size: 1.35rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .card .delta {
+      margin-top: 0.35rem;
+      font-size: 0.8rem;
+      color: var(--success);
+    }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .panel-head {
+      padding: 1rem 1.15rem;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+    th {
+      text-align: left;
+      padding: 0.65rem 1.15rem;
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      background: rgba(0,0,0,0.2);
+    }
+    td {
+      padding: 0.75rem 1.15rem;
+      border-top: 1px solid var(--border);
+    }
+    .mono { font-family: "JetBrains Mono", monospace; font-size: 0.8rem; }
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.5rem;
+      border-radius: 6px;
+      font-size: 0.72rem;
+      font-weight: 600;
+    }
+    .badge-paid { background: rgba(52, 199, 89, 0.15); color: var(--success); }
+    .badge-open { background: var(--accent-soft); color: var(--accent); }
+  </style>
+</head>
+<body>
+  <aside>
+    <div class="logo">
+      <span>ProBooks</span>
+      <h1>Dashboard</h1>
+    </div>
+    <nav>
+      <a class="active" href="#">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+        Overview
+      </a>
+      <a href="#">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        Invoices
+      </a>
+      <a href="#">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+        Expenses
+      </a>
+      <a href="#">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+        Reports
+      </a>
+      <a href="#">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        Settings
+      </a>
+    </nav>
+  </aside>
+  <div class="main-wrap">
+    <header>
+      <div class="search">
+        Search transactions, clients…
+        <kbd>⌘K</kbd>
+      </div>
+      <div class="header-actions">
+        <div class="avatar">JD</div>
+      </div>
+    </header>
+    <main>
+      <h2 class="page-title">Overview</h2>
+      <p class="page-sub">Base shell for ProBooks AI — books, invoices, and AI-assisted workflows.</p>
+      <div class="cards">
+        <div class="card">
+          <label>Cash on hand</label>
+          <strong>$48,290</strong>
+          <div class="delta">+12.4% vs last month</div>
+        </div>
+        <div class="card">
+          <label>Outstanding AR</label>
+          <strong>$12,450</strong>
+          <div class="delta">3 invoices due</div>
+        </div>
+        <div class="card">
+          <label>MTD expenses</label>
+          <strong>$8,102</strong>
+          <div class="delta">On track for budget</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">Recent activity</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Reference</th>
+              <th>Description</th>
+              <th>Amount</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="mono">INV-1042</td>
+              <td>Acme Corp — consulting</td>
+              <td class="mono">$4,500.00</td>
+              <td><span class="badge badge-paid">Paid</span></td>
+            </tr>
+            <tr>
+              <td class="mono">EXP-883</td>
+              <td>Software subscription</td>
+              <td class="mono">$299.00</td>
+              <td><span class="badge badge-open">Categorized</span></td>
+            </tr>
+            <tr>
+              <td class="mono">INV-1043</td>
+              <td>Northwind — retainer</td>
+              <td class="mono">$2,000.00</td>
+              <td><span class="badge badge-open">Open</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

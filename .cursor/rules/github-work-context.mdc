@@ -1,0 +1,14 @@
+---
+description: Use synced GitHub + local file context when planning or implementing work
+alwaysApply: true
+---
+
+# GitHub and local work context
+
+When discussing roadmap, bugs, features, refactors, or what to do next:
+
+1. Prefer reading `integrations/work-context.json` if it exists. It aggregates **local repository files** with **open GitHub pull requests and issues** (generated on the developer machine).
+2. If that file is missing or clearly stale, suggest running `.\scripts\sync-workspace.ps1` from the repo root (requires [GitHub CLI](https://cli.github.com/) and `gh auth login`).
+3. In pull requests, use the GitHub **linked issues** syntax in descriptions and commits (`Fixes #123`, `Relates to #456`) so work stays traceable.
+
+The committed sample shape lives at `integrations/work-context.example.json`.
