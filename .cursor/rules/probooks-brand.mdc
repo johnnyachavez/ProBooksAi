@@ -10,3 +10,5 @@ Use **ProBooks+ai** (plus sign between words, lowercase `ai`) in UI strings, pag
 Avoid **ProBooks AI**, **ProBooksAi**, or spaced variants unless you are referring to a legacy path, folder, or GitHub repo slug that cannot be renamed yet.
 
 GitHub repository slugs cannot contain `+`; prefer something like `probooks-ai` for remote URLs while the product name stays ProBooks+ai.
+
+In UI/CSS, do not apply `text-transform: uppercase` to elements that display the product name, or it will read as PROBOOKS+AI.
