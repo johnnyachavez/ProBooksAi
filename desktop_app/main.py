@@ -52,6 +52,8 @@ STATUS_COLORS = {
 
 INBOX_HEADER_COLOR = "#1F3864"  # dark navy – matches ProBooksAi branding
 
+COMPANY_NAME = "CHAVAN TRUCKING CORPORATION"  # placeholder – replace with real company/file name
+
 
 # ---------------------------------------------------------------------------
 # Background worker – runs AI extraction off the UI thread
@@ -425,6 +427,43 @@ class DetailPane(QScrollArea):
 
 
 # ---------------------------------------------------------------------------
+# App header / banner
+# ---------------------------------------------------------------------------
+
+class AppHeaderWidget(QFrame):
+    """Top banner showing the app name and current company/file name."""
+
+    def __init__(self, company_name: str = COMPANY_NAME, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet(
+            f"background: {INBOX_HEADER_COLOR}; border-bottom: 2px solid #4a6fa8;"
+        )
+        self.setFixedHeight(44)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(14, 0, 14, 0)
+        layout.setSpacing(0)
+
+        lbl_app = QLabel("ProBooksAi")
+        lbl_app.setStyleSheet(
+            "color: white; font-weight: bold; font-size: 16px; background: transparent;"
+        )
+        layout.addWidget(lbl_app)
+
+        layout.addStretch()
+
+        self._lbl_company = QLabel(company_name)
+        self._lbl_company.setStyleSheet(
+            "color: #c8d8f0; font-size: 12px; background: transparent;"
+        )
+        layout.addWidget(self._lbl_company)
+
+    def set_company_name(self, name: str):
+        """Update the displayed company/file name at runtime."""
+        self._lbl_company.setText(name)
+
+
+# ---------------------------------------------------------------------------
 # Main window
 # ---------------------------------------------------------------------------
 
@@ -444,13 +483,14 @@ class MainWindow(QMainWindow):
     # -- UI construction -----------------------------------------------------
 
     def _build_ui(self):
+        self._build_menu_bar()
+
         # Toolbar
         toolbar = QToolBar("Main")
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
 
         act_import = QAction("\U0001f4c2  Import Documents\u2026", self)
-        act_import.setShortcut("Ctrl+O")
         act_import.triggered.connect(self._on_import)
         toolbar.addAction(act_import)
 
@@ -460,9 +500,17 @@ class MainWindow(QMainWindow):
         act_refresh.triggered.connect(self._refresh_inbox)
         toolbar.addAction(act_refresh)
 
-        # Central splitter
+        # Container: header banner + splitter
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(0)
+
+        self._header = AppHeaderWidget()
+        container_layout.addWidget(self._header)
+
+        # Splitter (original central layout)
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        self.setCentralWidget(splitter)
 
         # Left: inbox
         left = QWidget()
@@ -494,6 +542,9 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self._detail)
 
         splitter.setSizes([380, 720])
+        container_layout.addWidget(splitter)
+
+        self.setCentralWidget(container)
 
         # Status bar
         self._status_bar = QStatusBar()
@@ -502,6 +553,75 @@ class MainWindow(QMainWindow):
 
         # Drag & drop on the main window itself
         self.setAcceptDrops(True)
+
+    # -- menu bar ------------------------------------------------------------
+
+    def _build_menu_bar(self):
+        mb = self.menuBar()
+
+        # File menu
+        file_menu = mb.addMenu("&File")
+
+        act_open = QAction("&Open \u2026", self)
+        act_open.setShortcut("Ctrl+O")
+        act_open.triggered.connect(self._on_import)
+        file_menu.addAction(act_open)
+
+        act_save = QAction("&Save", self)
+        act_save.setShortcut("Ctrl+S")
+        act_save.setEnabled(False)
+        file_menu.addAction(act_save)
+
+        act_save_as = QAction("Save &As \u2026", self)
+        act_save_as.setEnabled(False)
+        file_menu.addAction(act_save_as)
+
+        file_menu.addSeparator()
+
+        act_exit = QAction("E&xit", self)
+        act_exit.setShortcut("Ctrl+Q")
+        act_exit.triggered.connect(self.close)
+        file_menu.addAction(act_exit)
+
+        # View menu
+        view_menu = mb.addMenu("&View")
+        act_view_inbox = QAction("Show Document Inbox", self)
+        act_view_inbox.setEnabled(False)
+        view_menu.addAction(act_view_inbox)
+        act_view_detail = QAction("Show Detail Pane", self)
+        act_view_detail.setEnabled(False)
+        view_menu.addAction(act_view_detail)
+
+        # Edit menu
+        edit_menu = mb.addMenu("&Edit")
+
+        act_undo = QAction("&Undo", self)
+        act_undo.setShortcut("Ctrl+Z")
+        act_undo.setEnabled(False)
+        edit_menu.addAction(act_undo)
+
+        act_redo = QAction("&Redo", self)
+        act_redo.setShortcut("Ctrl+Y")
+        act_redo.setEnabled(False)
+        edit_menu.addAction(act_redo)
+
+        edit_menu.addSeparator()
+
+        act_prefs = QAction("&Preferences \u2026", self)
+        act_prefs.setEnabled(False)
+        edit_menu.addAction(act_prefs)
+
+        # Tools menu
+        tools_menu = mb.addMenu("&Tools")
+        act_tools = QAction("(Coming soon)", self)
+        act_tools.setEnabled(False)
+        tools_menu.addAction(act_tools)
+
+        # Help menu
+        help_menu = mb.addMenu("&Help")
+        act_about = QAction("&About ProBooksAi", self)
+        act_about.triggered.connect(self._on_about)
+        help_menu.addAction(act_about)
 
     # -- drag & drop on window -----------------------------------------------
 
@@ -515,6 +635,15 @@ class MainWindow(QMainWindow):
             self._import_files(paths)
 
     # -- slots ---------------------------------------------------------------
+
+    def _on_about(self):
+        QMessageBox.about(
+            self,
+            "About ProBooksAi",
+            "<b>ProBooksAi</b><br>"
+            "Version 0.1 — AI-powered bookkeeping for small business.<br><br>"
+            "\u00a9 2024 ProBooksAi",
+        )
 
     def _on_import(self):
         paths, _ = QFileDialog.getOpenFileNames(
