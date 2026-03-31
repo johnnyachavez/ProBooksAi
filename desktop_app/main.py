@@ -30,12 +30,14 @@ from PySide6.QtWidgets import (
     QFormLayout, QFrame, QGroupBox, QHBoxLayout, QLabel,
     QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit,
     QPushButton, QScrollArea, QSizePolicy, QSplitter,
-    QStatusBar, QTableWidget, QTableWidgetItem, QToolBar,
+    QStatusBar, QTabWidget, QTableWidget, QTableWidgetItem, QToolBar,
     QVBoxLayout, QWidget,
 )
 
 from probooksai.database import DocumentDatabase
 from probooksai.coa import coa_display_list, load_coa
+from probooksai.bank_import import BankDatabase
+from desktop_app.bank_import_tab import BankImportTab
 
 # Accepted MIME types / file extensions
 ACCEPTED_MIMES = {"application/pdf", "image/jpeg", "image/png"}
@@ -473,8 +475,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("ProBooksAi – Document Intake")
         self.resize(1100, 700)
 
-        self._db   = DocumentDatabase()
-        self._coa  = load_coa()
+        self._db      = DocumentDatabase()
+        self._bank_db = BankDatabase()
+        self._coa     = load_coa()
         self._worker: AIWorker | None = None
 
         self._build_ui()
@@ -500,7 +503,7 @@ class MainWindow(QMainWindow):
         act_refresh.triggered.connect(self._refresh_inbox)
         toolbar.addAction(act_refresh)
 
-        # Container: header banner + splitter
+        # Container: header banner + tab widget
         container = QWidget()
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
@@ -508,6 +511,15 @@ class MainWindow(QMainWindow):
 
         self._header = AppHeaderWidget()
         container_layout.addWidget(self._header)
+
+        # Tab widget
+        self._tabs = QTabWidget()
+
+        # ── Tab 1: Document Intake ──────────────────────────────────────────
+        intake_widget = QWidget()
+        intake_layout = QVBoxLayout(intake_widget)
+        intake_layout.setContentsMargins(0, 0, 0, 0)
+        intake_layout.setSpacing(0)
 
         # Splitter (original central layout)
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -542,8 +554,15 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self._detail)
 
         splitter.setSizes([380, 720])
-        container_layout.addWidget(splitter)
+        intake_layout.addWidget(splitter)
 
+        self._tabs.addTab(intake_widget, "📄  Document Intake")
+
+        # ── Tab 2: Bank Import & Reconciliation ─────────────────────────────
+        self._bank_tab = BankImportTab(self._bank_db)
+        self._tabs.addTab(self._bank_tab, "🏦  Bank Import")
+
+        container_layout.addWidget(self._tabs)
         self.setCentralWidget(container)
 
         # Status bar
@@ -766,6 +785,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self._db.close()
+        self._bank_db.close()
         super().closeEvent(event)
 
 
