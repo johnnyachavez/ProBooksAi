@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Invoice — ProBooks+ai</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --chrome-bg: #0f1419;
+      --chrome-border: #2d3a4a;
+      --chrome-accent: #3d9cf5;
+      --ink: #111;
+      --line: #000;
+      --paper: #fff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", Arial, Helvetica, sans-serif;
+      background: var(--chrome-bg);
+      color: #e8edf4;
+      min-height: 100vh;
+    }
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem 1.25rem;
+      border-bottom: 1px solid var(--chrome-border);
+      flex-wrap: wrap;
+    }
+    .toolbar a {
+      color: var(--chrome-accent);
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+    .toolbar a:hover { text-decoration: underline; }
+    .toolbar .title {
+      font-weight: 700;
+      font-size: 0.85rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #8b9cb3;
+      margin-right: auto;
+    }
+    .toolbar button {
+      background: var(--chrome-accent);
+      color: #0f1419;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.875rem;
+      cursor: pointer;
+    }
+    .toolbar button.secondary {
+      background: var(--chrome-border);
+      color: #e8edf4;
+    }
+    .toolbar button:hover { filter: brightness(1.08); }
+    .sheet-wrap {
+      padding: 1.5rem;
+      display: flex;
+      justify-content: center;
+    }
+    .invoice-sheet {
+      width: 100%;
+      max-width: 900px;
+      background: var(--paper);
+      color: var(--ink);
+      padding: 1.75rem 1.5rem 2rem;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.35);
+    }
+    .inv-top {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 1.5rem;
+      align-items: start;
+      margin-bottom: 1.25rem;
+    }
+    .sender input,
+    .sender textarea {
+      display: block;
+      width: 100%;
+      border: none;
+      padding: 0.15rem 0;
+      font: inherit;
+      color: var(--ink);
+      background: transparent;
+    }
+    .sender .company {
+      font-weight: 700;
+      font-size: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+    .sender textarea {
+      resize: vertical;
+      min-height: 3.2em;
+      line-height: 1.35;
+    }
+    .inv-title-block { text-align: right; }
+    .inv-title-block h1 {
+      margin: 0 0 0.5rem;
+      font-size: 1.75rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .meta-table {
+      border-collapse: collapse;
+      margin-left: auto;
+      font-size: 0.875rem;
+    }
+    .meta-table th,
+    .meta-table td {
+      border: 1px solid var(--line);
+      padding: 0.35rem 0.65rem;
+      min-width: 7rem;
+    }
+    .meta-table th {
+      background: #f0f0f0;
+      font-weight: 700;
+      text-align: center;
+      text-transform: uppercase;
+      font-size: 0.72rem;
+    }
+    .meta-table td input {
+      width: 100%;
+      border: none;
+      font: inherit;
+      text-align: center;
+      padding: 0.2rem;
+    }
+    .mid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    @media (max-width: 640px) {
+      .inv-top { grid-template-columns: 1fr; }
+      .inv-title-block { text-align: left; }
+      .meta-table { margin-left: 0; }
+      .mid { grid-template-columns: 1fr; }
+    }
+    .bill-to {
+      border: 1px solid var(--line);
+      min-height: 6.5rem;
+      padding: 0.5rem 0.65rem;
+    }
+    .bill-to .label {
+      font-weight: 700;
+      font-size: 0.72rem;
+      margin-bottom: 0.35rem;
+      text-transform: uppercase;
+    }
+    .bill-to textarea {
+      width: 100%;
+      border: none;
+      font: inherit;
+      min-height: 4.5rem;
+      resize: vertical;
+      line-height: 1.35;
+    }
+    .project-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+    .project-table th,
+    .project-table td {
+      border: 1px solid var(--line);
+      padding: 0.4rem 0.5rem;
+    }
+    .project-table th {
+      width: 50%;
+      background: #f0f0f0;
+      font-weight: 700;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+    }
+    .project-table td input {
+      width: 100%;
+      border: none;
+      font: inherit;
+      padding: 0.15rem;
+    }
+    .lines-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+      table-layout: fixed;
+    }
+    .lines-table th {
+      border: 1px solid var(--line);
+      background: #f0f0f0;
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 0.65rem;
+      padding: 0.4rem 0.35rem;
+      text-align: center;
+    }
+    .lines-table th:nth-child(1) { width: 11%; }
+    .lines-table th:nth-child(2) { width: 9%; }
+    .lines-table th:nth-child(3) { width: 28%; }
+    .lines-table th:nth-child(4) { width: 11%; }
+    .lines-table th:nth-child(5) { width: 12%; }
+    .lines-table th:nth-child(6) { width: 9%; }
+    .lines-table th:nth-child(7) { width: 12%; }
+    .lines-table td {
+      border: 1px solid var(--line);
+      padding: 0;
+      vertical-align: middle;
+    }
+    .lines-table td input {
+      width: 100%;
+      border: none;
+      font: inherit;
+      padding: 0.35rem 0.4rem;
+      background: transparent;
+    }
+    .lines-table td.num input { text-align: right; font-variant-numeric: tabular-nums; }
+    .lines-table td.desc input { text-align: left; }
+    .lines-table tbody tr.line-row td.desc input { text-align: left; }
+    .subtotal-row td {
+      font-weight: 700;
+      padding: 0.45rem 0.4rem;
+    }
+    .subtotal-row .sub-label { text-align: left; padding-left: 0.65rem; }
+    .subtotal-row .sub-num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .fee-row td { padding: 0; }
+    .fee-row input { font-weight: 400; }
+    .balance-row td {
+      border: 2px solid var(--line);
+      font-weight: 700;
+      padding: 0.55rem 0.65rem;
+    }
+    .balance-row .bal-label { text-align: right; text-transform: uppercase; font-size: 0.85rem; }
+    .balance-row .bal-amt {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      font-size: 1rem;
+    }
+    .closing {
+      margin-top: 1.25rem;
+      font-size: 0.85rem;
+      max-width: 28rem;
+    }
+    .closing input {
+      display: block;
+      width: 100%;
+      border: none;
+      border-bottom: 1px solid #ccc;
+      font: inherit;
+      margin-bottom: 0.5rem;
+      padding: 0.2rem 0;
+      background: transparent;
+    }
+    @media print {
+      .no-print { display: none !important; }
+      body { background: #fff; }
+      .sheet-wrap { padding: 0; display: block; }
+      .invoice-sheet {
+        box-shadow: none;
+        max-width: none;
+        padding: 0.5rem;
+      }
+      .lines-table td input,
+      .meta-table td input,
+      .sender input,
+      .sender textarea,
+      .bill-to textarea,
+      .project-table td input,
+      .closing input {
+        border: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar no-print">
+    <a href="index.html">← Dashboard</a>
+    <span class="title">ProBooks+ai · Invoice</span>
+    <button type="button" class="secondary" id="btn-add-line">Add line</button>
+    <button type="button" id="btn-print">Print / PDF</button>
+  </div>
+  <div class="sheet-wrap">
+    <div class="invoice-sheet" id="invoice">
+      <div class="inv-top">
+        <div class="sender">
+          <input type="text" class="company" id="sender-company" name="sender_company" value="" autocomplete="organization" aria-label="Your company name" />
+          <textarea id="sender-address" name="sender_address" rows="3" aria-label="Your address"></textarea>
+          <input type="text" id="sender-phone" name="sender_phone" value="" autocomplete="tel" aria-label="Your phone" />
+        </div>
+        <div class="inv-title-block">
+          <h1>Invoice</h1>
+          <table class="meta-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Invoice #</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><input type="text" id="inv-date" name="invoice_date" value="" autocomplete="off" /></td>
+                <td><input type="text" id="inv-number" name="invoice_number" value="" autocomplete="off" /></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="mid">
+        <div class="bill-to">
+          <div class="label">Bill to</div>
+          <textarea id="bill-to" name="bill_to" rows="5" aria-label="Bill to address"></textarea>
+        </div>
+        <table class="project-table">
+          <tbody>
+            <tr>
+              <th>PO / Contract #</th>
+              <td><input type="text" id="po-contract" name="po_contract" value="" /></td>
+            </tr>
+            <tr>
+              <th>Name / Job #</th>
+              <td><input type="text" id="name-job" name="name_job" value="" /></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <table class="lines-table">
+        <thead>
+          <tr>
+            <th>Serviced on</th>
+            <th>JL #</th>
+            <th>Description</th>
+            <th>BOL #</th>
+            <th>Rate</th>
+            <th>Qty</th>
+            <th>Amount</th>
+          </tr>
+        </thead>
+        <tbody id="line-body"></tbody>
+        <tbody>
+          <tr class="subtotal-row">
+            <td colspan="2"></td>
+            <td class="sub-label">Subtotal</td>
+            <td colspan="3"></td>
+            <td class="sub-num" id="cell-subtotal">0.00</td>
+          </tr>
+          <tr class="fee-row line-row">
+            <td></td>
+            <td class="num"><input type="text" id="fee-jl" name="fee_jl" value="" aria-label="Fee JL code" /></td>
+            <td class="desc"><input type="text" id="fee-desc" name="fee_description" value="" aria-label="Fee description" /></td>
+            <td></td>
+            <td class="num"><input type="text" id="fee-pct" name="fee_percent" value="" inputmode="decimal" aria-label="Fee percent" /></td>
+            <td></td>
+            <td class="num"><span id="cell-fee-amt">0.00</span></td>
+          </tr>
+          <tr class="balance-row">
+            <td colspan="5"></td>
+            <td class="bal-label">Balance due</td>
+            <td class="bal-amt" id="cell-balance">$0.00</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="closing">
+        <input type="text" id="closing-msg" name="closing_message" value="" aria-label="Closing message" />
+        <input type="text" id="closing-phone" name="closing_phone" value="" autocomplete="tel" aria-label="Closing contact phone" />
+      </div>
+    </div>
+  </div>
+
+  <template id="line-template">
+    <tr class="line-row">
+      <td><input type="text" class="line-serviced" autocomplete="off" /></td>
+      <td class="num"><input type="text" class="line-jl" /></td>
+      <td class="desc"><input type="text" class="line-desc" /></td>
+      <td class="num"><input type="text" class="line-bol" /></td>
+      <td class="num"><input type="text" class="line-rate" inputmode="decimal" /></td>
+      <td class="num"><input type="text" class="line-qty" inputmode="decimal" /></td>
+      <td class="num"><input type="text" class="line-amt" inputmode="decimal" readonly tabindex="-1" /></td>
+    </tr>
+  </template>
+
+  <script>
+(function () {
+  const lineBody = document.getElementById("line-body");
+  const tpl = document.getElementById("line-template");
+  const subtotalEl = document.getElementById("cell-subtotal");
+  const feeAmtEl = document.getElementById("cell-fee-amt");
+  const balanceEl = document.getElementById("cell-balance");
+  const feePctInput = document.getElementById("fee-pct");
+
+  function parseNum(s) {
+    if (s == null || String(s).trim() === "") return NaN;
+    const n = parseFloat(String(s).replace(/,/g, ""));
+    return Number.isFinite(n) ? n : NaN;
+  }
+
+  function fmtMoney(n) {
+    if (!Number.isFinite(n)) return "";
+    return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function fmtBalance(n) {
+    if (!Number.isFinite(n)) return "$0.00";
+    return "$" + fmtMoney(n);
+  }
+
+  function rowAmount(rateStr, qtyStr) {
+    const rate = parseNum(rateStr);
+    if (!Number.isFinite(rate)) return NaN;
+    const qRaw = String(qtyStr || "").trim();
+    const qty = qRaw === "" ? 1 : parseNum(qtyStr);
+    if (!Number.isFinite(qty) || qty === 0) return rate;
+    return rate * qty;
+  }
+
+  function addLine() {
+    const node = tpl.content.cloneNode(true);
+    lineBody.appendChild(node);
+    const row = lineBody.lastElementChild;
+    wireRow(row);
+    recalc();
+  }
+
+  function wireRow(row) {
+    const rate = row.querySelector(".line-rate");
+    const qty = row.querySelector(".line-qty");
+    const amt = row.querySelector(".line-amt");
+    function updateAmt() {
+      const v = rowAmount(rate.value, qty.value);
+      amt.value = Number.isFinite(v) ? fmtMoney(v) : "";
+    }
+    rate.addEventListener("input", function () { updateAmt(); recalc(); });
+    qty.addEventListener("input", function () { updateAmt(); recalc(); });
+    row.querySelectorAll("input").forEach(function (inp) {
+      if (inp !== amt) inp.addEventListener("input", recalc);
+    });
+  }
+
+  function lineSubtotal() {
+    let sum = 0;
+    lineBody.querySelectorAll(".line-row").forEach(function (row) {
+      const rate = row.querySelector(".line-rate").value;
+      const qty = row.querySelector(".line-qty").value;
+      const v = rowAmount(rate, qty);
+      if (Number.isFinite(v)) sum += v;
+    });
+    return sum;
+  }
+
+  function recalc() {
+    lineBody.querySelectorAll(".line-row").forEach(function (row) {
+      const rate = row.querySelector(".line-rate");
+      const qty = row.querySelector(".line-qty");
+      const amt = row.querySelector(".line-amt");
+      const v = rowAmount(rate.value, qty.value);
+      amt.value = Number.isFinite(v) ? fmtMoney(v) : "";
+    });
+    const sub = lineSubtotal();
+    subtotalEl.textContent = fmtMoney(sub);
+    const pct = parseNum(feePctInput.value);
+    let fee = 0;
+    if (Number.isFinite(sub) && Number.isFinite(pct)) fee = sub * (pct / 100);
+    feeAmtEl.textContent = fmtMoney(fee);
+    const bal = (Number.isFinite(sub) ? sub : 0) + (Number.isFinite(fee) ? fee : 0);
+    balanceEl.textContent = fmtBalance(bal);
+  }
+
+  document.getElementById("btn-add-line").addEventListener("click", addLine);
+  document.getElementById("btn-print").addEventListener("click", function () { window.print(); });
+  feePctInput.addEventListener("input", recalc);
+
+  for (let i = 0; i < 6; i++) addLine();
+})();
+  </script>
+</body>
+</html>
