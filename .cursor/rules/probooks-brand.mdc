@@ -1,0 +1,12 @@
+---
+description: Official product name ProBooks+ai for user-facing copy
+alwaysApply: true
+---
+
+# Product naming
+
+Use **ProBooks+ai** (plus sign between words, lowercase `ai`) in UI strings, page titles, marketing copy, and docs.
+
+Avoid **ProBooks AI**, **ProBooksAi**, or spaced variants unless you are referring to a legacy path, folder, or GitHub repo slug that cannot be renamed yet.
+
+GitHub repository slugs cannot contain `+`; prefer something like `probooks-ai` for remote URLs while the product name stays ProBooks+ai.
