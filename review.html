@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ProBooks+ai — Build review</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a222c;
+      --border: #2d3a4a;
+      --text: #e8edf4;
+      --muted: #8b9cb3;
+      --accent: #3d9cf5;
+      --radius: 10px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "DM Sans", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 1.5rem clamp(1rem, 4vw, 2.5rem);
+      max-width: 900px;
+      margin-inline: auto;
+    }
+    h1 {
+      margin: 0 0 0.35rem;
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .lead {
+      color: var(--muted);
+      margin: 0 0 1.75rem;
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+    section {
+      margin-bottom: 1.75rem;
+    }
+    h2 {
+      margin: 0 0 0.75rem;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+    .grid {
+      display: grid;
+      gap: 0.65rem;
+    }
+    @media (min-width: 520px) {
+      .grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    a.card {
+      display: block;
+      padding: 1rem 1.1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      text-decoration: none;
+      color: inherit;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    a.card:hover {
+      border-color: var(--accent);
+      background: #1e2732;
+    }
+    a.card strong {
+      display: block;
+      color: var(--accent);
+      font-size: 0.95rem;
+      margin-bottom: 0.25rem;
+    }
+    a.card span {
+      font-size: 0.82rem;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+    .footer-note {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-top: 2rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+    }
+    code {
+      font-size: 0.85em;
+      background: rgba(0,0,0,0.25);
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <h1>ProBooks+ai — build review</h1>
+  <p class="lead">
+    Use this page to open every built surface in the repo: UI prototypes, docs, and GitHub. Serve the folder with a static server so links work (see bottom).
+  </p>
+
+  <section>
+    <h2>UI (static shell)</h2>
+    <div class="grid">
+      <a class="card" href="index.html">
+        <strong>Overview</strong>
+        <span>Main shell: menu strip, sidebar, overview cards, activity table.</span>
+      </a>
+      <a class="card" href="invoice.html">
+        <strong>Invoice template</strong>
+        <span>Print-style invoice layout, line math, PDF via browser print.</span>
+      </a>
+      <a class="card" href="review.html">
+        <strong>This page</strong>
+        <span>Build review hub (bookmark for quick access).</span>
+      </a>
+    </div>
+  </section>
+
+  <section>
+    <h2>Documentation</h2>
+    <div class="grid">
+      <a class="card" href="docs/BACKLOG.md">
+        <strong>Issue backlog (Markdown)</strong>
+        <span>Phased roadmap and duplicate triage. Opens as raw text in the browser.</span>
+      </a>
+      <a class="card" href="https://github.com/johnnyachavez/ProBooksAi/issues" target="_blank" rel="noopener noreferrer">
+        <strong>GitHub issues</strong>
+        <span>Open issues and project discussion (requires network).</span>
+      </a>
+      <a class="card" href="https://github.com/johnnyachavez/ProBooksAi/blob/main/docs/BACKLOG.md" target="_blank" rel="noopener noreferrer">
+        <strong>Backlog on GitHub</strong>
+        <span>Rendered Markdown on GitHub (after you push).</span>
+      </a>
+    </div>
+  </section>
+
+  <section>
+    <h2>Repo & automation</h2>
+    <div class="grid">
+      <a class="card" href="https://github.com/johnnyachavez/ProBooksAi" target="_blank" rel="noopener noreferrer">
+        <strong>Repository</strong>
+        <span>Source, Actions, and settings.</span>
+      </a>
+      <a class="card" href="https://github.com/johnnyachavez/ProBooksAi/actions" target="_blank" rel="noopener noreferrer">
+        <strong>GitHub Actions</strong>
+        <span>CI runs for the project.</span>
+      </a>
+    </div>
+  </section>
+
+  <p class="footer-note">
+    Local preview: from the project folder run <code>python -m http.server 8765</code> then open
+    <code>http://127.0.0.1:8765/review.html</code>. Opening HTML files via <code>file://</code> may break some paths.
+  </p>
+</body>
+</html>

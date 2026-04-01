@@ -12,4 +12,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Ensure base UI artifacts exist
-        run: test -f index.html && test -f invoice.html
+        run: test -f index.html && test -f invoice.html && test -f review.html
