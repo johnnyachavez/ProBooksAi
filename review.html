@@ -141,6 +141,21 @@
   </section>
 
   <section>
+    <h2>Python core (SQLite + CLI)</h2>
+    <p class="lead" style="margin-bottom: 0.75rem;">
+      Implements GitHub issues <strong>#21</strong> / <strong>#27</strong> (migrations), <strong>#28</strong> (backup/restore), <strong>#30</strong> (bank accounts). Install from the repo root:
+    </p>
+    <pre style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; font-size: 0.78rem; overflow-x: auto; color: var(--text);"><code>pip install -e ".[dev]"
+python -m probooks migrate
+python -m probooks status
+python -m probooks accounts add --name "Checking" --type checking --last4 1234
+python -m probooks accounts list</code></pre>
+    <p class="lead" style="margin-top: 0.75rem; margin-bottom: 0;">
+      See <a href="README.md" style="color: var(--accent);">README.md</a> (raw) for backup/restore commands. Run <code style="font-size:0.85em;">python -m pytest</code> for tests.
+    </p>
+  </section>
+
+  <section>
     <h2>Repo & automation</h2>
     <div class="grid">
       <a class="card" href="https://github.com/johnnyachavez/ProBooksAi" target="_blank" rel="noopener noreferrer">

@@ -2,6 +2,15 @@
 
 Repository: [johnnyachavez/ProBooksAi](https://github.com/johnnyachavez/ProBooksAi)
 
+## Implementation status (repo)
+
+| Area | Issues | Status |
+|------|--------|--------|
+| Phase 0 dark UI shell | #17, #20, #29 | **Partial** — `index.html`, `invoice.html`, `review.html` |
+| Phase 1 storage | #21, #27, #28 | **MVP** — Python `probooks` package: migrations, `%LOCALAPPDATA%\ProBooks+ai\probooks.db`, backup/restore CLI |
+| Phase 2 bank accounts | #30 | **MVP** — `bank_accounts` table + `probooks accounts list/add` |
+| Phase 2 remainder | #31+ | Not started (CSV import, register, reconciliation, …) |
+
 This file orders **open** work so implementation can proceed top-to-bottom. “Completed” for housekeeping means **triaged, deduplicated, and sequenced**; most items are multi-week epics, not single commits.
 
 ## Principles
