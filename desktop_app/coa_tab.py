@@ -14,6 +14,7 @@ Widgets
 
 from __future__ import annotations
 
+import sqlite3
 from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
@@ -176,7 +177,7 @@ class AddEditCOADialog(QDialog):
                     description=description,
                     is_active=is_active,
                 )
-        except Exception as exc:  # noqa: BLE001
+        except (ValueError, sqlite3.IntegrityError) as exc:
             QMessageBox.critical(self, "Error", str(exc))
             return
 
@@ -328,26 +329,19 @@ class COATab(QWidget):
             )
             if confirm != QMessageBox.StandardButton.Yes:
                 return
-            self._db.update_account(
-                account_id=acct_id,
-                account_number=row["account_number"],
-                account_name=name,
-                account_type=row["account_type"],
-                sub_type=row["sub_type"] or "",
-                normal_balance=row["normal_balance"] or "debit",
-                description=row["description"] or "",
-                is_active=False,
-            )
-        else:
-            self._db.update_account(
-                account_id=acct_id,
-                account_number=row["account_number"],
-                account_name=name,
-                account_type=row["account_type"],
-                sub_type=row["sub_type"] or "",
-                normal_balance=row["normal_balance"] or "debit",
-                description=row["description"] or "",
-                is_active=True,
-            )
+        self._set_account_active(row, acct_id, not currently_active)
         self._refresh()
         self.coaChanged.emit()
+
+    def _set_account_active(self, row, account_id: int, is_active: bool):
+        """Toggle the is_active flag on an account row, preserving all other fields."""
+        self._db.update_account(
+            account_id=account_id,
+            account_number=row["account_number"],
+            account_name=row["account_name"],
+            account_type=row["account_type"],
+            sub_type=row["sub_type"] or "",
+            normal_balance=row["normal_balance"] or "debit",
+            description=row["description"] or "",
+            is_active=is_active,
+        )
