@@ -37,20 +37,16 @@ from PySide6.QtWidgets import (
 from probooksai.database import DocumentDatabase
 from probooksai.coa import coa_display_list, load_coa
 from probooksai.bank_import import BankDatabase
+from probooksai.coa_db import COADatabase
 from desktop_app.bank_import_tab import BankImportTab
+from desktop_app.coa_tab import COATab
+from desktop_app.theme import apply_dark_theme, STATUS_COLORS as THEME_STATUS_COLORS
 
 # Accepted MIME types / file extensions
 ACCEPTED_MIMES = {"application/pdf", "image/jpeg", "image/png"}
 ACCEPTED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png"}
 
-STATUS_COLORS = {
-    "New":          "#2196F3",   # blue
-    "Extracted":    "#9C27B0",   # purple
-    "Needs Review": "#FF9800",   # amber
-    "Approved":     "#4CAF50",   # green
-    "Posted":       "#607D8B",   # blue-grey
-    "Error":        "#F44336",   # red
-}
+STATUS_COLORS = THEME_STATUS_COLORS
 
 INBOX_HEADER_COLOR = "#1F3864"  # dark navy – matches ProBooksAi branding
 
@@ -427,6 +423,16 @@ class DetailPane(QScrollArea):
         if self._doc_id is not None:
             self.reject.emit(self._doc_id)
 
+    def update_coa(self, coa_list: list[str]):
+        """Refresh the COA dropdown with an updated list."""
+        current = self._f_coa.currentText()
+        self._f_coa.clear()
+        self._f_coa.addItems(["– select –"] + coa_list)
+        # Restore selection if still present
+        idx = self._f_coa.findText(current)
+        if idx >= 0:
+            self._f_coa.setCurrentIndex(idx)
+
 
 # ---------------------------------------------------------------------------
 # App header / banner
@@ -477,6 +483,8 @@ class MainWindow(QMainWindow):
 
         self._db      = DocumentDatabase()
         self._bank_db = BankDatabase()
+        self._coa_db  = COADatabase(self._bank_db._conn)
+        self._coa_db.seed_from_workbook()
         self._coa     = load_coa()
         self._worker: AIWorker | None = None
 
@@ -561,6 +569,11 @@ class MainWindow(QMainWindow):
         # ── Tab 2: Bank Import & Reconciliation ─────────────────────────────
         self._bank_tab = BankImportTab(self._bank_db)
         self._tabs.addTab(self._bank_tab, "🏦  Bank Import")
+
+        # ── Tab 3: Chart of Accounts Editor ─────────────────────────────────
+        self._coa_tab = COATab(self._coa_db)
+        self._coa_tab.coaChanged.connect(self._on_coa_changed)
+        self._tabs.addTab(self._coa_tab, "📊  Chart of Accounts")
 
         container_layout.addWidget(self._tabs)
         self.setCentralWidget(container)
@@ -783,6 +796,13 @@ class MainWindow(QMainWindow):
         docs = self._db.list_documents()
         self._inbox.populate(docs)
 
+    def _on_coa_changed(self):
+        """Called when the COA editor modifies the chart of accounts."""
+        # Refresh the dropdown list used in the document intake detail pane
+        self._coa = load_coa()
+        coa_display = self._coa_db.display_list()
+        self._detail.update_coa(coa_display)
+
     def closeEvent(self, event):
         self._db.close()
         self._bank_db.close()
@@ -797,6 +817,7 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("ProBooksAi")
     app.setOrganizationName("ProBooksAi")
+    apply_dark_theme(app)
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

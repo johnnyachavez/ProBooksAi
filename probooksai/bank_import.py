@@ -42,14 +42,25 @@ from typing import Optional
 RECONCILE_TOLERANCE = 0.00   # cents-exact reconciliation
 ACCOUNT_TYPES = ("checking", "savings", "credit_card", "other")
 
-
 # ---------------------------------------------------------------------------
-# Database helpers
+# Schema versioning (Issue #21)
 # ---------------------------------------------------------------------------
 
-_DDL = """
-PRAGMA foreign_keys = ON;
+# Bump this number whenever you add a migration below.
+SCHEMA_VERSION = 2
 
+_DDL_SCHEMA_VERSION = """
+CREATE TABLE IF NOT EXISTS schema_version (
+    id      INTEGER PRIMARY KEY CHECK (id = 1),
+    version INTEGER NOT NULL DEFAULT 0
+);
+"""
+
+# Ordered list of (version, sql) migration tuples.
+# Each entry upgrades the DB from (version-1) to version.
+_MIGRATIONS: list[tuple[int, str]] = [
+    # v1 – initial schema (bank_accounts, batches, transactions)
+    (1, """
 CREATE TABLE IF NOT EXISTS bank_accounts (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     name            TEXT    NOT NULL,
@@ -85,7 +96,59 @@ CREATE TABLE IF NOT EXISTS bank_transactions (
     fingerprint     TEXT    NOT NULL,
     UNIQUE (bank_account_id, fingerprint)
 );
-"""
+"""),
+    # v2 – extend bank_accounts with institution, last4, notes, is_active,
+    #       updated_at (Issue #30)
+    (2, """
+ALTER TABLE bank_accounts ADD COLUMN institution  TEXT    NOT NULL DEFAULT '';
+ALTER TABLE bank_accounts ADD COLUMN last4        TEXT    NOT NULL DEFAULT '';
+ALTER TABLE bank_accounts ADD COLUMN notes        TEXT    NOT NULL DEFAULT '';
+ALTER TABLE bank_accounts ADD COLUMN is_active    INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE bank_accounts ADD COLUMN updated_at   TEXT;
+"""),
+]
+
+
+def _apply_migrations(conn: sqlite3.Connection) -> None:
+    """Bring the DB schema up to SCHEMA_VERSION, running any pending migrations."""
+    conn.executescript(_DDL_SCHEMA_VERSION)
+    conn.commit()
+
+    row = conn.execute("SELECT version FROM schema_version WHERE id = 1").fetchone()
+    current = row["version"] if row else 0
+
+    if current == 0:
+        conn.execute(
+            "INSERT OR REPLACE INTO schema_version (id, version) VALUES (1, 0)"
+        )
+        conn.commit()
+
+    for version, sql in _MIGRATIONS:
+        if version <= current:
+            continue
+        # Run each ALTER TABLE statement individually so SQLite doesn't choke
+        for statement in sql.strip().split(";"):
+            s = statement.strip()
+            if s:
+                try:
+                    conn.execute(s)
+                except sqlite3.OperationalError as exc:
+                    # Ignore "duplicate column name" – column already exists from
+                    # a previous partial migration attempt.
+                    if "duplicate column name" not in str(exc).lower():
+                        raise
+        conn.execute(
+            "UPDATE schema_version SET version = ? WHERE id = 1", (version,)
+        )
+        conn.commit()
+        current = version
+
+
+# ---------------------------------------------------------------------------
+# Database helpers
+# ---------------------------------------------------------------------------
+
+_DDL_PRAGMA = "PRAGMA foreign_keys = ON;"
 
 
 def _now() -> str:
@@ -95,8 +158,9 @@ def _now() -> str:
 def _connect(db_path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    conn.executescript(_DDL)
+    conn.execute(_DDL_PRAGMA)
     conn.commit()
+    _apply_migrations(conn)
     return conn
 
 
@@ -297,16 +361,24 @@ class BankDatabase:
         account_number: str = "",
         bank_name: str = "",
         account_type: str = "checking",
+        institution: str = "",
+        last4: str = "",
+        notes: str = "",
+        is_active: bool = True,
     ) -> int:
         """Create a new bank account record.  Returns new row id."""
         if account_type not in ACCOUNT_TYPES:
             raise ValueError(f"Invalid account_type {account_type!r}. Must be one of {ACCOUNT_TYPES}")
+        now = _now()
         cur = self._conn.execute(
             """
-            INSERT INTO bank_accounts (name, account_number, bank_name, account_type, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO bank_accounts
+                (name, account_number, bank_name, account_type,
+                 institution, last4, notes, is_active, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (name, account_number, bank_name, account_type, _now()),
+            (name, account_number, bank_name, account_type,
+             institution, last4, notes, 1 if is_active else 0, now, now),
         )
         self._conn.commit()
         return cur.lastrowid
@@ -316,9 +388,13 @@ class BankDatabase:
             "SELECT * FROM bank_accounts WHERE id = ?", (account_id,)
         ).fetchone()
 
-    def list_bank_accounts(self) -> list:
+    def list_bank_accounts(self, include_inactive: bool = False) -> list:
+        if include_inactive:
+            return self._conn.execute(
+                "SELECT * FROM bank_accounts ORDER BY name"
+            ).fetchall()
         return self._conn.execute(
-            "SELECT * FROM bank_accounts ORDER BY name"
+            "SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY name"
         ).fetchall()
 
     def update_bank_account(
@@ -328,6 +404,10 @@ class BankDatabase:
         account_number: str = "",
         bank_name: str = "",
         account_type: str = "checking",
+        institution: str = "",
+        last4: str = "",
+        notes: str = "",
+        is_active: bool = True,
     ):
         """Update an existing bank account record."""
         if account_type not in ACCOUNT_TYPES:
@@ -335,10 +415,26 @@ class BankDatabase:
         self._conn.execute(
             """
             UPDATE bank_accounts
-            SET name = ?, account_number = ?, bank_name = ?, account_type = ?
+            SET name = ?, account_number = ?, bank_name = ?, account_type = ?,
+                institution = ?, last4 = ?, notes = ?, is_active = ?,
+                updated_at = ?
             WHERE id = ?
             """,
-            (name, account_number, bank_name, account_type, account_id),
+            (name, account_number, bank_name, account_type,
+             institution, last4, notes, 1 if is_active else 0,
+             _now(), account_id),
+        )
+        self._conn.commit()
+
+    def archive_bank_account(self, account_id: int):
+        """
+        Archive (soft-delete) a bank account by setting is_active = 0.
+
+        Prefer archive over delete when the account has transactions/batches.
+        """
+        self._conn.execute(
+            "UPDATE bank_accounts SET is_active = 0, updated_at = ? WHERE id = ?",
+            (_now(), account_id),
         )
         self._conn.commit()
 
