@@ -149,7 +149,9 @@
 python -m probooks migrate
 python -m probooks status
 python -m probooks accounts add --name "Checking" --type checking --last4 1234
-python -m probooks accounts list</code></pre>
+python -m probooks accounts list
+python -m probooks import csv -a 1 -f sample.csv --skip-rows 1 --date-col 0 --amount-col 1 --payee-col 2
+python -m probooks transactions -a 1 -n 20</code></pre>
     <p class="lead" style="margin-top: 0.75rem; margin-bottom: 0;">
       See <a href="README.md" style="color: var(--accent);">README.md</a> (raw) for backup/restore commands. Run <code style="font-size:0.85em;">python -m pytest</code> for tests.
     </p>

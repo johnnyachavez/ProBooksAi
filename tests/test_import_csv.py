@@ -1,0 +1,66 @@
+"""CSV import tests (#31, #33, #34)."""
+
+from pathlib import Path
+
+from probooks.accounts import add_account
+from probooks.database import connect, migration_files, run_migrations
+from probooks.import_csv import ColumnMap, count_transactions, import_bank_csv
+
+
+def _db_with_account(tmp_path: Path) -> tuple[Path, int]:
+    db = tmp_path / "i.db"
+    mdir = Path(__file__).resolve().parents[1] / "probooks" / "migrations"
+    conn = connect(db)
+    run_migrations(conn, migration_files(mdir))
+    aid = add_account(conn, name="Checking", account_type="checking")
+    conn.close()
+    return db, aid
+
+
+def test_import_csv_basic(tmp_path: Path) -> None:
+    db, aid = _db_with_account(tmp_path)
+    csv_path = tmp_path / "t.csv"
+    csv_path.write_text(
+        "Date,Amount,Name\n"
+        "2026-01-15,-12.34,COFFEE\n"
+        "2026-01-16,100.00,DEPOSIT\n",
+        encoding="utf-8",
+    )
+    conn = connect(db)
+    r = import_bank_csv(
+        conn,
+        bank_account_id=aid,
+        csv_path=csv_path,
+        columns=ColumnMap(date=0, amount=1, payee=2),
+        skip_rows=1,
+    )
+    assert r.rows_imported == 2
+    assert r.rows_skipped == 0
+    assert count_transactions(conn) == 2
+    conn.close()
+
+
+def test_import_csv_skips_bad_row_and_errors_out(tmp_path: Path) -> None:
+    db, aid = _db_with_account(tmp_path)
+    csv_path = tmp_path / "bad.csv"
+    csv_path.write_text(
+        "d,a\n"
+        "2026-01-01,10\n"
+        "not-a-date,20\n",
+        encoding="utf-8",
+    )
+    err = tmp_path / "err.csv"
+    conn = connect(db)
+    r = import_bank_csv(
+        conn,
+        bank_account_id=aid,
+        csv_path=csv_path,
+        columns=ColumnMap(date=0, amount=1),
+        skip_rows=1,
+        errors_file=err,
+    )
+    assert r.rows_imported == 1
+    assert r.rows_skipped == 1
+    assert err.is_file()
+    assert "bad_date" in err.read_text()
+    conn.close()

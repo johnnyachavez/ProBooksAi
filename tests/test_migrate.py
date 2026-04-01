@@ -14,6 +14,7 @@ def test_migrations_apply_once(tmp_path: Path) -> None:
     applied = run_migrations(conn, migration_files(mdir))
     conn.close()
     assert "001_initial.sql" in applied
+    assert "002_import_and_transactions.sql" in applied
     conn = connect(db)
     applied2 = run_migrations(conn, migration_files(mdir))
     conn.close()
