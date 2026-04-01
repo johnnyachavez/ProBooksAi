@@ -59,6 +59,24 @@ Examples:
 | `phase-5-gl` | General Ledger posting |
 | `phase-6-rules-ai` | Rules engine, AI suggestions |
 | `phase-7-ocr` | PDF/OCR intake |
+| `phase-8-invoicing` | Customer invoices, AR MVP |
+| `phase-9-ar-payments` | Receive payments, AR application |
+| `phase-10-ar-aging` | AR aging report |
+| `phase-11-bills` | Vendor bills, AP MVP |
+| `phase-12-ap-payments` | Pay bills, AP application |
+| `phase-13-ap-aging` | AP aging report |
+| `phase-14-sales-tax` | Sales tax settings and invoice tax |
+| `phase-15-payroll` | Payroll MVP (employees + pay runs) |
+| `phase-16-payroll-tax` | Payroll tax placeholder framework |
+| `phase-17-bank-matching` | Link bank transactions to AR/AP/payroll |
+| `phase-18-splits` | Transaction split support |
+| `phase-19-transfers` | Bank-to-bank transfer transactions |
+| `phase-20-receipts` | Receipt / document workflow |
+| `phase-21-performance` | Large CSV imports, worker threads |
+| `phase-22-export` | CSV export and reconciliation reports |
+| `phase-23-audit-log` | Change history / audit trail |
+| `phase-24-multi-company` | Multiple books / company files |
+| `duplicate` | Issue is a duplicate of another |
 | `bug` | Something isn't working |
 | `docs` | Documentation changes |
 | `good first issue` | Low complexity, good starting point |
