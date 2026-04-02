@@ -1,0 +1,90 @@
+name: UI Screenshot
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  workflow_dispatch:
+
+jobs:
+  screenshot:
+    name: Capture UI Screenshot
+    runs-on: ubuntu-latest
+    continue-on-error: true   # non-blocking: flaky GUI rendering won't fail the PR
+    permissions:
+      contents: read
+      pull-requests: write   # needed to post the PR comment
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies (Qt / Xvfb)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            xvfb \
+            libxcb-cursor0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render-util0 \
+            libxcb-shape0 \
+            libxcb-xinerama0 \
+            libxcb-xkb1 \
+            libxkbcommon-x11-0 \
+            libegl1 \
+            libgl1
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install PySide6 openpyxl
+
+      - name: Create output directory
+        run: mkdir -p artifacts/ui
+
+      - name: Capture main-window screenshot
+        run: |
+          xvfb-run --auto-servernum --server-args="-screen 0 1280x800x24" \
+            python scripts/capture_ui_screenshot.py
+        env:
+          QT_QPA_PLATFORM: xcb
+          # Leave OPENAI_API_KEY unset; the screenshot only needs the UI shell
+          # and the app handles a missing key gracefully at startup
+
+      - name: Upload screenshot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-screenshots
+          path: artifacts/ui/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Comment on PR with artifact link
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              '## 📸 UI Screenshot',
+              '',
+              'A screenshot of the main window was captured for this PR.',
+              '',
+              `**Download:** Go to [Actions → this run](${runUrl}) and look for the **ui-screenshots** artifact.`,
+              '',
+              '_Screenshot is generated automatically by the UI Screenshot workflow._',
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
