@@ -12,6 +12,7 @@ dependencies = ["openpyxl"]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
+desktop = ["PySide6>=6.5"]
 
 [project.scripts]
 probooks = "probooks.cli:main"
