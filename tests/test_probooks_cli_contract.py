@@ -31,3 +31,24 @@ def test_probooks_cli_wires_backup_restore_subcommands() -> None:
     assert 'sub.add_parser(\n        "restore",' in cli
     assert "return cmd_backup(db, args.output)" in cli
     assert "return cmd_restore(db, args.input, args.yes)" in cli
+
+
+def test_probooks_cli_backup_restore_argparse_help_and_flags() -> None:
+    cli = PROBOOKS_CLI.read_text(encoding="utf-8")
+    assert 'help="Write a SQLite online backup of --db to another file"' in cli
+    assert (
+        "Requires SQLite at --db and an --output that is a different path than --db after resolving."
+        in cli
+    )
+    assert 'help="Replace --db from a SQLite backup file (online backup API)"' in cli
+    assert (
+        "Requires SQLite at --input and a different path than --db after resolving."
+        in cli
+    )
+    assert 'help="Destination .db path (must not be the same file as --db)."' in cli
+    assert 'help="Backup .db to read from (must not be the same file as --db)."' in cli
+    assert 'bp.add_argument(\n        "--output",' in cli
+    assert '        "-o",' in cli
+    assert 'rp.add_argument(\n        "--input",' in cli
+    assert '        "-i",' in cli
+    assert 'rp.add_argument("--yes", action="store_true", help="Confirm overwrite")' in cli
