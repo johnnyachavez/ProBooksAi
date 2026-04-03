@@ -1,4 +1,4 @@
-"""ProBooks+ai — SQLite-backed ``probooks`` CLI package (shared schema with the PySide6 desktop app). Excel COA workbook output uses ``openpyxl`` via ``probooksai.generator`` / root ``generate_workbook.py``."""
+"""ProBooks+ai — SQLite-backed ``probooks`` CLI package (shared schema with the PySide6 desktop app). Excel COA workbook output uses ``openpyxl`` via ``probooksai.generator`` / root ``generate_workbook.py``; the shared Excel ``--help`` epilog string lives in ``probooks.help_epilog``."""
 
 from __future__ import annotations
 
