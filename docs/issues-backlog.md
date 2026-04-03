@@ -22,6 +22,8 @@ PySide6 run, **Fusion** dark theme, and **Qt** font stderr note: **[README.md �
 
 Shared **Excel** **`--help`** line (**`probooks/help_epilog.py`**; **`python -m probooks`**, **`python -m desktop_app.main`**): **[README.md — Desktop app](../README.md#desktop-app-pyside6)**.
 
+**Backup / restore** (SQLite online backup, **`probooks.backup`**; CLI and desktop **File** menu): **[README.md — Python CLI](../README.md#python-cli)**.
+
 Phased roadmap and in-repo implementation snapshot: **[ROADMAP.md — Implementation snapshot](ROADMAP.md#implementation-snapshot-repository-2026-04)**.
 
 Cross-phase issues (**#21**, packaging, backup UI, theme, CI tests): **[ROADMAP.md — Supporting / cross-cutting](ROADMAP.md#supporting-cross-cutting-issues)**.

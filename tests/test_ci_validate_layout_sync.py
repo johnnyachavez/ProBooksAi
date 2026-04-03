@@ -1115,11 +1115,14 @@ def test_issues_backlog_orients_readme_docs_bar_and_github_config() -> None:
 
 
 def test_issues_backlog_documents_excel_help_epilog() -> None:
-    """issues-backlog short index should mention help_epilog + both entrypoints (hub parity with BACKLOG)."""
+    """issues-backlog short index should mention help_epilog, backup API, + both entrypoints (hub parity)."""
     text = DOCS_ISSUES_BACKLOG_MD.read_text(encoding="utf-8")
     assert "probooks/help_epilog.py" in text
     assert "python -m probooks" in text
     assert "python -m desktop_app.main" in text
+    assert "probooks.backup" in text
+    assert "SQLite online backup" in text
+    assert "../README.md#python-cli" in text
 
 
 def test_backlog_links_readme_desktop_app_section() -> None:
