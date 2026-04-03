@@ -11,7 +11,7 @@ contact_links:
     about: Static UI hub via python -m http.server — not live books data; desktop app or probooks CLI for SQLite.
   - name: Desktop app (PySide6)
     url: https://github.com/johnnyachavez/ProBooksAi/blob/main/README.md#desktop-app-pyside6
-    about: pip install -e ".[desktop]", python -m desktop_app.main, Fusion theme, and Qt font stderr note.
+    about: pip install -e ".[desktop]", python -m desktop_app.main, Fusion theme, Qt font stderr note, and shared Excel line on --help via probooks/help_epilog.py.
   - name: Excel workbook template (openpyxl)
     url: https://github.com/johnnyachavez/ProBooksAi/blob/main/README.md#excel-workbook-template-openpyxl
     about: python generate_workbook.py, openpyxl COA template — same README anchor as review.html Documentation card and issue templates.

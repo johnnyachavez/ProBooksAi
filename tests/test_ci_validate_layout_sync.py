@@ -309,6 +309,7 @@ def test_contributing_ci_documents_issues_backlog_review_config_touchpoints() ->
     assert "blob/.../issues-backlog.md" in ci_chunk
     assert "test_issues_backlog_orients_readme_docs_bar_and_github_config" in ci_chunk
     assert "test_review_html_issues_backlog_card_mentions_issue_chooser_config" in ci_chunk
+    assert "test_issues_backlog_documents_excel_help_epilog" in ci_chunk
     assert "**`PULL_REQUEST_TEMPLATE.md`**" in ci_chunk
     assert "test_pr_template_issues_backlog_checklist_cites_layout_sync_tests" in ci_chunk
     assert "test_contributing_ci_documents_issues_backlog_review_config_touchpoints" in ci_chunk
@@ -360,6 +361,19 @@ def test_pr_template_lists_readme_excel_workbook_anchor_checklist() -> None:
         "test_contributing_ci_documents_readme_excel_workbook_anchor_bullet",
         "test_hub_docs_related_docs_link_readme_excel_workbook_template",
         "test_readme_docs_bar_links_excel_workbook_anchor",
+        "test_review_html_python_desktop_section_mentions_help_epilog",
+        "test_static_shell_page_sub_mentions_help_epilog",
+    ):
+        assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
+
+
+def test_pr_template_readme_desktop_anchor_checklist_cites_help_epilog_tests() -> None:
+    """PR template Desktop anchor row should cite help_epilog-related layout tests."""
+    text = (_REPO / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    assert "`## Desktop app (PySide6)`** was renamed" in text
+    for name in (
+        "test_review_html_python_desktop_section_mentions_help_epilog",
+        "test_static_shell_page_sub_mentions_help_epilog",
     ):
         assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
 
@@ -382,6 +396,24 @@ def test_contributing_ci_documents_readme_excel_workbook_anchor_bullet() -> None
     assert "test_contributing_ci_documents_readme_excel_workbook_anchor_bullet" in chunk
     assert "test_hub_docs_related_docs_link_readme_excel_workbook_template" in chunk
     assert "test_readme_docs_bar_links_excel_workbook_anchor" in chunk
+    assert "test_review_html_python_desktop_section_mentions_help_epilog" in chunk
+    assert "test_static_shell_page_sub_mentions_help_epilog" in chunk
+
+
+def test_contributing_ci_documents_readme_desktop_help_epilog_layout_tests() -> None:
+    """Continuous integration README Desktop bullet lists layout tests for help_epilog hub copy."""
+    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    ci_start = md.index("### Continuous integration")
+    table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
+    chunk = md[ci_start:table_start]
+    desk = chunk.index("**README `## Desktop app (PySide6)` anchor**")
+    nxt = chunk.index("\n- **README `### Excel workbook", desk)
+    bullet = chunk[desk:nxt]
+    for name in (
+        "test_review_html_python_desktop_section_mentions_help_epilog",
+        "test_static_shell_page_sub_mentions_help_epilog",
+    ):
+        assert name in bullet, f"CONTRIBUTING Desktop anchor bullet should mention {name!r}"
 
 
 def test_pr_template_issues_backlog_checklist_cites_layout_sync_tests() -> None:
@@ -395,6 +427,7 @@ def test_pr_template_issues_backlog_checklist_cites_layout_sync_tests() -> None:
     assert "issues-backlog + GitHub chooser" in text
     for name in (
         "test_issues_backlog_orients_readme_docs_bar_and_github_config",
+        "test_issues_backlog_documents_excel_help_epilog",
         "test_contributing_ci_documents_issues_backlog_review_config_touchpoints",
         "test_github_issue_templates_reference_core_docs",
         "test_review_html_issues_backlog_card_mentions_issue_chooser_config",
