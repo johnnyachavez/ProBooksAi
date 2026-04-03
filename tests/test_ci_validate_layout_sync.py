@@ -498,6 +498,9 @@ def test_pr_template_lists_readme_default_database_paths_checklist() -> None:
         "test_review_html_python_desktop_section_mentions_help_epilog",
         "test_pr_template_lists_readme_default_database_paths_checklist",
         "test_contributing_ci_documents_readme_default_database_paths_bullet",
+        "test_hub_docs_related_docs_link_readme_default_database_paths",
+        "test_contributing_ci_documents_hub_readme_default_database_paths_segment",
+        "test_pr_template_lists_hub_docs_readme_default_database_paths_checklist",
     ):
         assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
 
@@ -510,6 +513,7 @@ def test_contributing_ci_documents_readme_default_database_paths_bullet() -> Non
     chunk = md[ci_start:table_start]
     assert "**README `### Default database paths (Windows)`**" in chunk
     assert "Why not one `.db` yet" in chunk
+    assert "**Hub docs — README default database paths segment**" in chunk
     for name in (
         "test_readme_default_database_paths_notes_two_schemas_and_roadmap",
         "test_readme_docs_bar_links_default_database_paths_anchor",
@@ -518,6 +522,9 @@ def test_contributing_ci_documents_readme_default_database_paths_bullet() -> Non
         "test_review_html_python_desktop_section_mentions_help_epilog",
         "test_pr_template_lists_readme_default_database_paths_checklist",
         "test_contributing_ci_documents_readme_default_database_paths_bullet",
+        "test_hub_docs_related_docs_link_readme_default_database_paths",
+        "test_contributing_ci_documents_hub_readme_default_database_paths_segment",
+        "test_pr_template_lists_hub_docs_readme_default_database_paths_checklist",
     ):
         assert name in chunk, f"CONTRIBUTING CI should mention {name!r} on default DB paths bullet"
 
@@ -732,6 +739,13 @@ def test_github_issue_templates_reference_core_docs() -> None:
     readme_excel = "README.md#excel-workbook-template-openpyxl"
     readme_dbpaths = "README.md#default-database-paths-windows"
     contrib_rt = "docs/CONTRIBUTING.md#running-tests"
+    desk_i = bug.index(readme_desktop)
+    dbp_i = bug.index(readme_dbpaths)
+    xls_i = bug.index(readme_excel)
+    assert desk_i < dbp_i < xls_i, (
+        "bug_report.md triaging line should list README Desktop, then Default database paths, then Excel "
+        "(same order as ROADMAP/BACKLOG/CONTRIBUTING Related docs)"
+    )
     for label, text in (("bug_report.md", bug), ("feature_request.md", feat)):
         assert naming in text, f"{label} should link CONTRIBUTING.md#naming-conventions"
         assert contrib_rt in text, f"{label} should deep-link CONTRIBUTING Running Tests"
