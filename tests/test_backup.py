@@ -363,6 +363,45 @@ def test_restore_database_replaces_existing_target_when_overwrite_true(tmp_path:
     conn.close()
 
 
+def test_backup_database_unlinks_temp_file_when_backup_raises(tmp_path: Path) -> None:
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    src = tmp_path / "live.db"
+    conn = connect(src)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    dest = tmp_path / "out.db"
+
+    with patch(
+        "probooks.backup._backup_sqlite_file_to_path",
+        side_effect=sqlite3.OperationalError("forced backup failure"),
+    ):
+        with pytest.raises(sqlite3.OperationalError, match="forced backup failure"):
+            backup_database(src, dest)
+    assert not dest.exists()
+    assert not list(tmp_path.glob(".probooks-backup-*.tmp"))
+
+
+def test_restore_database_unlinks_temp_file_when_backup_raises(tmp_path: Path) -> None:
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    live = tmp_path / "live.db"
+    conn = connect(live)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    bak = tmp_path / "bak.db"
+    backup_database(live, bak)
+    target = tmp_path / "target.db"
+    assert not target.exists()
+
+    with patch(
+        "probooks.backup._backup_sqlite_file_to_path",
+        side_effect=sqlite3.OperationalError("forced restore copy failure"),
+    ):
+        with pytest.raises(sqlite3.OperationalError, match="forced restore copy failure"):
+            restore_database(bak, target, overwrite=True)
+    assert not target.exists()
+    assert not list(tmp_path.glob(".probooks-restore-*.tmp"))
+
+
 def test_cli_restore_rejects_non_sqlite_backup(tmp_path: Path) -> None:
     bad = tmp_path / "bak.db"
     bad.write_text("not sqlite", encoding="utf-8")
