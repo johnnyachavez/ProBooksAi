@@ -1,5 +1,6 @@
 """Backup / restore tests."""
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -140,6 +141,30 @@ def test_cli_backup_and_restore_reject_same_path(tmp_path: Path) -> None:
     conn.close()
     assert cmd_backup(db, db) == 1
     assert cmd_restore(db, db, yes=True) == 1
+
+
+def test_backup_roundtrip_while_other_connection_open(tmp_path: Path) -> None:
+    """Online backup stays consistent when another handle keeps the source DB open."""
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    src = tmp_path / "live.db"
+    conn = connect(src)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    holder = sqlite3.connect(src)
+    try:
+        bak = tmp_path / "out.db"
+        backup_database(src, bak)
+        assert is_sqlite_file(bak)
+        dest = tmp_path / "restored.db"
+        restore_database(bak, dest, overwrite=True)
+        assert is_sqlite_file(dest)
+        r = sqlite3.connect(dest)
+        try:
+            assert r.execute("SELECT COUNT(*) FROM companies").fetchone()[0] >= 1
+        finally:
+            r.close()
+    finally:
+        holder.close()
 
 
 def test_backup_roundtrip(tmp_path: Path) -> None:

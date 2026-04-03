@@ -1,17 +1,17 @@
 """Backup / restore SQLite database files (issue #28).
 
-Writes to a temporary file in the destination directory, then ``os.replace`` onto the
-final path so an interrupted copy does not truncate the target database.
+Uses ``sqlite3.Connection.backup`` (online backup) into a temp file, then
+``os.replace`` onto the final path so the destination is not left truncated on failure.
+That yields a consistent snapshot even when another connection (e.g. the desktop app)
+still has the source database open.
 
-For a stable snapshot, avoid copying *source_db* while your process still has it open
-via ``sqlite3`` (close connections first, as the desktop app does before **File → Backup**).
-The CLI typically runs when no other handle holds the default ``--db`` file.
+Restore copies the backup file the same way so static ``.db`` backups round-trip reliably.
 """
 
 from __future__ import annotations
 
 import os
-import shutil
+import sqlite3
 import tempfile
 from pathlib import Path
 
@@ -32,6 +32,24 @@ def _same_resolved_path(a: Path, b: Path) -> bool:
         return False
 
 
+def _sqlite_uri_readonly(path: Path) -> str:
+    return path.expanduser().resolve().as_uri() + "?mode=ro"
+
+
+def _backup_sqlite_file_to_path(source: Path, dest_sqlite_path: Path) -> None:
+    """Stream *source* into *dest_sqlite_path* using SQLite's backup API."""
+    uri = _sqlite_uri_readonly(source)
+    src_conn = sqlite3.connect(uri, uri=True, timeout=120.0)
+    try:
+        dst_conn = sqlite3.connect(dest_sqlite_path)
+        try:
+            src_conn.backup(dst_conn)
+        finally:
+            dst_conn.close()
+    finally:
+        src_conn.close()
+
+
 def backup_database(source_db: Path, destination: Path) -> None:
     if not is_sqlite_file(source_db):
         raise ValueError(f"Not a SQLite database file: {source_db}")
@@ -49,7 +67,7 @@ def backup_database(source_db: Path, destination: Path) -> None:
     os.close(fd)
     tmp_path = Path(tmp_name)
     try:
-        shutil.copy2(source_db, tmp_path)
+        _backup_sqlite_file_to_path(source_db, tmp_path)
     except BaseException:
         tmp_path.unlink(missing_ok=True)
         raise
@@ -79,7 +97,7 @@ def restore_database(backup_file: Path, target_db: Path, *, overwrite: bool) -> 
     os.close(fd)
     tmp_path = Path(tmp_name)
     try:
-        shutil.copy2(backup_file, tmp_path)
+        _backup_sqlite_file_to_path(backup_file, tmp_path)
     except BaseException:
         tmp_path.unlink(missing_ok=True)
         raise

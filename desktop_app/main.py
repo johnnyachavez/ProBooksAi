@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import mimetypes
 import os
+import sqlite3
 import sys
 from functools import partial
 from pathlib import Path
@@ -1509,9 +1510,6 @@ class MainWindow(QMainWindow):
             return
         if not path.lower().endswith(".db"):
             path += ".db"
-        resolved_src = str(src)
-        self._db.close()
-        self._bank_db.close()
         try:
             backup_database(src, Path(path))
         except ValueError as exc:
@@ -1521,24 +1519,15 @@ class MainWindow(QMainWindow):
                 escape_ampersand_for_qt(str(exc)),
                 ok_tip="Close; the active company file does not look like SQLite — open a valid company or repair the file.",
             )
-            try:
-                self._load_company_at_path(resolved_src)
-            except Exception:
-                pass
             return
-        except OSError as exc:
+        except (OSError, sqlite3.Error) as exc:
             message_box_critical_ok(
                 self,
                 "Backup failed",
                 escape_ampersand_for_qt(str(exc)),
                 ok_tip="Close; check disk space, path permissions, and that the file is not locked.",
             )
-            try:
-                self._load_company_at_path(resolved_src)
-            except Exception:
-                pass
             return
-        self._load_company_at_path(resolved_src)
         message_box_information_ok(
             self,
             "Backup complete",
@@ -1610,7 +1599,7 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
             return
-        except OSError as exc:
+        except (OSError, sqlite3.Error) as exc:
             message_box_critical_ok(
                 self,
                 "Restore failed",
