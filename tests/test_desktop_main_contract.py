@@ -133,6 +133,13 @@ def test_main_tab_widgets_have_root_hover_tooltips() -> None:
     assert "Default sales tax name and rate" in tax
 
 
+def test_file_menu_backup_tip_mentions_sqlite_online_backup() -> None:
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("act_backup = QAction")
+    end = text.index("act_restore = QAction", start)
+    assert "SQLite online backup" in text[start:end]
+
+
 def test_backup_company_uses_shared_backup_helper() -> None:
     """File → Backup delegates to probooks.backup (SQLite online backup, safe while DB is open)."""
     text = _MAIN.read_text(encoding="utf-8")

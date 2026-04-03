@@ -1580,7 +1580,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Restore",
                 "Choose a different file than the active company database.",
-                ok_tip="Close; pick a separate backup file to copy over the active company .db.",
+                ok_tip="Close; pick a separate backup file to restore from (not the active company .db).",
             )
             return
         self._db.close()
