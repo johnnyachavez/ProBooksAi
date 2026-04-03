@@ -786,6 +786,9 @@ def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
     assert "config.yml" in text
     assert "help_epilog" in text
     assert "test_hub_docs_related_docs_link_readme_excel_workbook_template" in text
+    assert "### Default database paths (Windows)" in text
+    assert "Why not one `.db` yet" in text
+    assert "test_readme_default_database_paths_notes_two_schemas_and_roadmap" in text
     assert "review.html" in text
     assert "test_ci_validate_layout_sync.py" in text
     assert "CONTRIBUTING.md#continuous-integration" in text
