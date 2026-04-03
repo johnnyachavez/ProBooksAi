@@ -3,11 +3,21 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from tests.repo_paths import (
+    DOCS_ROADMAP_MD,
+    INDEX_HTML,
     INTEGRATIONS_WORK_CONTEXT_EXAMPLE as _EXAMPLE,
+    INVOICE_HTML,
+    REVIEW_HTML,
+    REPO_ROOT,
     SYNC_WORKSPACE_PS1,
 )
+
+
+def _repo_rel_posix(path: Path) -> str:
+    return path.relative_to(REPO_ROOT).as_posix()
 
 
 def test_work_context_example_is_valid_json_with_expected_keys() -> None:
@@ -38,10 +48,10 @@ def test_work_context_example_is_valid_json_with_expected_keys() -> None:
         assert isinstance(row["lastWriteUtc"], str) and row["lastWriteUtc"].strip(), row
         paths.add(row["path"])
     expected_paths = {
-        "index.html",
-        "invoice.html",
-        "review.html",
-        "docs/ROADMAP.md",
+        _repo_rel_posix(INDEX_HTML),
+        _repo_rel_posix(INVOICE_HTML),
+        _repo_rel_posix(REVIEW_HTML),
+        _repo_rel_posix(DOCS_ROADMAP_MD),
     }
     assert paths == expected_paths, (
         f"localWorkFiles paths should be the minimal sample set {expected_paths!r}, got {paths!r}"
