@@ -420,6 +420,9 @@ def test_readme_ci_validate_layout_bullet_mentions_conftest() -> None:
     chunk = readme[start : readme.index("\n## ", start + 1)]
     assert "ci_validate_layout.sh" in chunk and "ci_validate_layout.ps1" in chunk
     assert "tests/conftest.py" in chunk
+    assert "**`.gitattributes`**" in chunk, (
+        "README Scripts ci_validate_layout bullet should mention .gitattributes (layout require + LF policy)"
+    )
 
 
 def test_readme_contributing_section_mentions_conftest() -> None:
