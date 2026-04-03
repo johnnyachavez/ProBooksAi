@@ -44,6 +44,13 @@ def test_is_sqlite_file_true_at_minimum_size(tmp_path: Path) -> None:
     assert is_sqlite_file(p)
 
 
+def test_is_sqlite_file_true_when_bytes_follow_header(tmp_path: Path) -> None:
+    p = tmp_path / "padded.db"
+    p.write_bytes(SQLITE_MAGIC + b"\x00" * 8192)
+    assert p.stat().st_size > 16
+    assert is_sqlite_file(p)
+
+
 def test_is_sqlite_file_false_when_path_is_directory(tmp_path: Path) -> None:
     d = tmp_path / "fake.db"
     d.mkdir()
