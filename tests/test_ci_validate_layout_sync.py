@@ -922,6 +922,10 @@ def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
     assert "ci_validate_layout.ps1" in text
     assert "**Layout validators:**" in text
     assert "same path in both lists" in text
+    assert (
+        "**Layout + workflow contracts** documents what **`test_cursor_rule_github_work_context_points_at_contributing_ci`** covers"
+        in text
+    )
 
 
 def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> None:
