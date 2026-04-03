@@ -157,6 +157,24 @@ def test_readme_opener_mentions_shell_cli_desktop_sqlite() -> None:
         assert needle in line, f"README lede should mention {needle!r}: {line!r}"
 
 
+def test_readme_python_cli_section_mentions_backup_restore_online_api() -> None:
+    """README ## Python CLI should document backup/restore commands and shared probooks.backup."""
+    readme = README_MD.read_text(encoding="utf-8")
+    start = readme.index("## Python CLI")
+    end = readme.index("### CSV import", start)
+    section = readme[start:end]
+    for needle in (
+        "probooks backup",
+        "probooks restore",
+        "probooks.backup",
+        "SQLite online backup",
+        "File → Backup",
+        "File → Restore",
+        "**`--db`**",
+    ):
+        assert needle in section, f"README Python CLI section should mention {needle!r}"
+
+
 def test_readme_default_database_paths_notes_two_schemas_and_roadmap() -> None:
     """README should state CLI vs desktop DB files are not interchangeable and point at ROADMAP #21 note."""
     readme = README_MD.read_text(encoding="utf-8")
