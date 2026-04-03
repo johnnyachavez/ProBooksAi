@@ -52,6 +52,13 @@ def test_desktop_main_cli_and_qt_app_strings_use_probooks_plus_ai() -> None:
     assert 'app.setOrganizationName("ProBooks+ai")' in text
 
 
+def test_journal_tab_f5_refresh_shortcut_wired() -> None:
+    path = _MAIN.parent / "journal_tab.py"
+    text = path.read_text(encoding="utf-8")
+    assert 'QKeySequence("F5")' in text
+    assert "activated.connect(self._refresh_list)" in text
+
+
 def test_bank_import_tab_f5_reload_shortcut_wired() -> None:
     path = _MAIN.parent / "bank_import_tab.py"
     text = path.read_text(encoding="utf-8")

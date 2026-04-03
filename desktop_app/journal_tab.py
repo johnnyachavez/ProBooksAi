@@ -1,4 +1,7 @@
-"""Journal entry viewer (Phase 5 GL register)."""
+"""Journal entry viewer (Phase 5 GL register).
+
+**F5** (when this tab or its children have focus) runs the same reload as **Refresh** (entry list + lines).
+"""
 
 from __future__ import annotations
 
@@ -6,6 +9,7 @@ import sqlite3
 from functools import partial
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFileDialog,
@@ -54,6 +58,10 @@ class JournalTab(QWidget):
         self._end = QLineEdit()
         row.addWidget(self._end)
         b = QPushButton("Refresh")
+        b.setToolTip(
+            "Reload the journal entry list and line detail for the current date filter. "
+            "Shortcut: F5 (when Journal has focus)."
+        )
         b.clicked.connect(self._refresh_list)
         row.addWidget(b)
         row.addWidget(QPushButton("Export CSV…", clicked=self._export_csv))
@@ -80,6 +88,10 @@ class JournalTab(QWidget):
         split.addWidget(self._lines)
         split.setSizes([260, 600])
         layout.addWidget(split)
+
+        sc_refresh = QShortcut(QKeySequence("F5"), self)
+        sc_refresh.setContext(Qt.WidgetWithChildrenShortcut)
+        sc_refresh.activated.connect(self._refresh_list)
 
         self._entries: list = []
 
