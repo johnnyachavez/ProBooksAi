@@ -8,17 +8,20 @@ Payee column uses a two-line layout (description, then COA or memo sub-line).
 Number column shows reference on the first line and a short type tag (DEP / PMT /
 XFER / TXN) on the second. **Clr** shows **C** when the row is marked cleared on the register, else **R** when the
 CSV import batch is marked reconciled in Bank Import. Rows without a COA category are highlighted.
+The filter choice and last selected bank account persist in ``QSettings``, scoped by
+company SQLite path (same app profile as the main window).
 """
 
 from __future__ import annotations
 
 import csv
+import hashlib
 import sqlite3
 from functools import partial
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSettings
 from PySide6.QtGui import QColor, QBrush
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -239,7 +242,8 @@ class RegisterTab(QWidget):
         self._filter_combo.addItem("Not cleared", "not_cleared")
         self._filter_combo.addItem("Batch reconciled (import)", "batch_reconciled")
         self._filter_combo.addItem("Batch not reconciled", "batch_not_reconciled")
-        self._filter_combo.currentIndexChanged.connect(self._reload_current)
+        self._restore_register_filter_from_settings()
+        self._filter_combo.currentIndexChanged.connect(self._on_register_filter_changed)
         filt.addWidget(self._filter_combo)
         filt.addStretch()
         layout.addLayout(filt)
@@ -305,7 +309,8 @@ class RegisterTab(QWidget):
             "Assign a COA account to clear the highlight. "
             "Starred (★) items at the top of the COA list are hints from your rules "
             "and, when OPENAI_API_KEY is set, optional AI picks. "
-            "Balance is the running total in date order (not recalculated for other sorts)."
+            "Balance is the running total in date order (not recalculated for other sorts). "
+            "Filter and last bank account choice are remembered per company file for the next session."
         )
         tip.setWordWrap(True)
         tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
@@ -318,6 +323,39 @@ class RegisterTab(QWidget):
     def refresh_coa_choices(self):
         """Call when the chart of accounts changes (same DB connection)."""
         self._coa_choices = self._coa_db.display_list()
+        self._reload_current()
+
+    def _register_prefs_id(self) -> str:
+        p = getattr(self._db, "_db_path", None)
+        if not p:
+            return "default"
+        return hashlib.sha256(
+            str(p).encode("utf-8", errors="replace")
+        ).hexdigest()[:16]
+
+    def _register_filter_settings_key(self) -> str:
+        return f"register/last_filter_{self._register_prefs_id()}"
+
+    def _register_bank_account_settings_key(self) -> str:
+        return f"register/last_bank_account_id_{self._register_prefs_id()}"
+
+    def _restore_register_filter_from_settings(self) -> None:
+        raw = QSettings().value(self._register_filter_settings_key(), "all")
+        want = str(raw) if raw is not None else "all"
+        self._filter_combo.blockSignals(True)
+        for i in range(self._filter_combo.count()):
+            d = self._filter_combo.itemData(i)
+            if d is not None and str(d) == want:
+                self._filter_combo.setCurrentIndex(i)
+                break
+        self._filter_combo.blockSignals(False)
+
+    def _on_register_filter_changed(self) -> None:
+        d = self._filter_combo.currentData()
+        QSettings().setValue(
+            self._register_filter_settings_key(),
+            str(d if d is not None else "all"),
+        )
         self._reload_current()
 
     def _refresh_account_combo(self):
@@ -334,20 +372,37 @@ class RegisterTab(QWidget):
                     escape_ampersand_for_qt(label), acct["id"]
                 )
         self._acct_combo.blockSignals(False)
+        picked = False
         if prev is not None:
             for i in range(self._acct_combo.count()):
                 if self._acct_combo.itemData(i) == prev:
                     self._acct_combo.setCurrentIndex(i)
+                    picked = True
                     break
+        if not picked and accounts:
+            sid_raw = QSettings().value(self._register_bank_account_settings_key(), -1)
+            try:
+                sid = int(sid_raw) if sid_raw is not None else -1
+            except (TypeError, ValueError):
+                sid = -1
+            if sid > 0:
+                for i in range(self._acct_combo.count()):
+                    if self._acct_combo.itemData(i) == sid:
+                        self._acct_combo.setCurrentIndex(i)
+                        picked = True
+                        break
         self._on_account_changed()
 
     def _on_account_changed(self):
         aid = self._acct_combo.currentData()
         self._current_account_id = aid
+        s = QSettings()
         if aid is None:
+            s.remove(self._register_bank_account_settings_key())
             self._clear_table()
             return
-        self._load_transactions(aid)
+        s.setValue(self._register_bank_account_settings_key(), int(aid))
+        self._load_transactions(int(aid))
 
     def _reload_current(self):
         if self._current_account_id is not None:
