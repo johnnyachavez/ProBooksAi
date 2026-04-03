@@ -201,6 +201,48 @@ def test_main_banner_and_inbox_header_have_tooltips() -> None:
     assert "lbl_inbox.setToolTip" in text
 
 
+def test_app_header_tooltips_mention_file_backup() -> None:
+    text = _MAIN.read_text(encoding="utf-8")
+    hdr = text.split("class AppHeaderWidget", 1)[1].split("class MainWindow", 1)[0]
+    assert "File → Backup" in hdr
+    assert "probooks.backup" in hdr
+
+
+def test_file_menu_company_file_actions_tips_mention_backup_pointer() -> None:
+    text = _MAIN.read_text(encoding="utf-8")
+    o = text.index("act_open_company = QAction")
+    open_chunk = text[o : text.index("act_new_company = QAction", o)]
+    assert "probooks backup" in open_chunk
+    n = text.index("act_new_company = QAction")
+    new_chunk = text[n : text.index("act_backup = QAction", n)]
+    assert "File → Backup" in new_chunk
+    c = text.index("act_copy_db_path = QAction")
+    copy_chunk = text[c : text.index("act_save = QAction", c)]
+    assert "probooks backup" in copy_chunk
+
+
+def test_copy_db_path_empty_dialog_tip_mentions_backup() -> None:
+    text = _MAIN.read_text(encoding="utf-8")
+    s = text.index("def _on_copy_company_database_path")
+    chunk = text[s : text.index("def _on_help_roadmap", s)]
+    assert "File → Backup" in chunk
+    assert "probooks.backup" in chunk
+
+
+def test_help_roadmap_menu_tip_mentions_backup_snapshot() -> None:
+    text = _MAIN.read_text(encoding="utf-8")
+    r = text.index("act_roadmap = QAction")
+    chunk = text[r : text.index("act_intake_keys = QAction", r)]
+    assert "probooks.backup" in chunk
+
+
+def test_file_exit_menu_tip_suggests_backup() -> None:
+    text = _MAIN.read_text(encoding="utf-8")
+    e = text.index("_menu_action_tip(\n            act_exit,")
+    chunk = text[e : text.index("act_exit.triggered", e)]
+    assert "File → Backup" in chunk
+
+
 def test_main_toolbar_import_tooltip_echoes_file_menu_ctrl_o() -> None:
     text = _MAIN.read_text(encoding="utf-8")
     assert "act_import.setToolTip" in text
@@ -221,7 +263,8 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
     assert "\n            act_open_company,\n" in chunk
     assert "\n            act_copy_db_path,\n" in chunk
     assert "_menu_action_tip(act, f" in chunk
-    assert "_menu_action_tip(act_exit, " in chunk
+    ex = chunk.index("act_exit = QAction")
+    assert "_menu_action_tip(" in chunk[ex : ex + 400]
     assert "\n            act_intake_keys,\n" in chunk
     assert "\n            act_more_tab_keys,\n" in chunk
 

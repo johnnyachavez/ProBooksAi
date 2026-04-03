@@ -721,7 +721,8 @@ class AppHeaderWidget(QFrame):
         )
         self.setFixedHeight(44)
         self.setToolTip(
-            "App banner; company name is the open SQLite file (switch via File → Open company database)."
+            "App banner; company name is the open SQLite file (File → Open company database; "
+            "File → Backup saves a copy via probooks.backup)."
         )
 
         layout = QHBoxLayout(self)
@@ -745,7 +746,8 @@ class AppHeaderWidget(QFrame):
             "color: #c8d8f0; font-size: 12px; background: transparent;"
         )
         self._lbl_company.setToolTip(
-            "Current company database or file name (updates when you open another company)."
+            "Current company database or file name (updates when you open another company). "
+            "File → Backup / probooks backup copies this path."
         )
         layout.addWidget(self._lbl_company)
 
@@ -979,7 +981,8 @@ class MainWindow(QMainWindow):
         act_open_company.setShortcut("Ctrl+Shift+O")
         _menu_action_tip(
             act_open_company,
-            "Open a different company SQLite database (Ctrl+Shift+O).",
+            "Open a different company SQLite database (Ctrl+Shift+O). "
+            "File → Backup copies the active .db first (same engine as probooks backup).",
         )
         act_open_company.triggered.connect(self._on_open_company_database)
         file_menu.addAction(act_open_company)
@@ -987,7 +990,8 @@ class MainWindow(QMainWindow):
         act_new_company = QAction("&New company database\u2026", self)
         _menu_action_tip(
             act_new_company,
-            "Create a new empty company SQLite database at a path you choose.",
+            "Create a new empty company SQLite database at a path you choose. "
+            "Use File → Backup / probooks backup on any file you rely on before switching.",
         )
         act_new_company.triggered.connect(self._on_new_company_database)
         file_menu.addAction(act_new_company)
@@ -1015,7 +1019,8 @@ class MainWindow(QMainWindow):
         act_copy_db_path.setShortcutContext(Qt.ApplicationShortcut)
         _menu_action_tip(
             act_copy_db_path,
-            "Copy the resolved company .db path to the clipboard (Ctrl+Alt+P).",
+            "Copy the resolved company .db path to the clipboard (Ctrl+Alt+P); "
+            "matches the file File → Backup and probooks backup read from.",
         )
         act_copy_db_path.triggered.connect(self._on_copy_company_database_path)
         file_menu.addAction(act_copy_db_path)
@@ -1039,7 +1044,10 @@ class MainWindow(QMainWindow):
 
         act_exit = QAction("E&xit", self)
         act_exit.setShortcut("Ctrl+Q")
-        _menu_action_tip(act_exit, "Exit ProBooks+ai (Ctrl+Q).")
+        _menu_action_tip(
+            act_exit,
+            "Exit ProBooks+ai (Ctrl+Q). Consider File → Backup if you want an extra copy of the open .db.",
+        )
         act_exit.triggered.connect(self.close)
         file_menu.addAction(act_exit)
 
@@ -1107,7 +1115,8 @@ class MainWindow(QMainWindow):
         help_menu = mb.addMenu("&Help")
         act_roadmap = QAction("Product &roadmap (local file)\u2026", self)
         _menu_action_tip(
-            act_roadmap, "Open docs/ROADMAP.md with the default application."
+            act_roadmap,
+            "Open docs/ROADMAP.md; implementation snapshot notes backup / CLI parity (probooks.backup).",
         )
         act_roadmap.triggered.connect(self._on_help_roadmap)
         help_menu.addAction(act_roadmap)
@@ -1187,7 +1196,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Copy path",
                 "No company database path is available.",
-                ok_tip="Open or create a company database first (File menu).",
+                ok_tip="Open or create a company first (File menu); then File → Backup / probooks backup (probooks.backup) applies.",
             )
             return
         resolved = str(Path(raw).resolve())
