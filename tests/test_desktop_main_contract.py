@@ -46,6 +46,7 @@ def test_bank_import_tab_f5_reload_shortcut_wired() -> None:
     assert "def _reload_bank_import_view" in text
     assert 'QKeySequence("F5")' in text
     assert "activated.connect(self._reload_bank_import_view)" in text
+    assert "F5 refreshes accounts and import batches" in text
 
 
 def test_register_tab_persists_header_state_via_qsettings() -> None:

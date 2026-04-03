@@ -791,6 +791,15 @@ class BankImportTab(QWidget):
 
         outer.addWidget(splitter)
 
+        tip = QLabel(
+            "F5 refreshes accounts and import batches; if a batch is selected, it is re-opened when "
+            "it still exists (updates transactions and reconciliation). "
+            "More shortcuts: Help → Bank register keyboard shortcuts (Register tab)."
+        )
+        tip.setWordWrap(True)
+        tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        outer.addWidget(tip)
+
         sc_reload = QShortcut(QKeySequence("F5"), self)
         sc_reload.setContext(Qt.WidgetWithChildrenShortcut)
         sc_reload.activated.connect(self._reload_bank_import_view)
