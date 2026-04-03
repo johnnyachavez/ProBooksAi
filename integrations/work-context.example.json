@@ -26,5 +26,7 @@
       "state": "OPEN"
     }
   ],
-  "warnings": []
+  "warnings": [
+    "GitHub CLI is not authenticated or the token is invalid. Run: gh auth login -h github.com"
+  ]
 }
