@@ -45,6 +45,36 @@ def test_restore_rejects_non_sqlite_backup(tmp_path: Path) -> None:
         restore_database(bad, target, overwrite=True)
 
 
+def test_backup_rejects_same_destination(tmp_path: Path) -> None:
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    src = tmp_path / "live.db"
+    conn = connect(src)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    with pytest.raises(ValueError, match="must differ"):
+        backup_database(src, src)
+
+
+def test_restore_rejects_same_path(tmp_path: Path) -> None:
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    db = tmp_path / "live.db"
+    conn = connect(db)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    with pytest.raises(ValueError, match="must differ"):
+        restore_database(db, db, overwrite=True)
+
+
+def test_cli_backup_and_restore_reject_same_path(tmp_path: Path) -> None:
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    db = tmp_path / "live.db"
+    conn = connect(db)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    assert cmd_backup(db, db) == 1
+    assert cmd_restore(db, db, yes=True) == 1
+
+
 def test_backup_roundtrip(tmp_path: Path) -> None:
     mdir = PROBOOKS_MIGRATIONS_DIR
     src = tmp_path / "live.db"
