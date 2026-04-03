@@ -1,6 +1,6 @@
 # scripts/ci_validate_layout.ps1
-# ProBooks+ai — same path checks as scripts/ci_validate_layout.sh and CI validate.
-# Run from repo root: .\scripts\ci_validate_layout.ps1
+# ProBooks+ai — same path checks as scripts/ci_validate_layout.sh and CI validate (Linux runs the .sh).
+# When bash is not on PATH (e.g. plain Windows PowerShell), run from repo root: .\scripts\ci_validate_layout.ps1
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path

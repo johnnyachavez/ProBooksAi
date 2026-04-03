@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ProBooks+ai — same path checks as .github/workflows/ci.yml validate job.
-# Twin: scripts/ci_validate_layout.ps1 (Windows). Keep both lists identical.
-# Run from anywhere: bash scripts/ci_validate_layout.sh (repo root is next to scripts/).
+# Twin: scripts/ci_validate_layout.ps1 (Windows when bash is not on PATH). Keep both lists identical.
+# Run from repo root: bash scripts/ci_validate_layout.sh (Git Bash / WSL / Unix). See README Scripts.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
