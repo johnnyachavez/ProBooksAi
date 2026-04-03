@@ -41,6 +41,8 @@ def test_register_tab_cleared_actions_document_shortcuts_in_tooltips() -> None:
     text = (_MAIN.parent / "register_tab.py").read_text(encoding="utf-8")
     assert "setToolTip" in text
     assert "Ctrl+Shift+C" in text and "Ctrl+Shift+U" in text
+    assert "Ctrl+Shift+E" in text
+    assert "activated.connect(self._export_csv)" in text
 
 
 def test_register_tab_clr_header_tooltip_documents_batch_reconciled() -> None:

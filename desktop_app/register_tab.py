@@ -10,8 +10,8 @@ XFER / TXN) on the second. **Clr** shows **C** when the row is marked cleared on
 CSV import batch is marked reconciled in Bank Import. Rows without a COA category are highlighted.
 The filter choice, last selected bank account, and register table **column header widths**
 persist in ``QSettings``, scoped by company SQLite path (same app profile as the main window).
-**Ctrl+Shift+C** / **Ctrl+Shift+U** mark cleared / clear cleared when the Register tab (or its
-controls) has keyboard focus.
+**Ctrl+Shift+C** / **Ctrl+Shift+U** mark cleared / clear cleared; **Ctrl+Shift+E** runs **Export CSV…**
+when the Register tab (or its controls) has keyboard focus.
 """
 
 from __future__ import annotations
@@ -231,7 +231,8 @@ class RegisterTab(QWidget):
         row.addWidget(self._btn_post)
         self._btn_export = QPushButton("Export CSV…")
         self._btn_export.setToolTip(
-            "Export the current grid to CSV (respects the active filter and column order)."
+            "Export the current grid to CSV (respects the active filter and column order). "
+            "Shortcut: Ctrl+Shift+E (when Register has focus)."
         )
         self._btn_export.clicked.connect(self._export_csv)
         row.addWidget(self._btn_export)
@@ -316,6 +317,9 @@ class RegisterTab(QWidget):
         sc_uncleared = QShortcut(QKeySequence("Ctrl+Shift+U"), self)
         sc_uncleared.setContext(Qt.WidgetWithChildrenShortcut)
         sc_uncleared.activated.connect(self._clear_cleared)
+        sc_export = QShortcut(QKeySequence("Ctrl+Shift+E"), self)
+        sc_export.setContext(Qt.WidgetWithChildrenShortcut)
+        sc_export.activated.connect(self._export_csv)
 
         foot = QHBoxLayout()
         self._lbl_debits = QLabel("Total debits: —")
@@ -341,7 +345,8 @@ class RegisterTab(QWidget):
             "and, when OPENAI_API_KEY is set, optional AI picks. "
             "Balance is the running total in date order (not recalculated for other sorts). "
             "Filter, last bank account, and column widths are remembered per company file for the next session. "
-            "With focus on this tab: Ctrl+Shift+C marks cleared, Ctrl+Shift+U clears cleared."
+            "With focus on this tab: Ctrl+Shift+C marks cleared, Ctrl+Shift+U clears cleared, "
+            "Ctrl+Shift+E exports CSV."
         )
         tip.setWordWrap(True)
         tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
