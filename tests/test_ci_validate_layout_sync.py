@@ -800,6 +800,7 @@ def test_issues_backlog_orients_readme_docs_bar_and_github_config() -> None:
     assert "shown in the GitHub **New issue** chooser" in text
     assert "both **Issues backlog** cards" in text
     assert "**Hub docs — issues-backlog link text**" in text
+    assert "**Hub docs — README default database paths segment**" in text
     assert "verbatim-aligned" in text
 
 
@@ -882,6 +883,8 @@ def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
     """Cursor work-context rule should point hub doc edits at CONTRIBUTING CI + layout-sync tests."""
     text = (_REPO / ".cursor" / "rules" / "github-work-context.mdc").read_text(encoding="utf-8")
     assert "issues-backlog.md" in text
+    assert "bug_report.md" in text
+    assert "test_github_issue_templates_reference_core_docs" in text
     assert "config.yml" in text
     assert "help_epilog" in text
     assert "test_hub_docs_related_docs_link_readme_excel_workbook_template" in text

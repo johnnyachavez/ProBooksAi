@@ -6,6 +6,8 @@ The **Doc index (issues-backlog)** contact **`about`** text in **`.github/ISSUE_
 
 The **Related docs** / **Other docs** lines on **[ROADMAP.md](ROADMAP.md)**, **[BACKLOG.md](BACKLOG.md)**, and **[CONTRIBUTING.md](CONTRIBUTING.md)** repeat the same **[issues-backlog.md](issues-backlog.md)** hub blurb; keep them verbatim-aligned ([CONTRIBUTING.md — Continuous integration](CONTRIBUTING.md#continuous-integration), **Hub docs — issues-backlog link text**).
 
+The same three hub lines also repeat the same **README — Default database paths** segment (link + CLI vs desktop parenthetical); keep them verbatim-aligned ([CONTRIBUTING.md — Continuous integration](CONTRIBUTING.md#continuous-integration), **Hub docs — README default database paths segment**).
+
 Canonical ordering and GitHub links: **[BACKLOG.md](BACKLOG.md)**.
 
 Install, CLI, desktop, **`review.html`** hub: **[README.md](../README.md#web-shell-review)**.
