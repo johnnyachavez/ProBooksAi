@@ -29,7 +29,6 @@ from __future__ import annotations
 import argparse
 import mimetypes
 import os
-import shutil
 import sys
 from functools import partial
 from pathlib import Path
@@ -57,6 +56,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from probooks.backup import backup_database, restore_database
 from probooks.help_epilog import EXCEL_COA_WORKBOOK_ARGPARSE_EPILOG
 from probooks.paths import default_intake_db_path
 from probooksai.database import DocumentDatabase
@@ -1510,7 +1510,7 @@ class MainWindow(QMainWindow):
         if not path.lower().endswith(".db"):
             path += ".db"
         try:
-            shutil.copy2(src, path)
+            backup_database(src, Path(path))
         except OSError as exc:
             message_box_critical_ok(
                 self,
@@ -1577,7 +1577,19 @@ class MainWindow(QMainWindow):
         self._db.close()
         self._bank_db.close()
         try:
-            shutil.copy2(path, target)
+            restore_database(Path(path), target, overwrite=True)
+        except ValueError as exc:
+            message_box_critical_ok(
+                self,
+                "Restore failed",
+                escape_ampersand_for_qt(str(exc)),
+                ok_tip="Close; pick a file that is a SQLite backup (.db), then try again.",
+            )
+            try:
+                self._load_company_at_path(str(target))
+            except Exception:
+                pass
+            return
         except OSError as exc:
             message_box_critical_ok(
                 self,
