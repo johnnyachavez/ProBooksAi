@@ -50,6 +50,43 @@ def test_cli_restore_returns_one_when_backup_file_missing(tmp_path: Path) -> Non
     assert cmd_restore(target, missing_bak, yes=True) == 1
 
 
+def test_cli_backup_creates_nested_destination_parent(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    src = tmp_path / "live.db"
+    conn = connect(src)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    nested = tmp_path / "exports" / "nested" / "out.db"
+    assert not nested.parent.exists()
+    assert cmd_backup(src, nested) == 0
+    assert is_sqlite_file(nested)
+    out = capsys.readouterr().out
+    assert "Backed up to" in out
+    assert str(nested) in out
+
+
+def test_cli_restore_creates_nested_target_parent(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    live = tmp_path / "live.db"
+    conn = connect(live)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    bak = tmp_path / "bak.db"
+    backup_database(live, bak)
+    nested_target = tmp_path / "restored" / "dir" / "company.db"
+    assert not nested_target.parent.exists()
+    assert cmd_restore(nested_target, bak, yes=True) == 0
+    assert is_sqlite_file(nested_target)
+    out = capsys.readouterr().out
+    assert "Restored database from" in out
+    assert str(bak) in out
+    assert str(nested_target) in out
+
+
 def test_cli_backup_rejects_non_sqlite_source(tmp_path: Path) -> None:
     bad = tmp_path / "src.db"
     bad.write_text("not sqlite", encoding="utf-8")
