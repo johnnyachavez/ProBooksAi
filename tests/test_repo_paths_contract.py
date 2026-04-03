@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 from tests import repo_paths
@@ -27,20 +26,3 @@ def test_repo_paths_pin_essential_repo_files() -> None:
     assert repo_paths.REPO_ROOT.is_dir()
     assert repo_paths.DESKTOP_APP_DIR.is_dir()
     assert repo_paths.PROBOOKS_MIGRATIONS_DIR.is_dir()
-
-
-def test_ci_validate_layout_sh_require_paths_exist() -> None:
-    """Every ``require`` path in ``ci_validate_layout.sh`` must exist (twin .ps1 uses the same list)."""
-    text = repo_paths.CI_VALIDATE_LAYOUT_SH.read_text(encoding="utf-8")
-    root = repo_paths.REPO_ROOT
-    rels: list[str] = []
-    for line in text.splitlines():
-        m = re.match(r"^require\s+(\S+)\s*$", line.strip())
-        if m:
-            rels.append(m.group(1))
-    assert rels, "expected at least one require line in ci_validate_layout.sh"
-    for rel in rels:
-        path = root / rel
-        assert path.is_file(), (
-            f"ci_validate_layout.sh lists require {rel!r} but {path} is not a file"
-        )

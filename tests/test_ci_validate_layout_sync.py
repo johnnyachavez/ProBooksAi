@@ -55,6 +55,17 @@ def test_ci_validate_layout_sh_and_ps1_same_paths_and_order() -> None:
     )
 
 
+def test_ci_validate_layout_sh_require_paths_exist() -> None:
+    """Every ``require`` path in ``ci_validate_layout.sh`` must exist (twin .ps1 uses the same list)."""
+    rels = _paths_from_sh(_SH.read_text(encoding="utf-8"))
+    assert rels, "expected at least one require line in ci_validate_layout.sh"
+    for rel in rels:
+        path = REPO_ROOT / rel
+        assert path.is_file(), (
+            f"ci_validate_layout.sh lists require {rel!r} but {path} is not a file"
+        )
+
+
 def test_ci_yml_validate_job_invokes_layout_shell_script() -> None:
     """Keep path checks in scripts/ci_validate_layout.sh, not re-inlined into the workflow YAML."""
     yml = GITHUB_WORKFLOW_CI_YML.read_text(encoding="utf-8")
