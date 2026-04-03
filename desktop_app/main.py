@@ -992,7 +992,7 @@ class MainWindow(QMainWindow):
         act_backup = QAction("&Backup company file\u2026", self)
         _menu_action_tip(
             act_backup,
-            "Save a copy of the current company database to a backup file.",
+            "Back up the company database to a file you choose (SQLite online backup; safe while the app is open).",
         )
         act_backup.triggered.connect(self._on_backup_company)
         file_menu.addAction(act_backup)
@@ -1531,8 +1531,8 @@ class MainWindow(QMainWindow):
         message_box_information_ok(
             self,
             "Backup complete",
-            f"Copied company file to:\n{escape_ampersand_for_qt(path)}",
-            ok_tip="Close; your backup copy is ready at the path shown.",
+            f"Backup saved to:\n{escape_ampersand_for_qt(path)}",
+            ok_tip="Close; the backup file is ready at the path shown.",
         )
 
     def _on_restore_company(self):
