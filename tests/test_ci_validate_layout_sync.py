@@ -306,6 +306,7 @@ def test_review_html_readme_default_database_paths_documentation_card() -> None:
     assert "probooks.db" in card
     assert "probooksai.db" in card
     assert "#21" in card
+    assert "tests/test_issue_21_schema_inventory.py" in card
 
 
 def test_review_html_readme_excel_documentation_card_mentions_help_epilog() -> None:
@@ -329,6 +330,8 @@ def test_review_html_python_desktop_section_mentions_help_epilog() -> None:
     assert "--help" in chunk
     assert 'href="README.md#default-database-paths-windows"' in chunk
     assert 'href="docs/ROADMAP.md#supporting-cross-cutting-issues"' in chunk
+    assert "tests/test_issue_21_schema_inventory.py" in chunk
+    assert 'href="docs/CONTRIBUTING.md#continuous-integration"' in chunk
 
 
 def test_static_shell_page_sub_mentions_help_epilog() -> None:
@@ -793,6 +796,15 @@ def test_github_issue_templates_reference_core_docs() -> None:
     )
     assert "README.md#default-database-paths-windows" in config, (
         "config.yml should include Default database paths contact URL"
+    )
+    db_paths_start = config.index("name: Default database paths (Windows)")
+    db_paths_end = config.index("name: Excel workbook template (openpyxl)", db_paths_start)
+    db_paths_block = config[db_paths_start:db_paths_end]
+    assert "tests/test_issue_21_schema_inventory.py" in db_paths_block, (
+        "config.yml Default database paths about should mention DDL inventory tests"
+    )
+    assert "CONTRIBUTING.md#continuous-integration SQLite issue #21 bullet" in db_paths_block, (
+        "config.yml Default database paths about should point at CONTRIBUTING SQLite issue #21 bullet"
     )
     assert "name: Excel workbook template (openpyxl)" in config, (
         "config.yml should define Excel workbook template contact label"
