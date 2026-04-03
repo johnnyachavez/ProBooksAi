@@ -1112,7 +1112,8 @@ class MainWindow(QMainWindow):
         act_intake_keys = QAction("Document &intake shortcuts…", self)
         _menu_action_tip(
             act_intake_keys,
-            "F5 refresh, Ctrl+O import, View chords, and links to other Help topics.",
+            "F5 refresh, Ctrl+O import, File → Backup/Restore (probooks.backup), "
+            "View chords, and links to other Help topics.",
         )
         act_intake_keys.triggered.connect(
             lambda: show_document_intake_keyboard_shortcuts_dialog(self)
@@ -1148,7 +1149,8 @@ class MainWindow(QMainWindow):
         act_more_tab_keys = QAction("&More tab shortcuts (F5)…", self)
         _menu_action_tip(
             act_more_tab_keys,
-            "F5 refresh and View chords for COA, Journal, Reports, and Audit.",
+            "F5 refresh and View chords for COA, Journal, Reports, and Audit; "
+            "Document intake shortcuts summarizes File → Backup/Restore.",
         )
         act_more_tab_keys.triggered.connect(
             lambda: show_more_main_tabs_keyboard_shortcuts_dialog(self)
