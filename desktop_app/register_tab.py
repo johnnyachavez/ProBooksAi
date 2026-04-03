@@ -214,7 +214,7 @@ def _register_keyboard_shortcuts_help_text() -> str:
         "Ctrl+Shift+U — Clear cleared (selected rows)\n"
         "\n"
         "Document Intake:\n"
-        "Help → Document intake shortcuts…\n"
+        "Help → Document intake shortcuts… (includes File → Backup / Restore via probooks.backup).\n"
         "\n"
         "COA, Journal, Reports, Audit:\n"
         "Help → More tab shortcuts (F5)…\n"

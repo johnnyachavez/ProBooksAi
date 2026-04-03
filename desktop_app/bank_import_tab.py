@@ -108,7 +108,7 @@ def _bank_import_keyboard_shortcuts_help_text() -> str:
         "Manage Bank Accounts (dialog): right-click the accounts table (including empty area) "
         "for Keyboard shortcuts… (same as this dialog).\n\n"
         "Document Intake:\n"
-        "Help → Document intake shortcuts…\n\n"
+        "Help → Document intake shortcuts… (includes File → Backup / Restore via probooks.backup).\n\n"
         "COA, Journal, Reports, Audit:\n"
         "Help → More tab shortcuts (F5)…\n\n"
         "Register tab has additional shortcuts:\n"

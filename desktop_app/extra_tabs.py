@@ -3578,7 +3578,7 @@ def _business_keyboard_shortcuts_help_text() -> str:
         "Business modal dialogs with a copyable grid (payment apply tables, tax lines, etc.): "
         "right-click (including empty area) for Keyboard shortcuts… (same as this dialog).\n\n"
         "Document Intake:\n"
-        "Help → Document intake shortcuts…\n\n"
+        "Help → Document intake shortcuts… (includes File → Backup / Restore via probooks.backup).\n\n"
         "COA, Journal, Reports, Audit:\n"
         "Help → More tab shortcuts (F5)…\n\n"
         "Other tabs:\n"
