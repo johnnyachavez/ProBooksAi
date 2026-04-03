@@ -391,6 +391,16 @@ def test_readme_scripts_mention_work_context_example_json() -> None:
         assert needle in sync_line, f"sync-workspace README bullet should mention {needle!r}"
 
 
+def test_readme_ci_validate_layout_bullet_mentions_conftest() -> None:
+    """README Scripts section should name tests/conftest.py next to layout validators (PR template parity)."""
+    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    head = "## Scripts (`scripts/`)"
+    start = readme.index(head)
+    chunk = readme[start : readme.index("\n## ", start + 1)]
+    assert "ci_validate_layout.sh" in chunk and "ci_validate_layout.ps1" in chunk
+    assert "tests/conftest.py" in chunk
+
+
 def test_contributing_ci_documents_work_context_example_touchpoints() -> None:
     """Continuous integration section should list where work-context.example.json must stay in sync."""
     md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
