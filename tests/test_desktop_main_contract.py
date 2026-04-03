@@ -133,6 +133,20 @@ def test_main_tab_widgets_have_root_hover_tooltips() -> None:
     assert "Default sales tax name and rate" in tax
 
 
+def test_backup_company_closes_sqlite_before_copy_and_reloads() -> None:
+    """Avoid copying the live .db while DocumentDatabase/BankDatabase still have it open."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("def _on_backup_company")
+    end = text.index("def _on_restore_company", start)
+    chunk = text[start:end]
+    assert "backup_database(" in chunk
+    db_close = chunk.index("self._db.close()")
+    bank_close = chunk.index("self._bank_db.close()")
+    backup_call = chunk.index("backup_database(")
+    assert db_close < backup_call and bank_close < backup_call
+    assert "self._load_company_at_path(resolved_src)" in chunk
+
+
 def test_detail_pane_action_buttons_have_tooltips() -> None:
     text = _MAIN.read_text(encoding="utf-8")
     assert "_btn_run.setToolTip" in text
