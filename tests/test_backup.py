@@ -5,11 +5,36 @@ from pathlib import Path
 
 import pytest
 
-from probooks.backup import backup_database, is_sqlite_file, restore_database
+from probooks.backup import SQLITE_MAGIC, backup_database, is_sqlite_file, restore_database
 from probooks.cli import cmd_backup, cmd_restore
 from probooks.database import connect, migration_files, run_migrations
 
 from tests.repo_paths import PROBOOKS_MIGRATIONS_DIR
+
+
+def test_is_sqlite_file_false_when_missing(tmp_path: Path) -> None:
+    assert not is_sqlite_file(tmp_path / "missing.db")
+
+
+def test_is_sqlite_file_false_when_too_small(tmp_path: Path) -> None:
+    p = tmp_path / "tiny.db"
+    p.write_bytes(SQLITE_MAGIC[:8])
+    assert p.stat().st_size < 16
+    assert not is_sqlite_file(p)
+
+
+def test_is_sqlite_file_false_when_wrong_header(tmp_path: Path) -> None:
+    p = tmp_path / "wrong.db"
+    p.write_bytes(b"not sqlite data!")
+    assert p.stat().st_size >= 16
+    assert not is_sqlite_file(p)
+
+
+def test_is_sqlite_file_true_at_minimum_size(tmp_path: Path) -> None:
+    p = tmp_path / "header_only.db"
+    p.write_bytes(SQLITE_MAGIC)
+    assert p.stat().st_size == 16
+    assert is_sqlite_file(p)
 
 
 def test_cli_backup_rejects_non_sqlite_source(tmp_path: Path) -> None:
