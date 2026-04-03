@@ -1052,6 +1052,9 @@ def test_hub_docs_link_contributing_running_tests_section() -> None:
 def test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests() -> None:
     """PR template CI/layout checklist should cover .cursor rule edits + layout-sync pytest names."""
     text = (_REPO / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    assert "**`tests/conftest.py`**" in text, (
+        "PR template CI row should remind editors to sync CONTRIBUTING when conftest changes"
+    )
     assert "**`.cursor/rules/github-work-context.mdc`**" in text
     for name in (
         "test_cursor_rule_github_work_context_points_at_contributing_ci",
