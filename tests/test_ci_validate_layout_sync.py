@@ -586,6 +586,7 @@ def test_pr_template_lists_issue_21_schema_inventory_checklist() -> None:
     assert "**`_MIGRATIONS`**" in text
     assert "**`tests/test_issue_21_schema_inventory.py`**" in text
     assert "**SQLite issue #21**" in text
+    assert "column inventory frozensets" in text
     assert "**`pytest tests/test_issue_21_schema_inventory.py`**" in text
     assert "test_pr_template_lists_issue_21_schema_inventory_checklist" in text
 
@@ -627,10 +628,13 @@ def test_contributing_ci_documents_issue_21_schema_inventory_bullet() -> None:
     assert "**`tests/test_issue_21_schema_inventory.py`**" in chunk
     assert "**`_CLI_BANK_TABLES`**" in chunk
     assert "**`_DESKTOP_BANK_CORE_TABLES`**" in chunk
+    assert "**`_CLI_*_COLUMNS`**" in chunk
+    assert "**`_SHARED_*_COLUMN_NAMES`**" in chunk
     for name in (
         "test_cli_migrations_user_tables_match_expected",
         "test_desktop_bank_database_user_tables_match_expected",
         "test_cli_and_desktop_bank_share_only_expected_table_names",
+        "test_issue_21_bank_table_columns_match_inventory",
         "test_contributing_ci_documents_issue_21_schema_inventory_bullet",
         "test_pr_template_lists_issue_21_schema_inventory_checklist",
     ):
