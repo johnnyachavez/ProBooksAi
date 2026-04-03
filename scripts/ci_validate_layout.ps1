@@ -43,6 +43,7 @@ Require-File ".github/ISSUE_TEMPLATE/bug_report.md"
 Require-File ".github/ISSUE_TEMPLATE/feature_request.md"
 
 Require-File "integrations/work-context.example.json"
+Require-File ".cursor/rules/github-work-context.mdc"
 
 Require-File "index.html"
 Require-File "invoice.html"

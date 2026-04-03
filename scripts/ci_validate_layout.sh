@@ -44,6 +44,7 @@ require .github/ISSUE_TEMPLATE/bug_report.md
 require .github/ISSUE_TEMPLATE/feature_request.md
 
 require integrations/work-context.example.json
+require .cursor/rules/github-work-context.mdc
 
 require index.html
 require invoice.html

@@ -357,6 +357,44 @@ def test_contributing_other_docs_links_issues_backlog_short_index() -> None:
     assert "](issues-backlog.md)" in md
 
 
+def test_hub_markdown_avoids_unicode_apostrophe_u2019() -> None:
+    """Hub docs use ASCII apostrophe (') in contractions; avoid U+2019 (copy/paste from word processors)."""
+    for rel in (
+        "README.md",
+        "docs/CONTRIBUTING.md",
+        "docs/ROADMAP.md",
+        "docs/BACKLOG.md",
+        "docs/issues-backlog.md",
+    ):
+        text = (_REPO / rel).read_text(encoding="utf-8")
+        assert "\u2019" not in text, f"{rel} must not contain U+2019; use ASCII ' instead"
+
+
+def test_contributing_ci_documents_hub_markdown_u2019_bullet() -> None:
+    """Continuous integration section documents the hub Markdown U+2019 contract test."""
+    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    ci_start = md.index("### Continuous integration")
+    table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
+    chunk = md[ci_start:table_start]
+    assert "**Markdown (hub files)**" in chunk
+    assert "test_hub_markdown_avoids_unicode_apostrophe_u2019" in chunk
+    assert "test_contributing_ci_documents_hub_markdown_u2019_bullet" in chunk
+    assert "test_pr_template_lists_hub_markdown_u2019_checklist" in chunk
+
+
+def test_pr_template_lists_hub_markdown_u2019_checklist() -> None:
+    """PR template should remind editors about ASCII apostrophes in hub Markdown."""
+    text = (_REPO / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    assert "**Markdown (hub files)**" in text
+    assert "U+2019" in text
+    for name in (
+        "test_hub_markdown_avoids_unicode_apostrophe_u2019",
+        "test_contributing_ci_documents_hub_markdown_u2019_bullet",
+        "test_pr_template_lists_hub_markdown_u2019_checklist",
+    ):
+        assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
+
+
 def test_github_issue_templates_reference_core_docs() -> None:
     """Issue chooser + forms stay aligned with ROADMAP, BACKLOG, README web shell + Desktop, CONTRIBUTING naming."""
     naming = "docs/CONTRIBUTING.md#naming-conventions"
@@ -492,6 +530,18 @@ def test_hub_docs_link_contributing_running_tests_section() -> None:
     assert "[Running Tests](#running-tests)" in contrib
 
 
+def test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests() -> None:
+    """PR template CI/layout checklist should cover .cursor rule edits + layout-sync pytest names."""
+    text = (_REPO / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    assert "**`.cursor/rules/github-work-context.mdc`**" in text
+    for name in (
+        "test_cursor_rule_github_work_context_points_at_contributing_ci",
+        "test_contributing_ci_documents_cursor_github_work_context_rule_test",
+        "test_ci_validate_layout_sh_and_ps1_same_paths_and_order",
+    ):
+        assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
+
+
 def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
     """Cursor work-context rule should point hub doc edits at CONTRIBUTING CI + layout-sync tests."""
     text = (_REPO / ".cursor" / "rules" / "github-work-context.mdc").read_text(encoding="utf-8")
@@ -500,6 +550,10 @@ def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
     assert "review.html" in text
     assert "test_ci_validate_layout_sync.py" in text
     assert "CONTRIBUTING.md#continuous-integration" in text
+    assert "ci_validate_layout.sh" in text
+    assert "ci_validate_layout.ps1" in text
+    assert "**Layout validators:**" in text
+    assert "same path in both lists" in text
 
 
 def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> None:
@@ -510,4 +564,8 @@ def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> Non
     chunk = md[ci_start:table_start]
     assert "**Layout + workflow contracts**" in chunk
     assert "test_cursor_rule_github_work_context_points_at_contributing_ci" in chunk
+    assert "test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests" in chunk
     assert "**`.cursor/rules/github-work-context.mdc`**" in chunk
+    assert "both **`require`** **`.cursor/rules/github-work-context.mdc`**" in chunk
+    assert "documented in that file" in chunk
+    assert "**Layout validators** paragraph" in chunk
