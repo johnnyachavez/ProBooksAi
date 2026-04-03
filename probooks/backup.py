@@ -2,6 +2,10 @@
 
 Writes to a temporary file in the destination directory, then ``os.replace`` onto the
 final path so an interrupted copy does not truncate the target database.
+
+For a stable snapshot, avoid copying *source_db* while your process still has it open
+via ``sqlite3`` (close connections first, as the desktop app does before **File → Backup**).
+The CLI typically runs when no other handle holds the default ``--db`` file.
 """
 
 from __future__ import annotations
