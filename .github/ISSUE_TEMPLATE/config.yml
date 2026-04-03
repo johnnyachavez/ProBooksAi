@@ -20,7 +20,7 @@ contact_links:
     about: python generate_workbook.py, openpyxl COA template, CLI/desktop --help Excel line via probooks/help_epilog.py — same README anchor as review.html Documentation card and issue templates.
   - name: Running Tests (work-context)
     url: https://github.com/johnnyachavez/ProBooksAi/blob/main/docs/CONTRIBUTING.md#running-tests
-    about: sync-workspace.ps1, integrations/work-context.example.json, pytest, and Qt headless note.
+    about: sync-workspace.ps1, integrations/work-context.example.json, pytest, Qt headless note; gh auth login / gh repo set-default (see CONTRIBUTING Running Tests).
   - name: Doc index (issues-backlog)
     url: https://github.com/johnnyachavez/ProBooksAi/blob/main/docs/issues-backlog.md
     about: Short links to BACKLOG, README Web shell + Desktop + Default database paths + Excel workbook template, ROADMAP snapshot + Supporting / cross-cutting (#21 table), CONTRIBUTING (CI + Running Tests contacts), and work-context sample; review.html Issues backlog Documentation cards (local + GitHub blob) echo that ROADMAP snapshot + Supporting / cross-cutting blurb and name .github/ISSUE_TEMPLATE/config.yml; ROADMAP, BACKLOG, and CONTRIBUTING repeat the same issues-backlog.md hub blurb; issues-backlog.md also orients probooks/help_epilog.py and CLI/desktop --help with README Desktop.

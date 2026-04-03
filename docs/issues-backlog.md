@@ -28,4 +28,4 @@ Cross-phase issues (**#21**, packaging, backup UI, theme, CI tests): **[ROADMAP.
 
 Contributing (CI, **contract-test** table, PRs, naming): **[CONTRIBUTING.md](CONTRIBUTING.md#continuous-integration)**.
 
-Optional **GitHub CLI** workspace snapshot (**`integrations/work-context.example.json`**, **`scripts/sync-workspace.ps1`**): **[CONTRIBUTING.md — Running Tests](CONTRIBUTING.md#running-tests)**.
+Optional **GitHub CLI** workspace snapshot (**`integrations/work-context.example.json`**, **`scripts/sync-workspace.ps1`**): **[CONTRIBUTING.md — Running Tests](CONTRIBUTING.md#running-tests)** (**`gh auth login`**, **`gh repo set-default`**).
