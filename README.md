@@ -90,4 +90,4 @@ The **`.[ci]`** extra (see `pyproject.toml`) matches the GitHub Actions **python
 
 ## Contributing
 
-Conventions, labels, CI, and the **contract-test** table: [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) — [Continuous integration](docs/CONTRIBUTING.md#continuous-integration).
+Conventions, labels, CI, the **contract-test** table, and shared pytest fixtures (**`tests/conftest.py`**): [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) — [Continuous integration](docs/CONTRIBUTING.md#continuous-integration).

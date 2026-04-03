@@ -401,6 +401,15 @@ def test_readme_ci_validate_layout_bullet_mentions_conftest() -> None:
     assert "tests/conftest.py" in chunk
 
 
+def test_readme_contributing_section_mentions_conftest() -> None:
+    """README ## Contributing should point readers at tests/conftest.py for shared fixtures."""
+    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    start = readme.index("## Contributing")
+    chunk = readme[start:]
+    assert "contract-test" in chunk
+    assert "tests/conftest.py" in chunk
+
+
 def test_contributing_ci_documents_work_context_example_touchpoints() -> None:
     """Continuous integration section should list where work-context.example.json must stay in sync."""
     md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
