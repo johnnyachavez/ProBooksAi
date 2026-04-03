@@ -87,6 +87,31 @@ def test_main_backup_and_restore_roundtrip(tmp_path: Path) -> None:
     conn.close()
 
 
+def test_main_restore_without_yes_returns_two(tmp_path: Path) -> None:
+    from probooks.cli import main
+
+    target = tmp_path / "live.db"
+    bak = tmp_path / "bak.db"
+    err = io.StringIO()
+    with patch.object(sys, "stderr", err):
+        code = main(["--db", str(target), "restore", "-i", str(bak)])
+    assert code == 2
+    assert "--yes" in err.getvalue()
+    assert "confirm" in err.getvalue().lower()
+
+
+def test_main_restore_prints_error_when_input_missing(tmp_path: Path) -> None:
+    from probooks.cli import main
+
+    target = tmp_path / "live.db"
+    missing = tmp_path / "gone.db"
+    err = io.StringIO()
+    with patch.object(sys, "stderr", err):
+        code = main(["--db", str(target), "restore", "-i", str(missing), "--yes"])
+    assert code == 1
+    assert "Backup file not found" in err.getvalue()
+
+
 def test_cli_restore_returns_one_when_backup_file_missing(tmp_path: Path) -> None:
     target = tmp_path / "live.db"
     missing_bak = tmp_path / "missing.db"
