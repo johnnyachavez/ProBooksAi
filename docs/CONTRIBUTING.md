@@ -135,7 +135,7 @@ A flat **`requirements.txt`** is also checked in for environments that prefer it
 
 | Test module | Guards |
 |---|---|
-| **`test_pyproject_contract.py`** | **`pyproject.toml`** (name, description + **Excel COA workbook** / **`openpyxl`** in metadata, **`[project.urls]` Documentation** → README **`#web-shell-review`**, scripts, **`.[ci]`**, Hatch, **pytest** ini) |
+| **`test_pyproject_contract.py`** | **`pyproject.toml`** (name, description + **Excel COA workbook** / **`openpyxl`** / **`probooks/help_epilog.py`** in metadata, **`[project.urls]` Documentation** → README **`#web-shell-review`**, scripts, **`.[ci]`**, Hatch, **pytest** ini) |
 | **`test_requirements_contract.py`** | **`requirements.txt`** core deps |
 | **`test_package_name_contract.py`** | **`probooks-ai`** in **`desktop_app/version.py`**, **`probooks/__init__.py`** |
 | **`test_integrations_example_contract.py`** | **`integrations/work-context.example.json`** (top-level keys; **`localWorkFiles`** exact set **`index.html`**, **`invoice.html`**, **`review.html`**, **`docs/ROADMAP.md`** (each once); sample **PR** / **issue** rows; **`warnings`** strings; see **Running Tests** above) |
