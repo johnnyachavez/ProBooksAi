@@ -392,6 +392,8 @@ def test_review_html_python_desktop_section_mentions_help_epilog() -> None:
     assert 'href="docs/CONTRIBUTING.md#continuous-integration"' in chunk
     assert 'href="docs/CONTRIBUTING.md#running-tests"' in chunk
     assert "sync-workspace.ps1" in chunk
+    assert "probooks.backup" in chunk
+    assert "SQLite online backup" in chunk
 
 
 def test_static_shell_page_sub_mentions_help_epilog() -> None:
