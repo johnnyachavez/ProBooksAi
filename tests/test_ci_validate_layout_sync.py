@@ -145,6 +145,7 @@ def test_roadmap_snapshot_why_not_one_db_points_at_issue_21_inventory() -> None:
     start = text.index("**Why not one `.db` yet:**")
     end = text.index("\n| Roadmap phases |", start)
     chunk = text[start:end]
+    assert "Bank DDL inventory" in chunk
     assert "tests/test_issue_21_schema_inventory.py" in chunk
     assert "](CONTRIBUTING.md#continuous-integration)" in chunk
     assert "**SQLite issue #21** bullet" in chunk

@@ -216,7 +216,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--db",
         type=Path,
         default=None,
-        help="Database file (default: %%LOCALAPPDATA%%/ProBooks+ai/probooks.db on Windows)",
+        help=(
+            "Database file (default: %%LOCALAPPDATA%%/ProBooks+ai/"
+            f"{default_db_path().name} on Windows)"
+        ),
     )
     sub = p.add_subparsers(dest="command", required=True)
 

@@ -18,6 +18,9 @@ def test_probooks_cli_description_epilog_and_default_db_help() -> None:
     assert 'description="ProBooks+ai SQLite CLI"' in cli
     assert "python -m probooks" in cli
     assert "Default database" in cli
+    assert "default_db_path().name" in cli, (
+        "CLI --db help should derive the default filename from probooks.paths.default_db_path()"
+    )
     assert "ProBooks+ai" in cli
     assert "EXCEL_COA_WORKBOOK_ARGPARSE_EPILOG" in cli
     assert "generate_workbook.py" in hel
