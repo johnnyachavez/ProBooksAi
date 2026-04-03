@@ -131,7 +131,8 @@ def show_document_intake_keyboard_shortcuts_dialog(parent: QWidget) -> None:
         parent,
         "Document intake shortcuts",
         _document_intake_keyboard_shortcuts_help_text(),
-        ok_tip="Close this help summary; shortcuts apply when Document Intake has focus.",
+        ok_tip="Close; shortcuts apply when Document Intake has focus. "
+        "Company .db: File → Backup / Restore (probooks.backup).",
     )
 
 

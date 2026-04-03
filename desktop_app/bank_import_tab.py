@@ -123,7 +123,8 @@ def show_bank_import_keyboard_shortcuts_dialog(parent: QWidget) -> None:
         parent,
         "Bank import shortcuts",
         _bank_import_keyboard_shortcuts_help_text(),
-        ok_tip="Close this help summary; shortcuts apply when Bank Import has focus.",
+        ok_tip="Close; shortcuts apply when Bank Import has focus. "
+        "Company .db: File → Backup / Restore (probooks.backup).",
     )
 
 
@@ -142,7 +143,8 @@ class ManageAccountsDialog(QDialog):
         self._coa_db = coa_db
         self.setWindowTitle("Manage Bank Accounts")
         self.setToolTip(
-            "Add, edit, or delete bank accounts used for CSV/PDF import and the register."
+            "Add, edit, or delete bank accounts used for CSV/PDF import and the register. "
+            "Changes write to the open company .db — use File → Backup / probooks backup before risky edits."
         )
         self.resize(560, 400)
         self._build_ui()

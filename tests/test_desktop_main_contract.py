@@ -600,6 +600,8 @@ def test_bank_import_manage_and_account_edit_dialogs_have_window_tooltips() -> N
     bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
     assert 'self.setWindowTitle("Manage Bank Accounts")' in bit
     assert "Add, edit, or delete bank accounts used for CSV/PDF import" in bit
+    mad = bit.split("class ManageAccountsDialog", 1)[1].split("def _build_ui", 1)[0]
+    assert "File → Backup" in mad and "probooks backup" in mad
     assert "Bank account label, institution, type" in bit
 
 
@@ -861,6 +863,29 @@ def test_help_about_menu_tip_mentions_ok_backup_hint() -> None:
 def test_help_menu_bank_register_business_shortcuts_tips_point_at_intake_backup() -> None:
     text = _MAIN.read_text(encoding="utf-8")
     assert text.count("Document intake help lists File backup/restore.") >= 3
+
+
+def test_help_keyboard_shortcuts_dialog_ok_tips_mention_company_db_backup() -> None:
+    needle = "Company .db: File → Backup / Restore (probooks.backup)."
+    main_t = _MAIN.read_text(encoding="utf-8")
+    midx = main_t.index("def show_document_intake_keyboard_shortcuts_dialog")
+    inc = main_t[midx : main_t.index("\n\n# Accepted MIME", midx)]
+    assert needle in inc
+    bi = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
+    bidx = bi.index("def show_bank_import_keyboard_shortcuts_dialog")
+    b = bi[bidx : bi.index("\n\n# =====", bidx)]
+    assert needle in b
+    reg = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
+    ridx = reg.index("def show_register_keyboard_shortcuts_dialog")
+    r = reg[ridx : reg.index("\n\nclass RegisterTab", ridx)]
+    assert needle in r
+    et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
+    bidx = et.index("def show_business_keyboard_shortcuts_dialog")
+    e = et[bidx : et.index("\n\nclass BusinessHub", bidx)]
+    assert needle in e
+    mm = (_DESKTOP_APP_DIR / "more_main_tabs_shortcuts.py").read_text(encoding="utf-8")
+    m = mm.split("show_more_main_tabs_keyboard_shortcuts_dialog", 1)[1].split("def ", 1)[0]
+    assert needle in m
 
 
 def test_help_menu_keyboard_shortcuts_dialogs_use_information_ok_helper() -> None:

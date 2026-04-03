@@ -233,7 +233,8 @@ def show_register_keyboard_shortcuts_dialog(parent: QWidget) -> None:
         parent,
         "Register keyboard shortcuts",
         _register_keyboard_shortcuts_help_text(),
-        ok_tip="Close this help summary; shortcuts apply when Bank register has focus.",
+        ok_tip="Close; shortcuts apply when Bank register has focus. "
+        "Company .db: File → Backup / Restore (probooks.backup).",
     )
 
 

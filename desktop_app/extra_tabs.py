@@ -3592,7 +3592,8 @@ def show_business_keyboard_shortcuts_dialog(parent: QWidget) -> None:
         parent,
         "Business shortcuts",
         _business_keyboard_shortcuts_help_text(),
-        ok_tip="Close this help summary; shortcuts apply when the Business hub has focus.",
+        ok_tip="Close; shortcuts apply when the Business hub has focus. "
+        "Company .db: File → Backup / Restore (probooks.backup).",
     )
 
 
