@@ -308,6 +308,12 @@ def test_readme_docs_bar_links_excel_workbook_anchor() -> None:
     assert "[Excel workbook](#excel-workbook-template-openpyxl)" in readme
 
 
+def test_readme_docs_bar_links_python_cli_anchor() -> None:
+    """README top **Docs** line should jump to ## Python CLI."""
+    readme = README_MD.read_text(encoding="utf-8")
+    assert "[Python CLI](#python-cli)" in readme
+
+
 def test_hub_docs_related_docs_link_readme_excel_workbook_template() -> None:
     """ROADMAP, BACKLOG, and CONTRIBUTING should share the same README Excel segment in Related/Other docs."""
     segment = (
@@ -775,6 +781,27 @@ def test_contributing_ci_documents_readme_excel_workbook_anchor_bullet() -> None
     assert "test_review_html_readme_excel_documentation_card_mentions_help_epilog" in chunk
 
 
+def test_contributing_ci_documents_readme_python_cli_anchor_bullet() -> None:
+    """Continuous integration section documents the README ## Python CLI anchor + layout tests."""
+    md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
+    ci_start = md.index("### Continuous integration")
+    table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
+    chunk = md[ci_start:table_start]
+    start = chunk.index("**README `## Python CLI` anchor**")
+    end = chunk.index("\n- **README `## Desktop app (PySide6)` anchor**", start)
+    bullet = chunk[start:end]
+    assert "#python-cli" in bullet
+    assert "../README.md#python-cli" in bullet
+    for name in (
+        "test_readme_docs_bar_links_python_cli_anchor",
+        "test_readme_python_cli_section_mentions_backup_restore_online_api",
+        "test_issues_backlog_documents_excel_help_epilog",
+        "test_pr_template_lists_readme_python_cli_anchor_checklist",
+        "test_contributing_ci_documents_readme_python_cli_anchor_bullet",
+    ):
+        assert name in bullet, f"CONTRIBUTING Python CLI anchor bullet should mention {name!r}"
+
+
 def test_contributing_ci_documents_readme_desktop_help_epilog_layout_tests() -> None:
     """Continuous integration README Desktop bullet lists layout tests for help_epilog hub copy."""
     md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
@@ -1211,6 +1238,7 @@ def test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests() -> Non
         "test_readme_ci_validate_layout_bullet_mentions_conftest",
         "test_readme_contributing_section_mentions_conftest",
         "test_readme_python_cli_section_mentions_backup_restore_online_api",
+        "test_readme_docs_bar_links_python_cli_anchor",
         "test_hub_docs_related_docs_link_readme_excel_workbook_template",
         "test_hub_docs_related_docs_link_readme_default_database_paths",
         "test_readme_default_database_paths_notes_two_schemas_and_roadmap",
@@ -1223,6 +1251,22 @@ def test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests() -> Non
         "test_hub_docs_link_roadmap_supporting_cross_cutting_issues",
         "test_github_issue_templates_reference_core_docs",
         "test_pr_template_lists_issue_21_schema_inventory_checklist",
+    ):
+        assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
+
+
+def test_pr_template_lists_readme_python_cli_anchor_checklist() -> None:
+    """PR template should remind editors to sync README ## Python CLI / #python-cli + layout tests."""
+    text = GITHUB_PULL_REQUEST_TEMPLATE_MD.read_text(encoding="utf-8")
+    assert "**`## Python CLI`**" in text
+    assert "**`#python-cli`**" in text
+    assert "**README `## Python CLI` anchor**" in text
+    for name in (
+        "test_readme_docs_bar_links_python_cli_anchor",
+        "test_readme_python_cli_section_mentions_backup_restore_online_api",
+        "test_issues_backlog_documents_excel_help_epilog",
+        "test_pr_template_lists_readme_python_cli_anchor_checklist",
+        "test_contributing_ci_documents_readme_python_cli_anchor_bullet",
     ):
         assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
 
@@ -1257,6 +1301,7 @@ def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
         "test_readme_ci_validate_layout_bullet_mentions_conftest",
         "test_readme_contributing_section_mentions_conftest",
         "test_readme_python_cli_section_mentions_backup_restore_online_api",
+        "test_readme_docs_bar_links_python_cli_anchor",
         "test_contributing_ci_documents_issue_21_schema_inventory_bullet",
         "test_pr_template_lists_issue_21_schema_inventory_checklist",
     ):
@@ -1299,6 +1344,7 @@ def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> Non
     assert "test_readme_ci_validate_layout_bullet_mentions_conftest" in chunk
     assert "test_readme_contributing_section_mentions_conftest" in chunk
     assert "test_readme_python_cli_section_mentions_backup_restore_online_api" in chunk
+    assert "test_readme_docs_bar_links_python_cli_anchor" in chunk
     assert "test_cursor_rule_github_work_context_points_at_contributing_ci" in chunk
     assert "test_hub_docs_related_docs_link_readme_excel_workbook_template" in chunk
     assert "test_hub_docs_related_docs_link_readme_default_database_paths" in chunk
