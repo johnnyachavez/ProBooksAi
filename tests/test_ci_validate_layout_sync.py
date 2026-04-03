@@ -339,6 +339,9 @@ def test_review_html_issues_backlog_card_mentions_issue_chooser_config() -> None
     text = (_REPO / "review.html").read_text(encoding="utf-8")
     assert 'href="docs/issues-backlog.md"' in text
     assert "blob/main/docs/issues-backlog.md" in text
+    assert "ROADMAP snapshot + Supporting / cross-cutting" in text, (
+        "review.html issues-backlog card blurb should match config.yml Doc index about ROADMAP wording"
+    )
     path = ".github/ISSUE_TEMPLATE/config.yml"
     assert text.count(path) >= 2, f"review.html should mention {path!r} on both issues-backlog Documentation cards"
 
