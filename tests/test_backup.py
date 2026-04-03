@@ -146,6 +146,52 @@ def test_main_restore_stderr_when_input_not_sqlite(tmp_path: Path) -> None:
     assert "Not a SQLite" in err.getvalue()
 
 
+def test_main_backup_stderr_when_output_same_path_as_db(tmp_path: Path) -> None:
+    from probooks.cli import main
+
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    db = tmp_path / "live.db"
+    conn = connect(db)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    err = io.StringIO()
+    with patch.object(sys, "stderr", err):
+        code = main(["--db", str(db), "backup", "-o", str(db)])
+    assert code == 1
+    assert "must differ" in err.getvalue()
+
+
+def test_main_restore_stderr_when_input_same_path_as_db(tmp_path: Path) -> None:
+    from probooks.cli import main
+
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    db = tmp_path / "live.db"
+    conn = connect(db)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    err = io.StringIO()
+    with patch.object(sys, "stderr", err):
+        code = main(["--db", str(db), "restore", "-i", str(db), "--yes"])
+    assert code == 1
+    assert "must differ" in err.getvalue()
+
+
+def test_main_backup_accepts_short_output_flag(tmp_path: Path) -> None:
+    from probooks.cli import main
+
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    db = tmp_path / "company.db"
+    conn = connect(db)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    out = tmp_path / "snap.db"
+    stdout = io.StringIO()
+    with patch.object(sys, "stdout", stdout):
+        assert main(["--db", str(db), "backup", "-o", str(out)]) == 0
+    assert is_sqlite_file(out)
+    assert "Backed up to" in stdout.getvalue()
+
+
 def test_cli_restore_returns_one_when_backup_file_missing(tmp_path: Path) -> None:
     target = tmp_path / "live.db"
     missing_bak = tmp_path / "missing.db"
