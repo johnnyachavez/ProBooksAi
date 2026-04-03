@@ -1,4 +1,7 @@
-"""Command-line interface for ProBooks+ai."""
+"""Command-line interface for ProBooks+ai.
+
+``--help`` appends a shared Excel COA workbook line from ``probooks.help_epilog`` (see README *Excel workbook template*).
+"""
 
 from __future__ import annotations
 

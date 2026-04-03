@@ -11,6 +11,9 @@ _HELP_EPILOG = _REPO / "probooks" / "help_epilog.py"
 
 def test_probooks_cli_description_epilog_and_default_db_help() -> None:
     cli = _CLI.read_text(encoding="utf-8")
+    mod_doc_end = cli.index('"""', 3)
+    mod_doc = cli[: mod_doc_end + 3]
+    assert "help_epilog" in mod_doc
     hel = _HELP_EPILOG.read_text(encoding="utf-8")
     assert 'description="ProBooks+ai SQLite CLI"' in cli
     assert "python -m probooks" in cli

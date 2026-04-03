@@ -1,10 +1,10 @@
 # ProBooks+ai – Implementation Roadmap
 
-> **Last updated:** 2026-04-03  
+> **Last updated:** 2026-04-04  
 > This roadmap reflects the MVP-first, bank-centric build order for ProBooks+ai.  
 > Each phase maps to one or more focused pull requests.
 >
-> **Related docs:** [BACKLOG.md](BACKLOG.md) (issue order) · [issues-backlog.md](issues-backlog.md) (short index; **config.yml** chooser + **`review.html`** Issues cards) · [README — Web shell](../README.md#web-shell-review) (install, CLI; **`review.html`** hub) · [README — Desktop app](../README.md#desktop-app-pyside6) (PySide6 theme + Qt notes) · [README — Excel workbook template](../README.md#excel-workbook-template-openpyxl) (**generate_workbook.py**, **openpyxl**) · [CONTRIBUTING.md](CONTRIBUTING.md#continuous-integration) (CI, **contract-test** table, PRs, naming) · [CONTRIBUTING — Running Tests](CONTRIBUTING.md#running-tests) (**`sync-workspace.ps1`**, **`work-context.example.json`**) · [In-repo snapshot ↓](#implementation-snapshot-repository-2026-04)
+> **Related docs:** [BACKLOG.md](BACKLOG.md) (issue order) · [issues-backlog.md](issues-backlog.md) (short index; **config.yml** chooser + **`review.html`** Issues cards) · [README — Web shell](../README.md#web-shell-review) (install, CLI; **`review.html`** hub) · [README — Desktop app](../README.md#desktop-app-pyside6) (PySide6 theme + Qt notes) · [README — Excel workbook template](../README.md#excel-workbook-template-openpyxl) (**generate_workbook.py**, **openpyxl**; CLI/desktop **`--help`**: **`probooks/help_epilog.py***) · [CONTRIBUTING.md](CONTRIBUTING.md#continuous-integration) (CI, **contract-test** table, PRs, naming) · [CONTRIBUTING — Running Tests](CONTRIBUTING.md#running-tests) (**`sync-workspace.ps1`**, **`work-context.example.json`**) · [In-repo snapshot ↓](#implementation-snapshot-repository-2026-04)
 >
 > **Note on duplicate issues:** Several features were filed more than once as the backlog grew.
 > Where duplicates exist both issue numbers are listed; the higher-numbered one is canonical.
