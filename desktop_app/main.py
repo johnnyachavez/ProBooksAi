@@ -50,7 +50,7 @@ from probooksai.extensions_schema import apply_extensions
 from probooksai.gl import GLDatabase
 from desktop_app.bank_import_tab import BankImportTab
 from desktop_app.coa_tab import COATab
-from desktop_app.register_tab import RegisterTab
+from desktop_app.register_tab import RegisterTab, show_register_keyboard_shortcuts_dialog
 from desktop_app.reports_tab import ReportsTab
 from desktop_app.journal_tab import JournalTab
 from desktop_app.extra_tabs import BusinessHub
@@ -834,6 +834,11 @@ class MainWindow(QMainWindow):
         act_roadmap = QAction("Product &roadmap (local file)\u2026", self)
         act_roadmap.triggered.connect(self._on_help_roadmap)
         help_menu.addAction(act_roadmap)
+        act_register_keys = QAction("Bank &register keyboard shortcuts…", self)
+        act_register_keys.triggered.connect(
+            lambda: show_register_keyboard_shortcuts_dialog(self)
+        )
+        help_menu.addAction(act_register_keys)
         help_menu.addSeparator()
         act_about = QAction("&About ProBooks+ai", self)
         act_about.triggered.connect(self._on_about)

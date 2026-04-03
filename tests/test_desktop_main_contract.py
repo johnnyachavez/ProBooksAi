@@ -9,6 +9,17 @@ _MAIN = _REPO / "desktop_app" / "main.py"
 _HELP_EPILOG = _REPO / "probooks" / "help_epilog.py"
 
 
+def test_main_help_menu_wires_register_keyboard_shortcuts_dialog() -> None:
+    text = _MAIN.read_text(encoding="utf-8")
+    assert "show_register_keyboard_shortcuts_dialog" in text
+    assert "Bank &register keyboard shortcuts" in text
+
+
+def test_register_tab_exposes_shared_shortcuts_dialog_for_help_menu() -> None:
+    rtab = (_MAIN.parent / "register_tab.py").read_text(encoding="utf-8")
+    assert "def show_register_keyboard_shortcuts_dialog" in rtab
+
+
 def test_desktop_main_cli_and_qt_app_strings_use_probooks_plus_ai() -> None:
     text = _MAIN.read_text(encoding="utf-8")
     mod_doc_end = text.index('"""', 3)

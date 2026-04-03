@@ -12,7 +12,8 @@ The filter choice, last selected bank account, and register table **column heade
 persist in ``QSettings``, scoped by company SQLite path (same app profile as the main window).
 **Ctrl+Shift+C** / **Ctrl+Shift+U** mark cleared / clear cleared; **Ctrl+Shift+E** runs **Export CSV…**;
 **Ctrl+Shift+G** runs **Post selected to GL**; **F5** refreshes the grid when the Register tab (or its
-controls) has keyboard focus. **Right-click** the grid (including empty area) for **Keyboard shortcuts…**.
+controls) has keyboard focus. **Help** → **Bank register keyboard shortcuts…** or **right-click** the grid (including empty area)
+for **Keyboard shortcuts…**.
 """
 
 from __future__ import annotations
@@ -201,6 +202,15 @@ def _register_keyboard_shortcuts_help_text() -> str:
     )
 
 
+def show_register_keyboard_shortcuts_dialog(parent: QWidget) -> None:
+    """Same content as the grid context menu **Keyboard shortcuts…** (shared with **Help** menu)."""
+    QMessageBox.information(
+        parent,
+        "Register keyboard shortcuts",
+        _register_keyboard_shortcuts_help_text(),
+    )
+
+
 class RegisterTab(QWidget):
     """
     Check-register style view for all transactions on a selected bank account.
@@ -370,7 +380,7 @@ class RegisterTab(QWidget):
             "Filter, last bank account, and column widths are remembered per company file for the next session. "
             "With focus on this tab: F5 refreshes, Ctrl+Shift+G posts selected to GL, Ctrl+Shift+C marks cleared, "
             "Ctrl+Shift+U clears cleared, Ctrl+Shift+E exports CSV. "
-            "Right-click the grid (even on empty area) for Keyboard shortcuts…."
+            "Help → Bank register keyboard shortcuts…, or right-click the grid (even on empty area)."
         )
         tip.setWordWrap(True)
         tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
@@ -546,11 +556,7 @@ class RegisterTab(QWidget):
         self._reload_current()
 
     def _show_register_keyboard_shortcuts_help(self) -> None:
-        QMessageBox.information(
-            self,
-            "Register keyboard shortcuts",
-            _register_keyboard_shortcuts_help_text(),
-        )
+        show_register_keyboard_shortcuts_dialog(self)
 
     def _on_register_context_menu(self, pos):
         idx = self._table.indexAt(pos)
