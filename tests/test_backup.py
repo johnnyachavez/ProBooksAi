@@ -15,6 +15,10 @@ from probooks.database import connect, migration_files, run_migrations
 from tests.repo_paths import PROBOOKS_MIGRATIONS_DIR
 
 
+def test_sqlite_magic_matches_sqlite_database_file_header() -> None:
+    assert SQLITE_MAGIC == b"SQLite format 3\x00"
+
+
 def test_is_sqlite_file_false_when_missing(tmp_path: Path) -> None:
     assert not is_sqlite_file(tmp_path / "missing.db")
 
