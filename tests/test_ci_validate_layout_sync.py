@@ -221,6 +221,24 @@ def test_review_html_links_readme_web_shell_and_desktop_anchors() -> None:
     assert 'href="README.md#excel-workbook-template-openpyxl"' in text
 
 
+def test_review_html_python_desktop_section_mentions_help_epilog() -> None:
+    """review.html Python + desktop lead should surface shared --help Excel line (probooks/help_epilog.py)."""
+    text = (_REPO / "review.html").read_text(encoding="utf-8")
+    start = text.index('<h2>Python + desktop (SQLite)</h2>')
+    end = text.index("</section>", start)
+    chunk = text[start:end]
+    assert "probooks/help_epilog.py" in chunk
+    assert "--help" in chunk
+
+
+def test_static_shell_page_sub_mentions_help_epilog() -> None:
+    """index.html and invoice.html README hints mention help_epilog + --help (parity with review.html)."""
+    for name in ("index.html", "invoice.html"):
+        text = (_REPO / name).read_text(encoding="utf-8")
+        assert "probooks/help_epilog.py" in text, f"{name} should mention probooks/help_epilog.py"
+        assert "--help" in text, f"{name} should mention --help"
+
+
 def test_review_html_links_contributing_doc_anchors() -> None:
     """review.html Documentation section should link CONTRIBUTING Running Tests + Continuous integration."""
     text = (_REPO / "review.html").read_text(encoding="utf-8")
@@ -572,6 +590,14 @@ def test_issues_backlog_orients_readme_docs_bar_and_github_config() -> None:
     assert "both **Issues backlog** cards" in text
     assert "**Hub docs — issues-backlog link text**" in text
     assert "verbatim-aligned" in text
+
+
+def test_issues_backlog_documents_excel_help_epilog() -> None:
+    """issues-backlog short index should mention help_epilog + both entrypoints (hub parity with BACKLOG)."""
+    text = (_REPO / "docs" / "issues-backlog.md").read_text(encoding="utf-8")
+    assert "probooks/help_epilog.py" in text
+    assert "python -m probooks" in text
+    assert "python -m desktop_app.main" in text
 
 
 def test_backlog_links_readme_desktop_app_section() -> None:

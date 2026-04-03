@@ -199,7 +199,7 @@ python -m probooks accounts list
 python -m probooks import csv -a 1 -f sample.csv --skip-rows 1 --date-col 0 --amount-col 1 --payee-col 2
 python -m probooks transactions -a 1 -n 20</code></pre>
     <p class="lead" style="margin-top: 0.75rem; margin-bottom: 0.75rem;">
-      Desktop: <code style="font-size:0.85em;">pip install -e ".[desktop]"</code> then <code style="font-size:0.85em;">python -m desktop_app.main</code> — details in <a href="README.md#desktop-app-pyside6" style="color: var(--accent);">README.md</a> (Desktop app). Excel COA template: <a href="README.md#excel-workbook-template-openpyxl" style="color: var(--accent);">README.md</a>. Backup/restore and tests: same README; run <code style="font-size:0.85em;">python -m pytest</code>.
+      Desktop: <code style="font-size:0.85em;">pip install -e ".[desktop]"</code> then <code style="font-size:0.85em;">python -m desktop_app.main</code> — details in <a href="README.md#desktop-app-pyside6" style="color: var(--accent);">README.md</a> (Desktop app). <code>--help</code> on the CLI or desktop entrypoint prints the shared Excel workbook line from <code>probooks/help_epilog.py</code> (same README section). Excel COA template: <a href="README.md#excel-workbook-template-openpyxl" style="color: var(--accent);">README.md</a>. Backup/restore and tests: same README; run <code style="font-size:0.85em;">python -m pytest</code>.
     </p>
   </section>
 

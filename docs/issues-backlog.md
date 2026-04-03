@@ -14,6 +14,8 @@ PySide6 run, **Fusion** dark theme, and **Qt** font stderr note: **[README.md �
 
 **Excel COA workbook** (**`generate_workbook.py`**, **openpyxl**): **[README.md — Excel workbook template](../README.md#excel-workbook-template-openpyxl)**.
 
+Shared **Excel** **`--help`** line (**`probooks/help_epilog.py`**; **`python -m probooks`**, **`python -m desktop_app.main`**): **[README.md — Desktop app](../README.md#desktop-app-pyside6)**.
+
 Phased roadmap and in-repo implementation snapshot: **[ROADMAP.md — Implementation snapshot](ROADMAP.md#implementation-snapshot-repository-2026-04)**.
 
 Contributing (CI, **contract-test** table, PRs, naming): **[CONTRIBUTING.md](CONTRIBUTING.md#continuous-integration)**.
