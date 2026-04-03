@@ -340,6 +340,15 @@ def test_static_shell_page_sub_mentions_help_epilog() -> None:
         text = (_REPO / name).read_text(encoding="utf-8")
         assert "probooks/help_epilog.py" in text, f"{name} should mention probooks/help_epilog.py"
         assert "--help" in text, f"{name} should mention --help"
+        assert 'href="README.md#default-database-paths-windows"' in text, (
+            f"{name} should deep-link README default database paths"
+        )
+        assert "tests/test_issue_21_schema_inventory.py" in text, (
+            f"{name} should mention DDL inventory tests (issue #21)"
+        )
+        assert 'href="docs/CONTRIBUTING.md#continuous-integration"' in text, (
+            f"{name} should link CONTRIBUTING CI (SQLite issue #21 bullet)"
+        )
 
 
 def test_review_html_links_contributing_doc_anchors() -> None:
@@ -528,6 +537,7 @@ def test_pr_template_lists_readme_default_database_paths_checklist() -> None:
     text = (_REPO / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
     assert "### Default database paths (Windows)" in text
     assert "**README `### Default database paths (Windows)`**" in text
+    assert "**`index.html`** / **`invoice.html`** README hints" in text
     for name in (
         "test_readme_default_database_paths_notes_two_schemas_and_roadmap",
         "test_roadmap_snapshot_why_not_one_db_points_at_issue_21_inventory",
@@ -535,6 +545,7 @@ def test_pr_template_lists_readme_default_database_paths_checklist() -> None:
         "test_review_html_links_readme_web_shell_and_desktop_anchors",
         "test_review_html_readme_default_database_paths_documentation_card",
         "test_review_html_python_desktop_section_mentions_help_epilog",
+        "test_static_shell_page_sub_mentions_help_epilog",
         "test_pr_template_lists_readme_default_database_paths_checklist",
         "test_contributing_ci_documents_readme_default_database_paths_bullet",
         "test_hub_docs_related_docs_link_readme_default_database_paths",
@@ -567,6 +578,7 @@ def test_contributing_ci_documents_readme_default_database_paths_bullet() -> Non
     assert "**README `### Default database paths (Windows)`**" in chunk
     assert "Why not one `.db` yet" in chunk
     assert "**Hub docs — README default database paths segment**" in chunk
+    assert "**`index.html`** / **`invoice.html`** README hints" in chunk
     for name in (
         "test_readme_default_database_paths_notes_two_schemas_and_roadmap",
         "test_roadmap_snapshot_why_not_one_db_points_at_issue_21_inventory",
@@ -574,6 +586,7 @@ def test_contributing_ci_documents_readme_default_database_paths_bullet() -> Non
         "test_review_html_links_readme_web_shell_and_desktop_anchors",
         "test_review_html_readme_default_database_paths_documentation_card",
         "test_review_html_python_desktop_section_mentions_help_epilog",
+        "test_static_shell_page_sub_mentions_help_epilog",
         "test_pr_template_lists_readme_default_database_paths_checklist",
         "test_contributing_ci_documents_readme_default_database_paths_bullet",
         "test_hub_docs_related_docs_link_readme_default_database_paths",
@@ -1047,6 +1060,7 @@ def test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests() -> Non
         "test_review_html_readme_default_database_paths_documentation_card",
         "test_review_html_links_readme_web_shell_and_desktop_anchors",
         "test_review_html_python_desktop_section_mentions_help_epilog",
+        "test_static_shell_page_sub_mentions_help_epilog",
         "test_hub_docs_link_roadmap_supporting_cross_cutting_issues",
         "test_github_issue_templates_reference_core_docs",
         "test_pr_template_lists_issue_21_schema_inventory_checklist",
@@ -1077,6 +1091,7 @@ def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
         "test_review_html_readme_default_database_paths_documentation_card",
         "test_review_html_links_readme_web_shell_and_desktop_anchors",
         "test_review_html_python_desktop_section_mentions_help_epilog",
+        "test_static_shell_page_sub_mentions_help_epilog",
         "test_contributing_ci_documents_issue_21_schema_inventory_bullet",
         "test_pr_template_lists_issue_21_schema_inventory_checklist",
     ):
@@ -1113,6 +1128,7 @@ def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> Non
     assert "test_review_html_readme_default_database_paths_documentation_card" in chunk
     assert "test_review_html_links_readme_web_shell_and_desktop_anchors" in chunk
     assert "test_review_html_python_desktop_section_mentions_help_epilog" in chunk
+    assert "test_static_shell_page_sub_mentions_help_epilog" in chunk
     assert "test_github_issue_templates_reference_core_docs" in chunk
     assert (
         ", and **`test_github_issue_templates_reference_core_docs`** for **`.github/ISSUE_TEMPLATE/`** / **`config.yml`** / **`bug_report.md`** **Triaging**"
