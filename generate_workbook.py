@@ -6,7 +6,7 @@ Thin entry-point that delegates to ``probooksai.generator``.
 Run:
     python generate_workbook.py
 
-See **Excel workbook template** in the repository ``README.md``.
+See **[README — Excel workbook template](README.md#excel-workbook-template-openpyxl)** (repository root).
 """
 
 # Re-export everything so existing imports keep working

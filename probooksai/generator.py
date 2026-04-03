@@ -25,6 +25,8 @@ Run:
     python generate_workbook.py
 
 The workbook is written to ``ProBooksAi_Accounting.xlsx`` (legacy default filename) in the current directory.
+
+Install / CLI notes: ``README.md`` section **Excel workbook template (openpyxl)** (fragment ``#excel-workbook-template-openpyxl``).
 """
 
 import os
