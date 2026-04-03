@@ -139,7 +139,7 @@ A flat **`requirements.txt`** is also checked in for environments that prefer it
 | **`test_requirements_contract.py`** | **`requirements.txt`** core deps |
 | **`test_package_name_contract.py`** | **`probooks-ai`** in **`desktop_app/version.py`**, **`probooks/__init__.py`** |
 | **`test_integrations_example_contract.py`** | **`integrations/work-context.example.json`** (top-level keys; **`localWorkFiles`** exact set **`index.html`**, **`invoice.html`**, **`review.html`**, **`docs/ROADMAP.md`** (each once); sample **PR** / **issue** rows; **`warnings`** strings; see **Running Tests** above) |
-| **`test_generate_workbook_contract.py`** | **`generate_workbook.py`** → **`probooksai.generator`**; docstring notes **`probooks/help_epilog.py`** / **`--help`** |
+| **`test_generate_workbook_contract.py`** | **`generate_workbook.py`** → **`probooksai.generator`**; docstrings note **`probooks/help_epilog.py`** / **`--help`** (**`generate_workbook.py`** + **`probooksai/generator.py`**) |
 | **`test_desktop_main_contract.py`** | **`desktop_app/main.py`** argparse (**`--help`** epilog via **`EXCEL_COA_WORKBOOK_ARGPARSE_EPILOG`**) / **Qt** app strings + **`qInstallMessageHandler`** before **`QApplication`** (filters **`QFont::setPointSize`** stderr noise); **`desktop_app/theme.py`** Fusion style + pixel-sized app font ( **`FONT_SIZE_NORMAL`**) before/after **`setStyleSheet`**; Excel epilog text lives in **`probooks/help_epilog.py`** |
 | **`test_probooks_cli_contract.py`** | **`probooks/cli.py`** argparse / epilog ( **`EXCEL_COA_WORKBOOK_ARGPARSE_EPILOG`** from **`probooks/help_epilog.py`**: **Excel COA workbook** / **`generate_workbook.py`**) |
 | **`test_probooks_paths_contract.py`** | **`probooks/paths.py`** **`ProBooks+ai`** app dir |

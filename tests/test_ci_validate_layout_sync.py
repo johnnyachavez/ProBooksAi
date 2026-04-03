@@ -594,6 +594,11 @@ def test_github_issue_templates_reference_core_docs() -> None:
     assert "README.md#excel-workbook-template-openpyxl" in config, (
         "config.yml should include Excel workbook template contact URL to README.md#excel-workbook-template-openpyxl"
     )
+    ex_start = config.index("name: Excel workbook template (openpyxl)")
+    ex_end = config.index("name: Running Tests (work-context)", ex_start)
+    assert "help_epilog" in config[ex_start:ex_end], (
+        "config.yml Excel workbook template about should mention help_epilog (chooser parity)"
+    )
     assert "README Web shell + Desktop + Excel workbook template" in config, (
         "config.yml Doc index about should list Excel workbook template with Web shell + Desktop"
     )

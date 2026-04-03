@@ -27,6 +27,9 @@ Run:
 The workbook is written to ``ProBooksAi_Accounting.xlsx`` (legacy default filename) in the current directory.
 
 Install / CLI notes: ``README.md`` section **Excel workbook template (openpyxl)** (fragment ``#excel-workbook-template-openpyxl``).
+
+The short **Excel COA workbook** sentence on ``python -m probooks --help`` and ``python -m desktop_app.main --help``
+is defined in ``probooks/help_epilog.py`` (see README **Desktop app**).
 """
 
 import os
