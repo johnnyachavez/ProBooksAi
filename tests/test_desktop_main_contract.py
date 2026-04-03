@@ -133,6 +133,13 @@ def test_main_tab_widgets_have_root_hover_tooltips() -> None:
     assert "Default sales tax name and rate" in tax
 
 
+def test_file_menu_restore_tip_mentions_sqlite_backup_api() -> None:
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("act_restore = QAction")
+    end = text.index("act_copy_db_path = QAction", start)
+    assert "SQLite backup API" in text[start:end]
+
+
 def test_file_menu_backup_tip_mentions_sqlite_online_backup() -> None:
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("act_backup = QAction")

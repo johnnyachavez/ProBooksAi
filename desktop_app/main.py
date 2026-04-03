@@ -1000,7 +1000,7 @@ class MainWindow(QMainWindow):
         act_restore = QAction("&Restore from backup\u2026", self)
         _menu_action_tip(
             act_restore,
-            "Replace the current company database from a backup file.",
+            "Replace the company database from a backup .db file (brief disconnect; SQLite backup API; reloads when done).",
         )
         act_restore.triggered.connect(self._on_restore_company)
         file_menu.addAction(act_restore)
