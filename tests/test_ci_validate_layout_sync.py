@@ -809,6 +809,9 @@ def test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests() -> Non
         "test_ci_validate_layout_sh_and_ps1_same_paths_and_order",
         "test_hub_docs_related_docs_link_readme_excel_workbook_template",
         "test_readme_default_database_paths_notes_two_schemas_and_roadmap",
+        "test_review_html_readme_default_database_paths_documentation_card",
+        "test_review_html_links_readme_web_shell_and_desktop_anchors",
+        "test_review_html_python_desktop_section_mentions_help_epilog",
     ):
         assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
 
