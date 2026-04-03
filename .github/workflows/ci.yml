@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # Path list: scripts/ci_validate_layout.sh (+ twin scripts/ci_validate_layout.ps1 for Windows).
-      # Local: bash scripts/ci_validate_layout.sh  or  .\scripts\ci_validate_layout.ps1
+      # Local: bash scripts/ci_validate_layout.sh (Git Bash / WSL / PATH) or .\scripts\ci_validate_layout.ps1 (PowerShell if bash missing).
       - name: Ensure documented files and entry points exist
         run: bash scripts/ci_validate_layout.sh
 
