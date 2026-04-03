@@ -769,6 +769,8 @@ class BankDatabase:
         *register_filter* (register UI): ``needs_receipt``, ``has_attachment``,
         ``missing_attachment`` (needs_receipt and empty path),
         ``cleared`` / ``not_cleared`` (per-row register cleared flag),
+        ``batch_reconciled`` / ``batch_not_reconciled`` (import batch
+        ``is_reconciled``; aliases ``reconciled_batch`` / ``unreconciled_batch``),
         ``has_bank_match`` / ``no_bank_match`` (requires ``bank_match_links``;
         use :func:`~probooksai.extensions_schema.apply_extensions`), or ``None``/``all``.
         """
@@ -820,6 +822,18 @@ class BankDatabase:
             where += " AND COALESCE(cleared, 0) = 1"
         elif rf in ("not_cleared", "uncleared"):
             where += " AND COALESCE(cleared, 0) = 0"
+        elif rf in ("batch_reconciled", "reconciled_batch"):
+            where += (
+                " AND EXISTS (SELECT 1 FROM bank_import_batches b "
+                "WHERE b.id = bank_transactions.batch_id "
+                "AND COALESCE(b.is_reconciled, 0) = 1)"
+            )
+        elif rf in ("batch_not_reconciled", "unreconciled_batch"):
+            where += (
+                " AND EXISTS (SELECT 1 FROM bank_import_batches b "
+                "WHERE b.id = bank_transactions.batch_id "
+                "AND COALESCE(b.is_reconciled, 0) = 0)"
+            )
         return self._conn.execute(
             f"SELECT * FROM bank_transactions WHERE {where} ORDER BY txn_date, id",
             params,

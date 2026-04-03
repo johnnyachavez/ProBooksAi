@@ -579,6 +579,43 @@ class TestRegisterFilters:
         assert len(db.list_transactions(aid, register_filter="not_cleared")) == 1
         assert len(db.list_transactions(aid, register_filter="uncleared")) == 1
 
+    def test_batch_reconciled_register_filters(self, db):
+        aid = db.add_bank_account("B")
+        b1 = db.create_batch(aid)
+        b2 = db.create_batch(aid)
+        db.import_transactions(
+            b1,
+            aid,
+            [
+                {
+                    "txn_date": "2024-01-01",
+                    "description": "a",
+                    "amount": -1.0,
+                    "ref_number": "",
+                }
+            ],
+        )
+        db.import_transactions(
+            b2,
+            aid,
+            [
+                {
+                    "txn_date": "2024-01-02",
+                    "description": "b",
+                    "amount": -2.0,
+                    "ref_number": "",
+                }
+            ],
+        )
+        assert len(db.list_transactions(aid)) == 2
+        assert len(db.list_transactions(aid, register_filter="batch_reconciled")) == 0
+        assert len(db.list_transactions(aid, register_filter="batch_not_reconciled")) == 2
+        db.mark_batch_reconciled(b1, True)
+        assert len(db.list_transactions(aid, register_filter="batch_reconciled")) == 1
+        assert len(db.list_transactions(aid, register_filter="batch_not_reconciled")) == 1
+        assert len(db.list_transactions(aid, register_filter="reconciled_batch")) == 1
+        assert len(db.list_transactions(aid, register_filter="unreconciled_batch")) == 1
+
     def test_bank_match_filters_require_extensions(self, tmp_path):
         b = BankDatabase(db_path=str(tmp_path / "bare.db"))
         aid = b.add_bank_account("R")

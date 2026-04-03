@@ -237,6 +237,8 @@ class RegisterTab(QWidget):
         self._filter_combo.addItem("No payment link", "no_bank_match")
         self._filter_combo.addItem("Cleared (register)", "cleared")
         self._filter_combo.addItem("Not cleared", "not_cleared")
+        self._filter_combo.addItem("Batch reconciled (import)", "batch_reconciled")
+        self._filter_combo.addItem("Batch not reconciled", "batch_not_reconciled")
         self._filter_combo.currentIndexChanged.connect(self._reload_current)
         filt.addWidget(self._filter_combo)
         filt.addStretch()
