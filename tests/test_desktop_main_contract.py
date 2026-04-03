@@ -999,6 +999,7 @@ def test_bank_import_tab_f5_reload_shortcut_wired() -> None:
     assert 'QKeySequence("F5")' in text
     assert "activated.connect(self._reload_bank_import_view)" in text
     assert "F5 refreshes accounts and import batches" in text
+    assert "probooks.backup" in text.split("F5 refreshes accounts and import batches", 1)[1][:450]
     assert "Manage Bank Accounts table" in text
     assert "Bank import shortcuts" in text
     assert "Keyboard shortcuts…" in text
@@ -1026,6 +1027,7 @@ def test_grids_context_menus_use_qaction_hover_tooltips() -> None:
     txn_e = bit.index("def _open_import_txn_attachment", txn_s)
     txn_chunk = bit[txn_s:txn_e]
     assert "act_keys.setToolTip" in txn_chunk
+    assert "probooks.backup" in txn_chunk
     assert "act_att.setToolTip" in txn_chunk
     assert "act_history.setToolTip" in txn_chunk
     acc_s = bit.index("def _on_accounts_table_context_menu")
@@ -1035,6 +1037,7 @@ def test_grids_context_menus_use_qaction_hover_tooltips() -> None:
     reg = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
     rs = reg.index("def _on_register_context_menu")
     re = reg.index("def _open_register_attachment", rs)
+    assert "probooks.backup" in reg[rs:re]
     assert "act_clr.setToolTip" in reg[rs:re]
     assert "act_history.setToolTip" in reg[rs:re]
 

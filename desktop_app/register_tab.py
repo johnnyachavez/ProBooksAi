@@ -291,7 +291,8 @@ class RegisterTab(QWidget):
         self._btn_post = QPushButton("Post selected to GL")
         self._btn_post.setToolTip(
             "Post selected unposted rows to the general ledger (requires COA and mapped cash accounts). "
-            "Shortcut: Ctrl+Shift+G (when Register has focus)."
+            "Shortcut: Ctrl+Shift+G (when Register has focus). "
+            "GL posts write to the company SQLite file (File → Backup / probooks backup before big runs)."
         )
         self._btn_post.clicked.connect(self._post_selected)
         row.addWidget(self._btn_post)
@@ -413,7 +414,8 @@ class RegisterTab(QWidget):
         self._table.setToolTip(
             "Transactions for the selected bank account and filter; edit memo/COA inline where allowed. "
             "Right-click for Keyboard shortcuts… (empty area OK). F5 refresh; Ctrl+Shift+G post; "
-            "Ctrl+Shift+C / Ctrl+Shift+U cleared; Ctrl+Shift+E export."
+            "Ctrl+Shift+C / Ctrl+Shift+U cleared; Ctrl+Shift+E export. "
+            "Same company .db as other tabs (File → Backup / Restore, probooks.backup)."
         )
         layout.addWidget(self._table)
 
@@ -661,7 +663,8 @@ class RegisterTab(QWidget):
             "Keyboard shortcuts…", self._show_register_keyboard_shortcuts_help
         )
         act_keys.setToolTip(
-            "Same summary as Help → Bank register keyboard shortcuts… (F5, export, post, cleared chords)."
+            "Same summary as Help → Bank register keyboard shortcuts… "
+            "(F5, export, post, cleared chords, File → Backup / probooks.backup)."
         )
         if not idx.isValid():
             menu.exec(self._table.viewport().mapToGlobal(pos))

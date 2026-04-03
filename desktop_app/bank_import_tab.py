@@ -915,14 +915,16 @@ class BankImportTab(QWidget):
 
         btn_import = QPushButton("📥  Import CSV…")
         btn_import.setToolTip(
-            "Import bank transactions from a CSV file for the selected account."
+            "Import bank transactions from a CSV file for the selected account (writes to the company .db). "
+            "File → Backup / probooks backup before re-import experiments or large replaces."
         )
         btn_import.clicked.connect(self._on_import_csv)
         hdr_row.addWidget(btn_import)
 
         btn_pdf = QPushButton("📄  Import PDF\u2026")
         btn_pdf.setToolTip(
-            "Digital PDFs with a text layer only. Scanned statements need OCR (not included)."
+            "Digital PDFs with a text layer only. Scanned statements need OCR (not included). "
+            "Parsed rows write to the company SQLite file (File → Backup / probooks backup first if unsure)."
         )
         btn_pdf.clicked.connect(self._on_import_pdf)
         hdr_row.addWidget(btn_pdf)
@@ -961,7 +963,8 @@ class BankImportTab(QWidget):
         self._batch_table.setSortingEnabled(True)
         self._batch_table.setToolTip(
             "Import batches for the selected bank account; pick one to load its transactions. "
-            "Right-click for Keyboard shortcuts… (including on empty area)."
+            "Right-click for Keyboard shortcuts… (including on empty area). "
+            "Batches live in the company .db (File → Backup / Restore, probooks.backup)."
         )
         left_layout.addWidget(self._batch_table)
         splitter.addWidget(left)
@@ -986,12 +989,14 @@ class BankImportTab(QWidget):
 
         right_splitter.setSizes([400, 200])
         right_splitter.setToolTip(
-            "Drag to give more space to imported transactions or to the reconciliation panel."
+            "Drag to give more space to imported transactions or to the reconciliation panel. "
+            "Both panes show data from the shared company SQLite file (File → Backup / probooks backup)."
         )
         splitter.addWidget(right_splitter)
         splitter.setSizes([280, 720])
         splitter.setToolTip(
-            "Drag to widen the import batch list or the transactions and reconciliation area."
+            "Drag to widen the import batch list or the transactions and reconciliation area. "
+            "All bank import data is in the open company .db (File → Backup / Restore, probooks.backup)."
         )
 
         outer.addWidget(splitter)
@@ -1001,13 +1006,15 @@ class BankImportTab(QWidget):
             "it still exists (updates transactions and reconciliation). "
             "Right-click the batch or transaction table, or the Manage Bank Accounts table "
             "(even on empty area), for Keyboard shortcuts…. "
-            "Help → Bank import shortcuts…; Register tab: Help → Bank register keyboard shortcuts…"
+            "Help → Bank import shortcuts…; Register tab: Help → Bank register keyboard shortcuts…. "
+            "Company SQLite: File → Backup / Restore (probooks.backup, CLI probooks backup/restore)."
         )
         tip.setWordWrap(True)
         tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
         tip.setToolTip(
             "F5 reloads accounts and batches; right-click tables for Keyboard shortcuts… "
-            "(see Help → Bank import shortcuts…)."
+            "(see Help → Bank import shortcuts…). "
+            "Back up the company .db from File → Backup / probooks backup before destructive imports."
         )
         outer.addWidget(tip)
 
@@ -1114,7 +1121,8 @@ class BankImportTab(QWidget):
             "Keyboard shortcuts…", self._show_bank_import_keyboard_shortcuts_help
         )
         act_keys.setToolTip(
-            "Same summary as Help → Bank import shortcuts… (F5, batches, transactions, reconciliation)."
+            "Same summary as Help → Bank import shortcuts… "
+            "(F5, batches, transactions, reconciliation, File → Backup / probooks.backup)."
         )
         if not idx.isValid():
             menu.exec(self._txn_table.viewport().mapToGlobal(pos))
@@ -1168,7 +1176,8 @@ class BankImportTab(QWidget):
             "Keyboard shortcuts…", self._show_bank_import_keyboard_shortcuts_help
         )
         act_keys.setToolTip(
-            "Same summary as Help → Bank import shortcuts… (F5, batches, transactions, reconciliation)."
+            "Same summary as Help → Bank import shortcuts… "
+            "(F5, batches, transactions, reconciliation, File → Backup / probooks.backup)."
         )
         if not idx.isValid():
             menu.exec(self._batch_table.viewport().mapToGlobal(pos))
