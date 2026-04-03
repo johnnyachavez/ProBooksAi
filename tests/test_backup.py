@@ -192,6 +192,50 @@ def test_main_backup_accepts_short_output_flag(tmp_path: Path) -> None:
     assert "Backed up to" in stdout.getvalue()
 
 
+def test_main_backup_replaces_existing_destination_file(tmp_path: Path) -> None:
+    from probooks.cli import main
+
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    db = tmp_path / "live.db"
+    conn = connect(db)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    out = tmp_path / "out.db"
+    out.write_bytes(b"pre-existing non-sqlite payload")
+    assert not is_sqlite_file(out)
+    stdout = io.StringIO()
+    with patch.object(sys, "stdout", stdout):
+        assert main(["--db", str(db), "backup", "-o", str(out)]) == 0
+    assert is_sqlite_file(out)
+    assert "Backed up to" in stdout.getvalue()
+    conn = connect(out)
+    assert conn.execute("SELECT COUNT(*) FROM companies").fetchone()[0] >= 1
+    conn.close()
+
+
+def test_main_restore_replaces_existing_target_file(tmp_path: Path) -> None:
+    from probooks.cli import main
+
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    live = tmp_path / "live.db"
+    conn = connect(live)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    bak = tmp_path / "bak.db"
+    backup_database(live, bak)
+    target = tmp_path / "target.db"
+    target.write_bytes(b"old non-sqlite contents")
+    assert not is_sqlite_file(target)
+    stdout = io.StringIO()
+    with patch.object(sys, "stdout", stdout):
+        assert main(["--db", str(target), "restore", "-i", str(bak), "--yes"]) == 0
+    assert is_sqlite_file(target)
+    assert "Restored database from" in stdout.getvalue()
+    conn = connect(target)
+    assert conn.execute("SELECT COUNT(*) FROM companies").fetchone()[0] >= 1
+    conn.close()
+
+
 def test_cli_restore_returns_one_when_backup_file_missing(tmp_path: Path) -> None:
     target = tmp_path / "live.db"
     missing_bak = tmp_path / "missing.db"
