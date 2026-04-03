@@ -2,6 +2,7 @@
 integrations/work-context.json
 
 # OS / editor
+.cursor_github_test.txt
 Thumbs.db
 Desktop.ini
 *.swp
