@@ -10,6 +10,8 @@ The same three hub lines also repeat the same **README — Default database path
 
 The same three hub lines also repeat the same **README — Python CLI** segment (**`probooks.backup`**, SQLite online backup); keep them verbatim-aligned ([CONTRIBUTING.md — Continuous integration](CONTRIBUTING.md#continuous-integration), **Hub docs — README Python CLI segment**).
 
+The same three hub lines also repeat the same **README — Desktop app** segment (PySide6 theme + Qt notes; **File** → Backup/Restore, **`probooks.backup`**, **#28**); keep them verbatim-aligned ([CONTRIBUTING.md — Continuous integration](CONTRIBUTING.md#continuous-integration), **Hub docs — README Desktop app segment**).
+
 **SQLite issue #21** (CLI vs desktop bank DDL): changing **`probooks/migrations/`** or **`probooksai/bank_import.py`** requires updating **`tests/test_issue_21_schema_inventory.py`** per [CONTRIBUTING.md — Continuous integration](CONTRIBUTING.md#continuous-integration) (**SQLite issue #21** bullet).
 
 **SQLite online backup (#28)** / **`probooks.backup`**: changing **`probooks/backup.py`** or CLI/desktop backup wiring should keep **`tests/test_backup.py`**, **`tests/test_probooks_backup_contract.py`**, and the [ROADMAP.md — Implementation snapshot](ROADMAP.md#implementation-snapshot-repository-2026-04) **SQLite online backup (regression)** blurb aligned when behavior or documented guarantees change — [CONTRIBUTING.md — Continuous integration](CONTRIBUTING.md#continuous-integration) (**Module contracts**).
@@ -18,7 +20,7 @@ Canonical ordering and GitHub links: **[BACKLOG.md](BACKLOG.md)**.
 
 Install, CLI, desktop, **`review.html`** hub: **[README.md](../README.md#web-shell-review)**.
 
-PySide6 run, **Fusion** dark theme, and **Qt** font stderr note: **[README.md — Desktop app](../README.md#desktop-app-pyside6)**.
+PySide6 run, **Fusion** dark theme, **Qt** font stderr note; **File** → Backup/Restore (**`probooks.backup`**, **#28**): **[README.md — Desktop app](../README.md#desktop-app-pyside6)**.
 
 **Default database paths** (CLI **`probooks.db`** vs desktop **`probooksai.db`**, **#21**): **[README.md — Default database paths](../README.md#default-database-paths-windows)**.
 
