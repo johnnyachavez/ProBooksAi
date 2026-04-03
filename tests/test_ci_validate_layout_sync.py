@@ -251,11 +251,23 @@ def test_static_html_links_readme_excel_workbook_section() -> None:
 
 
 def test_review_html_links_readme_web_shell_and_desktop_anchors() -> None:
-    """review.html Documentation cards should deep-link README Web shell, Desktop, and Excel template sections."""
+    """review.html Documentation cards should deep-link README Web shell, Desktop, default DB paths, and Excel template."""
     text = (_REPO / "review.html").read_text(encoding="utf-8")
     assert 'href="README.md#web-shell-review"' in text
     assert 'href="README.md#desktop-app-pyside6"' in text
+    assert 'href="README.md#default-database-paths-windows"' in text
     assert 'href="README.md#excel-workbook-template-openpyxl"' in text
+
+
+def test_review_html_readme_default_database_paths_documentation_card() -> None:
+    """review.html Documentation grid should surface README default DB paths + #21 next to Desktop/Excel cards."""
+    text = (_REPO / "review.html").read_text(encoding="utf-8")
+    start = text.index("<strong>README — Default database paths</strong>")
+    end = text.index("</a>", start)
+    card = text[start:end]
+    assert "probooks.db" in card
+    assert "probooksai.db" in card
+    assert "#21" in card
 
 
 def test_review_html_readme_excel_documentation_card_mentions_help_epilog() -> None:
@@ -277,6 +289,7 @@ def test_review_html_python_desktop_section_mentions_help_epilog() -> None:
     chunk = text[start:end]
     assert "probooks/help_epilog.py" in chunk
     assert "--help" in chunk
+    assert 'href="README.md#default-database-paths-windows"' in chunk
 
 
 def test_static_shell_page_sub_mentions_help_epilog() -> None:
@@ -435,6 +448,9 @@ def test_pr_template_lists_readme_default_database_paths_checklist() -> None:
     assert "**README `### Default database paths (Windows)`**" in text
     for name in (
         "test_readme_default_database_paths_notes_two_schemas_and_roadmap",
+        "test_review_html_links_readme_web_shell_and_desktop_anchors",
+        "test_review_html_readme_default_database_paths_documentation_card",
+        "test_review_html_python_desktop_section_mentions_help_epilog",
         "test_pr_template_lists_readme_default_database_paths_checklist",
         "test_contributing_ci_documents_readme_default_database_paths_bullet",
     ):
@@ -451,6 +467,9 @@ def test_contributing_ci_documents_readme_default_database_paths_bullet() -> Non
     assert "Why not one `.db` yet" in chunk
     for name in (
         "test_readme_default_database_paths_notes_two_schemas_and_roadmap",
+        "test_review_html_links_readme_web_shell_and_desktop_anchors",
+        "test_review_html_readme_default_database_paths_documentation_card",
+        "test_review_html_python_desktop_section_mentions_help_epilog",
         "test_pr_template_lists_readme_default_database_paths_checklist",
         "test_contributing_ci_documents_readme_default_database_paths_bullet",
     ):
