@@ -622,6 +622,7 @@ def test_github_issue_templates_reference_core_docs() -> None:
         assert readme_shell in text, f"{label} should deep-link README Web shell (review)"
         assert readme_desktop in text, f"{label} should deep-link README Desktop app (PySide6)"
         assert readme_excel in text, f"{label} should deep-link README Excel workbook template"
+        assert "help_epilog" in text, f"{label} should mention help_epilog with Excel workbook template"
         assert "docs/BACKLOG.md" in text, f"{label} should link BACKLOG.md"
         assert "docs/issues-backlog.md" in text, f"{label} should link issues-backlog.md"
 

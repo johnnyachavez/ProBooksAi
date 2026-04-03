@@ -9,6 +9,8 @@ Or directly:
 
 Requires PySide6:
     pip install PySide6
+
+``--help`` prints the shared Excel COA workbook line from ``probooks/help_epilog.py`` (see README Desktop + Excel template).
 """
 
 from __future__ import annotations
