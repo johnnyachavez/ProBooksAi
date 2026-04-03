@@ -758,6 +758,9 @@ def test_github_issue_templates_reference_core_docs() -> None:
     assert "docs/issues-backlog.md" in config, (
         "config.yml should include Doc index contact link to docs/issues-backlog.md"
     )
+    assert "ROADMAP snapshot + Supporting / cross-cutting" in config, (
+        "config.yml Doc index about should note ROADMAP Supporting / cross-cutting (issues-backlog parity)"
+    )
     bug = (_REPO / ".github" / "ISSUE_TEMPLATE" / "bug_report.md").read_text(encoding="utf-8")
     feat = (_REPO / ".github" / "ISSUE_TEMPLATE" / "feature_request.md").read_text(encoding="utf-8")
     roadmap_snap = "ROADMAP.md#implementation-snapshot-repository-2026-04"
