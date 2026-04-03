@@ -1042,6 +1042,30 @@ def test_backup_roundtrip_paths_with_spaces(tmp_path: Path) -> None:
     conn.close()
 
 
+def test_cmd_backup_restore_roundtrip_paths_with_spaces(tmp_path: Path) -> None:
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    db = tmp_path / "cmd live company.db"
+    conn = connect(db)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    snap = tmp_path / "cmd backup snap.db"
+    stdout_bak = io.StringIO()
+    with patch.object(sys, "stdout", stdout_bak):
+        assert cmd_backup(db, snap) == 0
+    assert is_sqlite_file(snap)
+    assert "Backed up to" in stdout_bak.getvalue()
+
+    restored = tmp_path / "cmd restored out.db"
+    stdout_rest = io.StringIO()
+    with patch.object(sys, "stdout", stdout_rest):
+        assert cmd_restore(restored, snap, yes=True) == 0
+    assert is_sqlite_file(restored)
+    assert "Restored database from" in stdout_rest.getvalue()
+    conn = connect(restored)
+    assert conn.execute("SELECT COUNT(*) FROM companies").fetchone()[0] >= 1
+    conn.close()
+
+
 def test_backup_roundtrip(tmp_path: Path) -> None:
     mdir = PROBOOKS_MIGRATIONS_DIR
     src = tmp_path / "live.db"
