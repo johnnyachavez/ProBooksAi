@@ -64,7 +64,7 @@ The app uses a **Fusion**-based dark theme (`desktop_app/theme.py`). On some **W
 
 ## Issue-driven build order
 
-See [docs/BACKLOG.md](docs/BACKLOG.md) for phased GitHub issues and [docs/ROADMAP.md — implementation snapshot](docs/ROADMAP.md#implementation-snapshot-repository-2026-04) for the phased roadmap and what the repo ships today in **`desktop_app/`** and the **`probooks`** CLI. **#21 / #27 / #28** (storage + migrations + backup) and **#30** (bank accounts) are part of that foundation, not the whole surface.
+See [docs/BACKLOG.md](docs/BACKLOG.md) for phased GitHub issues and [docs/ROADMAP.md — implementation snapshot](docs/ROADMAP.md#implementation-snapshot-repository-2026-04) for the phased roadmap and what the repo ships today in **`desktop_app/`**, the **`probooks`** CLI, and root **`generate_workbook.py`** ([Excel COA workbook template](#excel-workbook-template-openpyxl)). **#21 / #27 / #28** (storage + migrations + backup) and **#30** (bank accounts) are part of that foundation, not the whole surface.
 
 ## Tests
 
