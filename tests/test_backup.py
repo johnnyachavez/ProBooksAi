@@ -409,6 +409,44 @@ def test_cmd_restore_returns_one_when_target_parent_is_file(tmp_path: Path) -> N
     assert err.getvalue().strip()
 
 
+def test_main_backup_returns_one_when_destination_parent_is_file(tmp_path: Path) -> None:
+    from probooks.cli import main
+
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    db = tmp_path / "live.db"
+    conn = connect(db)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    blocker = tmp_path / "not_a_directory"
+    blocker.write_text("blocking", encoding="utf-8")
+    out = blocker / "out.db"
+    err = io.StringIO()
+    with patch.object(sys, "stderr", err):
+        assert main(["--db", str(db), "backup", "-o", str(out)]) == 1
+    assert not out.exists()
+    assert err.getvalue().strip()
+
+
+def test_main_restore_returns_one_when_target_parent_is_file(tmp_path: Path) -> None:
+    from probooks.cli import main
+
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    live = tmp_path / "live.db"
+    conn = connect(live)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    bak = tmp_path / "bak.db"
+    backup_database(live, bak)
+    blocker = tmp_path / "blockfile"
+    blocker.write_bytes(b"x")
+    target = blocker / "target.db"
+    err = io.StringIO()
+    with patch.object(sys, "stderr", err):
+        assert main(["--db", str(target), "restore", "-i", str(bak), "--yes"]) == 1
+    assert not target.exists()
+    assert err.getvalue().strip()
+
+
 def test_backup_database_replaces_existing_destination_file(tmp_path: Path) -> None:
     """Destination path may already exist; online backup replaces it atomically."""
     mdir = PROBOOKS_MIGRATIONS_DIR
