@@ -1124,7 +1124,7 @@ class MainWindow(QMainWindow):
         act_bank_import_keys = QAction("Bank &import shortcuts…", self)
         _menu_action_tip(
             act_bank_import_keys,
-            "F5 refresh and context-menu shortcuts for Bank Import.",
+            "F5 refresh and context-menu shortcuts for Bank Import; Document intake help lists File backup/restore.",
         )
         act_bank_import_keys.triggered.connect(
             lambda: show_bank_import_keyboard_shortcuts_dialog(self)
@@ -1133,7 +1133,7 @@ class MainWindow(QMainWindow):
         act_register_keys = QAction("Bank &register keyboard shortcuts…", self)
         _menu_action_tip(
             act_register_keys,
-            "F5, Ctrl+Shift+G/E/C/U, and register grid shortcuts.",
+            "F5, Ctrl+Shift+G/E/C/U, and register grid shortcuts; Document intake help lists File backup/restore.",
         )
         act_register_keys.triggered.connect(
             lambda: show_register_keyboard_shortcuts_dialog(self)
@@ -1142,7 +1142,7 @@ class MainWindow(QMainWindow):
         act_business_keys = QAction("&Business shortcuts…", self)
         _menu_action_tip(
             act_business_keys,
-            "F5, Tax % Ctrl+S, and Business tab context menus.",
+            "F5, Tax % Ctrl+S, and Business tab context menus; Document intake help lists File backup/restore.",
         )
         act_business_keys.triggered.connect(
             lambda: show_business_keyboard_shortcuts_dialog(self)
@@ -1224,7 +1224,7 @@ class MainWindow(QMainWindow):
             f"Version {ver} \u2014 AI-powered bookkeeping for small business.<br><br>"
             f"Keyboard shortcuts are summarized under <b>Help</b>.<br><br>"
             f"\u00a9 2026 ProBooks+ai",
-            ok_tip="Close; use Help menu for shortcut summaries and product info.",
+            ok_tip="Close; Help lists shortcuts; File → Backup/Restore uses probooks.backup (same as CLI).",
         )
 
     def _on_import(self):

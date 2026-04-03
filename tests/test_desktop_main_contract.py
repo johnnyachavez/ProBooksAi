@@ -750,6 +750,19 @@ def test_main_window_uses_warning_and_critical_ok_helpers() -> None:
     assert "QMessageBox.about(" not in main_t
 
 
+def test_about_dialog_ok_tip_mentions_file_backup_cli_parity() -> None:
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("def _on_about")
+    chunk = text[start : text.index("def _on_import", start)]
+    assert "probooks.backup" in chunk
+    assert "File → Backup/Restore" in chunk
+
+
+def test_help_menu_bank_register_business_shortcuts_tips_point_at_intake_backup() -> None:
+    text = _MAIN.read_text(encoding="utf-8")
+    assert text.count("Document intake help lists File backup/restore.") >= 3
+
+
 def test_help_menu_keyboard_shortcuts_dialogs_use_information_ok_helper() -> None:
     """Help → shortcuts dialogs should set Ok hover text via message_box_information_ok."""
     main_t = _MAIN.read_text(encoding="utf-8")
