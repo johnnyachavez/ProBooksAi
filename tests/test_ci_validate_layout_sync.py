@@ -1106,6 +1106,8 @@ def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
     assert "CONTRIBUTING.md#continuous-integration" in text
     assert "ci_validate_layout.sh" in text
     assert "ci_validate_layout.ps1" in text
+    assert "tests/conftest.py" in text
+    assert "isolated_branded_app_data_env" in text
     assert "**Layout validators:**" in text
     assert "same path in both lists" in text
     assert (
@@ -1123,6 +1125,8 @@ def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> Non
     chunk = md[ci_start:table_start]
     assert "**Layout + workflow contracts**" in chunk
     assert "probooks/help_epilog.py" in chunk
+    assert "tests/conftest.py" in chunk
+    assert "isolated_branded_app_data_env" in chunk
     assert "test_cursor_rule_github_work_context_points_at_contributing_ci" in chunk
     assert "test_hub_docs_related_docs_link_readme_excel_workbook_template" in chunk
     assert "test_hub_docs_related_docs_link_readme_default_database_paths" in chunk
