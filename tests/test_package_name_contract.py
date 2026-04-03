@@ -25,3 +25,10 @@ def test_help_epilog_module_docstring_mentions_generator() -> None:
     assert "probooksai.generator" in doc
     assert "generate_workbook" in doc
     assert "desktop_app" in doc
+
+
+def test_probooksai_init_mentions_help_epilog_pointer() -> None:
+    """probooksai package doc stays aligned with probooks.help_epilog for --help copy."""
+    text = (_REPO / "probooksai" / "__init__.py").read_text(encoding="utf-8")
+    assert "help_epilog" in text
+    assert "probooks" in text
