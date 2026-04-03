@@ -101,6 +101,33 @@ def test_main_backup_and_restore_roundtrip(tmp_path: Path) -> None:
     conn.close()
 
 
+def test_main_backup_restore_roundtrip_paths_with_spaces(tmp_path: Path) -> None:
+    from probooks.cli import main
+
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    db = tmp_path / "live company.db"
+    conn = connect(db)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+
+    snap = tmp_path / "snap shot.db"
+    stdout_bak = io.StringIO()
+    with patch.object(sys, "stdout", stdout_bak):
+        assert main(["--db", str(db), "backup", "-o", str(snap)]) == 0
+    assert is_sqlite_file(snap)
+    assert "Backed up to" in stdout_bak.getvalue()
+
+    restored = tmp_path / "restored name.db"
+    stdout_restore = io.StringIO()
+    with patch.object(sys, "stdout", stdout_restore):
+        assert main(["--db", str(restored), "restore", "-i", str(snap), "--yes"]) == 0
+    assert is_sqlite_file(restored)
+    assert "Restored database from" in stdout_restore.getvalue()
+    conn = connect(restored)
+    assert conn.execute("SELECT COUNT(*) FROM companies").fetchone()[0] >= 1
+    conn.close()
+
+
 def test_main_restore_accepts_long_input_flag(tmp_path: Path) -> None:
     from probooks.cli import main
 
