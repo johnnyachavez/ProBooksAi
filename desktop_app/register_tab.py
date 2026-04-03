@@ -5,7 +5,8 @@ Phase 3 – Bank register: chronological transactions for one bank account with
 debit/credit columns, running balance, memo and COA inline edits, sortable columns
 (txn id on Date ``UserRole``; balance stays chronological), and footer totals.
 Payee column uses a two-line layout (description, then COA or memo sub-line).
-Rows without a COA category are highlighted.
+Number column shows reference on the first line and a short type tag (DEP / PMT /
+XFER / TXN) on the second. Rows without a COA category are highlighted.
 """
 
 from __future__ import annotations
@@ -125,6 +126,34 @@ def _register_payee_two_line_plain(txn: dict) -> str:
     return f"{line1}\n{line2}"
 
 
+def _register_number_type_tag(txn: dict) -> str:
+    """Second line of Number column: inferred register type (QuickBooks-style hint)."""
+    xfer = txn.get("transfer_to_bank_account_id")
+    try:
+        has_xfer = xfer is not None and int(xfer) > 0
+    except (TypeError, ValueError):
+        has_xfer = False
+    if has_xfer:
+        return "XFER"
+    try:
+        amt = float(txn.get("amount") or 0.0)
+    except (TypeError, ValueError):
+        amt = 0.0
+    if amt > 0:
+        return "DEP"
+    if amt < 0:
+        return "PMT"
+    return "TXN"
+
+
+def _register_number_two_line_plain(txn: dict) -> str:
+    """Number cell: line 1 = ref #; line 2 = DEP / PMT / XFER / TXN."""
+    ref = (txn.get("ref_number") or "").strip()
+    line1 = ref if ref else "—"
+    line2 = _register_number_type_tag(txn)
+    return f"{line1}\n{line2}"
+
+
 class RegisterTab(QWidget):
     """
     Check-register style view for all transactions on a selected bank account.
@@ -233,7 +262,7 @@ class RegisterTab(QWidget):
 
         tip = QLabel(
             "Deposits show in Debit; payments in Credit (cash-basis register). "
-            "Payee column shows description on the first line and COA (or memo) on the second. "
+            "Payee shows description then COA or memo; Number shows reference then type (DEP / PMT / XFER). "
             "Assign a COA account to clear the highlight. "
             "Starred (★) items at the top of the COA list are hints from your rules "
             "and, when OPENAI_API_KEY is set, optional AI picks. "
@@ -405,12 +434,13 @@ class RegisterTab(QWidget):
             if missing_coa:
                 d_item.setBackground(brush)
 
-            ref_raw = txn.get("ref_number") or ""
+            num_plain = _register_number_two_line_plain(txn)
             if posted:
-                ref_item = plain_display_table_item(ref_raw)
+                ref_item = plain_display_table_item(num_plain)
                 ref_item.setFlags(ref_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             else:
-                ref_item = QTableWidgetItem(ref_raw)
+                ref_item = QTableWidgetItem(escape_ampersand_for_qt(num_plain))
+                ref_item.setData(QTABLE_PLAIN_TEXT_ROLE, num_plain)
                 ref_item.setFlags(ref_item.flags() | Qt.ItemFlag.ItemIsEditable)
             ref_item.setTextAlignment(
                 Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
@@ -568,7 +598,16 @@ class RegisterTab(QWidget):
                         self._apply_payee_two_line_to_item(pay_it, dict(fresh))
                 self._resize_register_row(row)
             else:
-                self._db.update_transaction(txn_id, ref_number=item.text())
+                ref_first = item.text().split("\n", 1)[0].strip()
+                self._db.update_transaction(txn_id, ref_number=ref_first)
+                self._populating = True
+                fresh = self._db.get_transaction(txn_id)
+                if fresh is not None:
+                    num_plain = _register_number_two_line_plain(dict(fresh))
+                    item.setText(escape_ampersand_for_qt(num_plain))
+                    item.setData(QTABLE_PLAIN_TEXT_ROLE, num_plain)
+                self._populating = False
+                self._resize_register_row(row)
         except ValueError as exc:
             QMessageBox.warning(
                 self, "Cannot save", escape_ampersand_for_qt(str(exc))

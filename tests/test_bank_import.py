@@ -578,3 +578,20 @@ def test_register_payee_two_line_plain_prioritizes_coa_then_memo() -> None:
     assert _register_payee_two_line_plain({"description": "", "memo": "Note"}) == "—\nNote"
     assert "Assign COA" in _register_payee_two_line_plain({"description": "X"})
     assert _register_payee_two_line_plain({"description": "  X  "}) == "X\n— Assign COA —"
+
+
+def test_register_number_two_line_plain_type_tags() -> None:
+    from desktop_app.register_tab import _register_number_two_line_plain
+
+    assert _register_number_two_line_plain(
+        {"ref_number": "1087", "amount": -50.0, "transfer_to_bank_account_id": None}
+    ) == "1087\nPMT"
+    assert _register_number_two_line_plain(
+        {"ref_number": "", "amount": 100.0, "transfer_to_bank_account_id": None}
+    ) == "—\nDEP"
+    assert _register_number_two_line_plain(
+        {"ref_number": "1", "amount": -1.0, "transfer_to_bank_account_id": 3}
+    ) == "1\nXFER"
+    assert _register_number_two_line_plain(
+        {"ref_number": "z", "amount": 0.0, "transfer_to_bank_account_id": None}
+    ) == "z\nTXN"
