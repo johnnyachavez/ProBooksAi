@@ -6,6 +6,8 @@ PySide6 widget for bank account setup, CSV import, and statement reconciliation.
 **F5** (when this tab or its children have focus) reloads accounts and import batches and
 re-selects the same batch when it still exists, refreshing transactions and reconciliation.
 **Help** → **Bank import shortcuts…** shows the same **F5** summary and points at Register shortcuts.
+**Right-click** the **Import Batches** or **imported transactions** tables (including empty area) for
+**Keyboard shortcuts…** in the context menu.
 
 Tabs / widgets
 --------------
@@ -813,6 +815,7 @@ class BankImportTab(QWidget):
         tip = QLabel(
             "F5 refreshes accounts and import batches; if a batch is selected, it is re-opened when "
             "it still exists (updates transactions and reconciliation). "
+            "Right-click the batch or transaction table (even on empty area) for Keyboard shortcuts…. "
             "Help → Bank import shortcuts…; Register tab: Help → Bank register keyboard shortcuts…"
         )
         tip.setWordWrap(True)
@@ -849,6 +852,9 @@ class BankImportTab(QWidget):
             self._batch_table.selectRow(r)
             self._on_batch_selected()
             return
+
+    def _show_bank_import_keyboard_shortcuts_help(self) -> None:
+        show_bank_import_keyboard_shortcuts_dialog(self)
 
     def _refresh_accounts(self):
         self._acct_combo.blockSignals(True)
@@ -914,16 +920,20 @@ class BankImportTab(QWidget):
 
     def _on_import_txn_context_menu(self, pos):
         idx = self._txn_table.indexAt(pos)
+        menu = QMenu(self)
+        menu.addAction(
+            "Keyboard shortcuts…", self._show_bank_import_keyboard_shortcuts_help
+        )
         if not idx.isValid():
+            menu.exec(self._txn_table.viewport().mapToGlobal(pos))
             return
         row = idx.row()
         it = self._txn_table.item(row, 0)
-        if it is None:
+        if it is None or it.data(Qt.ItemDataRole.UserRole) is None:
+            menu.exec(self._txn_table.viewport().mapToGlobal(pos))
             return
         tid = it.data(Qt.ItemDataRole.UserRole)
-        if tid is None:
-            return
-        menu = QMenu(self)
+        menu.addSeparator()
         menu.addAction(
             "Open attachment…",
             partial(self._open_import_txn_attachment, int(tid)),
@@ -954,16 +964,20 @@ class BankImportTab(QWidget):
 
     def _on_batch_context_menu(self, pos):
         idx = self._batch_table.indexAt(pos)
+        menu = QMenu(self)
+        menu.addAction(
+            "Keyboard shortcuts…", self._show_bank_import_keyboard_shortcuts_help
+        )
         if not idx.isValid():
+            menu.exec(self._batch_table.viewport().mapToGlobal(pos))
             return
         row = idx.row()
         it = self._batch_table.item(row, 0)
-        if it is None:
+        if it is None or it.data(Qt.ItemDataRole.UserRole) is None:
+            menu.exec(self._batch_table.viewport().mapToGlobal(pos))
             return
         bid = it.data(Qt.ItemDataRole.UserRole)
-        if bid is None:
-            return
-        menu = QMenu(self)
+        menu.addSeparator()
         menu.addAction("Copy row", partial(copy_table_row_as_tsv, self._batch_table, row))
         act_history = menu.addAction("View change history…")
         chosen = menu.exec(self._batch_table.viewport().mapToGlobal(pos))

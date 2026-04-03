@@ -60,6 +60,8 @@ def test_bank_import_tab_f5_reload_shortcut_wired() -> None:
     assert "activated.connect(self._reload_bank_import_view)" in text
     assert "F5 refreshes accounts and import batches" in text
     assert "Bank import shortcuts" in text
+    assert "Keyboard shortcuts…" in text
+    assert "_show_bank_import_keyboard_shortcuts_help" in text
 
 
 def test_register_tab_persists_header_state_via_qsettings() -> None:
