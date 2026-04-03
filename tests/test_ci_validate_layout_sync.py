@@ -1085,6 +1085,18 @@ def test_github_issue_templates_reference_core_docs() -> None:
     assert "README.md#desktop-app-pyside6" in config, (
         "config.yml should include Desktop app contact link to README.md#desktop-app-pyside6"
     )
+    desk_start = config.index("name: Desktop app (PySide6)")
+    desk_end = config.index("name: Default database paths (Windows)", desk_start)
+    desk_block = config[desk_start:desk_end]
+    assert "probooks.backup" in desk_block, (
+        "config.yml Desktop app about should mention probooks.backup (File menu backup parity)"
+    )
+    assert "Backup" in desk_block and "Restore" in desk_block, (
+        "config.yml Desktop app about should mention File menu Backup/Restore"
+    )
+    assert "Regression tests" in desk_block and "#28" in desk_block, (
+        "config.yml Desktop app about should point readers at README Python CLI regression / #28"
+    )
     assert "name: Default database paths (Windows)" in config, (
         "config.yml should define Default database paths contact label"
     )

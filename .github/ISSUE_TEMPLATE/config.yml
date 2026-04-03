@@ -11,7 +11,7 @@ contact_links:
     about: Static UI hub via python -m http.server — not live books data; desktop app or probooks CLI for SQLite.
   - name: Desktop app (PySide6)
     url: https://github.com/johnnyachavez/ProBooksAi/blob/main/README.md#desktop-app-pyside6
-    about: pip install -e ".[desktop]", python -m desktop_app.main, Fusion theme, Qt font stderr note, and shared Excel line on --help via probooks/help_epilog.py.
+    about: pip install -e ".[desktop]", python -m desktop_app.main, Fusion theme, Qt font stderr note, shared Excel line on --help via probooks/help_epilog.py; File menu Backup/Restore uses probooks.backup (README #python-cli Regression tests / #28).
   - name: Default database paths (Windows)
     url: https://github.com/johnnyachavez/ProBooksAi/blob/main/README.md#default-database-paths-windows
     about: probooks.db (CLI) vs probooksai.db (desktop) in the same folder; two schemas until issue #21; ROADMAP snapshot Why not one .db yet; bank DDL inventory tests/test_issue_21_schema_inventory.py (CONTRIBUTING.md#continuous-integration SQLite issue #21 bullet).
