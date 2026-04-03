@@ -6,6 +6,9 @@ PySide6 widget for viewing and editing the Chart of Accounts.
 Issue #41 – COA editor (minimal): UI to view/add/edit/deactivate COA accounts.
 COA entries populate category dropdowns throughout the app.
 
+**F5** (when this tab or its children have focus) reloads the grid from the database (same as after
+add/edit/deactivate; respects **Show inactive**).
+
 Widgets
 -------
   COATab          – top-level QWidget (intended as a tab in MainWindow)
@@ -19,6 +22,7 @@ from functools import partial
 from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -290,6 +294,18 @@ class COATab(QWidget):
         # Footer
         self._lbl_count = QLabel("")
         layout.addWidget(self._lbl_count)
+
+        tip = QLabel(
+            "F5 reloads the chart from the database (respects Show inactive). "
+            "Journal and Bank import tabs also use F5 to refresh."
+        )
+        tip.setWordWrap(True)
+        tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        layout.addWidget(tip)
+
+        sc_refresh = QShortcut(QKeySequence("F5"), self)
+        sc_refresh.setContext(Qt.WidgetWithChildrenShortcut)
+        sc_refresh.activated.connect(self._refresh)
 
     # -- data ----------------------------------------------------------------
 
