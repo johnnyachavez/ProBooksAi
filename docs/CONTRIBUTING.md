@@ -79,7 +79,7 @@ Examples:
 | `phase-19-transfers` | Bank-to-bank transfer transactions |
 | `phase-20-receipts` | Receipt / document workflow |
 | `phase-21-performance` | Large CSV imports, worker threads |
-| `phase-22-export` | CSV export and reconciliation reports |
+| `phase-22-export` | CSV export, reconciliation reports, Excel COA workbook (**`generate_workbook.py`** / **`openpyxl`**) |
 | `phase-23-audit-log` | Change history / audit trail |
 | `phase-24-multi-company` | Multiple books / company files |
 | `duplicate` | Issue is a duplicate of another |
