@@ -1100,6 +1100,9 @@ def test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests() -> Non
         "PR template CI row should remind editors to sync CONTRIBUTING when conftest changes"
     )
     assert "**`.cursor/rules/github-work-context.mdc`**" in text
+    assert "**`.gitattributes`**" in text, (
+        "PR template CI row should remind editors to sync CONTRIBUTING when .gitattributes changes"
+    )
     for name in (
         "test_cursor_rule_github_work_context_points_at_contributing_ci",
         "test_contributing_ci_documents_cursor_github_work_context_rule_test",
