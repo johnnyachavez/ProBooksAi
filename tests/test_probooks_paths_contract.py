@@ -15,6 +15,9 @@ def test_probooks_paths_use_branded_app_dir_and_cli_db_name() -> None:
     assert '_DB_NAME = "probooks.db"' in text
     assert 'INTAKE_DB_NAME = "probooksai.db"' in text
     assert "def default_intake_db_path()" in text
+    assert "default_intake_sqlite_path" in text, (
+        "paths.py should point runtime default DB resolution at probooksai.database"
+    )
     assert "ProBooks+ai" in text
 
 
