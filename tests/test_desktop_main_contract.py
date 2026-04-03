@@ -758,6 +758,14 @@ def test_about_dialog_ok_tip_mentions_file_backup_cli_parity() -> None:
     assert "File → Backup/Restore" in chunk
 
 
+def test_help_about_menu_tip_mentions_ok_backup_hint() -> None:
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("act_about = QAction")
+    chunk = text[start : text.index("help_menu.addAction(act_about)", start)]
+    assert "probooks.backup" in chunk
+    assert "File backup" in chunk
+
+
 def test_help_menu_bank_register_business_shortcuts_tips_point_at_intake_backup() -> None:
     text = _MAIN.read_text(encoding="utf-8")
     assert text.count("Document intake help lists File backup/restore.") >= 3

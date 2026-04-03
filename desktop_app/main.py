@@ -1160,7 +1160,10 @@ class MainWindow(QMainWindow):
         help_menu.addAction(act_more_tab_keys)
         help_menu.addSeparator()
         act_about = QAction("&About ProBooks+ai", self)
-        _menu_action_tip(act_about, "Application name and version.")
+        _menu_action_tip(
+            act_about,
+            "Application name and version; Ok also notes Help shortcuts and File backup (probooks.backup).",
+        )
         act_about.triggered.connect(self._on_about)
         help_menu.addAction(act_about)
 
