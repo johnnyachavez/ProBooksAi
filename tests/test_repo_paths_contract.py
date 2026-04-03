@@ -24,6 +24,7 @@ def test_repo_paths_path_constants_live_under_repo_root() -> None:
 def test_repo_paths_pin_essential_repo_files() -> None:
     """High-traffic paths used by contract tests should exist on disk."""
     assert repo_paths.REPO_ROOT.is_dir()
+    assert repo_paths.GITATTRIBUTES.is_file()
     assert repo_paths.PYPROJECT_TOML.is_file()
     assert repo_paths.DESKTOP_APP_DIR.is_dir()
     assert repo_paths.PROBOOKS_MIGRATIONS_DIR.is_dir()

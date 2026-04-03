@@ -38,6 +38,7 @@ Require-File "scripts/ci_validate_layout.ps1"
 
 Require-File ".github/workflows/ci.yml"
 Require-File ".github/workflows/ui-screenshot.yml"
+Require-File ".gitattributes"
 Require-File ".github/PULL_REQUEST_TEMPLATE.md"
 Require-File ".github/ISSUE_TEMPLATE/config.yml"
 Require-File ".github/ISSUE_TEMPLATE/bug_report.md"

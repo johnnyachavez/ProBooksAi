@@ -14,6 +14,7 @@ PYPROJECT_TOML = REPO_ROOT / "pyproject.toml"
 REQUIREMENTS_TXT = REPO_ROOT / "requirements.txt"
 GENERATE_WORKBOOK_PY = REPO_ROOT / "generate_workbook.py"
 README_MD = REPO_ROOT / "README.md"
+GITATTRIBUTES = REPO_ROOT / ".gitattributes"
 REVIEW_HTML = REPO_ROOT / "review.html"
 
 # --- integrations/ (work-context sync sample) -------------------------------

@@ -39,6 +39,7 @@ require scripts/ci_validate_layout.ps1
 
 require .github/workflows/ci.yml
 require .github/workflows/ui-screenshot.yml
+require .gitattributes
 require .github/PULL_REQUEST_TEMPLATE.md
 require .github/ISSUE_TEMPLATE/config.yml
 require .github/ISSUE_TEMPLATE/bug_report.md
