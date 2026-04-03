@@ -893,8 +893,14 @@ def test_cli_backup_and_restore_reject_same_path(tmp_path: Path) -> None:
     conn = connect(db)
     run_migrations(conn, migration_files(mdir))
     conn.close()
-    assert cmd_backup(db, db) == 1
-    assert cmd_restore(db, db, yes=True) == 1
+    err_bak = io.StringIO()
+    with patch.object(sys, "stderr", err_bak):
+        assert cmd_backup(db, db) == 1
+    assert "must differ" in err_bak.getvalue()
+    err_rest = io.StringIO()
+    with patch.object(sys, "stderr", err_rest):
+        assert cmd_restore(db, db, yes=True) == 1
+    assert "must differ" in err_rest.getvalue()
 
 
 def test_backup_roundtrip_while_other_connection_open(tmp_path: Path) -> None:
