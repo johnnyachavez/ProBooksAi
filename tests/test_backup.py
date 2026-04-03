@@ -284,6 +284,41 @@ def test_restore_overwrite_false_creates_target_when_missing(tmp_path: Path) -> 
     conn.close()
 
 
+def test_backup_database_replaces_existing_destination_file(tmp_path: Path) -> None:
+    """Destination path may already exist; online backup replaces it atomically."""
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    src = tmp_path / "live.db"
+    conn = connect(src)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    dest = tmp_path / "out.db"
+    dest.write_bytes(b"previous junk not sqlite")
+    assert not is_sqlite_file(dest)
+    backup_database(src, dest)
+    assert is_sqlite_file(dest)
+    conn = connect(dest)
+    assert conn.execute("SELECT COUNT(*) FROM companies").fetchone()[0] >= 1
+    conn.close()
+
+
+def test_restore_database_replaces_existing_target_when_overwrite_true(tmp_path: Path) -> None:
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    live = tmp_path / "live.db"
+    conn = connect(live)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    bak = tmp_path / "bak.db"
+    backup_database(live, bak)
+    target = tmp_path / "target.db"
+    target.write_bytes(b"trash" * 10)
+    assert not is_sqlite_file(target)
+    restore_database(bak, target, overwrite=True)
+    assert is_sqlite_file(target)
+    conn = connect(target)
+    assert conn.execute("SELECT COUNT(*) FROM companies").fetchone()[0] >= 1
+    conn.close()
+
+
 def test_cli_restore_rejects_non_sqlite_backup(tmp_path: Path) -> None:
     bad = tmp_path / "bak.db"
     bad.write_text("not sqlite", encoding="utf-8")
