@@ -813,8 +813,11 @@ def test_github_issue_templates_reference_core_docs() -> None:
     db_paths_start = config.index("name: Default database paths (Windows)")
     db_paths_end = config.index("name: Excel workbook template (openpyxl)", db_paths_start)
     db_paths_block = config[db_paths_start:db_paths_end]
+    assert "DDL inventory" in db_paths_block, (
+        "config.yml Default database paths about should name DDL inventory (hub parity with static shells)"
+    )
     assert "tests/test_issue_21_schema_inventory.py" in db_paths_block, (
-        "config.yml Default database paths about should mention DDL inventory tests"
+        "config.yml Default database paths about should mention the schema inventory test module"
     )
     assert "CONTRIBUTING.md#continuous-integration SQLite issue #21 bullet" in db_paths_block, (
         "config.yml Default database paths about should point at CONTRIBUTING SQLite issue #21 bullet"

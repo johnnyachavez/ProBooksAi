@@ -14,7 +14,7 @@ contact_links:
     about: pip install -e ".[desktop]", python -m desktop_app.main, Fusion theme, Qt font stderr note, and shared Excel line on --help via probooks/help_epilog.py.
   - name: Default database paths (Windows)
     url: https://github.com/johnnyachavez/ProBooksAi/blob/main/README.md#default-database-paths-windows
-    about: probooks.db (CLI) vs probooksai.db (desktop) in the same folder; two schemas until issue #21; ROADMAP snapshot Why not one .db yet; tests/test_issue_21_schema_inventory.py (CONTRIBUTING.md#continuous-integration SQLite issue #21 bullet).
+    about: probooks.db (CLI) vs probooksai.db (desktop) in the same folder; two schemas until issue #21; ROADMAP snapshot Why not one .db yet; bank DDL inventory tests/test_issue_21_schema_inventory.py (CONTRIBUTING.md#continuous-integration SQLite issue #21 bullet).
   - name: Excel workbook template (openpyxl)
     url: https://github.com/johnnyachavez/ProBooksAi/blob/main/README.md#excel-workbook-template-openpyxl
     about: python generate_workbook.py, openpyxl COA template, CLI/desktop --help Excel line via probooks/help_epilog.py — same README anchor as review.html Documentation card and issue templates.
