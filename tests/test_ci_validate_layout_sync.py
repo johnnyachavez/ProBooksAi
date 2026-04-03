@@ -619,6 +619,7 @@ def test_contributing_ci_documents_issues_backlog_review_config_touchpoints() ->
         "test_issues_backlog_orients_readme_docs_bar_and_github_config",
         "test_review_html_issues_backlog_card_mentions_issue_chooser_config",
         "test_issues_backlog_documents_excel_help_epilog",
+        "test_issues_backlog_documents_sqlite_backup_regression_pointers",
         "test_hub_docs_related_docs_link_readme_default_database_paths",
         "test_contributing_ci_documents_hub_readme_default_database_paths_segment",
         "test_pr_template_lists_hub_docs_readme_default_database_paths_checklist",
@@ -920,6 +921,7 @@ def test_pr_template_issues_backlog_checklist_cites_layout_sync_tests() -> None:
     for name in (
         "test_issues_backlog_orients_readme_docs_bar_and_github_config",
         "test_issues_backlog_documents_excel_help_epilog",
+        "test_issues_backlog_documents_sqlite_backup_regression_pointers",
         "test_contributing_ci_documents_issues_backlog_review_config_touchpoints",
         "test_github_issue_templates_reference_core_docs",
         "test_review_html_issues_backlog_card_mentions_issue_chooser_config",
@@ -1243,6 +1245,8 @@ def test_issues_backlog_orients_readme_docs_bar_and_github_config() -> None:
     assert "tests/test_issue_21_schema_inventory.py" in text
     assert "probooks/migrations/" in text
     assert "probooksai/bank_import.py" in text
+    assert "**SQLite online backup (#28)**" in text
+    assert "tests/test_backup.py" in text
 
 
 def test_issues_backlog_documents_excel_help_epilog() -> None:
@@ -1254,6 +1258,17 @@ def test_issues_backlog_documents_excel_help_epilog() -> None:
     assert "probooks.backup" in text
     assert "SQLite online backup" in text
     assert "../README.md#python-cli" in text
+
+
+def test_issues_backlog_documents_sqlite_backup_regression_pointers() -> None:
+    """issues-backlog should point editors at backup tests + ROADMAP snapshot + Module contracts."""
+    text = DOCS_ISSUES_BACKLOG_MD.read_text(encoding="utf-8")
+    assert "**SQLite online backup (#28)**" in text
+    assert "tests/test_backup.py" in text
+    assert "tests/test_probooks_backup_contract.py" in text
+    assert "](ROADMAP.md#implementation-snapshot-repository-2026-04)" in text
+    assert "SQLite online backup (regression)" in text
+    assert "**Module contracts**" in text
 
 
 def test_backlog_links_readme_desktop_app_section() -> None:

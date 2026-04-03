@@ -12,6 +12,8 @@ The same three hub lines also repeat the same **README — Python CLI** segment 
 
 **SQLite issue #21** (CLI vs desktop bank DDL): changing **`probooks/migrations/`** or **`probooksai/bank_import.py`** requires updating **`tests/test_issue_21_schema_inventory.py`** per [CONTRIBUTING.md — Continuous integration](CONTRIBUTING.md#continuous-integration) (**SQLite issue #21** bullet).
 
+**SQLite online backup (#28)** / **`probooks.backup`**: changing **`probooks/backup.py`** or CLI/desktop backup wiring should keep **`tests/test_backup.py`**, **`tests/test_probooks_backup_contract.py`**, and the [ROADMAP.md — Implementation snapshot](ROADMAP.md#implementation-snapshot-repository-2026-04) **SQLite online backup (regression)** blurb aligned when behavior or documented guarantees change — [CONTRIBUTING.md — Continuous integration](CONTRIBUTING.md#continuous-integration) (**Module contracts**).
+
 Canonical ordering and GitHub links: **[BACKLOG.md](BACKLOG.md)**.
 
 Install, CLI, desktop, **`review.html`** hub: **[README.md](../README.md#web-shell-review)**.
