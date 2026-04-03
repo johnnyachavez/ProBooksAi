@@ -2,7 +2,7 @@
 
 Accounting app foundation: **dark UI shell** (static HTML), **`probooks` CLI**, and **PySide6 desktop** — **Python + SQLite** with migrations.
 
-**Docs:** [Issue backlog](docs/BACKLOG.md) · [Short index](docs/issues-backlog.md) · [Roadmap / snapshot](docs/ROADMAP.md#implementation-snapshot-repository-2026-04) · [Contributing](docs/CONTRIBUTING.md#continuous-integration) · [Running Tests](docs/CONTRIBUTING.md#running-tests) · [Desktop app](#desktop-app-pyside6)
+**Docs:** [Issue backlog](docs/BACKLOG.md) · [Short index](docs/issues-backlog.md) · [Roadmap / snapshot](docs/ROADMAP.md#implementation-snapshot-repository-2026-04) · [Contributing](docs/CONTRIBUTING.md#continuous-integration) · [Running Tests](docs/CONTRIBUTING.md#running-tests) · [Desktop app](#desktop-app-pyside6) · [Excel workbook](#excel-workbook-template-openpyxl)
 
 ## Web shell (review)
 

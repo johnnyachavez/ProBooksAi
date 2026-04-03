@@ -176,6 +176,23 @@ def test_readme_docs_bar_links_desktop_app_anchor() -> None:
     assert "[Desktop app](#desktop-app-pyside6)" in readme
 
 
+def test_readme_docs_bar_links_excel_workbook_anchor() -> None:
+    """README top **Docs** line should jump to ## Excel workbook template (openpyxl)."""
+    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    assert "[Excel workbook](#excel-workbook-template-openpyxl)" in readme
+
+
+def test_hub_docs_related_docs_link_readme_excel_workbook_template() -> None:
+    """ROADMAP, BACKLOG, and CONTRIBUTING should share the same README Excel segment in Related/Other docs."""
+    segment = (
+        "[README — Excel workbook template](../README.md#excel-workbook-template-openpyxl) "
+        "(**generate_workbook.py**, **openpyxl**)"
+    )
+    for rel in ("docs/ROADMAP.md", "docs/BACKLOG.md", "docs/CONTRIBUTING.md"):
+        text = (_REPO / rel).read_text(encoding="utf-8")
+        assert segment in text, f"{rel} should include the shared README Excel workbook segment"
+
+
 def test_static_html_links_readme_desktop_section() -> None:
     """Static shell pages that mention the desktop app should deep-link README Desktop."""
     needle = 'href="README.md#desktop-app-pyside6"'
@@ -309,6 +326,8 @@ def test_pr_template_lists_readme_excel_workbook_anchor_checklist() -> None:
         "test_review_html_links_readme_web_shell_and_desktop_anchors",
         "test_pr_template_lists_readme_excel_workbook_anchor_checklist",
         "test_contributing_ci_documents_readme_excel_workbook_anchor_bullet",
+        "test_hub_docs_related_docs_link_readme_excel_workbook_template",
+        "test_readme_docs_bar_links_excel_workbook_anchor",
     ):
         assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
 
@@ -322,8 +341,12 @@ def test_contributing_ci_documents_readme_excel_workbook_anchor_bullet() -> None
     assert "**README `### Excel workbook template (openpyxl)` anchor**" in chunk
     assert "README.md#excel-workbook-template-openpyxl" in chunk
     assert "**`config.yml`** (**Excel workbook template** contact link)" in chunk
+    assert "**ROADMAP** / **BACKLOG** **Related docs**" in chunk
+    assert "**README** top **Docs** line" in chunk
     assert "test_pr_template_lists_readme_excel_workbook_anchor_checklist" in chunk
     assert "test_contributing_ci_documents_readme_excel_workbook_anchor_bullet" in chunk
+    assert "test_hub_docs_related_docs_link_readme_excel_workbook_template" in chunk
+    assert "test_readme_docs_bar_links_excel_workbook_anchor" in chunk
 
 
 def test_pr_template_issues_backlog_checklist_cites_layout_sync_tests() -> None:
