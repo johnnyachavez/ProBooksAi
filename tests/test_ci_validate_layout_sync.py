@@ -659,6 +659,7 @@ def test_github_issue_templates_reference_core_docs() -> None:
     readme_shell = "README.md#web-shell-review"
     readme_desktop = "README.md#desktop-app-pyside6"
     readme_excel = "README.md#excel-workbook-template-openpyxl"
+    readme_dbpaths = "README.md#default-database-paths-windows"
     contrib_rt = "docs/CONTRIBUTING.md#running-tests"
     for label, text in (("bug_report.md", bug), ("feature_request.md", feat)):
         assert naming in text, f"{label} should link CONTRIBUTING.md#naming-conventions"
@@ -667,6 +668,7 @@ def test_github_issue_templates_reference_core_docs() -> None:
         assert readme_shell in text, f"{label} should deep-link README Web shell (review)"
         assert readme_desktop in text, f"{label} should deep-link README Desktop app (PySide6)"
         assert readme_excel in text, f"{label} should deep-link README Excel workbook template"
+        assert readme_dbpaths in text, f"{label} should deep-link README default database paths"
         assert "help_epilog" in text, f"{label} should mention help_epilog with Excel workbook template"
         assert "docs/BACKLOG.md" in text, f"{label} should link BACKLOG.md"
         assert "docs/issues-backlog.md" in text, f"{label} should link issues-backlog.md"
