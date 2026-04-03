@@ -804,13 +804,16 @@ def test_docs_indexes_link_contributing_ci_section() -> None:
 
 
 def test_hub_docs_link_roadmap_supporting_cross_cutting_issues() -> None:
-    """Hub docs deep-link ROADMAP Supporting / cross-cutting via explicit HTML anchor + stable fragment."""
+    """Hub docs + review.html deep-link ROADMAP Supporting / cross-cutting via explicit HTML anchor + stable fragment."""
     roadmap = (_REPO / "docs" / "ROADMAP.md").read_text(encoding="utf-8")
     assert '<a id="supporting-cross-cutting-issues"></a>' in roadmap
     assert "](ROADMAP.md#supporting-cross-cutting-issues)" in (_REPO / "docs" / "BACKLOG.md").read_text(encoding="utf-8")
     assert "](ROADMAP.md#supporting-cross-cutting-issues)" in (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
     assert "](ROADMAP.md#supporting-cross-cutting-issues)" in (_REPO / "docs" / "issues-backlog.md").read_text(encoding="utf-8")
     assert "](#supporting-cross-cutting-issues)" in roadmap
+    review = (_REPO / "review.html").read_text(encoding="utf-8")
+    assert 'href="docs/ROADMAP.md#supporting-cross-cutting-issues"' in review
+    assert "blob/main/docs/ROADMAP.md#supporting-cross-cutting-issues" in review
 
 
 def test_contributing_ci_documents_roadmap_supporting_cross_cutting_bullet() -> None:
@@ -823,6 +826,8 @@ def test_contributing_ci_documents_roadmap_supporting_cross_cutting_bullet() -> 
     end = chunk.index("\n- **README `## Web shell (review)` anchor**", start)
     bullet = chunk[start:end]
     assert "supporting-cross-cutting-issues" in bullet
+    assert "**`review.html`** Documentation cards" in bullet
+    assert "blob" in bullet
     assert "test_hub_docs_link_roadmap_supporting_cross_cutting_issues" in bullet
 
 
@@ -926,6 +931,7 @@ def test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests() -> Non
         "test_review_html_readme_default_database_paths_documentation_card",
         "test_review_html_links_readme_web_shell_and_desktop_anchors",
         "test_review_html_python_desktop_section_mentions_help_epilog",
+        "test_hub_docs_link_roadmap_supporting_cross_cutting_issues",
         "test_github_issue_templates_reference_core_docs",
     ):
         assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
@@ -963,6 +969,7 @@ def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
         "**Layout + workflow contracts** documents what **`test_cursor_rule_github_work_context_points_at_contributing_ci`** covers"
         in text
     )
+    assert "test_hub_docs_link_roadmap_supporting_cross_cutting_issues" in text
 
 
 def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> None:
@@ -987,6 +994,7 @@ def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> Non
         ", and **`test_github_issue_templates_reference_core_docs`** for **`.github/ISSUE_TEMPLATE/`** / **`config.yml`** / **`bug_report.md`** **Triaging**"
         in chunk
     )
+    assert "test_hub_docs_link_roadmap_supporting_cross_cutting_issues" in chunk
     assert "README.md#default-database-paths-windows" in chunk
     assert "test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests" in chunk
     assert "**`.cursor/rules/github-work-context.mdc`**" in chunk
