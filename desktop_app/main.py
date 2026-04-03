@@ -1506,13 +1506,13 @@ class MainWindow(QMainWindow):
                 self,
                 "Busy",
                 "Wait for AI extraction to finish before backing up.",
-                ok_tip="Close; wait for AI to finish, then back up again.",
+                ok_tip="Close; wait for AI, then File → Backup again (same engine as probooks backup).",
             )
             return
         src = Path(self._bank_db._db_path).resolve()
         path, _ = QFileDialog.getSaveFileName(
             self,
-            "Backup company database",
+            "Backup company database (probooks backup)",
             str(src.parent / f"{src.stem}-backup.db"),
             "SQLite Database (*.db);;All Files (*.*)",
         )
@@ -1527,7 +1527,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Backup failed",
                 escape_ampersand_for_qt(str(exc)),
-                ok_tip="Close; the active company file does not look like SQLite — open a valid company or repair the file.",
+                ok_tip="Close; open a valid company .db or repair it; File → Backup and probooks backup share probooks.backup.",
             )
             return
         except (OSError, sqlite3.Error) as exc:
@@ -1535,7 +1535,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Backup failed",
                 escape_ampersand_for_qt(str(exc)),
-                ok_tip="Close; check disk space, path permissions, and that the file is not locked.",
+                ok_tip="Close; check disk space, permissions, and locks; probooks backup uses the same engine (probooks.backup).",
             )
             return
         message_box_information_ok(
@@ -1552,7 +1552,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Busy",
                 "Wait for AI extraction to finish before restoring.",
-                ok_tip="Close; wait for AI to finish, then restore again.",
+                ok_tip="Close; wait for AI, then File → Restore again (same engine as probooks restore).",
             )
             return
         box = QMessageBox(self)
@@ -1582,7 +1582,7 @@ class MainWindow(QMainWindow):
             return
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select backup to restore",
+            "Select backup to restore (probooks restore)",
             "",
             "SQLite Database (*.db);;All Files (*.*)",
         )
@@ -1594,7 +1594,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Restore",
                 "Choose a different file than the active company database.",
-                ok_tip="Close; pick a separate backup file to restore from (not the active company .db).",
+                ok_tip="Close; pick a backup copy, not the live .db (same rules as probooks restore / probooks.backup).",
             )
             return
         self._db.close()
@@ -1606,7 +1606,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Restore failed",
                 escape_ampersand_for_qt(str(exc)),
-                ok_tip="Close; pick a file that is a SQLite backup (.db), then try again.",
+                ok_tip="Close; pick a valid SQLite backup .db; probooks restore matches File → Restore (probooks.backup).",
             )
             try:
                 self._load_company_at_path(str(target))
@@ -1619,7 +1619,7 @@ class MainWindow(QMainWindow):
                 "Restore failed",
                 f"{escape_ampersand_for_qt(str(exc))}\n\n"
                 "Try closing other apps using the database, then restart ProBooks+ai.",
-                ok_tip="Close; release file locks, restart the app if needed, then retry restore.",
+                ok_tip="Close; release locks and retry; probooks restore uses the same engine (probooks.backup).",
             )
             try:
                 self._load_company_at_path(str(target))

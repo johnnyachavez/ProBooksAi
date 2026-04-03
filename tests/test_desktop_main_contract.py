@@ -166,9 +166,12 @@ def test_backup_restore_success_and_confirm_copy_mentions_probooks_cli_parity() 
     assert "Backup complete" in bk
     assert "probooks backup" in bk
     assert "probooks.backup" in bk
+    assert "Backup company database (probooks backup)" in bk
     rs = text.split("def _on_restore_company", 1)[1].split("def _on_open_company_database", 1)[0]
     assert "Same engine as probooks restore (probooks.backup)" in rs
     assert "Restore complete" in rs
+    assert "probooks restore" in rs
+    assert "Select backup to restore (probooks restore)" in rs
 
 
 def test_detail_pane_action_buttons_have_tooltips() -> None:
