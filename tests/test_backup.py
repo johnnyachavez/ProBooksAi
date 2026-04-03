@@ -94,6 +94,25 @@ def test_main_backup_and_restore_roundtrip(tmp_path: Path) -> None:
     conn.close()
 
 
+def test_main_restore_accepts_long_input_flag(tmp_path: Path) -> None:
+    from probooks.cli import main
+
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    db = tmp_path / "live.db"
+    conn = connect(db)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    snap = tmp_path / "snap.db"
+    with patch.object(sys, "stdout", io.StringIO()):
+        assert main(["--db", str(db), "backup", "-o", str(snap)]) == 0
+    restored = tmp_path / "restored.db"
+    stdout = io.StringIO()
+    with patch.object(sys, "stdout", stdout):
+        assert main(["--db", str(restored), "restore", "--input", str(snap), "--yes"]) == 0
+    assert is_sqlite_file(restored)
+    assert "Restored database from" in stdout.getvalue()
+
+
 def test_main_restore_without_yes_returns_two(tmp_path: Path) -> None:
     from probooks.cli import main
 
@@ -326,6 +345,34 @@ def test_restore_overwrite_false_creates_target_when_missing(tmp_path: Path) -> 
     conn = connect(new_target)
     assert conn.execute("SELECT COUNT(*) FROM companies").fetchone()[0] >= 1
     conn.close()
+
+
+def test_backup_database_raises_when_destination_parent_is_a_file(tmp_path: Path) -> None:
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    src = tmp_path / "live.db"
+    conn = connect(src)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    blocker = tmp_path / "not_a_directory"
+    blocker.write_text("plain file", encoding="utf-8")
+    dest = blocker / "out.db"
+    with pytest.raises(OSError):
+        backup_database(src, dest)
+
+
+def test_restore_database_raises_when_target_parent_is_a_file(tmp_path: Path) -> None:
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    live = tmp_path / "live.db"
+    conn = connect(live)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    bak = tmp_path / "bak.db"
+    backup_database(live, bak)
+    blocker = tmp_path / "blockfile"
+    blocker.write_bytes(b"x")
+    target = blocker / "target.db"
+    with pytest.raises(OSError):
+        restore_database(bak, target, overwrite=True)
 
 
 def test_backup_database_replaces_existing_destination_file(tmp_path: Path) -> None:
