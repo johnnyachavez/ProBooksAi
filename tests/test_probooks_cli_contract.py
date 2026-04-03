@@ -14,3 +14,5 @@ def test_probooks_cli_description_epilog_and_default_db_help() -> None:
     assert "python -m probooks" in text
     assert "Default database" in text
     assert "ProBooks+ai" in text
+    assert "generate_workbook.py" in text
+    assert "Excel COA workbook" in text

@@ -204,7 +204,8 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Same interface: python -m probooks … "
             "The desktop app may use a different default SQLite file than this CLI; "
-            "see the repository README (Default database paths)."
+            "see the repository README (Default database paths). "
+            "Excel COA workbook (openpyxl): python generate_workbook.py; see README (Excel workbook template)."
         ),
     )
     p.add_argument(
