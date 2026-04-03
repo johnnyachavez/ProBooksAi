@@ -36,6 +36,13 @@ def test_register_tab_persists_header_state_via_qsettings() -> None:
     assert "register/table_header_state_" in text
 
 
+def test_register_tab_cleared_actions_document_shortcuts_in_tooltips() -> None:
+    """Toolbar tooltips surface the same Ctrl+Shift shortcuts as QShortcut."""
+    text = (_MAIN.parent / "register_tab.py").read_text(encoding="utf-8")
+    assert "setToolTip" in text
+    assert "Ctrl+Shift+C" in text and "Ctrl+Shift+U" in text
+
+
 def test_register_table_stylesheet_defines_cell_grid() -> None:
     """Bank register uses per-item borders; native QTable grid is often invisible under QSS."""
     from desktop_app.theme import register_table_style_sheet

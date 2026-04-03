@@ -262,8 +262,16 @@ class RegisterTab(QWidget):
         tools.addWidget(QPushButton("Transfer to…", clicked=self._transfer_dialog))
         tools.addWidget(QPushButton("Splits…", clicked=self._splits_dialog))
         tools.addWidget(QPushButton("Link payment…", clicked=self._link_payment_dialog))
-        tools.addWidget(QPushButton("Mark cleared", clicked=self._mark_cleared))
-        tools.addWidget(QPushButton("Clear cleared", clicked=self._clear_cleared))
+        self._btn_mark_cleared = QPushButton("Mark cleared", clicked=self._mark_cleared)
+        self._btn_mark_cleared.setToolTip(
+            "Set cleared on selected rows. Shortcut: Ctrl+Shift+C (when Register has focus)."
+        )
+        tools.addWidget(self._btn_mark_cleared)
+        self._btn_clear_cleared = QPushButton("Clear cleared", clicked=self._clear_cleared)
+        self._btn_clear_cleared.setToolTip(
+            "Clear cleared on selected rows. Shortcut: Ctrl+Shift+U (when Register has focus)."
+        )
+        tools.addWidget(self._btn_clear_cleared)
         tools.addStretch()
         layout.addLayout(tools)
 
