@@ -40,6 +40,13 @@ def test_is_sqlite_file_true_at_minimum_size(tmp_path: Path) -> None:
     assert is_sqlite_file(p)
 
 
+def test_is_sqlite_file_false_when_path_is_directory(tmp_path: Path) -> None:
+    d = tmp_path / "fake.db"
+    d.mkdir()
+    assert d.is_dir()
+    assert not is_sqlite_file(d)
+
+
 def test_cli_backup_returns_one_when_source_db_missing(tmp_path: Path) -> None:
     missing = tmp_path / "nope.db"
     out = tmp_path / "out.db"
@@ -110,6 +117,33 @@ def test_main_restore_prints_error_when_input_missing(tmp_path: Path) -> None:
         code = main(["--db", str(target), "restore", "-i", str(missing), "--yes"])
     assert code == 1
     assert "Backup file not found" in err.getvalue()
+
+
+def test_main_backup_stderr_when_db_not_sqlite(tmp_path: Path) -> None:
+    from probooks.cli import main
+
+    db = tmp_path / "bad.db"
+    db.write_text("not sqlite", encoding="utf-8")
+    out = tmp_path / "out.db"
+    err = io.StringIO()
+    with patch.object(sys, "stderr", err):
+        code = main(["--db", str(db), "backup", "-o", str(out)])
+    assert code == 1
+    assert not out.exists()
+    assert "Not a SQLite" in err.getvalue()
+
+
+def test_main_restore_stderr_when_input_not_sqlite(tmp_path: Path) -> None:
+    from probooks.cli import main
+
+    target = tmp_path / "live.db"
+    bad_bak = tmp_path / "fake.bak"
+    bad_bak.write_text("plain", encoding="utf-8")
+    err = io.StringIO()
+    with patch.object(sys, "stderr", err):
+        code = main(["--db", str(target), "restore", "-i", str(bad_bak), "--yes"])
+    assert code == 1
+    assert "Not a SQLite" in err.getvalue()
 
 
 def test_cli_restore_returns_one_when_backup_file_missing(tmp_path: Path) -> None:
