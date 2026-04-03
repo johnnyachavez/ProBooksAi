@@ -63,7 +63,7 @@ The following duplicate issues have been superseded. Only the **canonical** issu
 
 The phases below are still the **product roadmap**; this table summarizes what exists **in this repo today** (`probooksai/`, `desktop_app/`).
 
-**Default database paths (Windows):** The `probooks` CLI (`probooks.paths`) and the desktop/intake stack (`probooksai.database.get_data_dir`) still use **two different** per-user locations (`%LOCALAPPDATA%\ProBooks+ai\probooks.db` vs `%APPDATA%\ProBooksAi\probooksai.db`). That split is intentional until a single location is chosen (see [#21](https://github.com/johnnyachavez/ProBooksAi/issues/21)); the repository [README](../README.md#default-database-paths-windows) documents both.
+**Default database paths (Windows):** Desktop and intake use `%LOCALAPPDATA%\ProBooks+ai\probooksai.db` via `probooksai.database.get_data_dir` — the **same branded folder** as the `probooks` CLI (`probooks.db`). The CLI and GUI still use **two SQLite filenames** in that folder until a single file is chosen (see [#21](https://github.com/johnnyachavez/ProBooksAi/issues/21)). Older `%APPDATA%\ProBooksAi\` data is copied forward automatically when the new file is absent; see the [README](../README.md#default-database-paths-windows).
 
 | Roadmap phases | In-repo status |
 |---|---|

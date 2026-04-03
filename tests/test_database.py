@@ -5,13 +5,14 @@ Tests for probooksai.database
 import os
 import sqlite3
 import struct
+import sys
 import tempfile
 import zlib
 from pathlib import Path
 
 import pytest
 
-from probooksai.database import DocumentDatabase, get_data_dir, get_docs_dir, _file_hash
+from probooksai.database import DocumentDatabase, _legacy_data_dir, get_data_dir, _file_hash
 
 
 # ---------------------------------------------------------------------------
@@ -279,6 +280,43 @@ class TestApprovedValues:
     def test_no_approved_returns_none(self, tmp_db, sample_pdf):
         doc_id = tmp_db.add_document(sample_pdf, "application/pdf", store=False)
         assert tmp_db.get_approved(doc_id) is None
+
+
+# ---------------------------------------------------------------------------
+# Default data directory (canonical vs legacy migration)
+# ---------------------------------------------------------------------------
+
+
+class TestGetDataDirMigration:
+    def test_migrates_legacy_db_and_documents(self, tmp_path, monkeypatch):
+        if sys.platform == "win32":
+            local = tmp_path / "Local"
+            roaming = tmp_path / "Roaming"
+            local.mkdir()
+            roaming.mkdir()
+            monkeypatch.setenv("LOCALAPPDATA", str(local))
+            monkeypatch.setenv("APPDATA", str(roaming))
+        else:
+            monkeypatch.delenv("APPDATA", raising=False)
+            monkeypatch.delenv("LOCALAPPDATA", raising=False)
+            monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+            fake_home = tmp_path / "home"
+            fake_home.mkdir()
+            monkeypatch.setenv("HOME", str(fake_home))
+
+        legacy = _legacy_data_dir()
+        legacy.mkdir(parents=True, exist_ok=True)
+        (legacy / "probooksai.db").write_bytes(b"legacy-db-marker")
+        docs = legacy / "documents"
+        docs.mkdir()
+        (docs / "a.txt").write_text("x", encoding="utf-8")
+
+        got = get_data_dir()
+
+        assert got.resolve() != legacy.resolve()
+        assert (got / "probooksai.db").is_file()
+        assert (got / "probooksai.db").read_bytes() == b"legacy-db-marker"
+        assert (got / "documents" / "a.txt").read_text(encoding="utf-8") == "x"
 
 
 # ---------------------------------------------------------------------------

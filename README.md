@@ -51,7 +51,7 @@ Writes `ProBooksAi_Accounting.xlsx` in the working directory (legacy default fil
 ### Default database paths (Windows)
 
 - **`probooks` CLI** (`probooks.paths`): `%LOCALAPPDATA%\ProBooks+ai\probooks.db`
-- **Document intake / desktop default file** when no path is passed (`probooksai.database.get_data_dir`): `%APPDATA%\ProBooksAi\probooksai.db` (legacy folder name on disk)
+- **Document intake / desktop default file** when no path is passed (`probooksai.database.get_data_dir`): `%LOCALAPPDATA%\ProBooks+ai\probooksai.db` (same per-user folder as the CLI; if you already had data under `%APPDATA%\ProBooksAi\`, it is copied here once on first access)
 
 ## Desktop app (PySide6)
 

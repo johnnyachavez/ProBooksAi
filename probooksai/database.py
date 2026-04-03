@@ -14,6 +14,7 @@ Schema
 import hashlib
 import json
 import os
+import shutil
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,16 +25,38 @@ from typing import Optional
 # Application data directory (Windows-friendly)
 # ---------------------------------------------------------------------------
 
-def get_data_dir() -> Path:
-    """Return (and create) the per-user data directory (folder name ``ProBooksAi``)."""
+def _legacy_data_dir() -> Path:
+    """Former default directory (``APPDATA/ProBooksAi`` on Windows, ``~/ProBooksAi`` otherwise)."""
     appdata = os.environ.get("APPDATA")
-    if appdata:
-        base = Path(appdata)
-    else:
-        base = Path.home()
-    data_dir = base / "ProBooksAi"
-    data_dir.mkdir(parents=True, exist_ok=True)
-    return data_dir
+    base = Path(appdata) if appdata else Path.home()
+    return base / "ProBooksAi"
+
+
+def get_data_dir() -> Path:
+    """Return (and create) the per-user data directory for intake + desktop default DB.
+
+    Uses :func:`probooks.paths.app_data_dir` (same branded folder as the ``probooks`` CLI).
+    If ``probooksai.db`` exists only under the legacy ``ProBooksAi`` folder, it is copied
+    here once (along with ``documents/`` when present).
+    """
+    from probooks.paths import app_data_dir, ensure_app_dirs
+
+    ensure_app_dirs()
+    dest = app_data_dir()
+    dest.mkdir(parents=True, exist_ok=True)
+
+    dest_db = dest / "probooksai.db"
+    legacy_root = _legacy_data_dir()
+    legacy_db = legacy_root / "probooksai.db"
+
+    if not dest_db.is_file() and legacy_db.is_file():
+        shutil.copy2(legacy_db, dest_db)
+        legacy_docs = legacy_root / "documents"
+        dest_docs = dest / "documents"
+        if legacy_docs.is_dir() and not dest_docs.exists():
+            shutil.copytree(legacy_docs, dest_docs)
+
+    return dest
 
 
 def get_docs_dir() -> Path:

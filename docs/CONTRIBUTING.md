@@ -10,7 +10,7 @@ Thanks for contributing! Please read this short guide before opening an issue or
 
 ### Product name
 
-Use **ProBooks+ai** (plus between words, lowercase `ai`) in titles, descriptions, and user-facing copy. The **GitHub repository slug** remains `ProBooksAi` (`+` is not allowed in repo names). **Legacy** on-disk folder names (for example under `%APPDATA%`) may still read `ProBooksAi`; do not rename those in docs without a coordinated migration (see issue #21).
+Use **ProBooks+ai** (plus between words, lowercase `ai`) in titles, descriptions, and user-facing copy. The **GitHub repository slug** remains `ProBooksAi` (`+` is not allowed in repo names). Older installs may still have a **`ProBooksAi`** folder under **`%APPDATA%`**; **`probooksai.database.get_data_dir`** now uses the same branded directory as **`probooks.paths`** and copies legacy **`probooksai.db`** (and **`documents/`**) forward once — see **[README](../README.md#default-database-paths-windows)** and issue **#21** for unifying the two default **`.db`** filenames.
 
 ### Issues
 
@@ -143,5 +143,5 @@ A flat **`requirements.txt`** is also checked in for environments that prefer it
 | **`test_desktop_main_contract.py`** | **`desktop_app/main.py`** module doc + argparse (**`--help`** epilog via **`EXCEL_COA_WORKBOOK_ARGPARSE_EPILOG`**) / **Qt** app strings + **`qInstallMessageHandler`** before **`QApplication`** (filters **`QFont::setPointSize`** stderr noise); **`desktop_app/theme.py`** Fusion style + pixel-sized app font ( **`FONT_SIZE_NORMAL`**) before/after **`setStyleSheet`**; Excel epilog text lives in **`probooks/help_epilog.py`** |
 | **`test_probooks_cli_contract.py`** | **`probooks/cli.py`** module doc + argparse / epilog ( **`EXCEL_COA_WORKBOOK_ARGPARSE_EPILOG`** from **`probooks/help_epilog.py`**: **Excel COA workbook** / **`generate_workbook.py`**) |
 | **`test_probooks_paths_contract.py`** | **`probooks/paths.py`** **`ProBooks+ai`** app dir |
-| **`test_probooksai_database_contract.py`** | **`probooksai/database.py`** legacy **`ProBooksAi`** folder |
+| **`test_probooksai_database_contract.py`** | **`probooksai/database.py`** **`get_data_dir`** ↔ **`probooks.paths.app_data_dir`** + legacy **`ProBooksAi`** migration |
 | **`test_local_docs_contract.py`** | **`desktop_app/local_docs.py`** → **`docs/ROADMAP.md`** |
