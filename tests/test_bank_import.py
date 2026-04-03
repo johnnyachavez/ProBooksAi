@@ -567,3 +567,14 @@ class TestReconciliationExport:
         assert "2024-01-05" in text
         assert "Deposit" in text
         assert "50" in text
+
+
+def test_register_payee_two_line_plain_prioritizes_coa_then_memo() -> None:
+    from desktop_app.register_tab import _register_payee_two_line_plain
+
+    assert _register_payee_two_line_plain(
+        {"description": "Vendor", "coa_account": "6200", "memo": "m"}
+    ) == "Vendor\n6200"
+    assert _register_payee_two_line_plain({"description": "", "memo": "Note"}) == "—\nNote"
+    assert "Assign COA" in _register_payee_two_line_plain({"description": "X"})
+    assert _register_payee_two_line_plain({"description": "  X  "}) == "X\n— Assign COA —"

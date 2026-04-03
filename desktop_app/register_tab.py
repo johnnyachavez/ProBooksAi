@@ -4,6 +4,7 @@ desktop_app.register_tab
 Phase 3 – Bank register: chronological transactions for one bank account with
 debit/credit columns, running balance, memo and COA inline edits, sortable columns
 (txn id on Date ``UserRole``; balance stays chronological), and footer totals.
+Payee column uses a two-line layout (description, then COA or memo sub-line).
 Rows without a COA category are highlighted.
 """
 
@@ -51,6 +52,7 @@ from desktop_app.open_attachment import open_local_attachment
 from desktop_app.qt_mnemonic import escape_ampersand_for_qt
 from desktop_app.table_clipboard import (
     QLIST_PLAIN_TEXT_ROLE,
+    QTABLE_PLAIN_TEXT_ROLE,
     NumericAmountTableItem,
     copy_qlistwidget_row_text,
     copy_table_row_as_tsv,
@@ -107,6 +109,20 @@ def _bank_match_label(m) -> str:
 def _txn_posted(row) -> bool:
     keys = row.keys()
     return "is_posted" in keys and int(row["is_posted"] or 0) == 1
+
+
+def _register_payee_two_line_plain(txn: dict) -> str:
+    """Payee cell: line 1 = description; line 2 = COA, else memo, else placeholder."""
+    line1 = (txn.get("description") or "").strip() or "—"
+    coa = (txn.get("coa_account") or "").strip()
+    memo = (txn.get("memo") or "").strip()
+    if coa:
+        line2 = coa
+    elif memo:
+        line2 = memo
+    else:
+        line2 = "— Assign COA —"
+    return f"{line1}\n{line2}"
 
 
 class RegisterTab(QWidget):
@@ -190,6 +206,7 @@ class RegisterTab(QWidget):
         self._table.setAlternatingRowColors(True)
         # Native grid is unreliable once app-level QTable styles apply; cell borders come from the stylesheet.
         self._table.setShowGrid(False)
+        self._table.setWordWrap(True)
         self._table.verticalHeader().setVisible(False)
         self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self._table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.Stretch)
@@ -216,6 +233,7 @@ class RegisterTab(QWidget):
 
         tip = QLabel(
             "Deposits show in Debit; payments in Credit (cash-basis register). "
+            "Payee column shows description on the first line and COA (or memo) on the second. "
             "Assign a COA account to clear the highlight. "
             "Starred (★) items at the top of the COA list are hints from your rules "
             "and, when OPENAI_API_KEY is set, optional AI picks. "
@@ -276,6 +294,16 @@ class RegisterTab(QWidget):
         self._table.setSortingEnabled(True)
         self._populating = False
         self._set_footer(0.0, 0.0, 0.0)
+
+    def _apply_payee_two_line_to_item(self, it: QTableWidgetItem, txn: dict) -> None:
+        raw = _register_payee_two_line_plain(txn)
+        it.setText(escape_ampersand_for_qt(raw))
+        it.setData(QTABLE_PLAIN_TEXT_ROLE, raw)
+
+    def _resize_register_row(self, row: int) -> None:
+        self._table.resizeRowToContents(row)
+        if self._table.rowHeight(row) < 40:
+            self._table.setRowHeight(row, 40)
 
     def _register_filter_param(self) -> Optional[str]:
         data = self._filter_combo.currentData()
@@ -371,6 +399,9 @@ class RegisterTab(QWidget):
             d_item = plain_display_table_item(txn["txn_date"] or "")
             d_item.setData(Qt.ItemDataRole.UserRole, tid)
             d_item.setFlags(d_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            d_item.setTextAlignment(
+                Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
+            )
             if missing_coa:
                 d_item.setBackground(brush)
 
@@ -381,11 +412,17 @@ class RegisterTab(QWidget):
             else:
                 ref_item = QTableWidgetItem(ref_raw)
                 ref_item.setFlags(ref_item.flags() | Qt.ItemFlag.ItemIsEditable)
+            ref_item.setTextAlignment(
+                Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
+            )
             if missing_coa:
                 ref_item.setBackground(brush)
 
-            payee_item = plain_display_table_item(txn.get("description") or "")
+            payee_item = plain_display_table_item(_register_payee_two_line_plain(txn))
             payee_item.setFlags(payee_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            payee_item.setTextAlignment(
+                Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
+            )
             if missing_coa:
                 payee_item.setBackground(brush)
 
@@ -396,6 +433,9 @@ class RegisterTab(QWidget):
             else:
                 memo_item = QTableWidgetItem(memo_raw)
                 memo_item.setFlags(memo_item.flags() | Qt.ItemFlag.ItemIsEditable)
+            memo_item.setTextAlignment(
+                Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
+            )
             if missing_coa:
                 memo_item.setBackground(brush)
 
@@ -415,14 +455,15 @@ class RegisterTab(QWidget):
                 credit_item.setFlags(credit_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 credit_item.setForeground(neg_color)
 
-            bal_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             if running < 0:
                 bal_item.setForeground(neg_color)
             elif running > 0:
                 bal_item.setForeground(pos_color)
 
             for it in (debit_item, credit_item, bal_item):
-                it.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                it.setTextAlignment(
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop
+                )
             if missing_coa:
                 for it in (debit_item, credit_item, bal_item):
                     it.setBackground(brush)
@@ -486,7 +527,12 @@ class RegisterTab(QWidget):
             )
             if missing_coa:
                 link_item.setBackground(brush)
+            link_item.setTextAlignment(
+                Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
+            )
             self._table.setItem(r, _COL_LINK, link_item)
+
+            self._resize_register_row(r)
 
         self._table.blockSignals(False)
         self._populating = False
@@ -515,6 +561,12 @@ class RegisterTab(QWidget):
         try:
             if col == _COL_MEMO:
                 self._db.update_transaction(txn_id, memo=item.text())
+                fresh = self._db.get_transaction(txn_id)
+                if fresh is not None:
+                    pay_it = self._table.item(row, _COL_PAYEE)
+                    if pay_it is not None:
+                        self._apply_payee_two_line_to_item(pay_it, dict(fresh))
+                self._resize_register_row(row)
             else:
                 self._db.update_transaction(txn_id, ref_number=item.text())
         except ValueError as exc:
@@ -671,6 +723,17 @@ class RegisterTab(QWidget):
             combo.setStyleSheet(f"QComboBox {{ background-color: {_MISSING_COA_BG.name()}; }}")
         else:
             combo.setStyleSheet("")
+
+        id_it = self._table.item(row, _COL_DATE)
+        if id_it is not None:
+            tid = id_it.data(Qt.ItemDataRole.UserRole)
+            if tid is not None:
+                fresh = self._db.get_transaction(int(tid))
+                if fresh is not None:
+                    pay_it = self._table.item(row, _COL_PAYEE)
+                    if pay_it is not None:
+                        self._apply_payee_two_line_to_item(pay_it, dict(fresh))
+                self._resize_register_row(row)
 
     def _mark_needs_receipt(self):
         for tid in self._selected_txn_ids():
