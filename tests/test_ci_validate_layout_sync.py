@@ -823,6 +823,13 @@ def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
     assert "### Default database paths (Windows)" in text
     assert "Why not one `.db` yet" in text
     assert "test_readme_default_database_paths_notes_two_schemas_and_roadmap" in text
+    assert "README.md#default-database-paths-windows" in text
+    for name in (
+        "test_review_html_readme_default_database_paths_documentation_card",
+        "test_review_html_links_readme_web_shell_and_desktop_anchors",
+        "test_review_html_python_desktop_section_mentions_help_epilog",
+    ):
+        assert name in text, f"github-work-context.mdc should mention {name!r}"
     assert "review.html" in text
     assert "test_ci_validate_layout_sync.py" in text
     assert "CONTRIBUTING.md#continuous-integration" in text
@@ -844,6 +851,10 @@ def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> Non
     assert "test_hub_docs_related_docs_link_readme_excel_workbook_template" in chunk
     assert "test_readme_default_database_paths_notes_two_schemas_and_roadmap" in chunk
     assert "Why not one `.db` yet" in chunk
+    assert "test_review_html_readme_default_database_paths_documentation_card" in chunk
+    assert "test_review_html_links_readme_web_shell_and_desktop_anchors" in chunk
+    assert "test_review_html_python_desktop_section_mentions_help_epilog" in chunk
+    assert "README.md#default-database-paths-windows" in chunk
     assert "test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests" in chunk
     assert "**`.cursor/rules/github-work-context.mdc`**" in chunk
     assert "both **`require`** **`.cursor/rules/github-work-context.mdc`**" in chunk
