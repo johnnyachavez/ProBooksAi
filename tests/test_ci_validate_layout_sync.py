@@ -1018,16 +1018,19 @@ def test_github_issue_templates_reference_core_docs() -> None:
     roadmap_snap = "ROADMAP.md#implementation-snapshot-repository-2026-04"
     roadmap_supporting = "docs/ROADMAP.md#supporting-cross-cutting-issues"
     readme_shell = "README.md#web-shell-review"
+    readme_python_cli = "README.md#python-cli"
     readme_desktop = "README.md#desktop-app-pyside6"
     readme_excel = "README.md#excel-workbook-template-openpyxl"
     readme_dbpaths = "README.md#default-database-paths-windows"
     contrib_rt = "docs/CONTRIBUTING.md#running-tests"
+    web_i = bug.index(readme_shell)
+    cli_i = bug.index(readme_python_cli)
     desk_i = bug.index(readme_desktop)
     dbp_i = bug.index(readme_dbpaths)
     xls_i = bug.index(readme_excel)
-    assert desk_i < dbp_i < xls_i, (
-        "bug_report.md triaging line should list README Desktop, then Default database paths, then Excel "
-        "(same order as ROADMAP/BACKLOG/CONTRIBUTING Related docs)"
+    assert web_i < cli_i < desk_i < dbp_i < xls_i, (
+        "bug_report.md triaging line should list README Web shell, Python CLI, Desktop, Default database paths, "
+        "then Excel (same order as ROADMAP/BACKLOG/CONTRIBUTING Related docs)"
     )
     assert bug.index(roadmap_snap) < bug.index(roadmap_supporting), (
         "bug_report.md triaging line should list ROADMAP implementation snapshot before Supporting / cross-cutting"
@@ -1041,6 +1044,7 @@ def test_github_issue_templates_reference_core_docs() -> None:
         assert roadmap_snap in text, f"{label} should deep-link ROADMAP implementation snapshot"
         assert roadmap_supporting in text, f"{label} should deep-link ROADMAP Supporting / cross-cutting"
         assert readme_shell in text, f"{label} should deep-link README Web shell (review)"
+        assert readme_python_cli in text, f"{label} should deep-link README Python CLI"
         assert readme_desktop in text, f"{label} should deep-link README Desktop app (PySide6)"
         assert readme_excel in text, f"{label} should deep-link README Excel workbook template"
         assert readme_dbpaths in text, f"{label} should deep-link README default database paths"

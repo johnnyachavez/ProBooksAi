@@ -9,6 +9,8 @@ labels: enhancement
 
 **Local preview:** [README — Web shell](https://github.com/johnnyachavez/ProBooksAi/blob/main/README.md#web-shell-review) (`python -m http.server`, **`review.html`** hub).
 
+**Python CLI / backup:** [README — Python CLI](https://github.com/johnnyachavez/ProBooksAi/blob/main/README.md#python-cli) (**`probooks.backup`**, SQLite online backup; CLI **`backup`/`restore`**, desktop **File** menu).
+
 **Desktop:** [README — Desktop app](https://github.com/johnnyachavez/ProBooksAi/blob/main/README.md#desktop-app-pyside6) (`pip install -e ".[desktop]"`, **`python -m desktop_app.main`**, theme + Qt notes).
 
 **Default database paths:** [README — Default database paths](https://github.com/johnnyachavez/ProBooksAi/blob/main/README.md#default-database-paths-windows) (CLI **`probooks.db`** vs desktop **`probooksai.db`**, **#21**).
