@@ -60,7 +60,7 @@ This file orders **open** work so implementation can proceed top-to-bottom. “C
 | P2 | [#48](https://github.com/johnnyachavez/ProBooksAi/issues/48) | Large CSV performance (worker + progress) |
 | P2 | [#52](https://github.com/johnnyachavez/ProBooksAi/issues/52) | Bank txn matching to documents / receipts |
 | P2 | [#53](https://github.com/johnnyachavez/ProBooksAi/issues/53) | Audit log (who/when/what) |
-| P2 | [#54](https://github.com/johnnyachavez/ProBooksAi/issues/54) | Export tools (CSV / reconciliation batches) |
+| P2 | [#54](https://github.com/johnnyachavez/ProBooksAi/issues/54) | Export tools (CSV / reconciliation batches / **Excel COA workbook** via **`generate_workbook.py`** + **`openpyxl`** — see **README**) |
 | P2 | [#55](https://github.com/johnnyachavez/ProBooksAi/issues/55) | Multi-company / multiple books (optional, late) |
 
 ## Phase 3 — COA, GL, posting
