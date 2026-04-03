@@ -1140,6 +1140,7 @@ def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> Non
     assert "probooks/help_epilog.py" in chunk
     assert "tests/conftest.py" in chunk
     assert "isolated_branded_app_data_env" in chunk
+    assert "test_readme_ci_validate_layout_bullet_mentions_conftest" in chunk
     assert "test_cursor_rule_github_work_context_points_at_contributing_ci" in chunk
     assert "test_hub_docs_related_docs_link_readme_excel_workbook_template" in chunk
     assert "test_hub_docs_related_docs_link_readme_default_database_paths" in chunk
