@@ -175,6 +175,13 @@ def test_readme_links_roadmap_implementation_snapshot() -> None:
     assert readme.count(needle) >= 2, f"expected at least two {needle!r} links (docs bar + body)"
 
 
+def test_readme_links_roadmap_supporting_cross_cutting() -> None:
+    """README docs bar and Issue-driven section should deep-link ROADMAP Supporting / cross-cutting."""
+    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    needle = "docs/ROADMAP.md#supporting-cross-cutting-issues"
+    assert readme.count(needle) >= 2, f"expected at least two {needle!r} links (docs bar + body)"
+
+
 def test_readme_docs_bar_links_issues_backlog_short_index() -> None:
     """README docs bar should link docs/issues-backlog.md (short index)."""
     readme = (_REPO / "README.md").read_text(encoding="utf-8")
@@ -307,6 +314,7 @@ def test_review_html_python_desktop_section_mentions_help_epilog() -> None:
     assert "probooks/help_epilog.py" in chunk
     assert "--help" in chunk
     assert 'href="README.md#default-database-paths-windows"' in chunk
+    assert 'href="docs/ROADMAP.md#supporting-cross-cutting-issues"' in chunk
 
 
 def test_static_shell_page_sub_mentions_help_epilog() -> None:
@@ -837,15 +845,25 @@ def test_contributing_ci_documents_roadmap_supporting_cross_cutting_bullet() -> 
     assert "**`review.html`** Documentation cards" in bullet
     assert "blob" in bullet
     assert "**`bug_report.md`**" in bullet
+    assert "**README** top **Docs** bar" in bullet
     assert "test_hub_docs_link_roadmap_supporting_cross_cutting_issues" in bullet
+    assert "test_readme_links_roadmap_supporting_cross_cutting" in bullet
+    assert "test_review_html_python_desktop_section_mentions_help_epilog" in bullet
     assert "test_github_issue_templates_reference_core_docs" in bullet
 
 
 def test_pr_template_roadmap_row_cites_supporting_cross_cutting_layout_sync_test() -> None:
-    """PR template ROADMAP checklist row should cite supporting-cross-cutting anchor + pytest name."""
+    """PR template ROADMAP checklist row should cite supporting-cross-cutting anchor + pytest names."""
     text = (_REPO / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
     assert "supporting-cross-cutting-issues" in text
-    assert "test_hub_docs_link_roadmap_supporting_cross_cutting_issues" in text
+    assert "README.md" in text
+    assert "Python + desktop" in text
+    for name in (
+        "test_hub_docs_link_roadmap_supporting_cross_cutting_issues",
+        "test_readme_links_roadmap_supporting_cross_cutting",
+        "test_review_html_python_desktop_section_mentions_help_epilog",
+    ):
+        assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
 
 
 def test_issues_backlog_orients_readme_docs_bar_and_github_config() -> None:

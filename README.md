@@ -2,7 +2,7 @@
 
 Accounting app foundation: **dark UI shell** (static HTML), **`probooks` CLI**, **PySide6 desktop**, and **Excel COA workbook** (**`openpyxl`**) — **Python + SQLite** with migrations.
 
-**Docs:** [Issue backlog](docs/BACKLOG.md) · [Short index](docs/issues-backlog.md) · [Roadmap / snapshot](docs/ROADMAP.md#implementation-snapshot-repository-2026-04) · [Contributing](docs/CONTRIBUTING.md#continuous-integration) · [Running Tests](docs/CONTRIBUTING.md#running-tests) · [Default DB paths](#default-database-paths-windows) · [Desktop app](#desktop-app-pyside6) · [Excel workbook](#excel-workbook-template-openpyxl)
+**Docs:** [Issue backlog](docs/BACKLOG.md) · [Short index](docs/issues-backlog.md) · [Roadmap / snapshot](docs/ROADMAP.md#implementation-snapshot-repository-2026-04) · [Cross-phase (#21)](docs/ROADMAP.md#supporting-cross-cutting-issues) · [Contributing](docs/CONTRIBUTING.md#continuous-integration) · [Running Tests](docs/CONTRIBUTING.md#running-tests) · [Default DB paths](#default-database-paths-windows) · [Desktop app](#desktop-app-pyside6) · [Excel workbook](#excel-workbook-template-openpyxl)
 
 ## Web shell (review)
 
@@ -10,7 +10,7 @@ Accounting app foundation: **dark UI shell** (static HTML), **`probooks` CLI**, 
 python -m http.server 8765
 ```
 
-Open [http://127.0.0.1:8765/review.html](http://127.0.0.1:8765/review.html) — hub to **`index.html`**, **`invoice.html`**, raw **BACKLOG** / **issues-backlog** / **ROADMAP** (with **implementation snapshot** anchor), and GitHub shortcuts (rendered docs on **github.com** after you push).
+Open [http://127.0.0.1:8765/review.html](http://127.0.0.1:8765/review.html) — hub to **`index.html`**, **`invoice.html`**, raw **BACKLOG** / **issues-backlog** / **ROADMAP** (**implementation snapshot** and **Supporting / cross-cutting** anchors), and GitHub shortcuts (rendered docs on **github.com** after you push).
 
 ## Python CLI
 
@@ -69,7 +69,7 @@ The app uses a **Fusion**-based dark theme (`desktop_app/theme.py`). On some **W
 
 ## Issue-driven build order
 
-See [docs/BACKLOG.md](docs/BACKLOG.md) for phased GitHub issues and [docs/ROADMAP.md — implementation snapshot](docs/ROADMAP.md#implementation-snapshot-repository-2026-04) for the phased roadmap and what the repo ships today in **`desktop_app/`**, the **`probooks`** CLI, and root **`generate_workbook.py`** ([Excel COA workbook template](#excel-workbook-template-openpyxl)). **#21 / #27 / #28** (storage + migrations + backup) and **#30** (bank accounts) are part of that foundation, not the whole surface.
+See [docs/BACKLOG.md](docs/BACKLOG.md) for phased GitHub issues and [docs/ROADMAP.md — implementation snapshot](docs/ROADMAP.md#implementation-snapshot-repository-2026-04) for the phased roadmap and what the repo ships today in **`desktop_app/`**, the **`probooks`** CLI, and root **`generate_workbook.py`** ([Excel COA workbook template](#excel-workbook-template-openpyxl)). [Supporting / cross-cutting issues](docs/ROADMAP.md#supporting-cross-cutting-issues) (**#21**, packaging, backup UI, theme, CI tests) tracks cross-phase work in the same file. **#21 / #27 / #28** (storage + migrations + backup) and **#30** (bank accounts) are part of that foundation, not the whole surface.
 
 ## Tests
 
