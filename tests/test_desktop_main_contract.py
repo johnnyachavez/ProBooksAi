@@ -43,6 +43,13 @@ def test_register_tab_cleared_actions_document_shortcuts_in_tooltips() -> None:
     assert "Ctrl+Shift+C" in text and "Ctrl+Shift+U" in text
 
 
+def test_register_tab_clr_header_tooltip_documents_batch_reconciled() -> None:
+    """Clr column header explains C vs R and points users at Bank Import for batch R."""
+    text = (_MAIN.parent / "register_tab.py").read_text(encoding="utf-8")
+    assert "horizontalHeaderItem(_COL_CLR)" in text
+    assert "Bank Import" in text
+
+
 def test_register_table_stylesheet_defines_cell_grid() -> None:
     """Bank register uses per-item borders; native QTable grid is often invisible under QSS."""
     from desktop_app.theme import register_table_style_sheet

@@ -120,7 +120,7 @@ def _wire_enter_opens_edit(tbl: QTableWidget, edit_handler) -> None:
     """While *tbl* has focus, Return / Enter runs *edit_handler* (same as double-click edit)."""
     for key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
         sc = QShortcut(QKeySequence(key), tbl)
-        sc.setContext(Qt.ShortcutContext.WidgetShortcut)
+        sc.setContext(Qt.WidgetShortcut)
         sc.activated.connect(edit_handler)
 
 
@@ -146,7 +146,7 @@ def _wire_find_focuses_line_edit(parent: QWidget, line_edit: QLineEdit) -> None:
         line_edit.selectAll()
 
     sc = QShortcut(QKeySequence(QKeySequence.StandardKey.Find), parent)
-    sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+    sc.setContext(Qt.WidgetWithChildrenShortcut)
     sc.activated.connect(_go)
 
 
@@ -2580,7 +2580,7 @@ class TaxSettingsTab(QWidget):
             QPushButton("Export sales tax summary CSV\u2026", clicked=self._export_sales_tax_csv)
         )
         save_sc = QShortcut(QKeySequence(QKeySequence.StandardKey.Save), self)
-        save_sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        save_sc.setContext(Qt.WidgetWithChildrenShortcut)
         save_sc.activated.connect(self._save)
 
     def _save(self):

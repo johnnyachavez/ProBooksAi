@@ -220,12 +220,19 @@ class RegisterTab(QWidget):
         self._acct_combo.currentIndexChanged.connect(self._on_account_changed)
         row.addWidget(self._acct_combo)
         btn_refresh = QPushButton("Refresh")
+        btn_refresh.setToolTip("Reload transactions for the selected bank account from the database.")
         btn_refresh.clicked.connect(self._reload_current)
         row.addWidget(btn_refresh)
         self._btn_post = QPushButton("Post selected to GL")
+        self._btn_post.setToolTip(
+            "Post selected unposted rows to the general ledger (requires COA and mapped cash accounts)."
+        )
         self._btn_post.clicked.connect(self._post_selected)
         row.addWidget(self._btn_post)
         self._btn_export = QPushButton("Export CSV…")
+        self._btn_export.setToolTip(
+            "Export the current grid to CSV (respects the active filter and column order)."
+        )
         self._btn_export.clicked.connect(self._export_csv)
         row.addWidget(self._btn_export)
         row.addStretch()
@@ -280,6 +287,12 @@ class RegisterTab(QWidget):
         self._table.setStyleSheet(register_table_style_sheet())
         self._table.setColumnCount(len(_HEADERS))
         self._table.setHorizontalHeaderLabels(_HEADERS)
+        clr_header = self._table.horizontalHeaderItem(_COL_CLR)
+        if clr_header is not None:
+            clr_header.setToolTip(
+                "C: cleared on this register. R: CSV import batch is reconciled in Bank Import. "
+                "Double-click a cell here to toggle cleared when the row allows it."
+            )
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setAlternatingRowColors(True)
         # Native grid is unreliable once app-level QTable styles apply; cell borders come from the stylesheet.

@@ -762,7 +762,7 @@ class MainWindow(QMainWindow):
 
         act_copy_db_path = QAction("Copy company database &path", self)
         act_copy_db_path.setShortcut("Ctrl+Alt+P")
-        act_copy_db_path.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
+        act_copy_db_path.setShortcutContext(Qt.ApplicationShortcut)
         act_copy_db_path.triggered.connect(self._on_copy_company_database_path)
         file_menu.addAction(act_copy_db_path)
 
@@ -798,7 +798,7 @@ class MainWindow(QMainWindow):
         ):
             act = QAction(label, self)
             act.setShortcut(sc)
-            act.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
+            act.setShortcutContext(Qt.ApplicationShortcut)
             act.triggered.connect(
                 lambda checked=False, i=idx: self._set_main_tab_index(i)
             )
