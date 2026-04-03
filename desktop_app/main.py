@@ -224,7 +224,8 @@ class InboxWidget(QTableWidget):
             lambda: show_document_intake_keyboard_shortcuts_dialog(self),
         )
         act_keys.setToolTip(
-            "Same summary as Help → Document intake shortcuts… (F5, Ctrl+O, View chords, links to other Help topics)."
+            "Same summary as Help → Document intake shortcuts… "
+            "(F5, Ctrl+O, File → Backup/Restore, View chords, links to other Help topics)."
         )
         if not idx.isValid():
             m.exec(self.viewport().mapToGlobal(pos))

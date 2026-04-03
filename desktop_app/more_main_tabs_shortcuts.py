@@ -24,7 +24,7 @@ def more_main_tabs_keyboard_shortcuts_help_text() -> str:
         "Right-click the main grid or list on these tabs (including empty area) for "
         "Keyboard shortcuts… (same as this dialog).\n\n"
         "Other shortcuts:\n"
-        "Help → Document intake shortcuts…\n"
+        "Help → Document intake shortcuts… (includes File → Backup / Restore via probooks.backup).\n"
         "Help → Bank import shortcuts…\n"
         "Help → Bank register keyboard shortcuts…\n"
         "Help → Business shortcuts…\n"
