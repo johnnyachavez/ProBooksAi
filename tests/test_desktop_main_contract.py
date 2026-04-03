@@ -48,6 +48,28 @@ def test_register_tab_cleared_actions_document_shortcuts_in_tooltips() -> None:
     assert "activated.connect(self._post_selected)" in text
 
 
+def test_register_keyboard_shortcuts_help_text_matches_wired_chords() -> None:
+    """Single helper lists the same chords as QShortcut (avoid help drifting from behavior)."""
+    text = (_MAIN.parent / "register_tab.py").read_text(encoding="utf-8")
+    start = text.index("def _register_keyboard_shortcuts_help_text")
+    end = text.index("\n\nclass RegisterTab", start)
+    chunk = text[start:end]
+    for needle in (
+        "F5 — Refresh",
+        "Ctrl+Shift+G",
+        "Ctrl+Shift+E",
+        "Ctrl+Shift+C",
+        "Ctrl+Shift+U",
+    ):
+        assert needle in chunk, f"register shortcuts help should mention {needle!r}"
+
+
+def test_register_context_menu_includes_keyboard_shortcuts_action() -> None:
+    text = (_MAIN.parent / "register_tab.py").read_text(encoding="utf-8")
+    assert "Keyboard shortcuts…" in text
+    assert "_show_register_keyboard_shortcuts_help" in text
+
+
 def test_register_tab_clr_header_tooltip_documents_batch_reconciled() -> None:
     """Clr column header explains C vs R and points users at Bank Import for batch R."""
     text = (_MAIN.parent / "register_tab.py").read_text(encoding="utf-8")

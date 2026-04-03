@@ -12,7 +12,7 @@ The filter choice, last selected bank account, and register table **column heade
 persist in ``QSettings``, scoped by company SQLite path (same app profile as the main window).
 **Ctrl+Shift+C** / **Ctrl+Shift+U** mark cleared / clear cleared; **Ctrl+Shift+E** runs **Export CSV…**;
 **Ctrl+Shift+G** runs **Post selected to GL**; **F5** refreshes the grid when the Register tab (or its
-controls) has keyboard focus.
+controls) has keyboard focus. **Right-click** the grid (including empty area) for **Keyboard shortcuts…**.
 """
 
 from __future__ import annotations
@@ -189,6 +189,18 @@ def _batch_reconciled_map(conn: sqlite3.Connection, txns: list) -> dict[int, boo
     return out
 
 
+def _register_keyboard_shortcuts_help_text() -> str:
+    """Plain text for Register shortcuts (keep aligned with ``QShortcut`` wiring)."""
+    return (
+        "These shortcuts apply when the Register tab or its controls have focus:\n\n"
+        "F5 — Refresh\n"
+        "Ctrl+Shift+G — Post selected to GL\n"
+        "Ctrl+Shift+E — Export CSV…\n"
+        "Ctrl+Shift+C — Mark cleared (selected rows)\n"
+        "Ctrl+Shift+U — Clear cleared (selected rows)\n"
+    )
+
+
 class RegisterTab(QWidget):
     """
     Check-register style view for all transactions on a selected bank account.
@@ -357,7 +369,8 @@ class RegisterTab(QWidget):
             "Balance is the running total in date order (not recalculated for other sorts). "
             "Filter, last bank account, and column widths are remembered per company file for the next session. "
             "With focus on this tab: F5 refreshes, Ctrl+Shift+G posts selected to GL, Ctrl+Shift+C marks cleared, "
-            "Ctrl+Shift+U clears cleared, Ctrl+Shift+E exports CSV."
+            "Ctrl+Shift+U clears cleared, Ctrl+Shift+E exports CSV. "
+            "Right-click the grid (even on empty area) for Keyboard shortcuts…."
         )
         tip.setWordWrap(True)
         tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
@@ -532,18 +545,29 @@ class RegisterTab(QWidget):
             return
         self._reload_current()
 
+    def _show_register_keyboard_shortcuts_help(self) -> None:
+        QMessageBox.information(
+            self,
+            "Register keyboard shortcuts",
+            _register_keyboard_shortcuts_help_text(),
+        )
+
     def _on_register_context_menu(self, pos):
         idx = self._table.indexAt(pos)
+        menu = QMenu(self)
+        menu.addAction(
+            "Keyboard shortcuts…", self._show_register_keyboard_shortcuts_help
+        )
         if not idx.isValid():
+            menu.exec(self._table.viewport().mapToGlobal(pos))
             return
         row = idx.row()
         it = self._table.item(row, _COL_DATE)
-        if it is None:
+        if it is None or it.data(Qt.ItemDataRole.UserRole) is None:
+            menu.exec(self._table.viewport().mapToGlobal(pos))
             return
         tid = it.data(Qt.ItemDataRole.UserRole)
-        if tid is None:
-            return
-        menu = QMenu(self)
+        menu.addSeparator()
         menu.addAction(
             "Open attachment…",
             partial(self._open_register_attachment, int(tid)),
