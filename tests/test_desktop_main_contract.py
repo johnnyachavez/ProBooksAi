@@ -93,6 +93,7 @@ def test_register_keyboard_shortcuts_help_text_matches_wired_chords() -> None:
         "Ctrl+Shift+E",
         "Ctrl+Shift+C",
         "Ctrl+Shift+U",
+        "Bank import shortcuts",
     ):
         assert needle in chunk, f"register shortcuts help should mention {needle!r}"
 

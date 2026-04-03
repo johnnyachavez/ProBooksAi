@@ -12,8 +12,8 @@ The filter choice, last selected bank account, and register table **column heade
 persist in ``QSettings``, scoped by company SQLite path (same app profile as the main window).
 **Ctrl+Shift+C** / **Ctrl+Shift+U** mark cleared / clear cleared; **Ctrl+Shift+E** runs **Export CSV…**;
 **Ctrl+Shift+G** runs **Post selected to GL**; **F5** refreshes the grid when the Register tab (or its
-controls) has keyboard focus. **Help** → **Bank register keyboard shortcuts…** or **right-click** the grid (including empty area)
-for **Keyboard shortcuts…**.
+controls) has keyboard focus. **Help** → **Bank register keyboard shortcuts…** (dialog also points at **Bank import shortcuts…**) or
+**right-click** the grid (including empty area) for **Keyboard shortcuts…**.
 """
 
 from __future__ import annotations
@@ -199,6 +199,9 @@ def _register_keyboard_shortcuts_help_text() -> str:
         "Ctrl+Shift+E — Export CSV…\n"
         "Ctrl+Shift+C — Mark cleared (selected rows)\n"
         "Ctrl+Shift+U — Clear cleared (selected rows)\n"
+        "\n"
+        "Bank import tab:\n"
+        "Help → Bank import shortcuts…\n"
     )
 
 
@@ -380,7 +383,8 @@ class RegisterTab(QWidget):
             "Filter, last bank account, and column widths are remembered per company file for the next session. "
             "With focus on this tab: F5 refreshes, Ctrl+Shift+G posts selected to GL, Ctrl+Shift+C marks cleared, "
             "Ctrl+Shift+U clears cleared, Ctrl+Shift+E exports CSV. "
-            "Help → Bank register keyboard shortcuts…, or right-click the grid (even on empty area)."
+            "Help → Bank register keyboard shortcuts… (includes Bank import shortcuts pointer), "
+            "Help → Bank import shortcuts…, or right-click the grid (even on empty area)."
         )
         tip.setWordWrap(True)
         tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
