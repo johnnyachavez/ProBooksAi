@@ -8,6 +8,7 @@
   The committed integrations/work-context.example.json documents a minimal shape for tests and onboarding
   (four sample localWorkFiles paths: index.html, invoice.html, review.html, docs/ROADMAP.md).
   The generated integrations/work-context.json lists all repo files under localWorkFiles and may include extra fields on pullRequests/issues from gh (labels, author, timestamps, etc.).
+  The payload includes warnings[] (for example when gh is missing or not authenticated); integrations/work-context.example.json shows sample warning text.
 
 .PARAMETER IncludeClosed
   Also fetch closed issues and merged/closed PRs (higher combined limit).
