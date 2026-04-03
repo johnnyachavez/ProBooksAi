@@ -1197,6 +1197,7 @@ def test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests() -> Non
         "test_layout_validator_windows_bash_path_guidance_in_hub_ci_scripts_and_cursor_rule",
         "test_readme_ci_validate_layout_bullet_mentions_conftest",
         "test_readme_contributing_section_mentions_conftest",
+        "test_readme_python_cli_section_mentions_backup_restore_online_api",
         "test_hub_docs_related_docs_link_readme_excel_workbook_template",
         "test_hub_docs_related_docs_link_readme_default_database_paths",
         "test_readme_default_database_paths_notes_two_schemas_and_roadmap",
@@ -1242,6 +1243,7 @@ def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
         "test_layout_validator_windows_bash_path_guidance_in_hub_ci_scripts_and_cursor_rule",
         "test_readme_ci_validate_layout_bullet_mentions_conftest",
         "test_readme_contributing_section_mentions_conftest",
+        "test_readme_python_cli_section_mentions_backup_restore_online_api",
         "test_contributing_ci_documents_issue_21_schema_inventory_bullet",
         "test_pr_template_lists_issue_21_schema_inventory_checklist",
     ):
@@ -1283,6 +1285,7 @@ def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> Non
     assert "test_layout_validator_hub_cites_require_paths_pytest" in chunk
     assert "test_readme_ci_validate_layout_bullet_mentions_conftest" in chunk
     assert "test_readme_contributing_section_mentions_conftest" in chunk
+    assert "test_readme_python_cli_section_mentions_backup_restore_online_api" in chunk
     assert "test_cursor_rule_github_work_context_points_at_contributing_ci" in chunk
     assert "test_hub_docs_related_docs_link_readme_excel_workbook_template" in chunk
     assert "test_hub_docs_related_docs_link_readme_default_database_paths" in chunk
