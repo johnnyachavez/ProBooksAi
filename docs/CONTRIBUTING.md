@@ -140,8 +140,8 @@ A flat **`requirements.txt`** is also checked in for environments that prefer it
 | **`test_package_name_contract.py`** | **`probooks-ai`** in **`desktop_app/version.py`**, **`probooks/__init__.py`** |
 | **`test_integrations_example_contract.py`** | **`integrations/work-context.example.json`** (top-level keys; **`localWorkFiles`** exact set **`index.html`**, **`invoice.html`**, **`review.html`**, **`docs/ROADMAP.md`** (each once); sample **PR** / **issue** rows; **`warnings`** strings; see **Running Tests** above) |
 | **`test_generate_workbook_contract.py`** | **`generate_workbook.py`** → **`probooksai.generator`** |
-| **`test_desktop_main_contract.py`** | **`desktop_app/main.py`** argparse (**`--help`** epilog: **Excel COA workbook** / **`generate_workbook.py`**) / **Qt** app strings + **`qInstallMessageHandler`** before **`QApplication`** (filters **`QFont::setPointSize`** stderr noise); **`desktop_app/theme.py`** Fusion style + pixel-sized app font ( **`FONT_SIZE_NORMAL`**) before/after **`setStyleSheet`** |
-| **`test_probooks_cli_contract.py`** | **`probooks/cli.py`** argparse / epilog (**Excel COA workbook** / **`generate_workbook.py`**) |
+| **`test_desktop_main_contract.py`** | **`desktop_app/main.py`** argparse (**`--help`** epilog via **`EXCEL_COA_WORKBOOK_ARGPARSE_EPILOG`**) / **Qt** app strings + **`qInstallMessageHandler`** before **`QApplication`** (filters **`QFont::setPointSize`** stderr noise); **`desktop_app/theme.py`** Fusion style + pixel-sized app font ( **`FONT_SIZE_NORMAL`**) before/after **`setStyleSheet`**; Excel epilog text lives in **`probooks/help_epilog.py`** |
+| **`test_probooks_cli_contract.py`** | **`probooks/cli.py`** argparse / epilog ( **`EXCEL_COA_WORKBOOK_ARGPARSE_EPILOG`** from **`probooks/help_epilog.py`**: **Excel COA workbook** / **`generate_workbook.py`**) |
 | **`test_probooks_paths_contract.py`** | **`probooks/paths.py`** **`ProBooks+ai`** app dir |
 | **`test_probooksai_database_contract.py`** | **`probooksai/database.py`** legacy **`ProBooksAi`** folder |
 | **`test_local_docs_contract.py`** | **`desktop_app/local_docs.py`** → **`docs/ROADMAP.md`** |

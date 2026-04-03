@@ -60,6 +60,8 @@ python -m desktop_app.main
 
 Optional: `python -m desktop_app.main --database PATH` (otherwise last company path from settings, then the default file from `get_data_dir`; see **Default database paths** above). For headless tests or CI parity, use **`.[ci]`** and set **`QT_QPA_PLATFORM=offscreen`** (see **Tests** below).
 
+**`--help`** on **`python -m probooks`** and **`python -m desktop_app.main`** prints the same **Excel COA workbook** line (**`generate_workbook.py`**, README).
+
 The app uses a **Fusion**-based dark theme (`desktop_app/theme.py`). On some **Windows** builds **Qt** may log a harmless **`QFont::setPointSize`** line at startup; `desktop_app/main.py` installs a narrow **Qt** message filter for that text before **`QApplication`** is constructed. Contract coverage: `tests/test_desktop_main_contract.py` and **CONTRIBUTING.md** (contract tests table).
 
 ## Issue-driven build order

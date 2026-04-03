@@ -6,14 +6,17 @@ from pathlib import Path
 
 _REPO = Path(__file__).resolve().parents[1]
 _MAIN = _REPO / "desktop_app" / "main.py"
+_HELP_EPILOG = _REPO / "probooks" / "help_epilog.py"
 
 
 def test_desktop_main_cli_and_qt_app_strings_use_probooks_plus_ai() -> None:
     text = _MAIN.read_text(encoding="utf-8")
+    hel = _HELP_EPILOG.read_text(encoding="utf-8")
     assert 'description="ProBooks+ai desktop application"' in text
     assert "epilog=" in text
-    assert "generate_workbook.py" in text
-    assert "Excel COA workbook" in text
+    assert "EXCEL_COA_WORKBOOK_ARGPARSE_EPILOG" in text
+    assert "generate_workbook.py" in hel
+    assert "Excel COA workbook" in hel
     assert "Default database paths" in text
     assert "probooksai.database.get_data_dir" in text
     assert 'app.setApplicationName("ProBooks+ai")' in text

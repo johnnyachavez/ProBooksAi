@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from probooks.help_epilog import EXCEL_COA_WORKBOOK_ARGPARSE_EPILOG
 from probooksai.database import DocumentDatabase
 from probooksai.html_escape import escape_html_text
 from probooksai.coa import coa_display_list, load_coa
@@ -1287,9 +1288,7 @@ def main():
     ver = application_version()
     parser = argparse.ArgumentParser(
         description="ProBooks+ai desktop application",
-        epilog=(
-            "Excel COA workbook (openpyxl): python generate_workbook.py; see README (Excel workbook template)."
-        ),
+        epilog=EXCEL_COA_WORKBOOK_ARGPARSE_EPILOG,
     )
     parser.add_argument(
         "--version",

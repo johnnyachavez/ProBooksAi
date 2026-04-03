@@ -9,6 +9,7 @@ from pathlib import Path
 
 from probooks import __version__
 from probooks.accounts import add_account, list_accounts
+from probooks.help_epilog import EXCEL_COA_WORKBOOK_ARGPARSE_EPILOG
 from probooks.backup import backup_database, is_sqlite_file, restore_database
 from probooks.database import connect, migration_files, run_migrations
 from probooks.import_csv import ColumnMap, import_bank_csv
@@ -205,7 +206,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Same interface: python -m probooks … "
             "The desktop app may use a different default SQLite file than this CLI; "
             "see the repository README (Default database paths). "
-            "Excel COA workbook (openpyxl): python generate_workbook.py; see README (Excel workbook template)."
+            + EXCEL_COA_WORKBOOK_ARGPARSE_EPILOG
         ),
     )
     p.add_argument(
