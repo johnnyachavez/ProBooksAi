@@ -110,12 +110,12 @@ def test_contributing_contract_table_rows_match_contract_modules() -> None:
 
 
 def test_readme_opener_mentions_shell_cli_desktop_sqlite() -> None:
-    """README lede matches shipped surfaces (static shell, CLI, desktop, SQLite)."""
+    """README lede matches shipped surfaces (static shell, CLI, desktop, Excel workbook, SQLite)."""
     readme = (_REPO / "README.md").read_text(encoding="utf-8")
     assert "Accounting app foundation:" in readme
     start = readme.index("Accounting app foundation:")
     line = readme[start : readme.find("\n", start)]
-    for needle in ("static HTML", "probooks", "PySide6 desktop", "SQLite"):
+    for needle in ("static HTML", "probooks", "PySide6 desktop", "Excel COA workbook", "openpyxl", "SQLite"):
         assert needle in line, f"README lede should mention {needle!r}: {line!r}"
 
 
