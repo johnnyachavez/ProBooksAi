@@ -449,7 +449,12 @@ def test_contributing_ci_documents_readme_default_database_paths_bullet() -> Non
     chunk = md[ci_start:table_start]
     assert "**README `### Default database paths (Windows)`**" in chunk
     assert "Why not one `.db` yet" in chunk
-    assert "test_readme_default_database_paths_notes_two_schemas_and_roadmap" in chunk
+    for name in (
+        "test_readme_default_database_paths_notes_two_schemas_and_roadmap",
+        "test_pr_template_lists_readme_default_database_paths_checklist",
+        "test_contributing_ci_documents_readme_default_database_paths_bullet",
+    ):
+        assert name in chunk, f"CONTRIBUTING CI should mention {name!r} on default DB paths bullet"
 
 
 def test_contributing_ci_documents_readme_excel_workbook_anchor_bullet() -> None:
@@ -808,6 +813,8 @@ def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> Non
     assert "probooks/help_epilog.py" in chunk
     assert "test_cursor_rule_github_work_context_points_at_contributing_ci" in chunk
     assert "test_hub_docs_related_docs_link_readme_excel_workbook_template" in chunk
+    assert "test_readme_default_database_paths_notes_two_schemas_and_roadmap" in chunk
+    assert "Why not one `.db` yet" in chunk
     assert "test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests" in chunk
     assert "**`.cursor/rules/github-work-context.mdc`**" in chunk
     assert "both **`require`** **`.cursor/rules/github-work-context.mdc`**" in chunk
