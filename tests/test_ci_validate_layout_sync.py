@@ -137,7 +137,9 @@ def test_readme_desktop_section_documents_theme_and_qt_font_filter() -> None:
         "--help",
         "python -m probooks",
         "Excel COA workbook",
+        "probooks/help_epilog.py",
         "generate_workbook.py",
+        "excel-workbook-template-openpyxl",
     ):
         assert needle in section, f"README Desktop section should mention {needle!r}"
 
