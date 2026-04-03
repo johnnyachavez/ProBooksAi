@@ -211,7 +211,7 @@ def test_hub_docs_related_docs_link_readme_excel_workbook_template() -> None:
     """ROADMAP, BACKLOG, and CONTRIBUTING should share the same README Excel segment in Related/Other docs."""
     segment = (
         "[README — Excel workbook template](../README.md#excel-workbook-template-openpyxl) "
-        "(**generate_workbook.py**, **openpyxl**; CLI/desktop **`--help`**: **`probooks/help_epilog.py***)"
+        "(**generate_workbook.py**, **openpyxl**; CLI/desktop **`--help`**: **`probooks/help_epilog.py`**)"
     )
     for rel in ("docs/ROADMAP.md", "docs/BACKLOG.md", "docs/CONTRIBUTING.md"):
         text = (_REPO / rel).read_text(encoding="utf-8")
