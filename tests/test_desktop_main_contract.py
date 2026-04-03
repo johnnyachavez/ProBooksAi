@@ -138,6 +138,7 @@ def test_file_menu_restore_tip_mentions_sqlite_backup_api() -> None:
     start = text.index("act_restore = QAction")
     end = text.index("act_copy_db_path = QAction", start)
     assert "SQLite backup API" in text[start:end]
+    assert "probooks.backup" in text[start:end]
 
 
 def test_file_menu_backup_tip_mentions_sqlite_online_backup() -> None:
@@ -145,6 +146,7 @@ def test_file_menu_backup_tip_mentions_sqlite_online_backup() -> None:
     start = text.index("act_backup = QAction")
     end = text.index("act_restore = QAction", start)
     assert "SQLite online backup" in text[start:end]
+    assert "probooks.backup" in text[start:end]
 
 
 def test_backup_company_uses_shared_backup_helper() -> None:
