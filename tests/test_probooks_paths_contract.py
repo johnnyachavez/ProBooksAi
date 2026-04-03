@@ -5,8 +5,29 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 _REPO = Path(__file__).resolve().parents[1]
 _PATHS = _REPO / "probooks" / "paths.py"
+
+
+@pytest.fixture
+def isolated_probooks_paths_env(tmp_path, monkeypatch) -> None:
+    """Point app dirs at tmp_path (Windows LOCALAPPDATA + APPDATA, else HOME)."""
+    if sys.platform == "win32":
+        local = tmp_path / "Local"
+        roaming = tmp_path / "Roaming"
+        local.mkdir()
+        roaming.mkdir()
+        monkeypatch.setenv("LOCALAPPDATA", str(local))
+        monkeypatch.setenv("APPDATA", str(roaming))
+    else:
+        monkeypatch.delenv("APPDATA", raising=False)
+        monkeypatch.delenv("LOCALAPPDATA", raising=False)
+        monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setenv("HOME", str(fake_home))
 
 
 def test_probooks_paths_use_branded_app_dir_and_cli_db_name() -> None:
@@ -22,43 +43,15 @@ def test_probooks_paths_use_branded_app_dir_and_cli_db_name() -> None:
     assert "ProBooks+ai" in text
 
 
-def test_default_intake_db_path_matches_app_dir_and_intake_name(tmp_path, monkeypatch) -> None:
-    if sys.platform == "win32":
-        local = tmp_path / "Local"
-        roaming = tmp_path / "Roaming"
-        local.mkdir()
-        roaming.mkdir()
-        monkeypatch.setenv("LOCALAPPDATA", str(local))
-        monkeypatch.setenv("APPDATA", str(roaming))
-    else:
-        monkeypatch.delenv("APPDATA", raising=False)
-        monkeypatch.delenv("LOCALAPPDATA", raising=False)
-        monkeypatch.delenv("XDG_DATA_HOME", raising=False)
-        fake_home = tmp_path / "home"
-        fake_home.mkdir()
-        monkeypatch.setenv("HOME", str(fake_home))
-
+def test_default_intake_db_path_matches_app_dir_and_intake_name(
+    isolated_probooks_paths_env,
+) -> None:
     from probooks.paths import INTAKE_DB_NAME, app_data_dir, default_intake_db_path
 
     assert default_intake_db_path() == app_data_dir() / INTAKE_DB_NAME
 
 
-def test_default_db_path_matches_app_dir_and_cli_name(tmp_path, monkeypatch) -> None:
-    if sys.platform == "win32":
-        local = tmp_path / "Local"
-        roaming = tmp_path / "Roaming"
-        local.mkdir()
-        roaming.mkdir()
-        monkeypatch.setenv("LOCALAPPDATA", str(local))
-        monkeypatch.setenv("APPDATA", str(roaming))
-    else:
-        monkeypatch.delenv("APPDATA", raising=False)
-        monkeypatch.delenv("LOCALAPPDATA", raising=False)
-        monkeypatch.delenv("XDG_DATA_HOME", raising=False)
-        fake_home = tmp_path / "home"
-        fake_home.mkdir()
-        monkeypatch.setenv("HOME", str(fake_home))
-
+def test_default_db_path_matches_app_dir_and_cli_name(isolated_probooks_paths_env) -> None:
     from probooks.paths import app_data_dir, default_db_path
 
     assert default_db_path() == app_data_dir() / "probooks.db"
