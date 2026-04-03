@@ -548,6 +548,37 @@ class TestRegisterFilters:
         db.update_transaction(tid, needs_receipt=1)
         assert len(db.list_transactions(aid, register_filter="needs_receipt")) == 1
 
+    def test_cleared_register_filters(self, db):
+        aid = db.add_bank_account("Clr")
+        bid = db.create_batch(aid)
+        db.import_transactions(
+            bid,
+            aid,
+            [
+                {
+                    "txn_date": "2024-01-01",
+                    "description": "a",
+                    "amount": -1.0,
+                    "ref_number": "",
+                },
+                {
+                    "txn_date": "2024-01-02",
+                    "description": "b",
+                    "amount": -2.0,
+                    "ref_number": "",
+                },
+            ],
+        )
+        rows = db.list_transactions(aid)
+        assert len(rows) == 2
+        assert len(db.list_transactions(aid, register_filter="cleared")) == 0
+        assert len(db.list_transactions(aid, register_filter="not_cleared")) == 2
+        tid0 = rows[0]["id"]
+        db.update_transaction(tid0, cleared=1)
+        assert len(db.list_transactions(aid, register_filter="cleared")) == 1
+        assert len(db.list_transactions(aid, register_filter="not_cleared")) == 1
+        assert len(db.list_transactions(aid, register_filter="uncleared")) == 1
+
     def test_bank_match_filters_require_extensions(self, tmp_path):
         b = BankDatabase(db_path=str(tmp_path / "bare.db"))
         aid = b.add_bank_account("R")

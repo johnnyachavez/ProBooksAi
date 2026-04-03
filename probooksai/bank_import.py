@@ -768,6 +768,7 @@ class BankDatabase:
 
         *register_filter* (register UI): ``needs_receipt``, ``has_attachment``,
         ``missing_attachment`` (needs_receipt and empty path),
+        ``cleared`` / ``not_cleared`` (per-row register cleared flag),
         ``has_bank_match`` / ``no_bank_match`` (requires ``bank_match_links``;
         use :func:`~probooksai.extensions_schema.apply_extensions`), or ``None``/``all``.
         """
@@ -815,6 +816,10 @@ class BankDatabase:
                 " AND NOT EXISTS (SELECT 1 FROM bank_match_links m "
                 "WHERE m.bank_transaction_id = bank_transactions.id)"
             )
+        elif rf == "cleared":
+            where += " AND COALESCE(cleared, 0) = 1"
+        elif rf in ("not_cleared", "uncleared"):
+            where += " AND COALESCE(cleared, 0) = 0"
         return self._conn.execute(
             f"SELECT * FROM bank_transactions WHERE {where} ORDER BY txn_date, id",
             params,
