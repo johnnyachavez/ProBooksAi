@@ -463,12 +463,14 @@ def test_layout_validator_windows_bash_path_guidance_in_hub_ci_scripts_and_curso
 
 
 def test_readme_contributing_section_mentions_conftest() -> None:
-    """README ## Contributing should point readers at tests/conftest.py for shared fixtures."""
+    """README ## Contributing should point at tests/conftest.py and Scripts layout validators."""
     readme = README_MD.read_text(encoding="utf-8")
     start = readme.index("## Contributing")
     chunk = readme[start:]
     assert "contract-test" in chunk
     assert "tests/conftest.py" in chunk
+    assert "ci_validate_layout.sh" in chunk and "ci_validate_layout.ps1" in chunk
+    assert "Scripts" in chunk and "scripts/" in chunk
 
 
 def test_contributing_ci_documents_work_context_example_touchpoints() -> None:
