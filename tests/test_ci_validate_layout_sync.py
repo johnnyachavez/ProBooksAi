@@ -949,6 +949,15 @@ def test_backlog_links_readme_desktop_app_section() -> None:
     assert "../README.md#desktop-app-pyside6" in text
 
 
+def test_backlog_phase1_storage_row_documents_issue_21_schema_inventory() -> None:
+    """BACKLOG Phase 1 storage row should point implementers at the CLI vs desktop DDL inventory tests."""
+    text = (_REPO / "docs" / "BACKLOG.md").read_text(encoding="utf-8")
+    assert "| Phase 1 storage |" in text
+    assert "tests/test_issue_21_schema_inventory.py" in text
+    assert "](CONTRIBUTING.md#continuous-integration)" in text
+    assert "**SQLite issue #21** bullet" in text
+
+
 def test_backlog_implementation_row_documents_excel_help_epilog() -> None:
     """BACKLOG MVP-in-repo row stays aligned with ROADMAP Phase 22 / README Desktop --help note."""
     text = (_REPO / "docs" / "BACKLOG.md").read_text(encoding="utf-8")
