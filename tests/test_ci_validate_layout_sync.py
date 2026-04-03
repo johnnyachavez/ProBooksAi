@@ -339,8 +339,8 @@ def test_review_html_issues_backlog_card_mentions_issue_chooser_config() -> None
     text = (_REPO / "review.html").read_text(encoding="utf-8")
     assert 'href="docs/issues-backlog.md"' in text
     assert "blob/main/docs/issues-backlog.md" in text
-    assert "ROADMAP snapshot + Supporting / cross-cutting" in text, (
-        "review.html issues-backlog card blurb should match config.yml Doc index about ROADMAP wording"
+    assert text.count("ROADMAP snapshot + Supporting / cross-cutting") >= 2, (
+        "review.html local + GitHub issues-backlog cards should echo config.yml Doc index ROADMAP wording"
     )
     path = ".github/ISSUE_TEMPLATE/config.yml"
     assert text.count(path) >= 2, f"review.html should mention {path!r} on both issues-backlog Documentation cards"
@@ -914,6 +914,9 @@ def test_backlog_implementation_row_documents_excel_help_epilog() -> None:
     assert "probooks/help_epilog.py" in text
     assert "python -m probooks" in text
     assert "python -m desktop_app.main" in text
+    assert "](ROADMAP.md#supporting-cross-cutting-issues)" in text, (
+        "BACKLOG MVP-in-repo row should link ROADMAP Supporting / cross-cutting for remaining gaps"
+    )
 
 
 def test_hub_docs_link_issues_backlog_short_index() -> None:
