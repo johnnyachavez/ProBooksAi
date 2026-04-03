@@ -971,6 +971,12 @@ def test_github_issue_templates_reference_core_docs() -> None:
     assert "README Web shell + Desktop + Default database paths + Excel workbook template" in config, (
         "config.yml Doc index about should list Default database paths with Web shell + Desktop + Excel"
     )
+    assert "README Python CLI (probooks.backup backup/restore)" in config, (
+        "config.yml Doc index about should mention README Python CLI + probooks.backup (issues-backlog parity)"
+    )
+    assert "SQLite online backup via probooks.backup" in config, (
+        "config.yml Doc index about should note SQLite online backup (issues-backlog parity)"
+    )
     assert "help_epilog" in config, (
         "config.yml Doc index about should note help_epilog / CLI desktop --help (issues-backlog parity)"
     )
