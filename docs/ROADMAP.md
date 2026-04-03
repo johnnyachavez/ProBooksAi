@@ -509,7 +509,7 @@ The following issues are not tied to a single phase but must be addressed alongs
 |---|---|---|
 | [#21](https://github.com/johnnyachavez/ProBooksAi/issues/21) | Single SQLite path + merged CLI/desktop migrations | Phase 1+ (see [implementation snapshot](#implementation-snapshot-repository-2026-04) **Why not one `.db` yet**) |
 | [#26](https://github.com/johnnyachavez/ProBooksAi/issues/26) / [#46](https://github.com/johnnyachavez/ProBooksAi/issues/46) | Release packaging (Windows installer + versioning) | After Phase 5 (GL posting complete) |
-| [#28](https://github.com/johnnyachavez/ProBooksAi/issues/28) | Backup / restore database from the UI | After Phase 1 |
+| [#28](https://github.com/johnnyachavez/ProBooksAi/issues/28) | Backup / restore database from the UI | Phase 1+ (see [implementation snapshot](#implementation-snapshot-repository-2026-04) **SQLite online backup (regression)**) |
 | [#29](https://github.com/johnnyachavez/ProBooksAi/issues/29) | Dark theme (global palette + tables) | Any phase |
 | [#47](https://github.com/johnnyachavez/ProBooksAi/issues/47) | CI tests for banking + posting | Alongside each phase |
 
