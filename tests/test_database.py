@@ -13,7 +13,13 @@ from pathlib import Path
 import pytest
 
 from probooks.paths import INTAKE_DB_NAME
-from probooksai.database import DocumentDatabase, _legacy_data_dir, get_data_dir, _file_hash
+from probooksai.database import (
+    DocumentDatabase,
+    _file_hash,
+    _legacy_data_dir,
+    default_intake_sqlite_path,
+    get_data_dir,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -318,6 +324,24 @@ class TestGetDataDirMigration:
         assert (got / INTAKE_DB_NAME).is_file()
         assert (got / INTAKE_DB_NAME).read_bytes() == b"legacy-db-marker"
         assert (got / "documents" / "a.txt").read_text(encoding="utf-8") == "x"
+
+    def test_default_intake_sqlite_path_matches_get_data_dir_intake_file(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        if sys.platform == "win32":
+            local = tmp_path / "Local"
+            local.mkdir()
+            monkeypatch.setenv("LOCALAPPDATA", str(local))
+        else:
+            monkeypatch.delenv("APPDATA", raising=False)
+            monkeypatch.delenv("LOCALAPPDATA", raising=False)
+            monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+            fake_home = tmp_path / "home"
+            fake_home.mkdir()
+            monkeypatch.setenv("HOME", str(fake_home))
+
+        base = get_data_dir()
+        assert default_intake_sqlite_path() == base / INTAKE_DB_NAME
 
 
 # ---------------------------------------------------------------------------
