@@ -413,6 +413,9 @@ def test_review_html_readme_python_cli_documentation_card_mentions_backup() -> N
     assert "<strong>README — Python CLI</strong>" in card
     assert "probooks.backup" in card
     assert "SQLite online backup" in card
+    assert "tests/test_backup.py" in card
+    assert "tests/test_probooks_backup_contract.py" in card
+    assert "#28" in card
 
 
 def test_review_html_readme_default_database_paths_documentation_card() -> None:
@@ -1123,6 +1126,16 @@ def test_github_issue_templates_reference_core_docs() -> None:
     assert "ROADMAP snapshot + Supporting / cross-cutting" in config, (
         "config.yml Doc index about should note ROADMAP Supporting / cross-cutting (issues-backlog parity)"
     )
+    doc_idx = config.index("name: Doc index (issues-backlog)")
+    doc_tail = config[doc_idx:]
+    for needle in (
+        "tests/test_backup.py",
+        "tests/test_probooks_backup_contract.py",
+        "Module contracts",
+        "SQLite online backup (regression)",
+        "README Python CLI Documentation card",
+    ):
+        assert needle in doc_tail, f"config.yml Doc index about should mention {needle!r} (hub parity)"
     bug = GITHUB_ISSUE_TEMPLATE_BUG_REPORT_MD.read_text(encoding="utf-8")
     feat = GITHUB_ISSUE_TEMPLATE_FEATURE_REQUEST_MD.read_text(encoding="utf-8")
     roadmap_snap = "ROADMAP.md#implementation-snapshot-repository-2026-04"
