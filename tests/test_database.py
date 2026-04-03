@@ -5,7 +5,6 @@ Tests for probooksai.database
 import os
 import sqlite3
 import struct
-import sys
 import tempfile
 import zlib
 from pathlib import Path
@@ -295,22 +294,7 @@ class TestApprovedValues:
 
 
 class TestGetDataDirMigration:
-    def test_migrates_legacy_db_and_documents(self, tmp_path, monkeypatch):
-        if sys.platform == "win32":
-            local = tmp_path / "Local"
-            roaming = tmp_path / "Roaming"
-            local.mkdir()
-            roaming.mkdir()
-            monkeypatch.setenv("LOCALAPPDATA", str(local))
-            monkeypatch.setenv("APPDATA", str(roaming))
-        else:
-            monkeypatch.delenv("APPDATA", raising=False)
-            monkeypatch.delenv("LOCALAPPDATA", raising=False)
-            monkeypatch.delenv("XDG_DATA_HOME", raising=False)
-            fake_home = tmp_path / "home"
-            fake_home.mkdir()
-            monkeypatch.setenv("HOME", str(fake_home))
-
+    def test_migrates_legacy_db_and_documents(self, isolated_branded_app_data_env):
         legacy = _legacy_data_dir()
         legacy.mkdir(parents=True, exist_ok=True)
         (legacy / INTAKE_DB_NAME).write_bytes(b"legacy-db-marker")
@@ -326,20 +310,8 @@ class TestGetDataDirMigration:
         assert (got / "documents" / "a.txt").read_text(encoding="utf-8") == "x"
 
     def test_default_intake_sqlite_path_matches_get_data_dir_intake_file(
-        self, tmp_path, monkeypatch
+        self, isolated_branded_app_data_env
     ) -> None:
-        if sys.platform == "win32":
-            local = tmp_path / "Local"
-            local.mkdir()
-            monkeypatch.setenv("LOCALAPPDATA", str(local))
-        else:
-            monkeypatch.delenv("APPDATA", raising=False)
-            monkeypatch.delenv("LOCALAPPDATA", raising=False)
-            monkeypatch.delenv("XDG_DATA_HOME", raising=False)
-            fake_home = tmp_path / "home"
-            fake_home.mkdir()
-            monkeypatch.setenv("HOME", str(fake_home))
-
         base = get_data_dir()
         assert default_intake_sqlite_path() == base / INTAKE_DB_NAME
 

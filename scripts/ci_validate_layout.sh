@@ -55,6 +55,7 @@ require examples/sample_bank.csv
 require generate_workbook.py
 
 require tests/test_ci_validate_layout_sync.py
+require tests/conftest.py
 require tests/test_pyproject_contract.py
 require tests/test_requirements_contract.py
 require tests/test_package_name_contract.py

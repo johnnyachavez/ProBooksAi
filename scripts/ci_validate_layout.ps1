@@ -54,6 +54,7 @@ Require-File "examples/sample_bank.csv"
 Require-File "generate_workbook.py"
 
 Require-File "tests/test_ci_validate_layout_sync.py"
+Require-File "tests/conftest.py"
 Require-File "tests/test_pyproject_contract.py"
 Require-File "tests/test_requirements_contract.py"
 Require-File "tests/test_package_name_contract.py"
