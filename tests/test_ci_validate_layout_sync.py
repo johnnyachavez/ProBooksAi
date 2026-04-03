@@ -240,6 +240,17 @@ def test_hub_docs_related_docs_link_readme_excel_workbook_template() -> None:
         assert segment in text, f"{rel} should include the shared README Excel workbook segment"
 
 
+def test_hub_docs_related_docs_link_readme_default_database_paths() -> None:
+    """ROADMAP, BACKLOG, and CONTRIBUTING should share the same README default DB segment in Related/Other docs."""
+    segment = (
+        "[README — Default database paths](../README.md#default-database-paths-windows) "
+        "(CLI **`probooks.db`** vs desktop **`probooksai.db`**, **#21**)"
+    )
+    for rel in ("docs/ROADMAP.md", "docs/BACKLOG.md", "docs/CONTRIBUTING.md"):
+        text = (_REPO / rel).read_text(encoding="utf-8")
+        assert segment in text, f"{rel} should include the shared README default database paths segment"
+
+
 def test_static_html_links_readme_desktop_section() -> None:
     """Static shell pages that mention the desktop app should deep-link README Desktop."""
     needle = 'href="README.md#desktop-app-pyside6"'
@@ -392,11 +403,26 @@ def test_contributing_ci_documents_hub_shared_issues_backlog_blurb() -> None:
     ci_chunk = md[ci_start:table_start]
     assert "**Hub docs — issues-backlog link text**" in ci_chunk
     hub = ci_chunk.index("**Hub docs — issues-backlog link text**")
-    hub_end = ci_chunk.index("\n- **ROADMAP snapshot", hub)
+    hub_end = ci_chunk.index("\n- **Hub docs — README default database paths segment**", hub)
     hub_bullet = ci_chunk[hub:hub_end]
     assert "test_hub_docs_shared_issues_backlog_blurb_lists_config_and_review_cards" in hub_bullet
     assert "test_contributing_ci_documents_hub_shared_issues_backlog_blurb" in hub_bullet
     assert "test_pr_template_lists_hub_docs_issues_backlog_blurb_checklist" in hub_bullet
+
+
+def test_contributing_ci_documents_hub_readme_default_database_paths_segment() -> None:
+    """Continuous integration section documents the ROADMAP/BACKLOG/CONTRIBUTING README default DB hub segment test."""
+    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    ci_start = md.index("### Continuous integration")
+    table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
+    ci_chunk = md[ci_start:table_start]
+    assert "**Hub docs — README default database paths segment**" in ci_chunk
+    hub = ci_chunk.index("**Hub docs — README default database paths segment**")
+    hub_end = ci_chunk.index("\n- **ROADMAP snapshot anchor**", hub)
+    hub_bullet = ci_chunk[hub:hub_end]
+    assert "test_hub_docs_related_docs_link_readme_default_database_paths" in hub_bullet
+    assert "test_contributing_ci_documents_hub_readme_default_database_paths_segment" in hub_bullet
+    assert "test_pr_template_lists_hub_docs_readme_default_database_paths_checklist" in hub_bullet
 
 
 def test_pr_template_lists_hub_docs_issues_backlog_blurb_checklist() -> None:
@@ -407,6 +433,18 @@ def test_pr_template_lists_hub_docs_issues_backlog_blurb_checklist() -> None:
         "test_hub_docs_shared_issues_backlog_blurb_lists_config_and_review_cards",
         "test_contributing_ci_documents_hub_shared_issues_backlog_blurb",
         "test_pr_template_lists_hub_docs_issues_backlog_blurb_checklist",
+    ):
+        assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
+
+
+def test_pr_template_lists_hub_docs_readme_default_database_paths_checklist() -> None:
+    """PR template should remind editors to sync ROADMAP/BACKLOG/CONTRIBUTING README default DB hub segment + tests."""
+    text = (_REPO / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    assert "Hub docs — README default database paths segment" in text
+    for name in (
+        "test_hub_docs_related_docs_link_readme_default_database_paths",
+        "test_contributing_ci_documents_hub_readme_default_database_paths_segment",
+        "test_pr_template_lists_hub_docs_readme_default_database_paths_checklist",
     ):
         assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
 
@@ -816,6 +854,7 @@ def test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests() -> Non
         "test_contributing_ci_documents_cursor_github_work_context_rule_test",
         "test_ci_validate_layout_sh_and_ps1_same_paths_and_order",
         "test_hub_docs_related_docs_link_readme_excel_workbook_template",
+        "test_hub_docs_related_docs_link_readme_default_database_paths",
         "test_readme_default_database_paths_notes_two_schemas_and_roadmap",
         "test_readme_docs_bar_links_default_database_paths_anchor",
         "test_review_html_readme_default_database_paths_documentation_card",
@@ -832,6 +871,7 @@ def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
     assert "config.yml" in text
     assert "help_epilog" in text
     assert "test_hub_docs_related_docs_link_readme_excel_workbook_template" in text
+    assert "test_hub_docs_related_docs_link_readme_default_database_paths" in text
     assert "### Default database paths (Windows)" in text
     assert "Why not one `.db` yet" in text
     assert "test_readme_default_database_paths_notes_two_schemas_and_roadmap" in text
@@ -862,6 +902,7 @@ def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> Non
     assert "probooks/help_epilog.py" in chunk
     assert "test_cursor_rule_github_work_context_points_at_contributing_ci" in chunk
     assert "test_hub_docs_related_docs_link_readme_excel_workbook_template" in chunk
+    assert "test_hub_docs_related_docs_link_readme_default_database_paths" in chunk
     assert "test_readme_default_database_paths_notes_two_schemas_and_roadmap" in chunk
     assert "test_readme_docs_bar_links_default_database_paths_anchor" in chunk
     assert "Why not one `.db` yet" in chunk
