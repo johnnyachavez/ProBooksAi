@@ -76,6 +76,7 @@ def test_main_window_tab_bar_has_tab_tooltips() -> None:
     assert "main_tab_bar.setTabToolTip" in text
     z = text.index("main_tab_bar.setTabToolTip(\n            0,")
     assert "File → Backup" in text[z : z + 320]
+    assert text.count("_main_tab_bar_db_hint") == 8
     assert "Bank CSV/PDF import" in text
     assert "Business hub:" in text
     assert "self._tabs.setToolTip(" in text

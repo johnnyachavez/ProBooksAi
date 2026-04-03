@@ -928,6 +928,7 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(AuditTab(self._bank_db._conn), "📜  Audit log")
 
         main_tab_bar = self._tabs.tabBar()
+        _main_tab_bar_db_hint = " Same company .db (File → Backup / Restore, probooks.backup)."
         main_tab_bar.setTabToolTip(
             0,
             "Import PDFs and images, run AI extraction, approve fields, and categorize to COA. "
@@ -935,31 +936,36 @@ class MainWindow(QMainWindow):
         )
         main_tab_bar.setTabToolTip(
             1,
-            "Bank CSV/PDF import, batches, transactions, and statement reconciliation.",
+            "Bank CSV/PDF import, batches, transactions, and statement reconciliation."
+            + _main_tab_bar_db_hint,
         )
         main_tab_bar.setTabToolTip(
             2,
-            "Check-register view: categorize, splits, transfer links, cleared flags, post to GL.",
+            "Check-register view: categorize, splits, transfer links, cleared flags, post to GL."
+            + _main_tab_bar_db_hint,
         )
         main_tab_bar.setTabToolTip(
             3,
-            "Chart of accounts: add, edit, deactivate; used in journal, reports, and pickers.",
+            "Chart of accounts: add, edit, deactivate; used in journal, reports, and pickers."
+            + _main_tab_bar_db_hint,
         )
         main_tab_bar.setTabToolTip(
             4,
-            "Financial reports: trial balance, income statement, balance sheet, CSV export.",
+            "Financial reports: trial balance, income statement, balance sheet, CSV export."
+            + _main_tab_bar_db_hint,
         )
         main_tab_bar.setTabToolTip(
             5,
-            "General journal: browse entries and lines by date (export CSV).",
+            "General journal: browse entries and lines by date (export CSV)." + _main_tab_bar_db_hint,
         )
         main_tab_bar.setTabToolTip(
             6,
-            "Business hub: rules, AR, AP, payroll runs, and default sales tax settings.",
+            "Business hub: rules, AR, AP, payroll runs, and default sales tax settings."
+            + _main_tab_bar_db_hint,
         )
         main_tab_bar.setTabToolTip(
             7,
-            "Audit trail: recent field-level changes (filter by entity type and id).",
+            "Audit trail: recent field-level changes (filter by entity type and id)." + _main_tab_bar_db_hint,
         )
 
         container_layout.addWidget(self._tabs)
