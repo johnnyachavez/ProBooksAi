@@ -21,14 +21,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Install system deps for PySide6 (EGL/GL)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1-mesa-dri
+
       - name: Install package and test deps
         run: pip install -e ".[ci]"
+
       - name: Run pytest
         env:
           QT_QPA_PLATFORM: offscreen
         run: python -m pytest
+
       - name: Verify wheel build (Hatch packages)
         run: pip install build && python -m build --wheel -o /tmp/wheelhouse
