@@ -424,6 +424,21 @@ def test_review_html_readme_python_cli_documentation_card_mentions_backup() -> N
     assert "#28" in card
 
 
+def test_review_html_readme_desktop_documentation_card_mentions_file_backup() -> None:
+    """review.html README — Desktop app Documentation card should mention File backup + probooks.backup + #28."""
+    text = REVIEW_HTML.read_text(encoding="utf-8")
+    marker = '<a class="card" href="README.md#desktop-app-pyside6">'
+    start = text.index(marker)
+    end = text.index("</a>", start)
+    card = text[start:end]
+    assert "README.md#desktop-app-pyside6" in card
+    assert "<strong>README — Desktop app</strong>" in card
+    assert "probooks.backup" in card
+    assert "Backup" in card
+    assert "Restore" in card
+    assert "#28" in card
+
+
 def test_review_html_readme_default_database_paths_documentation_card() -> None:
     """review.html Documentation grid should surface README default DB paths + #21 next to Desktop/Excel cards."""
     text = REVIEW_HTML.read_text(encoding="utf-8")
@@ -770,6 +785,7 @@ def test_pr_template_readme_desktop_anchor_checklist_cites_help_epilog_tests() -
     text = GITHUB_PULL_REQUEST_TEMPLATE_MD.read_text(encoding="utf-8")
     assert "`## Desktop app (PySide6)`** was renamed" in text
     for name in (
+        "test_review_html_readme_desktop_documentation_card_mentions_file_backup",
         "test_review_html_python_desktop_section_mentions_help_epilog",
         "test_static_shell_page_sub_mentions_help_epilog",
     ):
@@ -927,6 +943,7 @@ def test_contributing_ci_documents_readme_desktop_help_epilog_layout_tests() -> 
     nxt = chunk.index("\n- **README `### Excel workbook", desk)
     bullet = chunk[desk:nxt]
     for name in (
+        "test_review_html_readme_desktop_documentation_card_mentions_file_backup",
         "test_review_html_python_desktop_section_mentions_help_epilog",
         "test_static_shell_page_sub_mentions_help_epilog",
     ):
@@ -1422,6 +1439,7 @@ def test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests() -> Non
         "test_readme_docs_bar_links_default_database_paths_anchor",
         "test_review_html_readme_default_database_paths_documentation_card",
         "test_review_html_links_readme_web_shell_and_desktop_anchors",
+        "test_review_html_readme_desktop_documentation_card_mentions_file_backup",
         "test_review_html_readme_python_cli_documentation_card_mentions_backup",
         "test_static_html_links_readme_python_cli_section",
         "test_review_html_python_desktop_section_mentions_help_epilog",
@@ -1479,6 +1497,7 @@ def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
     for name in (
         "test_review_html_readme_default_database_paths_documentation_card",
         "test_review_html_links_readme_web_shell_and_desktop_anchors",
+        "test_review_html_readme_desktop_documentation_card_mentions_file_backup",
         "test_review_html_readme_python_cli_documentation_card_mentions_backup",
         "test_static_html_links_readme_python_cli_section",
         "test_review_html_python_desktop_section_mentions_help_epilog",
@@ -1545,6 +1564,7 @@ def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> Non
     assert "Why not one `.db` yet" in chunk
     assert "test_review_html_readme_default_database_paths_documentation_card" in chunk
     assert "test_review_html_links_readme_web_shell_and_desktop_anchors" in chunk
+    assert "test_review_html_readme_desktop_documentation_card_mentions_file_backup" in chunk
     assert "test_review_html_readme_python_cli_documentation_card_mentions_backup" in chunk
     assert "test_static_html_links_readme_python_cli_section" in chunk
     assert "test_review_html_python_desktop_section_mentions_help_epilog" in chunk
