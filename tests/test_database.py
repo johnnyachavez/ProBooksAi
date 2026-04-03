@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from probooks.paths import INTAKE_DB_NAME
 from probooksai.database import DocumentDatabase, _legacy_data_dir, get_data_dir, _file_hash
 
 
@@ -314,8 +315,8 @@ class TestGetDataDirMigration:
         got = get_data_dir()
 
         assert got.resolve() != legacy.resolve()
-        assert (got / "probooksai.db").is_file()
-        assert (got / "probooksai.db").read_bytes() == b"legacy-db-marker"
+        assert (got / INTAKE_DB_NAME).is_file()
+        assert (got / INTAKE_DB_NAME).read_bytes() == b"legacy-db-marker"
         assert (got / "documents" / "a.txt").read_text(encoding="utf-8") == "x"
 
 

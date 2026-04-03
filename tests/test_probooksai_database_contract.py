@@ -16,3 +16,4 @@ def test_probooksai_database_uses_paths_app_dir_with_legacy_migration() -> None:
     assert "app_data_dir" in text
     assert "ensure_app_dirs" in text
     assert "shutil.copy2" in text
+    assert "INTAKE_DB_NAME" in text
