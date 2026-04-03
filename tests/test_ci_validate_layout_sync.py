@@ -720,8 +720,11 @@ def test_github_issue_templates_reference_core_docs() -> None:
     assert "name: Doc index (issues-backlog)" in config, (
         "config.yml should keep the Doc index contact label (issues-backlog)"
     )
-    assert "review.html Issues backlog cards also name" in config, (
-        "config.yml Doc index about should mention review.html Issues backlog cards + config.yml"
+    assert (
+        "review.html Issues backlog Documentation cards (local + GitHub blob) echo that ROADMAP snapshot + Supporting / cross-cutting blurb and name .github/ISSUE_TEMPLATE/config.yml"
+        in config
+    ), (
+        "config.yml Doc index about should tie review.html Issues backlog Documentation cards to blurb + config.yml"
     )
     assert "repeat the same issues-backlog.md hub blurb" in config, (
         "config.yml Doc index about should note ROADMAP/BACKLOG/CONTRIBUTING hub blurb parity"
