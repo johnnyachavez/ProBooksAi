@@ -1,0 +1,513 @@
+"""Layout contract: twin validators stay aligned; GitHub Actions workflows keep key commands stable."""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+_REPO = Path(__file__).resolve().parents[1]
+_SH = _REPO / "scripts" / "ci_validate_layout.sh"
+_PS1 = _REPO / "scripts" / "ci_validate_layout.ps1"
+
+
+def _paths_from_sh(text: str) -> list[str]:
+    out: list[str] = []
+    for line in text.splitlines():
+        m = re.match(r"^require ([^\s]+)\s*$", line.strip())
+        if m:
+            out.append(m.group(1))
+    return out
+
+
+def _paths_from_ps1(text: str) -> list[str]:
+    out: list[str] = []
+    for line in text.splitlines():
+        m = re.match(r'^Require-File "([^"]+)"\s*$', line.strip())
+        if m:
+            out.append(m.group(1))
+    return out
+
+
+def test_ci_validate_layout_sh_and_ps1_same_paths_and_order() -> None:
+    sh_paths = _paths_from_sh(_SH.read_text(encoding="utf-8"))
+    ps1_paths = _paths_from_ps1(_PS1.read_text(encoding="utf-8"))
+    assert sh_paths == ps1_paths, (
+        "ci_validate_layout.sh and ci_validate_layout.ps1 must list the same paths in the same order.\n"
+        f"sh ({len(sh_paths)}): {sh_paths!r}\n"
+        f"ps1 ({len(ps1_paths)}): {ps1_paths!r}"
+    )
+
+
+def test_ci_yml_validate_job_invokes_layout_shell_script() -> None:
+    """Keep path checks in scripts/ci_validate_layout.sh, not re-inlined into the workflow YAML."""
+    yml = (_REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert re.search(r"(?m)^\s*run:\s+bash scripts/ci_validate_layout\.sh\s*$", yml), (
+        ".github/workflows/ci.yml validate step must use: run: bash scripts/ci_validate_layout.sh"
+    )
+
+
+def test_ci_yml_python_job_uses_ci_extra_headless_pytest_and_wheel() -> None:
+    """Main CI job should match docs: .[ci], offscreen Qt, pytest, Hatch wheel."""
+    yml = (_REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert 'python-version: "3.12"' in yml
+    assert 'pip install -e ".[ci]"' in yml
+    assert "QT_QPA_PLATFORM: offscreen" in yml
+    assert re.search(r"(?m)^\s*run:\s+python -m pytest\s*$", yml), (
+        "ci.yml python job should run tests via: run: python -m pytest"
+    )
+    assert "pip install build && python -m build --wheel" in yml
+
+
+def test_ui_screenshot_workflow_uses_xvfb_capture_script_and_desktop_extra() -> None:
+    """PR screenshot workflow must stay headless-friendly and match README scripting."""
+    yml = (_REPO / ".github" / "workflows" / "ui-screenshot.yml").read_text(encoding="utf-8")
+    assert "continue-on-error: true" in yml
+    assert "xvfb-run" in yml
+    assert "scripts/capture_ui_screenshot.py" in yml
+    assert 'pip install -e ".[desktop]"' in yml, (
+        'ui-screenshot.yml should install the package with the desktop extra: pip install -e ".[desktop]"'
+    )
+
+
+def test_ci_and_ui_screenshot_workflows_use_matching_python_version() -> None:
+    """Avoid drift between the main CI job and the optional screenshot job."""
+    ci = (_REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    shot = (_REPO / ".github" / "workflows" / "ui-screenshot.yml").read_text(encoding="utf-8")
+
+    def version_from(text: str) -> str:
+        m = re.search(r'python-version:\s*"([^"]+)"', text)
+        assert m, "expected setup-python python-version in workflow"
+        return m.group(1)
+
+    v_ci = version_from(ci)
+    v_shot = version_from(shot)
+    assert v_ci == v_shot, (
+        f"Use the same python-version in ci.yml and ui-screenshot.yml (got {v_ci!r} vs {v_shot!r})."
+    )
+
+
+def test_contract_test_modules_are_registered_in_layout_validators() -> None:
+    """Every tests/test_*_contract.py must appear in ci_validate_layout.sh and .ps1."""
+    tests_dir = _REPO / "tests"
+    names = sorted(p.name for p in tests_dir.glob("test_*_contract.py"))
+    assert names, "expected at least one tests/test_*_contract.py"
+    sh_text = _SH.read_text(encoding="utf-8")
+    ps1_text = _PS1.read_text(encoding="utf-8")
+    for name in names:
+        rel = f"tests/{name}"
+        assert f"require {rel}" in sh_text, f"add 'require {rel}' to scripts/ci_validate_layout.sh"
+        assert f'Require-File "{rel}"' in ps1_text, f'add Require-File "{rel}" to scripts/ci_validate_layout.ps1'
+
+
+def test_contributing_contract_table_rows_match_contract_modules() -> None:
+    """docs/CONTRIBUTING.md table must list every tests/test_*_contract.py (onboarding + review)."""
+    tests_dir = _REPO / "tests"
+    names = sorted(p.name for p in tests_dir.glob("test_*_contract.py"))
+    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    for name in names:
+        row = f"| **`{name}`** |"
+        assert row in md, f"add contract table row starting with {row!r} to docs/CONTRIBUTING.md"
+
+
+def test_readme_opener_mentions_shell_cli_desktop_sqlite() -> None:
+    """README lede matches shipped surfaces (static shell, CLI, desktop, SQLite)."""
+    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    assert "Accounting app foundation:" in readme
+    start = readme.index("Accounting app foundation:")
+    line = readme[start : readme.find("\n", start)]
+    for needle in ("static HTML", "probooks", "PySide6 desktop", "SQLite"):
+        assert needle in line, f"README lede should mention {needle!r}: {line!r}"
+
+
+def test_readme_desktop_section_documents_theme_and_qt_font_filter() -> None:
+    """README Desktop section stays aligned with Fusion theme + Windows Qt stderr filter."""
+    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    head = "## Desktop app (PySide6)"
+    start = readme.index(head)
+    rest = readme[start + len(head) :]
+    next_section = rest.index("\n## ")
+    section = rest[:next_section]
+    for needle in (
+        "Fusion",
+        "desktop_app/theme.py",
+        "desktop_app/main.py",
+        "QFont::setPointSize",
+        "test_desktop_main_contract.py",
+        "CONTRIBUTING.md",
+    ):
+        assert needle in section, f"README Desktop section should mention {needle!r}"
+
+
+def test_readme_links_contributing_continuous_integration_anchor() -> None:
+    """README docs bar and Contributing section should deep-link CONTRIBUTING CI + Running Tests."""
+    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    assert "[docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)" in readme
+    assert "docs/CONTRIBUTING.md#continuous-integration" in readme
+    assert "[Running Tests](docs/CONTRIBUTING.md#running-tests)" in readme
+
+
+def test_readme_links_roadmap_implementation_snapshot() -> None:
+    """README docs bar and Issue-driven section should deep-link ROADMAP implementation snapshot."""
+    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    needle = "docs/ROADMAP.md#implementation-snapshot-repository-2026-04"
+    assert readme.count(needle) >= 2, f"expected at least two {needle!r} links (docs bar + body)"
+
+
+def test_readme_docs_bar_links_issues_backlog_short_index() -> None:
+    """README docs bar should link docs/issues-backlog.md (short index)."""
+    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    assert "[Short index](docs/issues-backlog.md)" in readme
+
+
+def test_hub_docs_shared_issues_backlog_blurb_lists_config_and_review_cards() -> None:
+    """ROADMAP, BACKLOG, and CONTRIBUTING should share the same issues-backlog.md related-doc blurb."""
+    blurb = (
+        "[issues-backlog.md](issues-backlog.md) (short index; **config.yml** chooser + "
+        "**`review.html`** Issues cards)"
+    )
+    for rel in ("docs/ROADMAP.md", "docs/BACKLOG.md", "docs/CONTRIBUTING.md"):
+        text = (_REPO / rel).read_text(encoding="utf-8")
+        assert blurb in text, f"{rel} should include the shared issues-backlog.md blurb"
+
+
+def test_readme_docs_bar_links_desktop_app_anchor() -> None:
+    """README top **Docs** line should jump to ## Desktop app (PySide6)."""
+    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    assert "[Desktop app](#desktop-app-pyside6)" in readme
+
+
+def test_static_html_links_readme_desktop_section() -> None:
+    """Static shell pages that mention the desktop app should deep-link README Desktop."""
+    needle = 'href="README.md#desktop-app-pyside6"'
+    for name in ("index.html", "invoice.html", "review.html"):
+        text = (_REPO / name).read_text(encoding="utf-8")
+        assert needle in text, f"{name} should include {needle!r}"
+
+
+def test_review_html_links_readme_web_shell_and_desktop_anchors() -> None:
+    """review.html Documentation cards should deep-link README Web shell and Desktop sections."""
+    text = (_REPO / "review.html").read_text(encoding="utf-8")
+    assert 'href="README.md#web-shell-review"' in text
+    assert 'href="README.md#desktop-app-pyside6"' in text
+
+
+def test_review_html_links_contributing_doc_anchors() -> None:
+    """review.html Documentation section should link CONTRIBUTING Running Tests + Continuous integration."""
+    text = (_REPO / "review.html").read_text(encoding="utf-8")
+    assert 'href="docs/CONTRIBUTING.md#running-tests"' in text
+    assert 'href="docs/CONTRIBUTING.md#continuous-integration"' in text
+    assert "blob/main/docs/CONTRIBUTING.md#running-tests" in text
+    assert "blob/main/docs/CONTRIBUTING.md#continuous-integration" in text
+
+
+def test_review_html_issues_backlog_card_mentions_issue_chooser_config() -> None:
+    """review.html issues-backlog cards (local + GitHub blob) should name the same config path as docs/issues-backlog.md."""
+    text = (_REPO / "review.html").read_text(encoding="utf-8")
+    assert 'href="docs/issues-backlog.md"' in text
+    assert "blob/main/docs/issues-backlog.md" in text
+    path = ".github/ISSUE_TEMPLATE/config.yml"
+    assert text.count(path) >= 2, f"review.html should mention {path!r} on both issues-backlog Documentation cards"
+
+
+def test_readme_scripts_mention_work_context_example_json() -> None:
+    """README Scripts section should point at work-context.example.json vs generated JSON."""
+    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    assert "integrations/work-context.example.json" in readme
+    assert "sync-workspace.ps1" in readme
+    sync = readme.index("**`sync-workspace.ps1`**")
+    sync_line = readme[sync : readme.find("\n", sync)]
+    for needle in (
+        "index.html",
+        "invoice.html",
+        "review.html",
+        "docs/ROADMAP.md",
+        "test_integrations_example_contract.py",
+    ):
+        assert needle in sync_line, f"sync-workspace README bullet should mention {needle!r}"
+
+
+def test_contributing_ci_documents_work_context_example_touchpoints() -> None:
+    """Continuous integration section should list where work-context.example.json must stay in sync."""
+    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    assert "### Continuous integration" in md
+    ci_start = md.index("### Continuous integration")
+    table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
+    ci_chunk = md[ci_start:table_start]
+    assert "**`integrations/work-context.example.json`**" in ci_chunk
+    assert "test_integrations_example_contract.py" in ci_chunk
+    assert "github-work-context.mdc" in ci_chunk
+
+
+def test_contributing_ci_documents_contributing_md_anchor_touchpoints() -> None:
+    """Continuous integration section documents CONTRIBUTING.md fragment sync + review.html tests."""
+    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    ci_start = md.index("### Continuous integration")
+    table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
+    ci_chunk = md[ci_start:table_start]
+    assert "**CONTRIBUTING.md anchors (`#running-tests`, `#continuous-integration`)**" in ci_chunk
+    assert "test_review_html_links_contributing_doc_anchors" in ci_chunk
+
+
+def test_contributing_ci_documents_issues_backlog_review_config_touchpoints() -> None:
+    """Continuous integration section lists tests for issues-backlog.md vs review.html vs config.yml."""
+    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    ci_start = md.index("### Continuous integration")
+    table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
+    ci_chunk = md[ci_start:table_start]
+    assert "**issues-backlog + GitHub chooser**" in ci_chunk
+    assert "the following paragraph ties **Doc index (issues-backlog)** **`about`**" in ci_chunk
+    assert "another paragraph notes **ROADMAP** / **BACKLOG** / **Other docs** hub blurb parity" in ci_chunk
+    assert "Issues backlog Documentation cards" in ci_chunk
+    assert "blob/.../issues-backlog.md" in ci_chunk
+    assert "test_issues_backlog_orients_readme_docs_bar_and_github_config" in ci_chunk
+    assert "test_review_html_issues_backlog_card_mentions_issue_chooser_config" in ci_chunk
+    assert "**`PULL_REQUEST_TEMPLATE.md`**" in ci_chunk
+    assert "test_pr_template_issues_backlog_checklist_cites_layout_sync_tests" in ci_chunk
+    assert "test_contributing_ci_documents_issues_backlog_review_config_touchpoints" in ci_chunk
+    assert "test_contributing_ci_documents_config_doc_index_about_review_hub" in ci_chunk
+    assert "**Doc index (issues-backlog)** **`about`** ↔ **ISSUE_TEMPLATE** bullet" in ci_chunk
+
+
+def test_contributing_ci_documents_hub_shared_issues_backlog_blurb() -> None:
+    """Continuous integration section documents the ROADMAP/BACKLOG/CONTRIBUTING issues-backlog blurb test."""
+    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    ci_start = md.index("### Continuous integration")
+    table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
+    ci_chunk = md[ci_start:table_start]
+    assert "**Hub docs — issues-backlog link text**" in ci_chunk
+    hub = ci_chunk.index("**Hub docs — issues-backlog link text**")
+    hub_end = ci_chunk.index("\n- **ROADMAP snapshot", hub)
+    hub_bullet = ci_chunk[hub:hub_end]
+    assert "test_hub_docs_shared_issues_backlog_blurb_lists_config_and_review_cards" in hub_bullet
+    assert "test_contributing_ci_documents_hub_shared_issues_backlog_blurb" in hub_bullet
+    assert "test_pr_template_lists_hub_docs_issues_backlog_blurb_checklist" in hub_bullet
+
+
+def test_pr_template_lists_hub_docs_issues_backlog_blurb_checklist() -> None:
+    """PR template should remind editors to sync ROADMAP/BACKLOG/CONTRIBUTING issues-backlog blurb + tests."""
+    text = (_REPO / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    assert "Hub docs — issues-backlog link text" in text
+    for name in (
+        "test_hub_docs_shared_issues_backlog_blurb_lists_config_and_review_cards",
+        "test_contributing_ci_documents_hub_shared_issues_backlog_blurb",
+        "test_pr_template_lists_hub_docs_issues_backlog_blurb_checklist",
+    ):
+        assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
+
+
+def test_pr_template_issues_backlog_checklist_cites_layout_sync_tests() -> None:
+    """PR template row for issues-backlog vs config.yml should list the layout-sync pytest names."""
+    text = (_REPO / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    assert "docs/issues-backlog.md" in text
+    assert "orienting paragraphs" in text
+    assert "Canonical ordering" in text
+    assert "contact_links" in text
+    assert "Issues backlog Documentation cards" in text
+    assert "issues-backlog + GitHub chooser" in text
+    for name in (
+        "test_issues_backlog_orients_readme_docs_bar_and_github_config",
+        "test_contributing_ci_documents_issues_backlog_review_config_touchpoints",
+        "test_github_issue_templates_reference_core_docs",
+        "test_review_html_issues_backlog_card_mentions_issue_chooser_config",
+        "test_contributing_ci_documents_config_doc_index_about_review_hub",
+    ):
+        assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
+    assert "**Doc index (issues-backlog)** **`about`**" in text
+
+
+def test_contributing_running_tests_mentions_work_context_example() -> None:
+    """Running Tests section should point contributors at work-context example + sync script."""
+    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    chunk = md.split("## Running Tests", 1)[1].split("### Continuous integration", 1)[0]
+    assert "integrations/work-context.example.json" in chunk
+    assert "sync-workspace.ps1" in chunk
+    for needle in (
+        "index.html",
+        "invoice.html",
+        "review.html",
+        "docs/ROADMAP.md",
+        "test_integrations_example_contract.py",
+    ):
+        assert needle in chunk, f"Running Tests work-context paragraph should mention {needle!r}"
+
+
+def test_contributing_other_docs_links_readme_contributing_section() -> None:
+    """CONTRIBUTING intro should deep-link README ## Contributing (parity with docs bar)."""
+    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    assert "../README.md#contributing" in md
+
+
+def test_contributing_intro_self_links_continuous_integration_and_running_tests() -> None:
+    """CONTRIBUTING Other docs line should jump to CI + Running Tests on this page."""
+    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    intro = md.split("## Naming Conventions", 1)[0]
+    assert "[Continuous integration](#continuous-integration)" in intro
+    assert "[Running Tests](#running-tests)" in intro
+
+
+def test_contributing_other_docs_links_roadmap_implementation_snapshot() -> None:
+    """CONTRIBUTING should deep-link ROADMAP implementation snapshot (same anchor as BACKLOG / issues-backlog)."""
+    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    assert "ROADMAP.md#implementation-snapshot-repository-2026-04" in md
+
+
+def test_contributing_other_docs_links_issues_backlog_short_index() -> None:
+    """CONTRIBUTING intro should link the minimal issues-backlog index."""
+    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    assert "](issues-backlog.md)" in md
+
+
+def test_github_issue_templates_reference_core_docs() -> None:
+    """Issue chooser + forms stay aligned with ROADMAP, BACKLOG, README web shell + Desktop, CONTRIBUTING naming."""
+    naming = "docs/CONTRIBUTING.md#naming-conventions"
+    config = (_REPO / ".github" / "ISSUE_TEMPLATE" / "config.yml").read_text(encoding="utf-8")
+    assert naming in config, "config.yml Contributing guide URL should include CONTRIBUTING.md#naming-conventions"
+    assert "CONTRIBUTING.md#running-tests" in config, (
+        "config.yml should include Running Tests contact link to CONTRIBUTING.md#running-tests"
+    )
+    assert "name: Continuous integration" in config, (
+        "config.yml should define a Continuous integration contact link"
+    )
+    assert "name: Local preview (review.html)" in config, (
+        "config.yml should keep the Local preview contact label (review.html)"
+    )
+    assert "name: Running Tests (work-context)" in config, (
+        "config.yml should keep the Running Tests contact label (work-context)"
+    )
+    assert "name: Doc index (issues-backlog)" in config, (
+        "config.yml should keep the Doc index contact label (issues-backlog)"
+    )
+    assert "review.html Issues backlog cards also name" in config, (
+        "config.yml Doc index about should mention review.html Issues backlog cards + config.yml"
+    )
+    assert "repeat the same issues-backlog.md hub blurb" in config, (
+        "config.yml Doc index about should note ROADMAP/BACKLOG/CONTRIBUTING hub blurb parity"
+    )
+    assert config.count("CONTRIBUTING.md#continuous-integration") >= 1, (
+        "config.yml should include Continuous integration contact link to CONTRIBUTING.md#continuous-integration"
+    )
+    assert "README.md#web-shell-review" in config, (
+        "config.yml should include Local preview contact link to README.md#web-shell-review"
+    )
+    assert "README.md#desktop-app-pyside6" in config, (
+        "config.yml should include Desktop app contact link to README.md#desktop-app-pyside6"
+    )
+    assert "docs/issues-backlog.md" in config, (
+        "config.yml should include Doc index contact link to docs/issues-backlog.md"
+    )
+    bug = (_REPO / ".github" / "ISSUE_TEMPLATE" / "bug_report.md").read_text(encoding="utf-8")
+    feat = (_REPO / ".github" / "ISSUE_TEMPLATE" / "feature_request.md").read_text(encoding="utf-8")
+    roadmap_snap = "ROADMAP.md#implementation-snapshot-repository-2026-04"
+    readme_shell = "README.md#web-shell-review"
+    readme_desktop = "README.md#desktop-app-pyside6"
+    contrib_rt = "docs/CONTRIBUTING.md#running-tests"
+    for label, text in (("bug_report.md", bug), ("feature_request.md", feat)):
+        assert naming in text, f"{label} should link CONTRIBUTING.md#naming-conventions"
+        assert contrib_rt in text, f"{label} should deep-link CONTRIBUTING Running Tests"
+        assert roadmap_snap in text, f"{label} should deep-link ROADMAP implementation snapshot"
+        assert readme_shell in text, f"{label} should deep-link README Web shell (review)"
+        assert readme_desktop in text, f"{label} should deep-link README Desktop app (PySide6)"
+        assert "docs/BACKLOG.md" in text, f"{label} should link BACKLOG.md"
+        assert "docs/issues-backlog.md" in text, f"{label} should link issues-backlog.md"
+
+
+def test_contributing_ci_documents_config_doc_index_about_review_hub() -> None:
+    """ISSUE_TEMPLATE CI bullet should note Doc index about ↔ review.html, config.yml, hub blurb."""
+    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    ci_start = md.index("### Continuous integration")
+    table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
+    chunk = md[ci_start:table_start]
+    assert "**Doc index (issues-backlog)** **`about`**" in chunk
+    iss = chunk.index("**`.github/ISSUE_TEMPLATE/`**")
+    nxt = chunk.index("\n- **ROADMAP snapshot", iss)
+    issue_bullet = chunk[iss:nxt]
+    assert "**Doc index (issues-backlog)** **`about`** text notes" in issue_bullet
+    assert "shared **issues-backlog.md** hub blurb" in issue_bullet
+    assert "test_github_issue_templates_reference_core_docs" in issue_bullet
+    assert "test_contributing_ci_documents_config_doc_index_about_review_hub" in issue_bullet
+
+
+def test_docs_indexes_link_contributing_ci_section() -> None:
+    """ROADMAP, BACKLOG, and issues-backlog index should deep-link CONTRIBUTING CI (contract table)."""
+    needle = "CONTRIBUTING.md#continuous-integration"
+    for rel in ("docs/ROADMAP.md", "docs/BACKLOG.md", "docs/issues-backlog.md"):
+        text = (_REPO / rel).read_text(encoding="utf-8")
+        assert needle in text, f"{rel} should contain {needle!r}"
+
+
+def test_issues_backlog_orients_readme_docs_bar_and_github_config() -> None:
+    """issues-backlog explains BACKLOG vs this index + README Short index + config.yml chooser."""
+    text = (_REPO / "docs" / "issues-backlog.md").read_text(encoding="utf-8")
+    assert ".github/ISSUE_TEMPLATE/config.yml" in text
+    assert "Running Tests, **Doc index (issues-backlog)**)." in text
+    assert "Short index" in text
+    assert "../README.md#desktop-app-pyside6" in text
+    assert "integrations/work-context.example.json" in text
+    assert "](CONTRIBUTING.md#running-tests)" in text
+    assert "Continuous integration" in text
+    assert "**Doc index (issues-backlog)** contact **`about`** text" in text
+    assert "shown in the GitHub **New issue** chooser" in text
+    assert "both **Issues backlog** cards" in text
+    assert "**Hub docs — issues-backlog link text**" in text
+    assert "verbatim-aligned" in text
+
+
+def test_backlog_links_readme_desktop_app_section() -> None:
+    """BACKLOG implementation row should deep-link README Desktop (theme + Qt notes)."""
+    text = (_REPO / "docs" / "BACKLOG.md").read_text(encoding="utf-8")
+    assert "../README.md#desktop-app-pyside6" in text
+
+
+def test_hub_docs_link_issues_backlog_short_index() -> None:
+    """ROADMAP and BACKLOG Related docs should link issues-backlog.md (same folder)."""
+    needle = "](issues-backlog.md)"
+    for rel in ("docs/ROADMAP.md", "docs/BACKLOG.md"):
+        text = (_REPO / rel).read_text(encoding="utf-8")
+        assert needle in text, f"{rel} should link issues-backlog.md"
+
+
+def test_docs_indexes_link_readme_web_shell_review() -> None:
+    """Hub docs should deep-link README ## Web shell (review) (ROADMAP blockquote, BACKLOG, issues-backlog, CONTRIBUTING)."""
+    needle = "../README.md#web-shell-review"
+    for rel in ("docs/ROADMAP.md", "docs/BACKLOG.md", "docs/issues-backlog.md", "docs/CONTRIBUTING.md"):
+        text = (_REPO / rel).read_text(encoding="utf-8")
+        assert needle in text, f"{rel} should contain {needle!r}"
+
+
+def test_hub_docs_link_readme_desktop_app_section() -> None:
+    """Hub docs deep-link README ## Desktop app (PySide6) (parity with README docs bar)."""
+    needle = "../README.md#desktop-app-pyside6"
+    for rel in ("docs/ROADMAP.md", "docs/BACKLOG.md", "docs/issues-backlog.md", "docs/CONTRIBUTING.md"):
+        text = (_REPO / rel).read_text(encoding="utf-8")
+        assert needle in text, f"{rel} should contain {needle!r}"
+
+
+def test_hub_docs_link_contributing_running_tests_section() -> None:
+    """Hub docs deep-link CONTRIBUTING ## Running Tests (work-context / sync-workspace)."""
+    needle = "CONTRIBUTING.md#running-tests"
+    for rel in ("docs/ROADMAP.md", "docs/BACKLOG.md", "docs/issues-backlog.md"):
+        text = (_REPO / rel).read_text(encoding="utf-8")
+        assert needle in text, f"{rel} should contain {needle!r}"
+    contrib = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    assert "[Running Tests](#running-tests)" in contrib
+
+
+def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
+    """Cursor work-context rule should point hub doc edits at CONTRIBUTING CI + layout-sync tests."""
+    text = (_REPO / ".cursor" / "rules" / "github-work-context.mdc").read_text(encoding="utf-8")
+    assert "issues-backlog.md" in text
+    assert "config.yml" in text
+    assert "review.html" in text
+    assert "test_ci_validate_layout_sync.py" in text
+    assert "CONTRIBUTING.md#continuous-integration" in text
+
+
+def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> None:
+    """Continuous integration section should list the Cursor rule contract test."""
+    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    ci_start = md.index("### Continuous integration")
+    table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
+    chunk = md[ci_start:table_start]
+    assert "**Layout + workflow contracts**" in chunk
+    assert "test_cursor_rule_github_work_context_points_at_contributing_ci" in chunk
+    assert "**`.cursor/rules/github-work-context.mdc`**" in chunk

@@ -3,7 +3,10 @@
   "repository": "your-org/probooks-ai",
   "repositoryUrl": "https://github.com/your-org/probooks-ai",
   "localWorkFiles": [
-    { "path": "index.html", "lastWriteUtc": "2026-03-31T12:00:00.0000000Z" }
+    { "path": "index.html", "lastWriteUtc": "2026-03-31T12:00:00.0000000Z" },
+    { "path": "invoice.html", "lastWriteUtc": "2026-03-31T12:00:00.0000000Z" },
+    { "path": "review.html", "lastWriteUtc": "2026-03-31T12:00:00.0000000Z" },
+    { "path": "docs/ROADMAP.md", "lastWriteUtc": "2026-03-31T12:00:00.0000000Z" }
   ],
   "pullRequests": [
     {

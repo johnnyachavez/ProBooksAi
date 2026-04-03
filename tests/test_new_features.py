@@ -11,7 +11,7 @@ import os
 import pytest
 
 from probooksai.bank_import import BankDatabase, SCHEMA_VERSION
-from probooksai.gl import GLDatabase
+from probooksai.gl import GLDatabase, write_journal_export_csv
 from probooksai.coa_db import COADatabase, COA_ACCOUNT_TYPES
 
 
@@ -353,6 +353,36 @@ class TestGLDatabase:
         )
         jan = gdb.list_journal_entries(start_date="2026-01-01", end_date="2026-01-31")
         assert len(jan) == 1
+
+    def test_journal_export_rows_and_write_csv(self, gl_db, tmp_path):
+        gdb, _ = gl_db
+        gdb.create_journal_entry(
+            "2026-03-10",
+            [
+                {
+                    "account": "1000 – Cash",
+                    "debit": 50.0,
+                    "credit": 0.0,
+                    "description": "in",
+                },
+                {
+                    "account": "4000 – Sales",
+                    "debit": 0.0,
+                    "credit": 50.0,
+                    "description": "sale",
+                },
+            ],
+            memo="day total",
+        )
+        rows = gdb.journal_export_rows("2026-03-01", "2026-03-31")
+        assert len(rows) == 2
+        assert rows[0]["entry_memo"] == "day total"
+        p = tmp_path / "je.csv"
+        n = write_journal_export_csv(str(p), rows)
+        assert n == 2
+        text = p.read_text(encoding="utf-8")
+        assert "1000" in text
+        assert "day total" in text
 
     def test_post_transactions_bulk(self, gl_db):
         gdb, bdb = gl_db

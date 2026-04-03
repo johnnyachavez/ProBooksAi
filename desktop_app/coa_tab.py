@@ -15,6 +15,7 @@ Widgets
 from __future__ import annotations
 
 import sqlite3
+from functools import partial
 from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
@@ -30,6 +31,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QPushButton,
     QSizePolicy,
@@ -41,10 +43,39 @@ from PySide6.QtWidgets import (
 
 from probooksai.coa_db import COADatabase, COA_ACCOUNT_TYPES
 
+from desktop_app.audit_dialog import show_entity_audit_history
+from desktop_app.qt_mnemonic import escape_ampersand_for_qt
+from desktop_app.table_clipboard import (
+    QTABLE_PLAIN_TEXT_ROLE,
+    copy_table_row_as_tsv,
+    plain_display_table_item,
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+class _CoaAccountNumberTableItem(QTableWidgetItem):
+    """# column: escaped display, plain copy role, numeric sort when number is all digits."""
+
+    def __init__(self, account_number: str, account_id: int) -> None:
+        raw = str(account_number or "")
+        super().__init__(escape_ampersand_for_qt(raw))
+        self.setData(Qt.ItemDataRole.UserRole, int(account_id))
+        self.setData(QTABLE_PLAIN_TEXT_ROLE, raw)
+        sk = raw.strip()
+        self._int_key: int | None = int(sk) if sk.isdigit() else None
+
+    def __lt__(self, other: QTableWidgetItem) -> bool:
+        if isinstance(other, _CoaAccountNumberTableItem):
+            if self._int_key is not None and other._int_key is not None:
+                return self._int_key < other._int_key
+            a = (self.data(QTABLE_PLAIN_TEXT_ROLE) or "").strip().lower()
+            b = (other.data(QTABLE_PLAIN_TEXT_ROLE) or "").strip().lower()
+            return a < b
+        return super().__lt__(other)
 
 _TYPE_LABELS = {
     "asset":     "Asset",
@@ -178,7 +209,9 @@ class AddEditCOADialog(QDialog):
                     is_active=is_active,
                 )
         except (ValueError, sqlite3.IntegrityError) as exc:
-            QMessageBox.critical(self, "Error", str(exc))
+            QMessageBox.critical(
+                self, "Error", escape_ampersand_for_qt(str(exc))
+            )
             return
 
         self.accept()
@@ -249,6 +282,9 @@ class COATab(QWidget):
         self._table.setColumnWidth(5, 60)
         self._table.itemSelectionChanged.connect(self._on_selection)
         self._table.doubleClicked.connect(self._on_edit)
+        self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._table.customContextMenuRequested.connect(self._on_coa_context_menu)
+        self._table.setSortingEnabled(True)
         layout.addWidget(self._table)
 
         # Footer
@@ -260,24 +296,25 @@ class COATab(QWidget):
     def _refresh(self):
         include_inactive = self._chk_inactive.isChecked()
         rows = self._db.list_accounts(include_inactive=include_inactive)
-        self._table.setRowCount(0)
-        for row in rows:
-            r = self._table.rowCount()
-            self._table.insertRow(r)
-            self._table.setItem(r, 0, QTableWidgetItem(str(row["account_number"])))
-            self._table.setItem(r, 1, QTableWidgetItem(row["account_name"]))
-            self._table.setItem(r, 2, QTableWidgetItem(
-                _TYPE_LABELS.get(row["account_type"], row["account_type"])
-            ))
-            self._table.setItem(r, 3, QTableWidgetItem(row["sub_type"] or ""))
-            self._table.setItem(r, 4, QTableWidgetItem(
-                (row["normal_balance"] or "").title()
-            ))
-            active_item = QTableWidgetItem("✓" if row["is_active"] else "—")
+        self._table.setSortingEnabled(False)
+        self._table.setRowCount(len(rows))
+        for r, row in enumerate(rows):
+            num_it = _CoaAccountNumberTableItem(
+                str(row["account_number"]), int(row["id"])
+            )
+            self._table.setItem(r, 0, num_it)
+            self._table.setItem(r, 1, plain_display_table_item(row["account_name"] or ""))
+            type_lbl = _TYPE_LABELS.get(row["account_type"], row["account_type"])
+            self._table.setItem(r, 2, plain_display_table_item(str(type_lbl)))
+            self._table.setItem(r, 3, plain_display_table_item(row["sub_type"] or ""))
+            nb = (row["normal_balance"] or "").title()
+            self._table.setItem(r, 4, plain_display_table_item(nb))
+            active_item = plain_display_table_item(
+                "✓" if row["is_active"] else "—"
+            )
             active_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self._table.setItem(r, 5, active_item)
-            # Store id in row header (hidden data)
-            self._table.item(r, 0).setData(Qt.ItemDataRole.UserRole, row["id"])
+        self._table.setSortingEnabled(True)
 
         count = len(rows)
         self._lbl_count.setText(f"{count} account{'s' if count != 1 else ''}")
@@ -289,6 +326,31 @@ class COATab(QWidget):
         r = self._table.currentRow()
         item = self._table.item(r, 0)
         return item.data(Qt.ItemDataRole.UserRole) if item else None
+
+    def _on_coa_context_menu(self, pos):
+        idx = self._table.indexAt(pos)
+        if not idx.isValid():
+            return
+        row = idx.row()
+        item = self._table.item(row, 0)
+        if item is None:
+            return
+        aid = item.data(Qt.ItemDataRole.UserRole)
+        if aid is None:
+            return
+        menu = QMenu(self)
+        menu.addAction("Copy row", partial(copy_table_row_as_tsv, self._table, row))
+        act_history = menu.addAction("View change history…")
+        chosen = menu.exec(self._table.viewport().mapToGlobal(pos))
+        if chosen == act_history:
+            show_entity_audit_history(
+                self,
+                self._db._conn,
+                "coa_account",
+                int(aid),
+                window_title=f"Change history — COA account #{aid}",
+                empty_message="No audit entries recorded for this account yet.",
+            )
 
     # -- actions -------------------------------------------------------------
 
@@ -325,7 +387,9 @@ class COATab(QWidget):
             confirm = QMessageBox.question(
                 self,
                 "Deactivate Account",
-                f"Deactivate '{name}'? It will no longer appear in dropdowns.",
+                "Deactivate '"
+                f"{escape_ampersand_for_qt(name or '')}"
+                "'? It will no longer appear in dropdowns.",
             )
             if confirm != QMessageBox.StandardButton.Yes:
                 return

@@ -1,7 +1,7 @@
 """
 desktop_app.theme
 =================
-Global dark-theme constants and helper for ProBooksAi.
+Global dark-theme constants and helper for ProBooks+ai.
 
 Issue #29 – Dark theme across the entire app (global palette + tables).
 
@@ -13,7 +13,7 @@ Usage
 
 from __future__ import annotations
 
-from PySide6.QtGui import QColor, QPalette
+from PySide6.QtGui import QColor, QFont, QPalette
 from PySide6.QtWidgets import QApplication
 
 # ---------------------------------------------------------------------------
@@ -352,9 +352,36 @@ QDialogButtonBox QPushButton {{
 # Public API
 # ---------------------------------------------------------------------------
 
+
+def _ensure_application_font_has_explicit_size(app: QApplication) -> None:
+    """Give *app* a plain QFont with an explicit pixel size before setStyleSheet.
+
+    Global QSS uses ``font-size: {FONT_SIZE_NORMAL}`` (pixels). If the default
+    application font is point-sized, Qt's merge path can end up calling
+    ``setPointSize(-1)`` on Windows. Match the stylesheet with a fresh
+    **pixel-sized** font (same numeric size as ``FONT_SIZE_NORMAL``).
+    """
+    raw = FONT_SIZE_NORMAL.strip().lower().removesuffix("px").strip()
+    try:
+        pixel = max(int(raw), 1)
+    except ValueError:
+        pixel = 13
+    src = app.font()
+    family = src.family() or "Segoe UI"
+    fixed = QFont()
+    fixed.setFamily(family)
+    fixed.setPixelSize(pixel)
+    app.setFont(fixed)
+
+
 def apply_dark_theme(app: QApplication) -> None:
-    """Apply the ProBooksAi dark theme to *app*."""
+    """Apply the ProBooks+ai dark theme to *app*."""
+    # Fusion + explicit app font before/after QSS: Windows native style can merge
+    # fonts in a way that triggers setPointSize(-1) when a global stylesheet sets px sizes.
+    app.setStyle("Fusion")
+    _ensure_application_font_has_explicit_size(app)
     app.setStyleSheet(STYLESHEET)
+    _ensure_application_font_has_explicit_size(app)
 
     palette = QPalette()
     palette.setColor(QPalette.ColorRole.Window,          QColor(BG_PRIMARY))

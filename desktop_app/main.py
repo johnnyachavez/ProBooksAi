@@ -1,6 +1,6 @@
 """
-ProBooksAi Desktop Application
-================================
+ProBooks+ai desktop application
+===============================
 Run with:
     python -m desktop_app.main
 
@@ -13,34 +13,54 @@ Requires PySide6:
 
 from __future__ import annotations
 
+import argparse
 import mimetypes
 import os
+import shutil
 import sys
+from functools import partial
 from pathlib import Path
 
 from PySide6.QtCore import (
-    Qt, QThread, Signal, QMimeData,
+    Qt, QThread, Signal, QMimeData, QSettings, QUrl, qInstallMessageHandler,
 )
 from PySide6.QtGui import (
-    QAction, QColor, QDragEnterEvent, QDropEvent,
+    QAction, QColor, QDesktopServices, QDragEnterEvent, QDropEvent,
     QIcon, QPixmap,
 )
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QDoubleSpinBox, QFileDialog,
     QFormLayout, QFrame, QGroupBox, QHBoxLayout, QLabel,
-    QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit,
+    QLineEdit, QMainWindow, QMenu, QMessageBox, QPlainTextEdit,
     QPushButton, QScrollArea, QSizePolicy, QSplitter,
-    QStatusBar, QTabWidget, QTableWidget, QTableWidgetItem, QToolBar,
+    QStatusBar, QTabWidget, QTableWidget, QToolBar,
     QVBoxLayout, QWidget,
 )
 
 from probooksai.database import DocumentDatabase
+from probooksai.html_escape import escape_html_text
 from probooksai.coa import coa_display_list, load_coa
 from probooksai.bank_import import BankDatabase
 from probooksai.coa_db import COADatabase
+from probooksai.extensions_schema import apply_extensions
+from probooksai.gl import GLDatabase
 from desktop_app.bank_import_tab import BankImportTab
 from desktop_app.coa_tab import COATab
+from desktop_app.register_tab import RegisterTab
+from desktop_app.reports_tab import ReportsTab
+from desktop_app.journal_tab import JournalTab
+from desktop_app.extra_tabs import BusinessHub
+from desktop_app.audit_tab import AuditTab
 from desktop_app.theme import apply_dark_theme, STATUS_COLORS as THEME_STATUS_COLORS
+from desktop_app.version import application_version
+from desktop_app.local_docs import resolve_local_roadmap_path
+from desktop_app.table_clipboard import (
+    IntSortTableItem,
+    copy_table_row_as_tsv,
+    plain_display_table_item,
+    table_cell_clipboard_text,
+)
+from desktop_app.qt_mnemonic import escape_ampersand_for_qt
 
 # Accepted MIME types / file extensions
 ACCEPTED_MIMES = {"application/pdf", "image/jpeg", "image/png"}
@@ -48,7 +68,7 @@ ACCEPTED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png"}
 
 STATUS_COLORS = THEME_STATUS_COLORS
 
-INBOX_HEADER_COLOR = "#1F3864"  # dark navy – matches ProBooksAi branding
+INBOX_HEADER_COLOR = "#1F3864"  # dark navy – matches ProBooks+ai branding
 
 COMPANY_NAME = "CHAVAN TRUCKING CORPORATION"  # placeholder – replace with real company/file name
 
@@ -111,6 +131,18 @@ class InboxWidget(QTableWidget):
         self.setAlternatingRowColors(True)
         self.verticalHeader().setVisible(False)
         self.setAcceptDrops(True)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._on_context_menu)
+        self.setSortingEnabled(True)
+
+    def _on_context_menu(self, pos):
+        idx = self.indexAt(pos)
+        if not idx.isValid():
+            return
+        row = idx.row()
+        m = QMenu(self)
+        m.addAction("Copy row", partial(copy_table_row_as_tsv, self, row))
+        m.exec(self.viewport().mapToGlobal(pos))
 
     # -- drag & drop ---------------------------------------------------------
 
@@ -133,35 +165,55 @@ class InboxWidget(QTableWidget):
     # -- population ----------------------------------------------------------
 
     def populate(self, rows: list):
-        self.setRowCount(0)
-        for row in rows:
-            r = self.rowCount()
-            self.insertRow(r)
-            self.setItem(r, 0, QTableWidgetItem(str(row["id"])))
-            self.setItem(r, 1, QTableWidgetItem(row["filename"]))
+        self.setSortingEnabled(False)
+        self.setRowCount(len(rows))
+        for r, row in enumerate(rows):
+            did = int(row["id"])
+            id_cell = IntSortTableItem(str(did), did)
+            id_cell.setData(Qt.ItemDataRole.UserRole, did)
+            self.setItem(r, 0, id_cell)
+            fn = row["filename"] or ""
+            self.setItem(r, 1, plain_display_table_item(fn))
             mime = row["mimetype"] or ""
             doc_type = "PDF" if "pdf" in mime else "Image"
-            self.setItem(r, 2, QTableWidgetItem(doc_type))
+            self.setItem(r, 2, plain_display_table_item(doc_type))
             status = row["status"]
-            status_item = QTableWidgetItem(status)
+            status_item = plain_display_table_item(str(status or ""))
             color = STATUS_COLORS.get(status, "#000000")
             status_item.setForeground(QColor(color))
             self.setItem(r, 3, status_item)
             date_str = (row["import_date"] or "")[:10]
-            self.setItem(r, 4, QTableWidgetItem(date_str))
+            self.setItem(r, 4, plain_display_table_item(date_str))
+        self.setSortingEnabled(True)
 
     def selected_doc_id(self) -> int | None:
         rows = self.selectedItems()
         if not rows:
             return None
         r = self.currentRow()
-        id_item = self.item(r, 0)
-        return int(id_item.text()) if id_item else None
+        it = self.item(r, 0)
+        if it is not None:
+            eid = it.data(Qt.ItemDataRole.UserRole)
+            if eid is not None:
+                try:
+                    return int(eid)
+                except (TypeError, ValueError):
+                    pass
+        raw = table_cell_clipboard_text(self, r, 0).strip()
+        if not raw:
+            return None
+        try:
+            return int(raw)
+        except ValueError:
+            return None
 
 
 # ---------------------------------------------------------------------------
 # Detail pane (right panel)
 # ---------------------------------------------------------------------------
+
+_COA_SELECT_LABEL = "– select –"
+
 
 class DetailPane(QScrollArea):
     """Shows document preview + extracted fields + action buttons."""
@@ -186,6 +238,7 @@ class DetailPane(QScrollArea):
 
         # -- Document info ---------------------------------------------------
         self._lbl_filename = QLabel("No document selected")
+        self._lbl_filename.setTextFormat(Qt.TextFormat.PlainText)
         self._lbl_filename.setStyleSheet("font-weight: bold; font-size: 14px;")
         layout.addWidget(self._lbl_filename)
 
@@ -196,6 +249,7 @@ class DetailPane(QScrollArea):
         preview_group = QGroupBox("Preview")
         preview_layout = QVBoxLayout(preview_group)
         self._preview_label = QLabel("(Select a document to preview)")
+        self._preview_label.setTextFormat(Qt.TextFormat.PlainText)
         self._preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._preview_label.setMinimumHeight(180)
         self._preview_label.setStyleSheet("background: #f0f0f0; border: 1px solid #ccc;")
@@ -245,7 +299,7 @@ class DetailPane(QScrollArea):
         cat_layout = QFormLayout(cat_group)
 
         self._f_coa      = QComboBox()
-        self._f_coa.addItems(["– select –"] + coa_list)
+        self._fill_coa_combo(coa_list)
         self._f_coa.setEditable(True)
         self._f_tax_cat  = QLineEdit()
         self._f_confidence = QLabel("–")
@@ -255,6 +309,7 @@ class DetailPane(QScrollArea):
         cat_layout.addRow("AI Confidence:", self._f_confidence)
 
         self._lbl_rationale = QLabel("")
+        self._lbl_rationale.setTextFormat(Qt.TextFormat.PlainText)
         self._lbl_rationale.setWordWrap(True)
         self._lbl_rationale.setStyleSheet("color: #555; font-style: italic;")
         cat_layout.addRow("Rationale:", self._lbl_rationale)
@@ -294,11 +349,12 @@ class DetailPane(QScrollArea):
         row = db.get_document(doc_id)
         if not row:
             return
-        self._lbl_filename.setText(row["filename"])
+        self._lbl_filename.setText(escape_ampersand_for_qt(row["filename"]))
         status = row["status"]
         color  = STATUS_COLORS.get(status, "#000")
-        self._lbl_status.setText(f"Status: <b style='color:{color}'>{status}</b>")
+        safe_status = escape_html_text(status)
         self._lbl_status.setTextFormat(Qt.TextFormat.RichText)
+        self._lbl_status.setText(f"Status: <b style='color:{color}'>{safe_status}</b>")
 
         self._show_preview(row["stored_path"], row["mimetype"], row["page_count"])
 
@@ -310,7 +366,7 @@ class DetailPane(QScrollArea):
 
         # Categorisation
         if approved:
-            self._f_coa.setCurrentText(approved["coa_account"] or "")
+            self._set_coa_combo_raw(approved["coa_account"])
             self._f_tax_cat.setText(approved["tax_category"] or "")
 
         self._set_buttons_enabled(True)
@@ -319,11 +375,16 @@ class DetailPane(QScrollArea):
         """Fill the form with AI extraction + categorisation results."""
         self._populate_fields_from_extraction(result)
         if suggestions and not suggestions.error:
-            idx = self._f_coa.findText(suggestions.coa_account or "")
-            if idx >= 0:
-                self._f_coa.setCurrentIndex(idx)
+            s_coa = (suggestions.coa_account or "").strip()
+            if s_coa:
+                idx = self._f_coa.findData(s_coa, Qt.ItemDataRole.UserRole)
+                if idx >= 0:
+                    self._f_coa.setCurrentIndex(idx)
+                else:
+                    self._f_coa.setCurrentIndex(-1)
+                    self._f_coa.setEditText(s_coa)
             else:
-                self._f_coa.setEditText(suggestions.coa_account or "")
+                self._f_coa.setCurrentIndex(0)
             self._f_tax_cat.setText(suggestions.tax_category or "")
             conf = suggestions.confidence
             self._f_confidence.setText(f"{conf:.0%}")
@@ -342,7 +403,7 @@ class DetailPane(QScrollArea):
             "total":          self._f_total.value() or None,
             "currency":       self._f_currency.text().strip() or "USD",
             "notes":          self._f_notes.toPlainText().strip() or None,
-            "coa_account":    self._f_coa.currentText().strip() or None,
+            "coa_account":    self._coa_combo_raw_value(),
             "tax_category":   self._f_tax_cat.text().strip() or None,
         }
 
@@ -364,7 +425,8 @@ class DetailPane(QScrollArea):
             pages = page_count or "?"
             self._preview_label.setPixmap(QPixmap())
             self._preview_label.setText(
-                f"\U0001f4c4 PDF document\n{Path(stored_path).name}\n{pages} page(s)"
+                "\U0001f4c4 PDF document\n"
+                f"{escape_ampersand_for_qt(Path(stored_path).name)}\n{pages} page(s)"
             )
             return
         self._preview_label.setPixmap(QPixmap())
@@ -425,13 +487,73 @@ class DetailPane(QScrollArea):
 
     def update_coa(self, coa_list: list[str]):
         """Refresh the COA dropdown with an updated list."""
-        current = self._f_coa.currentText()
+        current = self._coa_combo_raw_value()
+        self._fill_coa_combo(coa_list)
+        self._set_coa_combo_raw(current)
+
+    def _fill_coa_combo(self, coa_list: list[str]) -> None:
         self._f_coa.clear()
-        self._f_coa.addItems(["– select –"] + coa_list)
-        # Restore selection if still present
-        idx = self._f_coa.findText(current)
+        self._f_coa.addItem(
+            escape_ampersand_for_qt(_COA_SELECT_LABEL), ""
+        )
+        for coa in coa_list:
+            c = (coa or "").strip()
+            if not c:
+                continue
+            self._f_coa.addItem(escape_ampersand_for_qt(c), c)
+
+    def _coa_combo_raw_value(self) -> str | None:
+        i = self._f_coa.currentIndex()
+        if i == 0:
+            return None
+        if i > 0:
+            data = self._f_coa.itemData(i, Qt.ItemDataRole.UserRole)
+            if data is not None and str(data).strip():
+                return str(data).strip()
+        t = self._f_coa.currentText().strip()
+        if not t or t == _COA_SELECT_LABEL:
+            return None
+        return t
+
+    def _set_coa_combo_raw(self, raw: str | None) -> None:
+        if self._f_coa.count() == 0:
+            return
+        if not (raw or "").strip():
+            self._f_coa.setCurrentIndex(0)
+            return
+        r = raw.strip()
+        idx = self._f_coa.findData(r, Qt.ItemDataRole.UserRole)
         if idx >= 0:
             self._f_coa.setCurrentIndex(idx)
+        else:
+            self._f_coa.setCurrentIndex(-1)
+            self._f_coa.setEditText(r)
+
+    def clear_view(self):
+        """Reset the detail pane when switching company database."""
+        self._doc_id = None
+        self._lbl_filename.setText("No document selected")
+        self._lbl_status.setTextFormat(Qt.TextFormat.PlainText)
+        self._lbl_status.setText("")
+        self._preview_label.setPixmap(QPixmap())
+        self._preview_label.setText("(Select a document to preview)")
+        self._f_vendor.clear()
+        if self._f_doctype.count() > 0:
+            self._f_doctype.setCurrentIndex(0)
+        self._f_inv_num.clear()
+        self._f_date.clear()
+        self._f_due_date.clear()
+        self._f_subtotal.setValue(0.0)
+        self._f_tax.setValue(0.0)
+        self._f_total.setValue(0.0)
+        self._f_currency.setText("USD")
+        self._f_notes.clear()
+        self._f_tax_cat.clear()
+        self._f_confidence.setText("\u2013")
+        self._lbl_rationale.clear()
+        if self._f_coa.count() > 0:
+            self._f_coa.setCurrentIndex(0)
+        self._set_buttons_enabled(False)
 
 
 # ---------------------------------------------------------------------------
@@ -452,7 +574,7 @@ class AppHeaderWidget(QFrame):
         layout.setContentsMargins(14, 0, 14, 0)
         layout.setSpacing(0)
 
-        lbl_app = QLabel("ProBooksAi")
+        lbl_app = QLabel("ProBooks+ai")
         lbl_app.setStyleSheet(
             "color: white; font-weight: bold; font-size: 16px; background: transparent;"
         )
@@ -460,7 +582,8 @@ class AppHeaderWidget(QFrame):
 
         layout.addStretch()
 
-        self._lbl_company = QLabel(company_name)
+        self._lbl_company = QLabel(escape_ampersand_for_qt(company_name))
+        self._lbl_company.setTextFormat(Qt.TextFormat.PlainText)
         self._lbl_company.setStyleSheet(
             "color: #c8d8f0; font-size: 12px; background: transparent;"
         )
@@ -468,7 +591,7 @@ class AppHeaderWidget(QFrame):
 
     def set_company_name(self, name: str):
         """Update the displayed company/file name at runtime."""
-        self._lbl_company.setText(name)
+        self._lbl_company.setText(escape_ampersand_for_qt(name))
 
 
 # ---------------------------------------------------------------------------
@@ -476,20 +599,23 @@ class AppHeaderWidget(QFrame):
 # ---------------------------------------------------------------------------
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, db_path: str | None = None):
         super().__init__()
-        self.setWindowTitle("ProBooksAi – Document Intake")
         self.resize(1100, 700)
 
-        self._db      = DocumentDatabase()
-        self._bank_db = BankDatabase()
-        self._coa_db  = COADatabase(self._bank_db._conn)
+        self._db_path = db_path
+        self._db = DocumentDatabase(db_path)
+        self._bank_db = BankDatabase(db_path)
+        apply_extensions(self._bank_db._conn)
+        self._gl_db = GLDatabase(self._bank_db._conn)
+        self._coa_db = COADatabase(self._bank_db._conn)
         self._coa_db.seed_from_workbook()
-        self._coa     = load_coa()
+        self._coa = load_coa()
         self._worker: AIWorker | None = None
 
         self._build_ui()
         self._refresh_inbox()
+        self._update_company_status()
 
     # -- UI construction -----------------------------------------------------
 
@@ -567,13 +693,23 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(intake_widget, "📄  Document Intake")
 
         # ── Tab 2: Bank Import & Reconciliation ─────────────────────────────
-        self._bank_tab = BankImportTab(self._bank_db)
+        self._bank_tab = BankImportTab(self._bank_db, self._coa_db)
         self._tabs.addTab(self._bank_tab, "🏦  Bank Import")
 
-        # ── Tab 3: Chart of Accounts Editor ─────────────────────────────────
+        # ── Tab 3: Bank register (Phase 3) ──────────────────────────────────
+        self._register_tab = RegisterTab(self._bank_db, self._coa_db, self._gl_db)
+        self._tabs.addTab(self._register_tab, "📒  Register")
+
+        # ── Tab 4: Chart of Accounts Editor ─────────────────────────────────
         self._coa_tab = COATab(self._coa_db)
         self._coa_tab.coaChanged.connect(self._on_coa_changed)
         self._tabs.addTab(self._coa_tab, "📊  Chart of Accounts")
+
+        # ── Tabs 5–7: GL reports & business (roadmap phases 5–16) ─────────
+        self._tabs.addTab(ReportsTab(self._bank_db._conn), "📈  Reports")
+        self._tabs.addTab(JournalTab(self._bank_db._conn), "📗  Journal")
+        self._tabs.addTab(BusinessHub(self._bank_db._conn), "🧾  Business")
+        self._tabs.addTab(AuditTab(self._bank_db._conn), "📜  Audit log")
 
         container_layout.addWidget(self._tabs)
         self.setCentralWidget(container)
@@ -581,7 +717,11 @@ class MainWindow(QMainWindow):
         # Status bar
         self._status_bar = QStatusBar()
         self.setStatusBar(self._status_bar)
-        self._status_bar.showMessage("Ready \u2013 drag & drop documents or use Import.")
+        self._status_bar.showMessage(
+            escape_ampersand_for_qt(
+                "Ready \u2013 drag & drop documents or use Import."
+            )
+        )
 
         # Drag & drop on the main window itself
         self.setAcceptDrops(True)
@@ -594,10 +734,33 @@ class MainWindow(QMainWindow):
         # File menu
         file_menu = mb.addMenu("&File")
 
-        act_open = QAction("&Open \u2026", self)
-        act_open.setShortcut("Ctrl+O")
-        act_open.triggered.connect(self._on_import)
-        file_menu.addAction(act_open)
+        act_import_docs = QAction("&Import documents\u2026", self)
+        act_import_docs.setShortcut("Ctrl+O")
+        act_import_docs.triggered.connect(self._on_import)
+        file_menu.addAction(act_import_docs)
+
+        act_open_company = QAction("Open &company database\u2026", self)
+        act_open_company.setShortcut("Ctrl+Shift+O")
+        act_open_company.triggered.connect(self._on_open_company_database)
+        file_menu.addAction(act_open_company)
+
+        act_new_company = QAction("&New company database\u2026", self)
+        act_new_company.triggered.connect(self._on_new_company_database)
+        file_menu.addAction(act_new_company)
+
+        act_backup = QAction("&Backup company file\u2026", self)
+        act_backup.triggered.connect(self._on_backup_company)
+        file_menu.addAction(act_backup)
+
+        act_restore = QAction("&Restore from backup\u2026", self)
+        act_restore.triggered.connect(self._on_restore_company)
+        file_menu.addAction(act_restore)
+
+        act_copy_db_path = QAction("Copy company database &path", self)
+        act_copy_db_path.setShortcut("Ctrl+Alt+P")
+        act_copy_db_path.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
+        act_copy_db_path.triggered.connect(self._on_copy_company_database_path)
+        file_menu.addAction(act_copy_db_path)
 
         act_save = QAction("&Save", self)
         act_save.setShortcut("Ctrl+S")
@@ -615,14 +778,27 @@ class MainWindow(QMainWindow):
         act_exit.triggered.connect(self.close)
         file_menu.addAction(act_exit)
 
-        # View menu
+        # View menu — tab shortcuts (tabs are created later; shortcuts fire after UI exists)
         view_menu = mb.addMenu("&View")
-        act_view_inbox = QAction("Show Document Inbox", self)
-        act_view_inbox.setEnabled(False)
-        view_menu.addAction(act_view_inbox)
-        act_view_detail = QAction("Show Detail Pane", self)
-        act_view_detail.setEnabled(False)
-        view_menu.addAction(act_view_detail)
+        for idx, (sc, label) in enumerate(
+            [
+                ("Ctrl+1", "Document &Intake"),
+                ("Ctrl+2", "&Bank Import"),
+                ("Ctrl+3", "&Register"),
+                ("Ctrl+4", "Chart of &Accounts"),
+                ("Ctrl+5", "&Reports"),
+                ("Ctrl+6", "&Journal"),
+                ("Ctrl+7", "&Business"),
+                ("Ctrl+8", "A&udit log"),
+            ]
+        ):
+            act = QAction(label, self)
+            act.setShortcut(sc)
+            act.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
+            act.triggered.connect(
+                lambda checked=False, i=idx: self._set_main_tab_index(i)
+            )
+            view_menu.addAction(act)
 
         # Edit menu
         edit_menu = mb.addMenu("&Edit")
@@ -651,7 +827,11 @@ class MainWindow(QMainWindow):
 
         # Help menu
         help_menu = mb.addMenu("&Help")
-        act_about = QAction("&About ProBooksAi", self)
+        act_roadmap = QAction("Product &roadmap (local file)\u2026", self)
+        act_roadmap.triggered.connect(self._on_help_roadmap)
+        help_menu.addAction(act_roadmap)
+        help_menu.addSeparator()
+        act_about = QAction("&About ProBooks+ai", self)
         act_about.triggered.connect(self._on_about)
         help_menu.addAction(act_about)
 
@@ -668,13 +848,49 @@ class MainWindow(QMainWindow):
 
     # -- slots ---------------------------------------------------------------
 
+    def _on_copy_company_database_path(self) -> None:
+        raw = getattr(self._bank_db, "_db_path", None) or self._db_path or ""
+        if not raw:
+            QMessageBox.information(
+                self,
+                "Copy path",
+                "No company database path is available.",
+            )
+            return
+        resolved = str(Path(raw).resolve())
+        QApplication.clipboard().setText(resolved)
+        self._status_bar.showMessage(
+            f"Copied path: {escape_ampersand_for_qt(resolved)}", 6000
+        )
+
+    def _on_help_roadmap(self):
+        path = resolve_local_roadmap_path()
+        if path is None:
+            QMessageBox.information(
+                self,
+                "Product roadmap",
+                "Could not find docs/ROADMAP.md.\n\n"
+                "In development, it lives in the repository docs folder.\n"
+                "Reinstall or rebuild the desktop app if you expected a bundled copy.",
+            )
+            return
+        url = QUrl.fromLocalFile(str(path))
+        if not QDesktopServices.openUrl(url):
+            QMessageBox.warning(
+                self,
+                "Product roadmap",
+                f"Unable to open the file (no default app for .md?):\n"
+                f"{escape_ampersand_for_qt(str(path))}",
+            )
+
     def _on_about(self):
+        ver = application_version()
         QMessageBox.about(
             self,
-            "About ProBooksAi",
-            "<b>ProBooksAi</b><br>"
-            "Version 0.1 — AI-powered bookkeeping for small business.<br><br>"
-            "\u00a9 2024 ProBooksAi",
+            "About ProBooks+ai",
+            f"<b>ProBooks+ai</b><br>"
+            f"Version {ver} \u2014 AI-powered bookkeeping for small business.<br><br>"
+            f"\u00a9 2026 ProBooks+ai",
         )
 
     def _on_import(self):
@@ -704,14 +920,17 @@ class MainWindow(QMainWindow):
                 self._db.add_document(path, mime, store=True)
                 imported += 1
             except Exception as exc:
-                self._status_bar.showMessage(f"Error importing {Path(path).name}: {exc}")
+                self._status_bar.showMessage(
+                    f"Error importing {escape_ampersand_for_qt(Path(path).name)}: "
+                    f"{escape_ampersand_for_qt(str(exc))}"
+                )
 
         self._refresh_inbox()
         if skipped:
             QMessageBox.warning(
                 self, "Skipped Files",
                 "The following files were skipped (unsupported type):\n"
-                + "\n".join(skipped),
+                + "\n".join(escape_ampersand_for_qt(s) for s in skipped),
             )
         if imported:
             self._status_bar.showMessage(f"Imported {imported} document(s).")
@@ -740,7 +959,9 @@ class MainWindow(QMainWindow):
             )
             return
 
-        self._status_bar.showMessage(f"Running AI extraction on {row['filename']}\u2026")
+        self._status_bar.showMessage(
+            f"Running AI extraction on {escape_ampersand_for_qt(row['filename'])}\u2026"
+        )
         self._db.set_status(doc_id, "Extracted")
 
         self._worker = AIWorker(doc_id, row["stored_path"], row["mimetype"], self._coa)
@@ -755,12 +976,18 @@ class MainWindow(QMainWindow):
         self._refresh_inbox()
         doc = self._db.get_document(doc_id)
         name = doc["filename"] if doc else str(doc_id)
-        self._status_bar.showMessage(f"AI extraction complete for {name}.")
+        self._status_bar.showMessage(
+            f"AI extraction complete for {escape_ampersand_for_qt(name)}."
+        )
 
     def _on_ai_error(self, doc_id: int, error: str):
         self._db.set_status(doc_id, "Error")
         self._refresh_inbox()
-        QMessageBox.critical(self, "AI Extraction Failed", f"Error:\n{error}")
+        QMessageBox.critical(
+            self,
+            "AI Extraction Failed",
+            f"Error:\n{escape_ampersand_for_qt(error)}",
+        )
         self._status_bar.showMessage("AI extraction failed.")
 
     def _on_approve(self, doc_id: int):
@@ -802,6 +1029,228 @@ class MainWindow(QMainWindow):
         self._coa = load_coa()
         coa_display = self._coa_db.display_list()
         self._detail.update_coa(coa_display)
+        self._register_tab.refresh_coa_choices()
+
+    def _set_main_tab_index(self, index: int) -> None:
+        if not hasattr(self, "_tabs"):
+            return
+        if index < 0 or index >= self._tabs.count():
+            return
+        self._tabs.setCurrentIndex(index)
+
+    def _sync_window_title(self) -> None:
+        ver = application_version()
+        p = getattr(self._bank_db, "_db_path", None) or self._db_path or ""
+        if p:
+            self.setWindowTitle(
+                f"ProBooks+ai – {escape_ampersand_for_qt(Path(p).name)} – Desktop v{ver}"
+            )
+        else:
+            self.setWindowTitle(f"ProBooks+ai – Desktop v{ver}")
+
+    def _update_company_status(self) -> None:
+        p = getattr(self._bank_db, "_db_path", None) or self._db_path or ""
+        self._status_bar.showMessage(
+            escape_ampersand_for_qt(
+                f"Company: {p}  \u2013  drag & drop documents or use Import."
+            )
+        )
+        if p:
+            self._header.set_company_name(Path(p).name)
+        else:
+            self._header.set_company_name("No company file")
+        self._sync_window_title()
+
+    def _rebuild_bank_related_tabs(self):
+        """Replace bank/GL/COA-related tabs after switching SQLite company file."""
+        for i in range(7, 0, -1):
+            w = self._tabs.widget(i)
+            self._tabs.removeTab(i)
+            if w is not None:
+                w.deleteLater()
+        tab_specs = [
+            ("🏦  Bank Import", BankImportTab(self._bank_db, self._coa_db)),
+            ("📒  Register", RegisterTab(self._bank_db, self._coa_db, self._gl_db)),
+            ("📊  Chart of Accounts", COATab(self._coa_db)),
+            ("📈  Reports", ReportsTab(self._bank_db._conn)),
+            ("📗  Journal", JournalTab(self._bank_db._conn)),
+            ("🧾  Business", BusinessHub(self._bank_db._conn)),
+            ("📜  Audit log", AuditTab(self._bank_db._conn)),
+        ]
+        for i, (title, widget) in enumerate(tab_specs, start=1):
+            self._tabs.insertTab(i, widget, title)
+        self._bank_tab = self._tabs.widget(1)
+        self._register_tab = self._tabs.widget(2)
+        self._coa_tab = self._tabs.widget(3)
+        self._coa_tab.coaChanged.connect(self._on_coa_changed)
+
+    def _load_company_at_path(self, resolved: str) -> None:
+        """Open SQLite at *resolved* and rebuild bank-side tabs + intake COA."""
+        self._db_path = resolved
+        QSettings().setValue("company_database_path", resolved)
+        self._db = DocumentDatabase(resolved)
+        self._bank_db = BankDatabase(resolved)
+        apply_extensions(self._bank_db._conn)
+        self._gl_db = GLDatabase(self._bank_db._conn)
+        self._coa_db = COADatabase(self._bank_db._conn)
+        self._coa_db.seed_from_workbook()
+        self._coa = load_coa()
+        self._rebuild_bank_related_tabs()
+        self._detail.clear_view()
+        self._detail.update_coa(self._coa_db.display_list())
+        self._refresh_inbox()
+        self._update_company_status()
+
+    def _switch_company_database(self, path: str, *, create_new: bool = False) -> None:
+        if self._worker and self._worker.isRunning():
+            QMessageBox.warning(
+                self,
+                "Busy",
+                "Wait for AI extraction to finish before switching company files.",
+            )
+            return
+
+        p = Path(path)
+        if create_new:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            if p.exists():
+                reply = QMessageBox.question(
+                    self,
+                    "File exists",
+                    "Open this existing file as the company database?\n\n"
+                    f"{escape_ampersand_for_qt(str(p))}",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if reply != QMessageBox.StandardButton.Yes:
+                    return
+        elif not p.exists():
+            QMessageBox.warning(
+                self,
+                "Not found",
+                f"File does not exist:\n{escape_ampersand_for_qt(str(p))}",
+            )
+            return
+
+        resolved = str(p.resolve())
+        self._db.close()
+        self._bank_db.close()
+        self._load_company_at_path(resolved)
+
+    def _on_backup_company(self):
+        if self._worker and self._worker.isRunning():
+            QMessageBox.warning(
+                self,
+                "Busy",
+                "Wait for AI extraction to finish before backing up.",
+            )
+            return
+        src = Path(self._bank_db._db_path).resolve()
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Backup company database",
+            str(src.parent / f"{src.stem}-backup.db"),
+            "SQLite Database (*.db);;All Files (*.*)",
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".db"):
+            path += ".db"
+        try:
+            shutil.copy2(src, path)
+        except OSError as exc:
+            QMessageBox.critical(
+                self, "Backup failed", escape_ampersand_for_qt(str(exc))
+            )
+            return
+        QMessageBox.information(
+            self,
+            "Backup complete",
+            f"Copied company file to:\n{escape_ampersand_for_qt(path)}",
+        )
+
+    def _on_restore_company(self):
+        if self._worker and self._worker.isRunning():
+            QMessageBox.warning(
+                self,
+                "Busy",
+                "Wait for AI extraction to finish before restoring.",
+            )
+            return
+        reply = QMessageBox.warning(
+            self,
+            "Restore company database",
+            "The selected backup will overwrite your current company database file on disk. "
+            "Unsaved work in memory is discarded. This cannot be undone.\n\nContinue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select backup to restore",
+            "",
+            "SQLite Database (*.db);;All Files (*.*)",
+        )
+        if not path:
+            return
+        target = Path(self._bank_db._db_path).resolve()
+        if Path(path).resolve() == target:
+            QMessageBox.information(
+                self,
+                "Restore",
+                "Choose a different file than the active company database.",
+            )
+            return
+        self._db.close()
+        self._bank_db.close()
+        try:
+            shutil.copy2(path, target)
+        except OSError as exc:
+            QMessageBox.critical(
+                self,
+                "Restore failed",
+                f"{escape_ampersand_for_qt(str(exc))}\n\n"
+                "Try closing other apps using the database, then restart ProBooks+ai.",
+            )
+            try:
+                self._load_company_at_path(str(target))
+            except Exception:
+                pass
+            return
+        self._load_company_at_path(str(target))
+        QMessageBox.information(
+            self,
+            "Restore complete",
+            "Company data was reloaded from the backup.",
+        )
+
+    def _on_open_company_database(self):
+        prev = QSettings().value("company_database_path", "", type=str) or ""
+        start_dir = str(Path(prev).parent) if prev else ""
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open company database",
+            start_dir,
+            "SQLite Database (*.db);;All Files (*.*)",
+        )
+        if path:
+            self._switch_company_database(path, create_new=False)
+
+    def _on_new_company_database(self):
+        prev = QSettings().value("company_database_path", "", type=str) or ""
+        start_dir = str(Path(prev).parent) if prev else ""
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "New company database",
+            start_dir,
+            "SQLite Database (*.db);;All Files (*.*)",
+        )
+        if path:
+            if not path.lower().endswith(".db"):
+                path += ".db"
+            self._switch_company_database(path, create_new=True)
 
     def closeEvent(self, event):
         self._db.close()
@@ -813,12 +1262,57 @@ class MainWindow(QMainWindow):
 # Entry point
 # ---------------------------------------------------------------------------
 
+def _suppress_qt_font_pointsize_stderr_spam() -> None:
+    """Drop known-harmless Qt warning when default GUI font meets global QSS (often Windows)."""
+
+    def _handler(msg_type, context, message) -> None:
+        text = (
+            message.decode("utf-8", errors="replace")
+            if isinstance(message, (bytes, bytearray))
+            else str(message)
+        )
+        if "QFont::setPointSize" in text and (
+            "Point size <= 0" in text or "must be greater than 0" in text
+        ):
+            return
+        prev = getattr(_handler, "_prev", None)
+        if prev is not None:
+            prev(msg_type, context, message)
+
+    _handler._prev = qInstallMessageHandler(_handler)
+
+
 def main():
+    _suppress_qt_font_pointsize_stderr_spam()
+    ver = application_version()
+    parser = argparse.ArgumentParser(description="ProBooks+ai desktop application")
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"ProBooks+ai {ver}",
+    )
+    parser.add_argument(
+        "--database",
+        metavar="PATH",
+        default=None,
+        help=(
+            "SQLite database path; if omitted, uses the last company file from settings "
+            "when it still exists, otherwise the default file from "
+            "probooksai.database.get_data_dir (see README: Default database paths)."
+        ),
+    )
+    args = parser.parse_args()
+
     app = QApplication(sys.argv)
-    app.setApplicationName("ProBooksAi")
-    app.setOrganizationName("ProBooksAi")
+    app.setApplicationName("ProBooks+ai")
+    app.setOrganizationName("ProBooks+ai")
     apply_dark_theme(app)
-    window = MainWindow()
+    db_path = args.database
+    if db_path is None:
+        last = QSettings().value("company_database_path", "", type=str) or ""
+        if last and Path(last).is_file():
+            db_path = last
+    window = MainWindow(db_path=db_path)
     window.show()
     sys.exit(app.exec())
 

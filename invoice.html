@@ -61,6 +61,14 @@
       color: #e8edf4;
     }
     .toolbar button:hover { filter: brightness(1.08); }
+    .toolbar-hint {
+      margin: 0;
+      padding: 0.45rem 1.25rem 0.65rem;
+      font-size: 0.78rem;
+      color: #8b9cb3;
+      border-bottom: 1px solid var(--chrome-border);
+    }
+    .toolbar-hint a { color: var(--chrome-accent); font-weight: 600; }
     .sheet-wrap {
       padding: 1.5rem;
       display: flex;
@@ -290,6 +298,7 @@
     <button type="button" class="secondary" id="btn-add-line">Add line</button>
     <button type="button" id="btn-print">Print / PDF</button>
   </div>
+  <p class="toolbar-hint no-print">Static print-style template. Real invoices: desktop app <strong>Business</strong> tab — see <a href="README.md#desktop-app-pyside6">README.md</a> (Desktop app).</p>
   <div class="sheet-wrap">
     <div class="invoice-sheet" id="invoice">
       <div class="inv-top">

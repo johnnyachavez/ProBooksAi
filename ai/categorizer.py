@@ -1,7 +1,7 @@
 """
 ai.categorizer
 ==============
-Cloud-API-driven COA categorisation for ProBooksAi.
+Cloud-API-driven COA categorisation for ProBooks+ai.
 
 Takes an :class:`ai.ExtractionResult` and a list of COA entries and asks the
 cloud AI to suggest the best matching General Ledger account(s) and a tax

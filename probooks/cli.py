@@ -198,7 +198,15 @@ def cmd_transactions_list(db: Path, args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="probooks", description="ProBooks+ai SQLite CLI")
+    p = argparse.ArgumentParser(
+        prog="probooks",
+        description="ProBooks+ai SQLite CLI",
+        epilog=(
+            "Same interface: python -m probooks … "
+            "The desktop app may use a different default SQLite file than this CLI; "
+            "see the repository README (Default database paths)."
+        ),
+    )
     p.add_argument(
         "--db",
         type=Path,

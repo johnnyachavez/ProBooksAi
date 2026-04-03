@@ -40,6 +40,26 @@ def test_import_csv_basic(tmp_path: Path) -> None:
     conn.close()
 
 
+def test_import_examples_sample_bank_csv_matches_readme_recipe(tmp_path: Path) -> None:
+    """README CSV example uses this file and column indices; keep them aligned."""
+    repo_root = Path(__file__).resolve().parents[1]
+    csv_path = repo_root / "examples" / "sample_bank.csv"
+    assert csv_path.is_file()
+    db, aid = _db_with_account(tmp_path)
+    conn = connect(db)
+    r = import_bank_csv(
+        conn,
+        bank_account_id=aid,
+        csv_path=csv_path,
+        columns=ColumnMap(date=0, amount=1, payee=2),
+        skip_rows=1,
+    )
+    assert r.rows_imported == 3
+    assert r.rows_skipped == 0
+    assert count_transactions(conn) == 3
+    conn.close()
+
+
 def test_import_csv_skips_bad_row_and_errors_out(tmp_path: Path) -> None:
     db, aid = _db_with_account(tmp_path)
     csv_path = tmp_path / "bad.csv"

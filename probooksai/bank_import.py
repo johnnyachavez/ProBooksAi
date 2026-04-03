@@ -15,7 +15,9 @@ Reconciliation
   computed_ending = beginning_balance + sum(amounts in [start, end])
   difference      = computed_ending - ending_balance
 
-  When |difference| <= RECONCILE_TOLERANCE the batch may be marked reconciled.
+  When |difference| <= tolerance (default :data:`RECONCILE_TOLERANCE`, overridable
+  in :func:`compute_reconciliation` / :meth:`BankDatabase.reconcile_batch`) the batch
+  may be marked reconciled.
 
 Sign convention
 ---------------
@@ -33,7 +35,7 @@ import re
 import sqlite3
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Callable, Optional
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -47,7 +49,7 @@ ACCOUNT_TYPES = ("checking", "savings", "credit_card", "other")
 # ---------------------------------------------------------------------------
 
 # Bump this number whenever you add a migration below.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 5
 
 _DDL_SCHEMA_VERSION = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -104,7 +106,26 @@ ALTER TABLE bank_accounts ADD COLUMN institution  TEXT    NOT NULL DEFAULT '';
 ALTER TABLE bank_accounts ADD COLUMN last4        TEXT    NOT NULL DEFAULT '';
 ALTER TABLE bank_accounts ADD COLUMN notes        TEXT    NOT NULL DEFAULT '';
 ALTER TABLE bank_accounts ADD COLUMN is_active    INTEGER NOT NULL DEFAULT 1;
-ALTER TABLE bank_accounts ADD COLUMN updated_at   TEXT;
+    ALTER TABLE bank_accounts ADD COLUMN updated_at   TEXT;
+"""),
+    # v3 – transaction memo + COA category (Phase 2/3 register & categorization)
+    (3, """
+ALTER TABLE bank_transactions ADD COLUMN memo         TEXT NOT NULL DEFAULT '';
+ALTER TABLE bank_transactions ADD COLUMN coa_account TEXT NOT NULL DEFAULT '';
+"""),
+    # v4 – GL cash account mapping + saved CSV column profile (Phase 4/5)
+    (4, """
+ALTER TABLE bank_accounts ADD COLUMN gl_display_account TEXT NOT NULL DEFAULT '';
+ALTER TABLE bank_accounts ADD COLUMN imp_csv_date_col TEXT NOT NULL DEFAULT '';
+ALTER TABLE bank_accounts ADD COLUMN imp_csv_amount_col TEXT NOT NULL DEFAULT '';
+ALTER TABLE bank_accounts ADD COLUMN imp_csv_desc_col TEXT NOT NULL DEFAULT '';
+ALTER TABLE bank_accounts ADD COLUMN imp_csv_ref_col TEXT NOT NULL DEFAULT '';
+"""),
+    # v5 – attachments / transfer flag (Phases 19–20)
+    (5, """
+ALTER TABLE bank_transactions ADD COLUMN attachment_path TEXT NOT NULL DEFAULT '';
+ALTER TABLE bank_transactions ADD COLUMN needs_receipt INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE bank_transactions ADD COLUMN transfer_to_bank_account_id INTEGER REFERENCES bank_accounts(id) ON DELETE SET NULL;
 """),
 ]
 
@@ -278,6 +299,7 @@ def compute_reconciliation(
     ending_balance: float,
     statement_start: Optional[str] = None,
     statement_end: Optional[str] = None,
+    tolerance: Optional[float] = None,
 ) -> dict:
     """
     Compute reconciliation for a list of transaction dicts.
@@ -297,8 +319,10 @@ def compute_reconciliation(
         sum_of_amounts     – algebraic sum (outflows negative)
         computed_ending    – beginning_balance + sum_of_amounts
         difference         – computed_ending − ending_balance
-        can_reconcile      – True when |difference| <= RECONCILE_TOLERANCE
+        can_reconcile      – True when |difference| <= tolerance used
+        tolerance_used     – ``RECONCILE_TOLERANCE`` if *tolerance* is None, else *tolerance* (rounded)
     """
+    tol = RECONCILE_TOLERANCE if tolerance is None else round(float(tolerance), 2)
     in_range = []
     for txn in transactions:
         d = txn.get("txn_date", "")
@@ -311,7 +335,7 @@ def compute_reconciliation(
     total = round(sum(t["amount"] for t in in_range), 2)
     computed_ending = round(beginning_balance + total, 2)
     difference = round(computed_ending - ending_balance, 2)
-    can_reconcile = abs(difference) <= RECONCILE_TOLERANCE
+    can_reconcile = abs(difference) <= tol
 
     return dict(
         transaction_count=len(in_range),
@@ -319,6 +343,7 @@ def compute_reconciliation(
         computed_ending=computed_ending,
         difference=difference,
         can_reconcile=can_reconcile,
+        tolerance_used=tol,
     )
 
 
@@ -365,6 +390,11 @@ class BankDatabase:
         last4: str = "",
         notes: str = "",
         is_active: bool = True,
+        gl_display_account: str = "",
+        imp_csv_date_col: str = "",
+        imp_csv_amount_col: str = "",
+        imp_csv_desc_col: str = "",
+        imp_csv_ref_col: str = "",
     ) -> int:
         """Create a new bank account record.  Returns new row id."""
         if account_type not in ACCOUNT_TYPES:
@@ -374,11 +404,15 @@ class BankDatabase:
             """
             INSERT INTO bank_accounts
                 (name, account_number, bank_name, account_type,
-                 institution, last4, notes, is_active, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 institution, last4, notes, is_active, created_at, updated_at,
+                 gl_display_account, imp_csv_date_col, imp_csv_amount_col,
+                 imp_csv_desc_col, imp_csv_ref_col)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (name, account_number, bank_name, account_type,
-             institution, last4, notes, 1 if is_active else 0, now, now),
+             institution, last4, notes, 1 if is_active else 0, now, now,
+             gl_display_account, imp_csv_date_col, imp_csv_amount_col,
+             imp_csv_desc_col, imp_csv_ref_col),
         )
         self._conn.commit()
         return cur.lastrowid
@@ -408,6 +442,11 @@ class BankDatabase:
         last4: str = "",
         notes: str = "",
         is_active: bool = True,
+        gl_display_account: Optional[str] = None,
+        imp_csv_date_col: Optional[str] = None,
+        imp_csv_amount_col: Optional[str] = None,
+        imp_csv_desc_col: Optional[str] = None,
+        imp_csv_ref_col: Optional[str] = None,
     ):
         """Update an existing bank account record."""
         if account_type not in ACCOUNT_TYPES:
@@ -423,6 +462,43 @@ class BankDatabase:
             (name, account_number, bank_name, account_type,
              institution, last4, notes, 1 if is_active else 0,
              _now(), account_id),
+        )
+        ext_cols: list[tuple[str, str]] = []
+        if gl_display_account is not None:
+            ext_cols.append(("gl_display_account", gl_display_account))
+        if imp_csv_date_col is not None:
+            ext_cols.append(("imp_csv_date_col", imp_csv_date_col))
+        if imp_csv_amount_col is not None:
+            ext_cols.append(("imp_csv_amount_col", imp_csv_amount_col))
+        if imp_csv_desc_col is not None:
+            ext_cols.append(("imp_csv_desc_col", imp_csv_desc_col))
+        if imp_csv_ref_col is not None:
+            ext_cols.append(("imp_csv_ref_col", imp_csv_ref_col))
+        for col, val in ext_cols:
+            self._conn.execute(
+                f"UPDATE bank_accounts SET {col} = ?, updated_at = ? WHERE id = ?",
+                (val, _now(), account_id),
+            )
+        self._conn.commit()
+
+    def save_import_column_profile(
+        self,
+        account_id: int,
+        *,
+        date_col: str,
+        amount_col: str,
+        description_col: str = "",
+        ref_col: str = "",
+    ) -> None:
+        """Persist last-used CSV column names for this bank account (Phase 4)."""
+        self._conn.execute(
+            """
+            UPDATE bank_accounts
+            SET imp_csv_date_col = ?, imp_csv_amount_col = ?,
+                imp_csv_desc_col = ?, imp_csv_ref_col = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (date_col, amount_col, description_col, ref_col, _now(), account_id),
         )
         self._conn.commit()
 
@@ -521,6 +597,86 @@ class BankDatabase:
         )
         self._conn.commit()
 
+    def export_batch_reconciliation_csv(
+        self,
+        batch_id: int,
+        file_path: str,
+        *,
+        tolerance: Optional[float] = None,
+    ) -> None:
+        """
+        Write batch metadata, reconciliation summary, and period transactions to *file_path* (UTF-8 CSV).
+        """
+        batch = self.get_batch(batch_id)
+        if batch is None:
+            raise ValueError(f"Batch id={batch_id} not found")
+        b = dict(batch)
+        acct = self.get_bank_account(b["bank_account_id"])
+        acct_name = (dict(acct)["name"] if acct else "")
+
+        txns = self.list_transactions(
+            bank_account_id=b["bank_account_id"],
+            statement_start=b["statement_start"],
+            statement_end=b["statement_end"],
+        )
+        recon: Optional[dict] = None
+        if b.get("beginning_balance") is not None and b.get("ending_balance") is not None:
+            recon = compute_reconciliation(
+                transactions=[dict(t) for t in txns],
+                beginning_balance=float(b["beginning_balance"]),
+                ending_balance=float(b["ending_balance"]),
+                statement_start=b.get("statement_start"),
+                statement_end=b.get("statement_end"),
+                tolerance=tolerance,
+            )
+
+        with open(file_path, "w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow(["ProBooks+ai reconciliation report"])
+            w.writerow(["Bank account", acct_name])
+            w.writerow(["Batch id", batch_id])
+            w.writerow(["Filename", b.get("filename") or ""])
+            w.writerow(["Imported at", b.get("imported_at") or ""])
+            w.writerow(["Statement start", b.get("statement_start") or ""])
+            w.writerow(["Statement end", b.get("statement_end") or ""])
+            w.writerow(["Beginning balance", b.get("beginning_balance")])
+            w.writerow(["Ending balance (bank)", b.get("ending_balance")])
+            w.writerow(["Marked reconciled", "yes" if b.get("is_reconciled") else "no"])
+            if recon:
+                w.writerow([])
+                w.writerow(["Transactions in period", recon["transaction_count"]])
+                w.writerow(["Sum of amounts", recon["sum_of_amounts"]])
+                w.writerow(["Computed ending balance", recon["computed_ending"]])
+                w.writerow(["Difference", recon["difference"]])
+                w.writerow(["Reconciliation tolerance (±)", recon["tolerance_used"]])
+                w.writerow(["Can reconcile (math)", "yes" if recon["can_reconcile"] else "no"])
+            w.writerow([])
+            w.writerow(
+                [
+                    "txn_date",
+                    "description",
+                    "amount",
+                    "ref_number",
+                    "memo",
+                    "coa_account",
+                    "posted",
+                ]
+            )
+            for t in txns:
+                d = dict(t)
+                posted = int(d.get("is_posted") or 0) == 1
+                w.writerow(
+                    [
+                        d.get("txn_date"),
+                        d.get("description") or "",
+                        d.get("amount"),
+                        d.get("ref_number") or "",
+                        d.get("memo") or "",
+                        d.get("coa_account") or "",
+                        "yes" if posted else "no",
+                    ]
+                )
+
     # -----------------------------------------------------------------------
     # Transactions
     # -----------------------------------------------------------------------
@@ -530,6 +686,9 @@ class BankDatabase:
         batch_id: int,
         bank_account_id: int,
         rows: list[dict],
+        *,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        cancel_check: Optional[Callable[[], bool]] = None,
     ) -> dict:
         """
         Insert *rows* into bank_transactions, skipping duplicates by fingerprint.
@@ -539,13 +698,20 @@ class BankDatabase:
             bank_account_id: The owning bank account.
             rows:            List of dicts with txn_date, description,
                              amount, ref_number.
+            progress_callback: Optional ``(current_index, total)`` for UI progress.
+            cancel_check:    Optional callable; if it returns True, stop importing.
 
         Returns:
-            dict with keys: inserted, skipped (duplicate count)
+            dict with keys: inserted, skipped, cancelled (bool)
         """
         inserted = 0
         skipped = 0
-        for row in rows:
+        cancelled = False
+        total = len(rows)
+        for i, row in enumerate(rows):
+            if cancel_check is not None and cancel_check():
+                cancelled = True
+                break
             fp = make_fingerprint(
                 bank_account_id,
                 row["txn_date"],
@@ -558,8 +724,9 @@ class BankDatabase:
                     """
                     INSERT INTO bank_transactions
                         (batch_id, bank_account_id, txn_date,
-                         description, amount, ref_number, fingerprint)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                         description, amount, ref_number, fingerprint,
+                         memo, coa_account)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         batch_id,
@@ -569,24 +736,34 @@ class BankDatabase:
                         row["amount"],
                         row.get("ref_number", ""),
                         fp,
+                        row.get("memo", ""),
+                        row.get("coa_account", ""),
                     ),
                 )
                 inserted += 1
             except sqlite3.IntegrityError:
                 skipped += 1
+            if progress_callback is not None and total > 0:
+                progress_callback(i + 1, total)
         self._conn.commit()
-        return dict(inserted=inserted, skipped=skipped)
+        return dict(inserted=inserted, skipped=skipped, cancelled=cancelled)
 
     def list_transactions(
         self,
         bank_account_id: int,
         statement_start: Optional[str] = None,
         statement_end: Optional[str] = None,
+        register_filter: Optional[str] = None,
     ) -> list:
         """
         Return transactions for *bank_account_id*, optionally filtered by date.
 
         Dates are ISO-8601 strings (YYYY-MM-DD), inclusive on both ends.
+
+        *register_filter* (register UI): ``needs_receipt``, ``has_attachment``,
+        ``missing_attachment`` (needs_receipt and empty path),
+        ``has_bank_match`` / ``no_bank_match`` (requires ``bank_match_links``;
+        use :func:`~probooksai.extensions_schema.apply_extensions`), or ``None``/``all``.
         """
         params: list = [bank_account_id]
         where = "bank_account_id = ?"
@@ -596,6 +773,42 @@ class BankDatabase:
         if statement_end:
             where += " AND txn_date <= ?"
             params.append(statement_end)
+        rf = (register_filter or "all").lower()
+        if rf == "needs_receipt":
+            where += " AND COALESCE(needs_receipt, 0) = 1"
+        elif rf == "has_attachment":
+            where += " AND COALESCE(TRIM(attachment_path), '') != ''"
+        elif rf == "missing_attachment":
+            where += (
+                " AND COALESCE(needs_receipt, 0) = 1"
+                " AND COALESCE(TRIM(attachment_path), '') = ''"
+            )
+        elif rf in ("has_bank_match", "has_payment_link"):
+            row = self._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='bank_match_links'"
+            ).fetchone()
+            if not row:
+                raise ValueError(
+                    "register_filter 'has_bank_match' requires bank_match_links "
+                    "(apply_extensions on the connection)."
+                )
+            where += (
+                " AND EXISTS (SELECT 1 FROM bank_match_links m "
+                "WHERE m.bank_transaction_id = bank_transactions.id)"
+            )
+        elif rf in ("no_bank_match", "no_payment_link"):
+            row = self._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='bank_match_links'"
+            ).fetchone()
+            if not row:
+                raise ValueError(
+                    "register_filter 'no_bank_match' requires bank_match_links "
+                    "(apply_extensions on the connection)."
+                )
+            where += (
+                " AND NOT EXISTS (SELECT 1 FROM bank_match_links m "
+                "WHERE m.bank_transaction_id = bank_transactions.id)"
+            )
         return self._conn.execute(
             f"SELECT * FROM bank_transactions WHERE {where} ORDER BY txn_date, id",
             params,
@@ -606,11 +819,104 @@ class BankDatabase:
             "SELECT * FROM bank_transactions WHERE id = ?", (txn_id,)
         ).fetchone()
 
+    def update_transaction(
+        self,
+        txn_id: int,
+        *,
+        memo: Optional[str] = None,
+        ref_number: Optional[str] = None,
+        coa_account: Optional[str] = None,
+        attachment_path: Any = ...,
+        needs_receipt: Any = ...,
+        transfer_to_bank_account_id: Any = ...,
+    ) -> None:
+        """
+        Persist inline edits on a bank transaction.
+
+        Pass ``None`` to leave *memo* / *ref_number* / *coa_account* unchanged;
+        pass ``""`` to clear *memo* or *coa_account*.
+
+        For *attachment_path*, *needs_receipt* (0/1), and *transfer_to_bank_account_id*,
+        pass the special default (ellipsis ``...``) to leave unchanged; pass a value
+        (including ``None`` for SQL NULL on transfer) to update.
+
+        Posted rows (when ``is_posted`` exists and is 1) cannot be modified.
+        """
+        row = self.get_transaction(txn_id)
+        if row is None:
+            raise ValueError(f"No transaction with id={txn_id}")
+        keys = row.keys()
+        if "is_posted" in keys and int(row["is_posted"] or 0) == 1:
+            raise ValueError("Cannot modify a posted transaction")
+
+        before = dict(row)
+
+        updates: list[str] = []
+        params: list = []
+        if memo is not None:
+            updates.append("memo = ?")
+            params.append(memo)
+        if ref_number is not None:
+            updates.append("ref_number = ?")
+            params.append(ref_number)
+        if coa_account is not None:
+            updates.append("coa_account = ?")
+            params.append(coa_account)
+        if attachment_path is not ...:
+            updates.append("attachment_path = ?")
+            params.append(attachment_path or "")
+        if needs_receipt is not ...:
+            updates.append("needs_receipt = ?")
+            params.append(1 if int(needs_receipt or 0) else 0)
+        if transfer_to_bank_account_id is not ...:
+            updates.append("transfer_to_bank_account_id = ?")
+            params.append(transfer_to_bank_account_id)
+
+        if not updates:
+            return
+        params.append(txn_id)
+        self._conn.execute(
+            f"UPDATE bank_transactions SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+        self._conn.commit()
+
+        try:
+            from probooksai.audit_log import append_audit
+
+            def _aud(field: str, old_v, new_v):
+                os_, ns = (str(old_v) if old_v is not None else ""), (
+                    str(new_v) if new_v is not None else ""
+                )
+                if os_ != ns:
+                    append_audit(
+                        self._conn, "bank_transaction", txn_id, field, os_, ns
+                    )
+
+            if memo is not None:
+                _aud("memo", before.get("memo"), memo)
+            if ref_number is not None:
+                _aud("ref_number", before.get("ref_number"), ref_number)
+            if coa_account is not None:
+                _aud("coa_account", before.get("coa_account"), coa_account)
+            if attachment_path is not ...:
+                _aud("attachment_path", before.get("attachment_path"), attachment_path or "")
+            if needs_receipt is not ...:
+                _aud("needs_receipt", before.get("needs_receipt"), int(needs_receipt or 0))
+            if transfer_to_bank_account_id is not ...:
+                _aud(
+                    "transfer_to_bank_account_id",
+                    before.get("transfer_to_bank_account_id"),
+                    transfer_to_bank_account_id,
+                )
+        except Exception:
+            pass
+
     # -----------------------------------------------------------------------
     # Reconciliation helpers
     # -----------------------------------------------------------------------
 
-    def reconcile_batch(self, batch_id: int) -> dict:
+    def reconcile_batch(self, batch_id: int, tolerance: Optional[float] = None) -> dict:
         """
         Compute reconciliation for a batch and, if it can reconcile,
         mark it reconciled.
@@ -635,12 +941,27 @@ class BankDatabase:
             ending_balance=batch["ending_balance"] or 0.0,
             statement_start=batch["statement_start"],
             statement_end=batch["statement_end"],
+            tolerance=tolerance,
         )
 
         reconciled = False
         if result["can_reconcile"]:
+            prev_rec = int(dict(batch).get("is_reconciled") or 0)
             self.mark_batch_reconciled(batch_id, True)
             reconciled = True
+            try:
+                from probooksai.audit_log import append_audit
+
+                append_audit(
+                    self._conn,
+                    "bank_import_batch",
+                    batch_id,
+                    "is_reconciled",
+                    str(prev_rec),
+                    "1",
+                )
+            except Exception:
+                pass
 
         result.update(batch_id=batch_id, reconciled=reconciled)
         return result
@@ -662,6 +983,9 @@ class BankDatabase:
         statement_end: Optional[str] = None,
         beginning_balance: Optional[float] = None,
         ending_balance: Optional[float] = None,
+        apply_categorization_rules: bool = True,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        cancel_check: Optional[Callable[[], bool]] = None,
     ) -> dict:
         """
         High-level helper: parse CSV → create batch → import transactions.
@@ -676,6 +1000,13 @@ class BankDatabase:
             description_col=description_col,
             ref_col=ref_col,
         )
+        if apply_categorization_rules:
+            try:
+                from probooksai.rules_engine import apply_rules_to_parsed_rows
+
+                apply_rules_to_parsed_rows(self._conn, rows)
+            except sqlite3.OperationalError:
+                pass
 
         batch_id = self.create_batch(
             bank_account_id=bank_account_id,
@@ -686,5 +1017,11 @@ class BankDatabase:
             ending_balance=ending_balance,
         )
 
-        counts = self.import_transactions(batch_id, bank_account_id, rows)
+        counts = self.import_transactions(
+            batch_id,
+            bank_account_id,
+            rows,
+            progress_callback=progress_callback,
+            cancel_check=cancel_check,
+        )
         return dict(batch_id=batch_id, **counts, parse_errors=0)

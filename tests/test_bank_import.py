@@ -407,3 +407,163 @@ class TestImportCsvPipeline:
         with BankDatabase(db_path=str(tmp_path / "cm.db")) as bdb:
             aid = bdb.add_bank_account("CM Account")
             assert aid > 0
+
+
+# ===========================================================================
+# BankDatabase – memo / coa columns & update_transaction (register)
+# ===========================================================================
+
+class TestBankTransactionRegisterFields:
+    def test_memo_and_coa_columns_exist(self, db):
+        db._conn.execute("SELECT memo, coa_account FROM bank_transactions LIMIT 0")
+
+
+class TestUpdateTransaction:
+    @staticmethod
+    def _one_txn(bdb):
+        aid = bdb.add_bank_account("CHK")
+        bid = bdb.create_batch(aid)
+        rows = [
+            {
+                "txn_date": "2024-01-01",
+                "description": "Coffee",
+                "amount": -4.5,
+                "ref_number": "101",
+            }
+        ]
+        bdb.import_transactions(bid, aid, rows)
+        return bdb.list_transactions(aid)[0]["id"]
+
+    def test_updates_memo_ref_coa(self, db):
+        tid = self._one_txn(db)
+        db.update_transaction(tid, memo="Trip", ref_number="102", coa_account="6100 – Supplies")
+        row = db.get_transaction(tid)
+        assert row["memo"] == "Trip"
+        assert row["ref_number"] == "102"
+        assert row["coa_account"] == "6100 – Supplies"
+
+    def test_partial_update(self, db):
+        tid = self._one_txn(db)
+        db.update_transaction(tid, memo="A")
+        db.update_transaction(tid, coa_account="4000 – Revenue")
+        row = db.get_transaction(tid)
+        assert row["memo"] == "A"
+        assert row["ref_number"] == "101"
+        assert row["coa_account"] == "4000 – Revenue"
+
+    def test_clear_coa_with_empty_string(self, db):
+        tid = self._one_txn(db)
+        db.update_transaction(tid, coa_account="4000 – Revenue")
+        db.update_transaction(tid, coa_account="")
+        row = db.get_transaction(tid)
+        assert row["coa_account"] == ""
+
+    def test_unknown_id_raises(self, db):
+        with pytest.raises(ValueError, match="No transaction"):
+            db.update_transaction(99999, memo="x")
+
+
+class TestImportProgressAndCancel:
+    def test_cancel_stops_import(self, db):
+        aid = db.add_bank_account("Big")
+        bid = db.create_batch(aid)
+        rows = [
+            {
+                "txn_date": f"2024-01-{i:02d}",
+                "description": "x",
+                "amount": -1.0,
+                "ref_number": "",
+            }
+            for i in range(1, 20)
+        ]
+        stop = {"go": False}
+
+        def cancel_check():
+            return stop["go"]
+
+        def progress(cur, tot):
+            if cur >= 4:
+                stop["go"] = True
+
+        result = db.import_transactions(
+            bid, aid, rows, progress_callback=progress, cancel_check=cancel_check
+        )
+        assert result["cancelled"] is True
+        assert result["inserted"] < len(rows)
+
+
+class TestRegisterFilters:
+    def test_needs_receipt_filter(self, db):
+        aid = db.add_bank_account("R")
+        bid = db.create_batch(aid)
+        db.import_transactions(
+            bid,
+            aid,
+            [
+                {
+                    "txn_date": "2024-01-01",
+                    "description": "a",
+                    "amount": -1.0,
+                    "ref_number": "",
+                }
+            ],
+        )
+        tid = db.list_transactions(aid)[0]["id"]
+        assert len(db.list_transactions(aid, register_filter="needs_receipt")) == 0
+        db.update_transaction(tid, needs_receipt=1)
+        assert len(db.list_transactions(aid, register_filter="needs_receipt")) == 1
+
+    def test_bank_match_filters_require_extensions(self, tmp_path):
+        b = BankDatabase(db_path=str(tmp_path / "bare.db"))
+        aid = b.add_bank_account("R")
+        bid = b.create_batch(aid)
+        b.import_transactions(
+            bid,
+            aid,
+            [
+                {
+                    "txn_date": "2024-01-01",
+                    "description": "a",
+                    "amount": -1.0,
+                    "ref_number": "",
+                }
+            ],
+        )
+        with pytest.raises(ValueError, match="bank_match_links"):
+            b.list_transactions(aid, register_filter="has_bank_match")
+        with pytest.raises(ValueError, match="bank_match_links"):
+            b.list_transactions(aid, register_filter="no_bank_match")
+        b.close()
+
+
+class TestReconciliationExport:
+    def test_export_batch_reconciliation_csv(self, db, tmp_path):
+        aid = db.add_bank_account("Main")
+        bid = db.create_batch(
+            aid,
+            filename="jan.csv",
+            statement_start="2024-01-01",
+            statement_end="2024-01-31",
+            beginning_balance=100.0,
+            ending_balance=150.0,
+        )
+        db.import_transactions(
+            bid,
+            aid,
+            [
+                {
+                    "txn_date": "2024-01-05",
+                    "description": "Deposit",
+                    "amount": 50.0,
+                    "ref_number": "r1",
+                },
+            ],
+        )
+        out = tmp_path / "recon.csv"
+        db.export_batch_reconciliation_csv(bid, str(out))
+        text = out.read_text(encoding="utf-8")
+        assert "ProBooks+ai reconciliation" in text
+        assert "Reconciliation tolerance" in text
+        assert "2024-01-05" in text
+        assert "Deposit" in text
+        assert "50" in text

@@ -129,6 +129,30 @@
         <strong>Issue backlog (Markdown)</strong>
         <span>Phased roadmap and duplicate triage. Opens as raw text in the browser.</span>
       </a>
+      <a class="card" href="docs/issues-backlog.md">
+        <strong>Issues backlog (short index)</strong>
+        <span>Quick links to BACKLOG, README, ROADMAP snapshot, CONTRIBUTING; GitHub New issue chooser is .github/ISSUE_TEMPLATE/config.yml.</span>
+      </a>
+      <a class="card" href="README.md#web-shell-review">
+        <strong>README — Web shell</strong>
+        <span>Static server, this hub, CLI, default database paths (raw Markdown).</span>
+      </a>
+      <a class="card" href="README.md#desktop-app-pyside6">
+        <strong>README — Desktop app</strong>
+        <span>PySide6 install, run line, Fusion theme, Qt stderr note (raw Markdown).</span>
+      </a>
+      <a class="card" href="docs/CONTRIBUTING.md#running-tests">
+        <strong>CONTRIBUTING — Running Tests</strong>
+        <span>pytest, headless Qt, sync-workspace.ps1, work-context.example.json (raw Markdown).</span>
+      </a>
+      <a class="card" href="docs/CONTRIBUTING.md#continuous-integration">
+        <strong>CONTRIBUTING — Continuous integration</strong>
+        <span>CI workflows, layout validators, contract-test table, issue templates (raw Markdown).</span>
+      </a>
+      <a class="card" href="docs/ROADMAP.md#implementation-snapshot-repository-2026-04">
+        <strong>Roadmap + in-repo snapshot</strong>
+        <span>Phased plan and what exists in the desktop app and CLI today (raw Markdown).</span>
+      </a>
       <a class="card" href="https://github.com/johnnyachavez/ProBooksAi/issues" target="_blank" rel="noopener noreferrer">
         <strong>GitHub issues</strong>
         <span>Open issues and project discussion (requires network).</span>
@@ -137,13 +161,31 @@
         <strong>Backlog on GitHub</strong>
         <span>Rendered Markdown on GitHub (after you push).</span>
       </a>
+      <a class="card" href="https://github.com/johnnyachavez/ProBooksAi/blob/main/docs/issues-backlog.md" target="_blank" rel="noopener noreferrer">
+        <strong>Issues index on GitHub</strong>
+        <span>Same short index as the local card; New issue chooser is .github/ISSUE_TEMPLATE/config.yml (after you push).</span>
+      </a>
+      <a class="card" href="https://github.com/johnnyachavez/ProBooksAi/blob/main/docs/ROADMAP.md#implementation-snapshot-repository-2026-04" target="_blank" rel="noopener noreferrer">
+        <strong>Roadmap on GitHub</strong>
+        <span>Rendered roadmap + snapshot section (after you push).</span>
+      </a>
+      <a class="card" href="https://github.com/johnnyachavez/ProBooksAi/blob/main/docs/CONTRIBUTING.md#running-tests" target="_blank" rel="noopener noreferrer">
+        <strong>Running Tests on GitHub</strong>
+        <span>Rendered Contributing page at the Running Tests anchor (after you push).</span>
+      </a>
+      <a class="card" href="https://github.com/johnnyachavez/ProBooksAi/blob/main/docs/CONTRIBUTING.md#continuous-integration" target="_blank" rel="noopener noreferrer">
+        <strong>Continuous integration on GitHub</strong>
+        <span>Rendered Contributing page at the Continuous integration anchor (after you push).</span>
+      </a>
     </div>
   </section>
 
   <section>
-    <h2>Python core (SQLite + CLI)</h2>
+    <h2>Python + desktop (SQLite)</h2>
     <p class="lead" style="margin-bottom: 0.75rem;">
-      Implements GitHub issues <strong>#21</strong> / <strong>#27</strong> (migrations), <strong>#28</strong> (backup/restore), <strong>#30</strong> (bank accounts). Install from the repo root:
+      The repo has a <strong>CLI</strong> (<code>python -m probooks</code>) and a <strong>PySide6 desktop app</strong> (<code>python -m desktop_app.main</code>) on the same SQLite schema. What is implemented today is summarized under <strong>Implementation snapshot</strong> in
+      <a href="docs/ROADMAP.md#implementation-snapshot-repository-2026-04" style="color: var(--accent);">docs/ROADMAP.md</a>
+      (static <code>index.html</code> is a dark UI shell only — not live books data).
     </p>
     <pre style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; font-size: 0.78rem; overflow-x: auto; color: var(--text);"><code>pip install -e ".[dev]"
 python -m probooks migrate
@@ -152,8 +194,8 @@ python -m probooks accounts add --name "Checking" --type checking --last4 1234
 python -m probooks accounts list
 python -m probooks import csv -a 1 -f sample.csv --skip-rows 1 --date-col 0 --amount-col 1 --payee-col 2
 python -m probooks transactions -a 1 -n 20</code></pre>
-    <p class="lead" style="margin-top: 0.75rem; margin-bottom: 0;">
-      See <a href="README.md" style="color: var(--accent);">README.md</a> (raw) for backup/restore commands. Run <code style="font-size:0.85em;">python -m pytest</code> for tests.
+    <p class="lead" style="margin-top: 0.75rem; margin-bottom: 0.75rem;">
+      Desktop: <code style="font-size:0.85em;">pip install -e ".[desktop]"</code> then <code style="font-size:0.85em;">python -m desktop_app.main</code> — details in <a href="README.md#desktop-app-pyside6" style="color: var(--accent);">README.md</a> (Desktop app). Backup/restore and tests: same README; run <code style="font-size:0.85em;">python -m pytest</code>.
     </p>
   </section>
 

@@ -1,16 +1,20 @@
 # ProBooks+ai — GitHub issue backlog (ordered)
 
-Repository: [johnnyachavez/ProBooksAi](https://github.com/johnnyachavez/ProBooksAi)
+**GitHub repository** (slug `ProBooksAi`; `+` is not allowed in repo names): [johnnyachavez/ProBooksAi](https://github.com/johnnyachavez/ProBooksAi)
+
+**Related docs:** [README — Web shell](../README.md#web-shell-review) (setup; **`review.html`** hub) · [README — Desktop app](../README.md#desktop-app-pyside6) (PySide6 theme + Qt notes) · [issues-backlog.md](issues-backlog.md) (short index; **config.yml** chooser + **`review.html`** Issues cards) · [ROADMAP.md — Implementation snapshot](ROADMAP.md#implementation-snapshot-repository-2026-04) (phases + in-repo table) · [CONTRIBUTING.md](CONTRIBUTING.md#continuous-integration) (CI, **contract-test** table, PRs, naming) · [CONTRIBUTING — Running Tests](CONTRIBUTING.md#running-tests) (**`sync-workspace.ps1`**, **`work-context.example.json`**)
 
 ## Implementation status (repo)
 
 | Area | Issues | Status |
 |------|--------|--------|
 | Phase 0 dark UI shell | #17, #20, #29 | **Partial** — `index.html`, `invoice.html`, `review.html` |
-| Phase 1 storage | #21, #27, #28 | **MVP** — Python `probooks` package: migrations, `%LOCALAPPDATA%\ProBooks+ai\probooks.db`, backup/restore CLI |
+| Phase 1 storage | #21, #27, #28 | **MVP** — Python `probooks` package: migrations, `%LOCALAPPDATA%\ProBooks+ai\probooks.db`, backup/restore CLI; desktop/intake may still default elsewhere — see [README](../README.md#default-database-paths-windows) |
 | Phase 2 bank accounts | #30 | **MVP** — `bank_accounts` table + `probooks accounts list/add` |
 | Phase 2 import + txn model | #31, #33, #34 | **MVP** — `import_batches`, `bank_transactions`, `probooks import csv`, `--errors-out`, `probooks transactions` |
-| Phase 2 remainder | #35+ | Not started (duplicate workflow, register UI, reconciliation, …) |
+| Phase 2 remainder → Phase 24 (desktop) | #35+ and later-phase issues below | **MVP in repo** — register, reconciliation, dedupe, COA, bank↔GL, posting, reports, Journal, Rules, digital-PDF text import, Business (AR/AP), payroll/tax, CSV worker, exports, audit, company file (`python -m desktop_app.main`). **Not** live data in static `index.html`. Remaining gaps per [ROADMAP.md — Implementation snapshot](ROADMAP.md#implementation-snapshot-repository-2026-04) (e.g. OCR/vision, packaging, #21 single DB path). **#29** on desktop: global **Fusion** + QSS via **`apply_dark_theme`** / **`desktop_app/theme.py`** (see [README — Desktop app](../README.md#desktop-app-pyside6)). |
+
+The **phase tables below** still list canonical issues for **what to build or polish next**; the row above replaces the old “not started” wording, which referred to the desktop app before the current PySide6 implementation landed.
 
 This file orders **open** work so implementation can proceed top-to-bottom. “Completed” for housekeeping means **triaged, deduplicated, and sequenced**; most items are multi-week epics, not single commits.
 

@@ -5,20 +5,30 @@ build-backend = "hatchling.build"
 [project]
 name = "probooks-ai"
 version = "0.1.0"
-description = "ProBooks+ai accounting core (SQLite + CLI)"
+description = "ProBooks+ai accounting (SQLite, probooks CLI, PySide6 desktop app)"
 readme = "README.md"
 requires-python = ">=3.10"
+keywords = ["accounting", "bookkeeping", "sqlite", "cli", "desktop", "pyside6", "general-ledger", "bank-import"]
 dependencies = ["openpyxl"]
 
+[project.urls]
+Homepage = "https://github.com/johnnyachavez/ProBooksAi"
+Repository = "https://github.com/johnnyachavez/ProBooksAi"
+Issues = "https://github.com/johnnyachavez/ProBooksAi/issues"
+Documentation = "https://github.com/johnnyachavez/ProBooksAi/blob/main/README.md#web-shell-review"
+
 [project.optional-dependencies]
-dev = ["pytest>=7.0"]
+dev = ["pytest>=7.0", "pypdf>=5.0"]
+statement = ["pypdf>=5.0"]
 desktop = ["PySide6>=6.5"]
+# Matches GitHub Actions python job: pytest + PDF tests + PySide6 (clipboard, invoice PDF smoke).
+ci = ["pytest>=7.0", "pypdf>=5.0", "PySide6>=6.5"]
 
 [project.scripts]
 probooks = "probooks.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["probooks"]
+packages = ["probooks", "probooksai"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

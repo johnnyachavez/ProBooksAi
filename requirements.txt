@@ -1,3 +1,6 @@
+# Convenience pin file (broader than pyproject.toml runtime deps).
+# Prefer editable install for development: pip install -e ".[ci]" (see README.md and docs/CONTRIBUTING.md).
+
 # Runtime dependencies
 openpyxl>=3.1.0
 PySide6>=6.6.0

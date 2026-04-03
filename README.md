@@ -1,6 +1,8 @@
 # ProBooks+ai
 
-Accounting app foundation: **dark UI shell** (static HTML) and a **Python + SQLite** core with migrations and CLI.
+Accounting app foundation: **dark UI shell** (static HTML), **`probooks` CLI**, and **PySide6 desktop** — **Python + SQLite** with migrations.
+
+**Docs:** [Issue backlog](docs/BACKLOG.md) · [Short index](docs/issues-backlog.md) · [Roadmap / snapshot](docs/ROADMAP.md#implementation-snapshot-repository-2026-04) · [Contributing](docs/CONTRIBUTING.md#continuous-integration) · [Running Tests](docs/CONTRIBUTING.md#running-tests) · [Desktop app](#desktop-app-pyside6)
 
 ## Web shell (review)
 
@@ -8,9 +10,11 @@ Accounting app foundation: **dark UI shell** (static HTML) and a **Python + SQLi
 python -m http.server 8765
 ```
 
-Open [http://127.0.0.1:8765/review.html](http://127.0.0.1:8765/review.html).
+Open [http://127.0.0.1:8765/review.html](http://127.0.0.1:8765/review.html) — hub to **`index.html`**, **`invoice.html`**, raw **BACKLOG** / **issues-backlog** / **ROADMAP** (with **implementation snapshot** anchor), and GitHub shortcuts (rendered docs on **github.com** after you push).
 
 ## Python CLI
+
+You can run **`python -m probooks`** instead of **`probooks`** if the console script is not on your `PATH`. Use **`python -m probooks --help`** (or **`probooks --help`**) for subcommands and the note on default database paths.
 
 ```bash
 pip install -e ".[dev]"
@@ -24,7 +28,7 @@ probooks restore --input ./backups/demo-backup.db --yes
 
 ### CSV import (issues #31, #33, #34)
 
-Prepare a CSV with at least **date** and **amount** columns (0-based indices). Example:
+Prepare a CSV with at least **date** and **amount** columns (0-based indices). A small demo file lives at **`examples/sample_bank.csv`** (CI asserts it is present; **pytest** imports it with the same column map as the example below). Example:
 
 ```bash
 probooks import csv --account 1 --file examples/sample_bank.csv --skip-rows 1 --date-col 0 --amount-col 1 --payee-col 2 --errors-out import-errors.csv
@@ -33,14 +37,51 @@ python -m probooks transactions --account 1 --limit 20
 
 Skipped rows (bad date/amount) go to `--errors-out` when set; amounts support `$`, commas, and `(123.45)` as negative.
 
-Database file (Windows): `%LOCALAPPDATA%\ProBooks+ai\probooks.db`.
+### Excel workbook template (openpyxl)
+
+```bash
+pip install -e .
+python generate_workbook.py
+```
+
+Writes `ProBooksAi_Accounting.xlsx` in the working directory (legacy default filename; see `probooksai.generator`). CI asserts **`generate_workbook.py`** is present in the repo root.
+
+### Default database paths (Windows)
+
+- **`probooks` CLI** (`probooks.paths`): `%LOCALAPPDATA%\ProBooks+ai\probooks.db`
+- **Document intake / desktop default file** when no path is passed (`probooksai.database.get_data_dir`): `%APPDATA%\ProBooksAi\probooksai.db` (legacy folder name on disk)
+
+## Desktop app (PySide6)
+
+```bash
+pip install -e ".[desktop]"
+python -m desktop_app.main
+```
+
+Optional: `python -m desktop_app.main --database PATH` (otherwise last company path from settings, then the default file from `get_data_dir`; see **Default database paths** above). For headless tests or CI parity, use **`.[ci]`** and set **`QT_QPA_PLATFORM=offscreen`** (see **Tests** below).
+
+The app uses a **Fusion**-based dark theme (`desktop_app/theme.py`). On some **Windows** builds **Qt** may log a harmless **`QFont::setPointSize`** line at startup; `desktop_app/main.py` installs a narrow **Qt** message filter for that text before **`QApplication`** is constructed. Contract coverage: `tests/test_desktop_main_contract.py` and **CONTRIBUTING.md** (contract tests table).
 
 ## Issue-driven build order
 
-See [docs/BACKLOG.md](docs/BACKLOG.md) for phased GitHub issues. Recent work targets **#21 / #27 / #28** (storage + migrations + backup) and **#30** (bank accounts).
+See [docs/BACKLOG.md](docs/BACKLOG.md) for phased GitHub issues and [docs/ROADMAP.md — implementation snapshot](docs/ROADMAP.md#implementation-snapshot-repository-2026-04) for the phased roadmap and what the repo ships today in **`desktop_app/`** and the **`probooks`** CLI. **#21 / #27 / #28** (storage + migrations + backup) and **#30** (bank accounts) are part of that foundation, not the whole surface.
 
 ## Tests
 
 ```bash
+pip install -e ".[ci]"
 pytest
 ```
+
+The **`.[ci]`** extra (see `pyproject.toml`) matches the GitHub Actions **python** job: **pytest**, **pypdf**, and **PySide6** so the full suite runs, including `tests/test_table_clipboard.py` and the invoice PDF smoke test in `tests/test_extensions_business.py` (PDF export runs in a **subprocess** on non-Windows so a Qt crash cannot kill pytest; on **Windows** that test is **skipped** because some Qt builds abort with `0xC0000409`—Linux CI still exercises it). Equivalent to **`.[dev,desktop]`** for those dependencies. CI sets **`QT_QPA_PLATFORM=offscreen`** for headless Qt; use the same on Linux without a display if you see platform plugin errors. For workflow filenames and the optional UI screenshot job, see [Continuous integration](docs/CONTRIBUTING.md#continuous-integration) in **CONTRIBUTING.md**.
+
+## Scripts (`scripts/`)
+
+- **`ci_validate_layout.sh`** / **`ci_validate_layout.ps1`** — Same required-path checks as the CI **validate** job. From the repo root: `bash scripts/ci_validate_layout.sh` (Git Bash / WSL / Unix) or **`.\scripts\ci_validate_layout.ps1`** (Windows PowerShell). Keep **both** files in sync when you add a **README** contract path; **`.github/workflows/ci.yml`** invokes the **`.sh`** script on Linux runners.
+- **`build_desktop.ps1`** / **`build_desktop.sh`** — PyInstaller build for the desktop app (output name **ProBooksPlusAi**).
+- **`sync-workspace.ps1`** — Optional local snapshot of repo + GitHub issues/PRs into **`integrations/work-context.json`** (requires [GitHub CLI](https://cli.github.com/) and `gh auth login`). The committed **`integrations/work-context.example.json`** documents the minimal shape: exactly four **`localWorkFiles`** paths — **`index.html`**, **`invoice.html`**, **`review.html`**, **`docs/ROADMAP.md`** — enforced by **`tests/test_integrations_example_contract.py`**. Generated JSON lists every repo file and may add extra PR/issue fields from **`gh`** (see script **`.DESCRIPTION`**).
+- **`capture_ui_screenshot.py`** — Headless main-window capture (see script docstring); writes under **`artifacts/`** (gitignored). Pull requests also trigger **`.github/workflows/ui-screenshot.yml`** (non-blocking; posts a comment with the artifact link).
+
+## Contributing
+
+Conventions, labels, CI, and the **contract-test** table: [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) — [Continuous integration](docs/CONTRIBUTING.md#continuous-integration).

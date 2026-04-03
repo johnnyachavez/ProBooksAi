@@ -18,6 +18,8 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Optional
 
+from probooksai.audit_log import append_audit
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -174,7 +176,16 @@ class COADatabase:
              parent_id, 1 if is_active else 0, now, now),
         )
         self._conn.commit()
-        return cur.lastrowid
+        acct_id = cur.lastrowid
+        append_audit(
+            self._conn,
+            "coa_account",
+            acct_id,
+            "created",
+            None,
+            f"{account_number} {account_name}",
+        )
+        return acct_id
 
     def get_account(self, account_id: int) -> Optional[sqlite3.Row]:
         return self._conn.execute(
@@ -211,6 +222,10 @@ class COADatabase:
     ):
         """Update an existing COA account."""
         _validate_type(account_type)
+        old = self.get_account(account_id)
+        if old is None:
+            raise ValueError(f"No COA account with id={account_id}")
+        old_d = dict(old)
         self._conn.execute(
             """
             UPDATE coa_accounts
@@ -224,9 +239,43 @@ class COADatabase:
              parent_id, 1 if is_active else 0, _now(), account_id),
         )
         self._conn.commit()
+        new_vals = {
+            "account_number": account_number,
+            "account_name": account_name,
+            "account_type": account_type,
+            "sub_type": sub_type or "",
+            "normal_balance": normal_balance.lower(),
+            "description": description or "",
+            "parent_id": parent_id,
+            "is_active": 1 if is_active else 0,
+        }
+        for field, nv in new_vals.items():
+            ov = old_d[field]
+            osv = "" if ov is None else str(ov)
+            nsv = "" if nv is None else str(nv)
+            if osv != nsv:
+                append_audit(
+                    self._conn,
+                    "coa_account",
+                    account_id,
+                    field,
+                    osv or None,
+                    nsv or None,
+                )
 
     def delete_account(self, account_id: int):
         """Hard-delete a COA account (use only if it has no references)."""
+        old = self.get_account(account_id)
+        if old is not None:
+            d = dict(old)
+            append_audit(
+                self._conn,
+                "coa_account",
+                account_id,
+                "deleted",
+                f"{d.get('account_number')} {d.get('account_name')}",
+                None,
+            )
         self._conn.execute(
             "DELETE FROM coa_accounts WHERE id = ?", (account_id,)
         )

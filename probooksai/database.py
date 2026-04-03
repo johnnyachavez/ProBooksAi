@@ -1,7 +1,7 @@
 """
 probooksai.database
 ===================
-SQLite-backed local storage for ProBooksAi document intake.
+SQLite-backed local storage for ProBooks+ai document intake.
 
 Schema
 ------
@@ -25,7 +25,7 @@ from typing import Optional
 # ---------------------------------------------------------------------------
 
 def get_data_dir() -> Path:
-    """Return (and create) the per-user ProBooksAi data directory."""
+    """Return (and create) the per-user data directory (folder name ``ProBooksAi``)."""
     appdata = os.environ.get("APPDATA")
     if appdata:
         base = Path(appdata)
@@ -157,8 +157,8 @@ class DocumentDatabase:
         """
         Import a document.
 
-        If *store* is True the file is copied into the ProBooksAi data
-        directory; otherwise the original path is recorded as-is.
+        If *store* is True the file is copied into the per-user ``ProBooksAi``
+        data folder; otherwise the original path is recorded as-is.
 
         Returns the new document ``id``.
         """

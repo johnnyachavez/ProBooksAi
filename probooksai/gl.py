@@ -1,7 +1,7 @@
 """
 probooksai.gl
 =============
-General Ledger posting engine for ProBooksAi.
+General Ledger posting engine for ProBooks+ai.
 
 Issue #40 – Posting engine (MVP): post bank transactions to GL journal entries.
 
@@ -26,6 +26,7 @@ Sign convention
 
 from __future__ import annotations
 
+import csv
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -78,7 +79,7 @@ def _now() -> str:
 
 class GLDatabase:
     """
-    GL posting engine backed by the shared ProBooksAi SQLite database.
+    GL posting engine backed by the shared ProBooks+ai SQLite database.
 
     Accepts an open :class:`sqlite3.Connection` (or a path) so it can share
     the same file as :class:`~probooksai.bank_import.BankDatabase`.
@@ -215,9 +216,213 @@ class GLDatabase:
             params,
         ).fetchall()
 
+    def journal_export_rows(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> list[dict]:
+        """
+        Flatten journal entries in the date range to one dict per GL line
+        (for CSV export).
+        """
+        entries = self.list_journal_entries(start_date, end_date)
+        out: list[dict] = []
+        for e in entries:
+            eid = e["id"]
+            entry = self.get_journal_entry(eid)
+            if entry is None:
+                continue
+            lines = self.get_entry_lines(eid)
+            edate = entry["entry_date"]
+            ememo = entry["memo"] or ""
+            for ln in lines:
+                d = dict(ln)
+                out.append(
+                    {
+                        "entry_id": eid,
+                        "entry_date": edate,
+                        "entry_memo": ememo,
+                        "account": d.get("account") or "",
+                        "debit": round(float(d.get("debit") or 0.0), 2),
+                        "credit": round(float(d.get("credit") or 0.0), 2),
+                        "line_description": d.get("description") or "",
+                    }
+                )
+        return out
+
     # -----------------------------------------------------------------------
     # Posting bank transactions
     # -----------------------------------------------------------------------
+
+    def _fetch_txn_splits(self, txn_id: int) -> list:
+        try:
+            return self._conn.execute(
+                """
+                SELECT amount, coa_account, memo FROM bank_txn_splits
+                WHERE parent_txn_id = ? ORDER BY id
+                """,
+                (txn_id,),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []
+
+    def _bank_gl_display(self, bank_account_id: int) -> str:
+        row = self._conn.execute(
+            "SELECT gl_display_account FROM bank_accounts WHERE id = ?",
+            (bank_account_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"Bank account id={bank_account_id} not found")
+        g = (row["gl_display_account"] or "").strip()
+        if not g:
+            raise ValueError(
+                f"Bank account id={bank_account_id} has no GL cash account mapping"
+            )
+        return g
+
+    def _post_transfer_transaction(
+        self,
+        txn_id: int,
+        txn: sqlite3.Row,
+        source_bank_gl: str,
+        dest_bank_account_id: int,
+        memo: str,
+    ) -> int:
+        """Bank-to-bank move: only cash GL accounts; no income/expense."""
+        dest_gl = self._bank_gl_display(dest_bank_account_id)
+        description = txn["description"] or "Transfer"
+        amount = round(float(txn["amount"]), 2)
+        abs_amount = abs(amount)
+        if amount >= 0:
+            lines = [
+                {
+                    "account": source_bank_gl,
+                    "debit": abs_amount,
+                    "credit": 0.0,
+                    "description": description,
+                },
+                {
+                    "account": dest_gl,
+                    "debit": 0.0,
+                    "credit": abs_amount,
+                    "description": description,
+                },
+            ]
+        else:
+            lines = [
+                {
+                    "account": source_bank_gl,
+                    "debit": 0.0,
+                    "credit": abs_amount,
+                    "description": description,
+                },
+                {
+                    "account": dest_gl,
+                    "debit": abs_amount,
+                    "credit": 0.0,
+                    "description": description,
+                },
+            ]
+        entry_id = self.create_journal_entry(
+            entry_date=txn["txn_date"],
+            lines=lines,
+            memo=memo or description,
+            source="bank_transfer",
+        )
+        self._conn.execute(
+            """
+            UPDATE bank_transactions
+            SET is_posted = 1, journal_entry_id = ?
+            WHERE id = ?
+            """,
+            (entry_id, txn_id),
+        )
+        self._conn.commit()
+        return entry_id
+
+    def _post_transaction_with_splits(
+        self,
+        txn_id: int,
+        bank_gl_account: str,
+        txn: sqlite3.Row,
+        splits: list,
+        memo: str,
+    ) -> int:
+        amount = round(float(txn["amount"]), 2)
+        split_total = round(sum(float(s["amount"]) for s in splits), 2)
+        if abs(split_total - amount) > 0.02:
+            raise ValueError("Split amounts do not match transaction amount")
+        abs_amount = abs(amount)
+        sum_abs_parts = round(
+            sum(abs(round(float(s["amount"]), 2)) for s in splits), 2
+        )
+        if abs(sum_abs_parts - abs_amount) > 0.02:
+            raise ValueError("Split amounts do not match transaction amount")
+        description = txn["description"] or ""
+        lines: list[dict] = []
+        if amount >= 0:
+            lines.append(
+                {
+                    "account": bank_gl_account,
+                    "debit": abs_amount,
+                    "credit": 0.0,
+                    "description": description,
+                }
+            )
+            for s in splits:
+                coa = (s["coa_account"] or "").strip()
+                if not coa:
+                    raise ValueError("Each split line must have a COA account")
+                part = abs(round(float(s["amount"]), 2))
+                line_desc = (s["memo"] or "").strip() or description
+                lines.append(
+                    {
+                        "account": coa,
+                        "debit": 0.0,
+                        "credit": part,
+                        "description": line_desc,
+                    }
+                )
+        else:
+            lines.append(
+                {
+                    "account": bank_gl_account,
+                    "debit": 0.0,
+                    "credit": abs_amount,
+                    "description": description,
+                }
+            )
+            for s in splits:
+                coa = (s["coa_account"] or "").strip()
+                if not coa:
+                    raise ValueError("Each split line must have a COA account")
+                part = abs(round(float(s["amount"]), 2))
+                line_desc = (s["memo"] or "").strip() or description
+                lines.append(
+                    {
+                        "account": coa,
+                        "debit": part,
+                        "credit": 0.0,
+                        "description": line_desc,
+                    }
+                )
+
+        entry_id = self.create_journal_entry(
+            entry_date=txn["txn_date"],
+            lines=lines,
+            memo=memo or description,
+            source="bank_import",
+        )
+        self._conn.execute(
+            """
+            UPDATE bank_transactions
+            SET is_posted = 1, journal_entry_id = ?
+            WHERE id = ?
+            """,
+            (entry_id, txn_id),
+        )
+        self._conn.commit()
+        return entry_id
 
     def post_transaction(
         self,
@@ -229,7 +434,10 @@ class GLDatabase:
         """
         Post a single bank transaction to the GL.
 
-        Creates a two-line balanced journal entry:
+        When ``bank_txn_splits`` rows exist for this transaction, posts one bank
+        line and one line per split (``category_account`` is ignored).
+
+        Otherwise creates a two-line balanced journal entry:
           - Positive amount (inflow):  debit bank GL,  credit category account
           - Negative amount (outflow): credit bank GL, debit category account
 
@@ -242,8 +450,33 @@ class GLDatabase:
         ).fetchone()
         if txn is None:
             raise ValueError(f"Transaction id={txn_id} not found")
-        if txn["is_posted"]:
+        posted = int(dict(txn).get("is_posted") or 0)
+        if posted:
             raise ValueError(f"Transaction id={txn_id} is already posted")
+
+        td = dict(txn)
+        transfer_to = td.get("transfer_to_bank_account_id")
+        splits = self._fetch_txn_splits(txn_id)
+        if transfer_to is not None:
+            if splits:
+                raise ValueError(
+                    "Remove split lines before posting a bank-to-bank transfer"
+                )
+            return self._post_transfer_transaction(
+                txn_id,
+                txn,
+                bank_gl_account,
+                int(transfer_to),
+                memo,
+            )
+        if splits:
+            return self._post_transaction_with_splits(
+                txn_id, bank_gl_account, txn, splits, memo
+            )
+
+        category_account = (category_account or "").strip()
+        if not category_account:
+            raise ValueError("No COA category selected for posting")
 
         amount = round(txn["amount"], 2)
         abs_amount = abs(amount)
@@ -302,14 +535,25 @@ class GLDatabase:
         skipped = []
         errors = []
         for txn_id in txn_ids:
-            if txn_id not in category_account_map:
+            has_splits = bool(self._fetch_txn_splits(txn_id))
+            row = self._conn.execute(
+                "SELECT transfer_to_bank_account_id FROM bank_transactions WHERE id = ?",
+                (txn_id,),
+            ).fetchone()
+            has_transfer = row is not None and row["transfer_to_bank_account_id"] is not None
+            if (
+                not has_splits
+                and not has_transfer
+                and txn_id not in category_account_map
+            ):
                 skipped.append(txn_id)
                 continue
+            cat = category_account_map.get(txn_id, "")
             try:
                 entry_id = self.post_transaction(
                     txn_id=txn_id,
                     bank_gl_account=bank_gl_account,
-                    category_account=category_account_map[txn_id],
+                    category_account=cat,
                     memo=memo,
                 )
                 posted.append((txn_id, entry_id))
@@ -363,3 +607,38 @@ class GLDatabase:
             }
             for row in rows
         ]
+
+
+def write_journal_export_csv(path: str, rows: list[dict]) -> int:
+    """
+    Write *rows* from :meth:`GLDatabase.journal_export_rows` to UTF-8 CSV.
+    Returns the number of data lines (excluding the header).
+    """
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(
+            [
+                "entry_id",
+                "entry_date",
+                "entry_memo",
+                "account",
+                "debit",
+                "credit",
+                "line_description",
+            ]
+        )
+        n = 0
+        for r in rows:
+            w.writerow(
+                [
+                    r["entry_id"],
+                    r["entry_date"],
+                    r["entry_memo"],
+                    r["account"],
+                    f"{r['debit']:.2f}",
+                    f"{r['credit']:.2f}",
+                    r["line_description"],
+                ]
+            )
+            n += 1
+    return n

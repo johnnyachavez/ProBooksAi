@@ -151,9 +151,32 @@ class TestComputeReconciliation:
 
     def test_returns_all_keys(self):
         result = compute_reconciliation([], 0.0, 0.0)
-        for key in ("transaction_count", "sum_of_amounts", "computed_ending",
-                    "difference", "can_reconcile"):
+        for key in (
+            "transaction_count",
+            "sum_of_amounts",
+            "computed_ending",
+            "difference",
+            "can_reconcile",
+            "tolerance_used",
+        ):
             assert key in result
+
+    def test_custom_tolerance_allows_small_difference(self):
+        txns = _make_txns([("2024-01-05", 999.98)])
+        r0 = compute_reconciliation(
+            txns, beginning_balance=1000.0, ending_balance=1999.99
+        )
+        assert r0["difference"] == pytest.approx(-0.01)
+        assert r0["can_reconcile"] is False
+        assert r0["tolerance_used"] == pytest.approx(0.0)
+        r1 = compute_reconciliation(
+            txns,
+            beginning_balance=1000.0,
+            ending_balance=1999.99,
+            tolerance=0.05,
+        )
+        assert r1["can_reconcile"] is True
+        assert r1["tolerance_used"] == pytest.approx(0.05)
 
     def test_rounding_to_two_decimal_places(self):
         txns = _make_txns([("2024-01-01", 0.1), ("2024-01-02", 0.2)])
@@ -205,6 +228,29 @@ class TestReconcileBatch:
         assert result["can_reconcile"] is False
         assert result["reconciled"] is False
         assert db.get_batch(bid)["is_reconciled"] == 0
+
+    def test_reconcile_marks_batch_within_custom_tolerance(self, db):
+        aid, bid = self._setup_batch(db, 1000.0, 1999.99)
+        db.import_transactions(
+            bid,
+            aid,
+            [
+                {
+                    "txn_date": "2024-01-05",
+                    "amount": 999.98,
+                    "description": "In",
+                    "ref_number": "",
+                }
+            ],
+        )
+        r0 = db.reconcile_batch(bid)
+        assert r0["difference"] == pytest.approx(-0.01)
+        assert r0["can_reconcile"] is False
+        assert r0["reconciled"] is False
+        r1 = db.reconcile_batch(bid, tolerance=0.05)
+        assert r1["can_reconcile"] is True
+        assert r1["reconciled"] is True
+        assert db.get_batch(bid)["is_reconciled"] == 1
 
     def test_reconcile_invalid_batch_raises(self, db):
         with pytest.raises(ValueError):

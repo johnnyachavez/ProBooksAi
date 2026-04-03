@@ -14,6 +14,9 @@ Desktop.ini
 # Optional tooling
 node_modules/
 
+# Local workflow / script output (e.g. UI screenshot)
+artifacts/
+
 # Python
 __pycache__/
 .pytest_cache/
@@ -21,4 +24,9 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.venv/
+venv/
+.coverage
+.coverage.*
+htmlcov/
 *.db

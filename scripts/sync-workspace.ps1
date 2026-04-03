@@ -1,10 +1,13 @@
 <#
 .SYNOPSIS
-  Merges local work-tree file paths with GitHub pull requests and issues into integrations/work-context.json.
+  Writes integrations/work-context.json with all local work-tree file paths plus GitHub pull requests and issues.
 
 .DESCRIPTION
   Requires GitHub CLI (gh) installed and authenticated: gh auth login
   Run from repo root or any path; resolves repository root automatically.
+  The committed integrations/work-context.example.json documents a minimal shape for tests and onboarding
+  (four sample localWorkFiles paths: index.html, invoice.html, review.html, docs/ROADMAP.md).
+  The generated integrations/work-context.json lists all repo files under localWorkFiles and may include extra fields on pullRequests/issues from gh (labels, author, timestamps, etc.).
 
 .PARAMETER IncludeClosed
   Also fetch closed issues and merged/closed PRs (higher combined limit).

@@ -1,4 +1,4 @@
-"""AI extraction and categorization module for ProBooksAi."""
+"""AI extraction and categorization module for ProBooks+ai."""
 
 from dataclasses import dataclass, field
 from typing import Optional

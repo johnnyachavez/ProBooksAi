@@ -1,10 +1,12 @@
 """
-ProBooksAi – CLI wrapper
-========================
+ProBooks+ai – CLI wrapper
+=========================
 Thin entry-point that delegates to ``probooksai.generator``.
 
 Run:
     python generate_workbook.py
+
+See **Excel workbook template** in the repository ``README.md``.
 """
 
 # Re-export everything so existing imports keep working

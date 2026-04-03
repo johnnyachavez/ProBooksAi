@@ -1,7 +1,7 @@
 """
 capture_ui_screenshot.py
 ========================
-Headless screenshot helper for ProBooksAi CI.
+Headless screenshot helper for ProBooks+ai CI.
 
 Usage (with a virtual display already active, e.g. via xvfb-run):
     python scripts/capture_ui_screenshot.py

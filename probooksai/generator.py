@@ -1,6 +1,6 @@
 """
-ProBooksAi – Accounting Software Workbook Generator
-====================================================
+ProBooks+ai – Accounting Software Workbook Generator
+======================================================
 Generates a fully-featured Excel workbook (.xlsx) that covers:
 
   1.  Dashboard          – Key metrics at a glance
@@ -24,7 +24,7 @@ Generates a fully-featured Excel workbook (.xlsx) that covers:
 Run:
     python generate_workbook.py
 
-The workbook will be saved as  ProBooksAi_Accounting.xlsx  in the current directory.
+The workbook is written to ``ProBooksAi_Accounting.xlsx`` (legacy default filename) in the current directory.
 """
 
 import os
@@ -192,7 +192,7 @@ def build_dashboard(ws, settings_name):
     ws.sheet_view.showGridLines = False
     ws.merge_cells("A1:J1")
     t = ws["A1"]
-    t.value     = "🏢  ProBooksAi – Accounting Dashboard"
+    t.value     = "🏢  ProBooks+ai – Accounting Dashboard"
     t.font      = _font(bold=True, size=22, color=WHITE)
     t.fill      = _fill(NAVY)
     t.alignment = _center()
@@ -288,7 +288,7 @@ def build_dashboard(ws, settings_name):
 # ---------------------------------------------------------------------------
 
 def build_settings(ws):
-    _title_block(ws, "⚙️  ProBooksAi – Settings",
+    _title_block(ws, "⚙️  ProBooks+ai – Settings",
                  "Configure company information and accounting preferences")
     ws.sheet_view.showGridLines = False
 

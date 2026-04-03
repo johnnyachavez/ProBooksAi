@@ -1,3 +1,4 @@
+# ProBooks+ai — default branch CI: static shell files, pytest (.[ci]), wheel build.
 name: CI
 
 on:
@@ -11,8 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Ensure base UI artifacts exist
-        run: test -f index.html && test -f invoice.html && test -f review.html
+      # Path list: scripts/ci_validate_layout.sh (+ twin scripts/ci_validate_layout.ps1 for Windows).
+      # Local: bash scripts/ci_validate_layout.sh  or  .\scripts\ci_validate_layout.ps1
+      - name: Ensure documented files and entry points exist
+        run: bash scripts/ci_validate_layout.sh
 
   python:
     runs-on: ubuntu-latest
@@ -22,6 +25,10 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install package and test deps
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[ci]"
       - name: Run pytest
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: python -m pytest
+      - name: Verify wheel build (Hatch packages)
+        run: pip install build && python -m build --wheel -o /tmp/wheelhouse

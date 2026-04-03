@@ -1,1 +1,1 @@
-"""Tests for ProBooksAi document intake and AI features."""
+"""Tests for ProBooks+ai document intake and AI features."""

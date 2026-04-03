@@ -1,7 +1,7 @@
 """
 ai.extractor
 ============
-Cloud-API-driven document extraction for ProBooksAi.
+Cloud-API-driven document extraction for ProBooks+ai.
 
 Environment variables
 ---------------------

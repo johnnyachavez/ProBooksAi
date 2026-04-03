@@ -1,0 +1,776 @@
+"""Extension schema, rules on import, and business (AR) helpers."""
+
+from __future__ import annotations
+
+import csv
+import os
+import subprocess
+import sys
+
+import pytest
+
+from probooksai.bank_import import BankDatabase, SCHEMA_VERSION
+from probooksai.extensions_schema import apply_extensions, EXTENSION_SCHEMA_VERSION
+from probooksai import business, rules_engine
+
+
+@pytest.fixture
+def db(tmp_path):
+    b = BankDatabase(db_path=str(tmp_path / "t.db"))
+    apply_extensions(b._conn)
+    yield b
+    b.close()
+
+
+def test_bank_schema_version_includes_gl_profile(db):
+    assert SCHEMA_VERSION >= 5
+    db._conn.execute(
+        "SELECT gl_display_account, imp_csv_date_col FROM bank_accounts LIMIT 0"
+    )
+
+
+def test_extension_schema_applied(db):
+    row = db._conn.execute(
+        "SELECT version FROM extension_schema_version WHERE id = 1"
+    ).fetchone()
+    assert row["version"] == EXTENSION_SCHEMA_VERSION
+    db._conn.execute("SELECT * FROM payroll_tax_items LIMIT 0")
+    db._conn.execute("SELECT * FROM payroll_run_tax_lines LIMIT 0")
+    db._conn.execute("SELECT * FROM categorization_rules LIMIT 0")
+
+
+def test_suggest_coa_matches_respects_priority(db):
+    rules_engine.add_rule(db._conn, "ALPHA", "1000 – A", priority=1)
+    rules_engine.add_rule(db._conn, "BETA", "2000 – B", priority=10)
+    rules_engine.add_rule(db._conn, "GAMMA", "3000 – C", priority=5)
+    s = rules_engine.suggest_coa_matches(db._conn, "X BETA Y GAMMA Z ALPHA", limit=5)
+    assert s[0] == "2000 – B"
+    assert "1000 – A" in s and "3000 – C" in s
+
+
+def test_rule_applied_on_import(db):
+    aid = db.add_bank_account("Main")
+    rules_engine.add_rule(db._conn, "COFFEE", "6100 – Test Expense", priority=5)
+    csv = "Date,Desc,Amt\n2024-02-01,COFFEE SHOP,-3.00\n"
+    db.import_csv(
+        aid,
+        csv,
+        date_col="Date",
+        amount_col="Amt",
+        description_col="Desc",
+        apply_categorization_rules=True,
+    )
+    rows = db.list_transactions(aid)
+    assert len(rows) == 1
+    assert "6100" in (rows[0]["coa_account"] or "")
+
+
+def test_payroll_tax_lines_and_report(db):
+    eid = business.add_employee(db._conn, "Pat")
+    rid = business.create_payroll_run(
+        db._conn,
+        eid,
+        "2024-01-01",
+        "2024-01-31",
+        "2024-01-31",
+        2000.0,
+        400.0,
+    )
+    items = business.list_payroll_tax_items(db._conn)
+    assert len(items) >= 1
+    tid = items[0]["id"]
+    business.upsert_payroll_run_tax_line(db._conn, rid, tid, 100.0, 50.0, "")
+    lines = business.list_payroll_run_tax_lines(db._conn, rid)
+    assert len(lines) == 1
+    assert lines[0]["employee_amount"] == pytest.approx(100.0)
+    rep = business.payroll_tax_totals_by_range(db._conn, "2024-01-01", "2024-12-31")
+    assert len(rep) == 1
+    assert float(rep[0]["employee_total"]) == pytest.approx(100.0)
+    assert float(rep[0]["employer_total"]) == pytest.approx(50.0)
+
+
+def test_suggest_bank_match_and_unlink(db):
+    cid = business.add_customer(db._conn, "Acme")
+    inv_id = business.create_invoice(
+        db._conn,
+        cid,
+        "I1",
+        "2024-05-01",
+        lines=[{"description": "Work", "qty": 1, "rate": 100.0}],
+    )
+    pid = business.record_ar_payment(
+        db._conn,
+        cid,
+        "2024-06-01",
+        100.0,
+        [(inv_id, 100.0)],
+    )
+    aid = db.add_bank_account("Chk")
+    bid = db.create_batch(aid)
+    db.import_transactions(
+        bid,
+        aid,
+        [
+            {
+                "txn_date": "2024-06-01",
+                "description": "Deposit",
+                "amount": 100.0,
+                "ref_number": "",
+            }
+        ],
+    )
+    tid = db.list_transactions(aid)[0]["id"]
+    sug = business.suggest_bank_match_candidates(db._conn, tid)
+    assert any(s["link_type"] == "ar_payment" and s["link_id"] == pid for s in sug)
+    business.link_bank_transaction(db._conn, tid, "ar_payment", pid)
+    db.import_transactions(
+        bid,
+        aid,
+        [
+            {
+                "txn_date": "2024-06-02",
+                "description": "Another",
+                "amount": 100.0,
+                "ref_number": "",
+            }
+        ],
+    )
+    rows = db.list_transactions(aid)
+    tid2 = rows[-1]["id"]
+    sug2 = business.suggest_bank_match_candidates(db._conn, tid2)
+    assert not any(
+        s["link_type"] == "ar_payment" and s["link_id"] == pid for s in sug2
+    )
+    business.unlink_bank_transaction(db._conn, tid)
+    assert business.get_bank_match(db._conn, tid) is None
+
+
+def test_register_filter_bank_match(db):
+    cid = business.add_customer(db._conn, "Acme")
+    inv_id = business.create_invoice(
+        db._conn,
+        cid,
+        "I1",
+        "2024-05-01",
+        lines=[{"description": "Work", "qty": 1, "rate": 100.0}],
+    )
+    pid = business.record_ar_payment(
+        db._conn,
+        cid,
+        "2024-06-01",
+        100.0,
+        [(inv_id, 100.0)],
+    )
+    aid = db.add_bank_account("Chk")
+    bid = db.create_batch(aid)
+    db.import_transactions(
+        bid,
+        aid,
+        [
+            {
+                "txn_date": "2024-06-01",
+                "description": "Deposit",
+                "amount": 100.0,
+                "ref_number": "",
+            },
+            {
+                "txn_date": "2024-06-02",
+                "description": "Other",
+                "amount": 50.0,
+                "ref_number": "",
+            },
+        ],
+    )
+    rows = db.list_transactions(aid)
+    tid0 = rows[0]["id"]
+    business.link_bank_transaction(db._conn, tid0, "ar_payment", pid)
+    assert len(db.list_transactions(aid, register_filter="has_bank_match")) == 1
+    assert len(db.list_transactions(aid, register_filter="no_bank_match")) == 1
+    assert len(db.list_transactions(aid)) == 2
+
+
+def test_audit_list_filtered_by_entity(db):
+    from probooksai.audit_log import list_filtered, list_for_entity
+
+    aid = db.add_bank_account("Aud")
+    bid = db.create_batch(aid)
+    db.import_transactions(
+        bid,
+        aid,
+        [
+            {
+                "txn_date": "2024-01-01",
+                "description": "z",
+                "amount": -2.0,
+                "ref_number": "",
+            }
+        ],
+    )
+    tid = db.list_transactions(aid)[0]["id"]
+    db.update_transaction(tid, memo="edited")
+    one = list_for_entity(db._conn, "bank_transaction", tid, limit=20)
+    assert any(x["field"] == "memo" for x in one)
+    by_type = list_filtered(db._conn, entity_type="bank_transaction", entity_id=None, limit=500)
+    assert len(by_type) >= 1
+
+
+def test_audit_log_on_bank_txn_update(db):
+    from probooksai.audit_log import list_recent
+
+    aid = db.add_bank_account("Aud")
+    bid = db.create_batch(aid)
+    db.import_transactions(
+        bid,
+        aid,
+        [
+            {
+                "txn_date": "2024-01-01",
+                "description": "z",
+                "amount": -2.0,
+                "ref_number": "",
+            }
+        ],
+    )
+    tid = db.list_transactions(aid)[0]["id"]
+    db.update_transaction(tid, memo="edited")
+    recent = list_recent(db._conn, 20)
+    assert any(r["entity_type"] == "bank_transaction" and r["field"] == "memo" for r in recent)
+
+
+def test_gl_post_bank_transfer(db):
+    from probooksai.gl import GLDatabase
+
+    gdb = GLDatabase(db._conn)
+    a1 = db.add_bank_account("Checking", gl_display_account="1010 – C")
+    a2 = db.add_bank_account("Savings", gl_display_account="1020 – S")
+    bid = db.create_batch(a1)
+    db.import_transactions(
+        bid,
+        a1,
+        [
+            {
+                "txn_date": "2024-04-01",
+                "description": "To savings",
+                "amount": -40.0,
+                "ref_number": "",
+            },
+        ],
+    )
+    tid = db.list_transactions(a1)[0]["id"]
+    db.update_transaction(tid, transfer_to_bank_account_id=a2)
+    eid = gdb.post_transaction(tid, "1010 – C", "")
+    lines = gdb.get_entry_lines(eid)
+    assert len(lines) == 2
+    c_line = next(ln for ln in lines if ln["account"] == "1010 – C")
+    s_line = next(ln for ln in lines if ln["account"] == "1020 – S")
+    assert c_line["credit"] == 40.0
+    assert s_line["debit"] == 40.0
+
+
+def test_gl_post_uses_bank_splits(db):
+    from probooksai.gl import GLDatabase
+
+    gdb = GLDatabase(db._conn)
+    aid = db.add_bank_account("Chk")
+    bid = db.create_batch(aid)
+    db.import_transactions(
+        bid,
+        aid,
+        [
+            {
+                "txn_date": "2024-02-01",
+                "description": "Split pay",
+                "amount": -100.0,
+                "ref_number": "",
+            },
+        ],
+    )
+    tid = db.list_transactions(aid)[0]["id"]
+    business.replace_splits(
+        db._conn,
+        tid,
+        [(-40.0, "6100 – Office", ""), (-60.0, "6200 – Travel", "")],
+    )
+    entry_id = gdb.post_transaction(tid, "1010 Checking", "9999 – ignored")
+    lines = gdb.get_entry_lines(entry_id)
+    assert len(lines) == 3
+    bank = next(ln for ln in lines if ln["account"] == "1010 Checking")
+    assert bank["credit"] == 100.0
+    assert sum(ln["debit"] for ln in lines if ln["account"] != "1010 Checking") == 100.0
+
+
+def test_coa_update_writes_audit(db):
+    from probooksai.audit_log import list_recent
+    from probooksai.coa_db import COADatabase
+
+    cdb = COADatabase(db._conn)
+    acct_id = cdb.add_account("8888", "Old Name", "expense")
+    cdb.update_account(acct_id, "8888", "New Name", "expense")
+    recent = list_recent(db._conn, 50)
+    assert any(
+        r["entity_type"] == "coa_account"
+        and r["field"] == "account_name"
+        and (r["new_value"] or "") == "New Name"
+        for r in recent
+    )
+
+
+def test_sales_tax_summary_by_invoice_date(db):
+    cid = business.add_customer(db._conn, "TaxCo")
+    business.create_invoice(
+        db._conn,
+        cid,
+        "T-1",
+        "2024-04-10",
+        lines=[{"description": "S", "qty": 1, "rate": 200.0}],
+        tax_rate_pct=8.0,
+    )
+    rows = business.sales_tax_invoices_in_range(db._conn, "2024-04-01", "2024-04-30")
+    assert len(rows) == 1
+    assert float(rows[0]["tax_total"]) == pytest.approx(16.0)
+    assert business.sales_tax_collected_sum(
+        db._conn, "2024-04-01", "2024-04-30"
+    ) == pytest.approx(16.0)
+
+
+def test_reconcile_batch_writes_audit(db):
+    from probooksai.audit_log import list_for_entity
+
+    aid = db.add_bank_account("Rec")
+    batch_id = db.create_batch(
+        aid,
+        statement_start="2024-01-01",
+        statement_end="2024-01-31",
+        beginning_balance=100.0,
+        ending_balance=160.0,
+    )
+    db.import_transactions(
+        batch_id,
+        aid,
+        [
+            {
+                "txn_date": "2024-01-10",
+                "description": "dep",
+                "amount": 60.0,
+                "ref_number": "",
+            }
+        ],
+    )
+    res = db.reconcile_batch(batch_id)
+    assert res["reconciled"] is True
+    ent = list_for_entity(db._conn, "bank_import_batch", batch_id, limit=20)
+    assert any(x["field"] == "is_reconciled" for x in ent)
+
+
+def test_ar_invoice_and_aging(db):
+    cid = business.add_customer(db._conn, "Acme")
+    business.create_invoice(
+        db._conn,
+        cid,
+        "INV-1",
+        "2024-01-01",
+        due_date="2024-01-15",
+        lines=[{"description": "Work", "qty": 1, "rate": 100.0}],
+        tax_rate_pct=0,
+    )
+    invs = business.list_invoices(db._conn)
+    assert len(invs) == 1
+    assert invs[0]["balance_due"] == pytest.approx(100.0)
+    aging = business.ar_aging_buckets(db._conn, "2024-06-01")[0]
+    assert "buckets" in aging
+
+
+def test_ar_ap_aging_bucket_totals_equal_sum_of_lines(db):
+    cid = business.add_customer(db._conn, "C1")
+    business.create_invoice(
+        db._conn,
+        cid,
+        "A1",
+        "2024-01-01",
+        due_date="2024-01-05",
+        lines=[{"description": "x", "qty": 1, "rate": 10.0}],
+    )
+    business.create_invoice(
+        db._conn,
+        cid,
+        "A2",
+        "2024-01-02",
+        due_date="2024-02-20",
+        lines=[{"description": "y", "qty": 1, "rate": 20.0}],
+    )
+    ar = business.ar_aging_buckets(db._conn, "2024-03-01")[0]
+    line_sum = sum(float(ln["balance"]) for ln in ar["lines"])
+    bucket_sum = sum(float(ar["buckets"][k]) for k in ar["buckets"])
+    assert line_sum == pytest.approx(bucket_sum)
+
+    vid = business.add_vendor(db._conn, "V1")
+    business.create_bill(db._conn, vid, "2024-01-01", 5.0, due_date="2024-01-10")
+    business.create_bill(db._conn, vid, "2024-01-02", 7.0, due_date="2024-03-01")
+    ap = business.ap_aging_buckets(db._conn, "2024-03-15")[0]
+    line_sum_ap = sum(float(ln["balance"]) for ln in ap["lines"])
+    bucket_sum_ap = sum(float(ap["buckets"][k]) for k in ap["buckets"])
+    assert line_sum_ap == pytest.approx(bucket_sum_ap)
+
+
+def test_ap_aging_days_past_due_matches_ar_shape(db):
+    vid = business.add_vendor(db._conn, "Supp")
+    business.create_bill(
+        db._conn,
+        vid,
+        "2024-01-01",
+        50.0,
+        due_date="2024-01-10",
+    )
+    out = business.ap_aging_buckets(db._conn, "2024-02-15")[0]
+    assert out["lines"]
+    ln = out["lines"][0]
+    assert ln["days_past_due"] == 36  # Feb 15 - Jan 10
+    assert ln["bucket"] == "31_60"
+
+
+def test_write_customers_and_vendors_csv(db, tmp_path):
+    business.add_customer(db._conn, "Acme", email="a@example.com")
+    business.add_vendor(db._conn, "Vendor1", is_1099=True)
+    cp = tmp_path / "customers.csv"
+    vp = tmp_path / "vendors.csv"
+    assert business.write_customers_csv(db._conn, str(cp)) == 1
+    assert business.write_vendors_csv(db._conn, str(vp)) == 1
+    ctext = cp.read_text(encoding="utf-8")
+    assert "Acme" in ctext and "a@example.com" in ctext
+    with vp.open(encoding="utf-8", newline="") as f:
+        vrows = list(csv.reader(f))
+    assert vrows[0][-1] == "is_1099"
+    assert vrows[1][1] == "Vendor1"
+    assert vrows[1][-1] == "1"
+
+
+def test_write_invoices_and_bills_csv(db, tmp_path):
+    cid = business.add_customer(db._conn, "Buyer")
+    vid = business.add_vendor(db._conn, "Supplier")
+    business.create_invoice(
+        db._conn,
+        cid,
+        "INV-X",
+        "2024-02-01",
+        lines=[{"description": "Work", "qty": 1, "rate": 50.0}],
+        tax_rate_pct=0,
+    )
+    business.create_bill(
+        db._conn,
+        vid,
+        "2024-02-15",
+        42.0,
+        vendor_invoice_number="B-9",
+    )
+    ip = tmp_path / "inv.csv"
+    bp = tmp_path / "bill.csv"
+    assert business.write_invoices_csv(db._conn, str(ip)) == 1
+    assert business.write_bills_csv(db._conn, str(bp)) == 1
+    itext = ip.read_text(encoding="utf-8")
+    assert "INV-X" in itext and "Buyer" in itext
+    btext = bp.read_text(encoding="utf-8")
+    assert "Supplier" in btext and "B-9" in btext
+
+
+def test_write_invoices_and_bills_csv_subset_ids(db, tmp_path):
+    cid = business.add_customer(db._conn, "C")
+    vid = business.add_vendor(db._conn, "V")
+    i1 = business.create_invoice(
+        db._conn,
+        cid,
+        "INV-1",
+        "2024-01-01",
+        lines=[{"description": "a", "qty": 1, "rate": 1.0}],
+        tax_rate_pct=0,
+    )
+    i2 = business.create_invoice(
+        db._conn,
+        cid,
+        "INV-2",
+        "2024-01-02",
+        lines=[{"description": "b", "qty": 1, "rate": 2.0}],
+        tax_rate_pct=0,
+    )
+    ip = tmp_path / "inv_order.csv"
+    assert business.write_invoices_csv(db._conn, str(ip), invoice_ids=[i2, i1]) == 2
+    inv_text = ip.read_text(encoding="utf-8")
+    assert inv_text.index("INV-2") < inv_text.index("INV-1")
+
+    ip_one = tmp_path / "inv_one.csv"
+    assert business.write_invoices_csv(db._conn, str(ip_one), invoice_ids=[i2]) == 1
+    assert "INV-2" in ip_one.read_text(encoding="utf-8")
+    assert "INV-1" not in ip_one.read_text(encoding="utf-8")
+
+    b1 = business.create_bill(db._conn, vid, "2024-02-01", 10.0, vendor_invoice_number="VB1")
+    b2 = business.create_bill(db._conn, vid, "2024-02-02", 20.0, vendor_invoice_number="VB2")
+    bp = tmp_path / "bills_order.csv"
+    assert business.write_bills_csv(db._conn, str(bp), bill_ids=[b2, b1]) == 2
+    bill_text = bp.read_text(encoding="utf-8")
+    assert bill_text.index("VB2") < bill_text.index("VB1")
+
+    bp_one = tmp_path / "bill_one.csv"
+    assert business.write_bills_csv(db._conn, str(bp_one), bill_ids=[b2]) == 1
+    one_b = bp_one.read_text(encoding="utf-8")
+    assert "VB2" in one_b and "VB1" not in one_b
+
+
+def _save_invoice_pdf_subprocess(db_path: str, invoice_id: int, pdf_path: str) -> subprocess.CompletedProcess:
+    """Run Qt PDF export in a child process so a native Qt crash cannot abort pytest."""
+    env = os.environ.copy()
+    env.setdefault("QT_QPA_PLATFORM", "offscreen")
+    code = (
+        "import sqlite3\n"
+        "from desktop_app.invoice_pdf import save_invoice_pdf\n"
+        f"c = sqlite3.connect({db_path!r})\n"
+        "c.row_factory = sqlite3.Row\n"
+        f"save_invoice_pdf(c, {invoice_id}, {pdf_path!r})\n"
+        "c.close()\n"
+    )
+    return subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env=env,
+    )
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="QPrinter PDF can abort the Qt process on some Windows builds (0xC0000409); Linux CI runs this test.",
+)
+def test_save_invoice_pdf_smoke(db, tmp_path):
+    pytest.importorskip("PySide6.QtPrintSupport")
+
+    cid = business.add_customer(db._conn, "Acme LLC", address="1 Main St")
+    iid = business.create_invoice(
+        db._conn,
+        cid,
+        "INV-PDF",
+        "2024-05-01",
+        due_date="2024-05-15",
+        memo="Terms: net 30 & <keep>",
+        lines=[{"description": "Consulting & Co.", "qty": 1, "rate": 100.0}],
+        tax_rate_pct=0,
+    )
+    db._conn.commit()
+    out = tmp_path / "invoice.pdf"
+    db_path = str(tmp_path / "t.db")
+    proc = _save_invoice_pdf_subprocess(db_path, iid, str(out))
+    assert proc.returncode == 0, proc.stderr or proc.stdout
+    assert out.is_file() and out.stat().st_size > 400
+
+
+def test_write_ar_and_ap_payments_csv(db, tmp_path):
+    cid = business.add_customer(db._conn, "PayerCo")
+    vid = business.add_vendor(db._conn, "PayeeCo")
+    iid = business.create_invoice(
+        db._conn,
+        cid,
+        "P-1",
+        "2024-02-01",
+        lines=[{"description": "x", "qty": 1, "rate": 40.0}],
+    )
+    bill_id = business.create_bill(db._conn, vid, "2024-02-10", 15.0)
+    bank_id = db.add_bank_account("Operating")
+    business.record_ar_payment(
+        db._conn,
+        cid,
+        "2024-02-20",
+        40.0,
+        [(iid, 40.0)],
+        bank_account_id=bank_id,
+        reference="DEP-1",
+    )
+    business.record_ap_payment(
+        db._conn,
+        vid,
+        "2024-02-21",
+        15.0,
+        [(bill_id, 15.0)],
+        bank_account_id=bank_id,
+        reference="CHK-9",
+    )
+    arp = tmp_path / "ar_pay.csv"
+    app = tmp_path / "ap_pay.csv"
+    assert business.write_ar_payments_csv(db._conn, str(arp)) == 1
+    assert business.write_ap_payments_csv(db._conn, str(app)) == 1
+    art = arp.read_text(encoding="utf-8")
+    assert "PayerCo" in art and "DEP-1" in art and "Operating" in art
+    apt = app.read_text(encoding="utf-8")
+    assert "PayeeCo" in apt and "CHK-9" in apt and "Operating" in apt
+
+    aral = tmp_path / "ar_alloc.csv"
+    apal = tmp_path / "ap_alloc.csv"
+    assert business.write_ar_payment_allocations_csv(db._conn, str(aral)) == 1
+    assert business.write_ap_payment_allocations_csv(db._conn, str(apal)) == 1
+    assert "P-1" in aral.read_text(encoding="utf-8") and "40.00" in aral.read_text(
+        encoding="utf-8"
+    )
+    assert "PayeeCo" in apal.read_text(encoding="utf-8") and "15.00" in apal.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_update_invoice_and_blocked_after_payment(db):
+    cid = business.add_customer(db._conn, "C1")
+    iid = business.create_invoice(
+        db._conn,
+        cid,
+        "E1",
+        "2024-03-01",
+        lines=[{"description": "A", "qty": 1, "rate": 10.0}],
+        tax_rate_pct=10.0,
+    )
+    row = db._conn.execute("SELECT total, balance_due FROM invoices WHERE id = ?", (iid,)).fetchone()
+    assert float(row["total"]) == pytest.approx(11.0)
+    business.update_invoice(
+        db._conn,
+        iid,
+        cid,
+        "E1",
+        "2024-03-02",
+        memo="x",
+        lines=[{"description": "B", "qty": 2, "rate": 5.0}],
+        tax_rate_pct=0,
+    )
+    row2 = db._conn.execute("SELECT total, memo FROM invoices WHERE id = ?", (iid,)).fetchone()
+    assert float(row2["total"]) == pytest.approx(10.0)
+    assert row2["memo"] == "x"
+    business.record_ar_payment(db._conn, cid, "2024-03-10", 10.0, [(iid, 10.0)])
+    with pytest.raises(ValueError, match="payments"):
+        business.update_invoice(
+            db._conn,
+            iid,
+            cid,
+            "E1",
+            "2024-03-02",
+            lines=[{"description": "B", "qty": 1, "rate": 1.0}],
+        )
+
+
+def test_record_ar_payment_deposit_bank_account(db):
+    cid = business.add_customer(db._conn, "Dep")
+    iid = business.create_invoice(
+        db._conn,
+        cid,
+        "D1",
+        "2024-01-01",
+        lines=[{"description": "x", "qty": 1, "rate": 30.0}],
+    )
+    aid = db.add_bank_account("Checking")
+    pid = business.record_ar_payment(
+        db._conn,
+        cid,
+        "2024-01-15",
+        30.0,
+        [(iid, 30.0)],
+        bank_account_id=aid,
+    )
+    row = db._conn.execute(
+        "SELECT bank_account_id FROM ar_payments WHERE id = ?", (pid,)
+    ).fetchone()
+    assert row["bank_account_id"] == aid
+
+    iid2 = business.create_invoice(
+        db._conn,
+        cid,
+        "D2",
+        "2024-01-02",
+        lines=[{"description": "y", "qty": 1, "rate": 5.0}],
+    )
+    pid2 = business.record_ar_payment(
+        db._conn,
+        cid,
+        "2024-01-16",
+        5.0,
+        [(iid2, 5.0)],
+    )
+    row2 = db._conn.execute(
+        "SELECT bank_account_id FROM ar_payments WHERE id = ?", (pid2,)
+    ).fetchone()
+    assert row2["bank_account_id"] is None
+
+
+def test_list_open_invoices_and_bills_for_party(db):
+    cid = business.add_customer(db._conn, "C")
+    vid = business.add_vendor(db._conn, "V")
+    iid = business.create_invoice(
+        db._conn,
+        cid,
+        "Z1",
+        "2024-01-10",
+        lines=[{"description": "x", "qty": 1, "rate": 40.0}],
+    )
+    bid = business.create_bill(db._conn, vid, "2024-02-01", 25.0)
+    open_inv = business.list_open_invoices_for_customer(db._conn, cid)
+    assert len(open_inv) == 1 and open_inv[0]["id"] == iid
+    open_b = business.list_open_bills_for_vendor(db._conn, vid)
+    assert len(open_b) == 1 and open_b[0]["id"] == bid
+    business.record_ar_payment(db._conn, cid, "2024-01-20", 40.0, [(iid, 40.0)])
+    assert business.list_open_invoices_for_customer(db._conn, cid) == []
+    business.record_ap_payment(db._conn, vid, "2024-02-10", 25.0, [(bid, 25.0)])
+    assert business.list_open_bills_for_vendor(db._conn, vid) == []
+
+
+def test_get_update_customer_and_vendor(db):
+    cid = business.add_customer(db._conn, "Old", email="a@x.org")
+    row = business.get_customer(db._conn, cid)
+    assert row["name"] == "Old"
+    business.update_customer(
+        db._conn,
+        cid,
+        "NewCo",
+        email="b@x.org",
+        phone="555",
+        address="1 Main",
+        notes="vip",
+    )
+    row2 = business.get_customer(db._conn, cid)
+    assert row2["name"] == "NewCo"
+    assert row2["email"] == "b@x.org"
+    assert row2["phone"] == "555"
+    assert row2["address"] == "1 Main"
+    assert row2["notes"] == "vip"
+    with pytest.raises(ValueError, match="not found"):
+        business.update_customer(db._conn, 99999, "X")
+
+    vid = business.add_vendor(db._conn, "V0", is_1099=False)
+    business.update_vendor(
+        db._conn,
+        vid,
+        "V1",
+        email="v@v.com",
+        is_1099=True,
+    )
+    vr = business.get_vendor(db._conn, vid)
+    assert vr["name"] == "V1"
+    assert vr["email"] == "v@v.com"
+    assert int(vr["is_1099"]) == 1
+    with pytest.raises(ValueError, match="not found"):
+        business.update_vendor(db._conn, 99999, "X")
+
+
+def test_update_bill_and_blocked_after_payment(db):
+    vid = business.add_vendor(db._conn, "V1")
+    bid = business.create_bill(db._conn, vid, "2024-04-01", 100.0, vendor_invoice_number="X1")
+    business.update_bill(
+        db._conn,
+        bid,
+        vid,
+        "2024-04-02",
+        80.0,
+        vendor_invoice_number="X2",
+        memo="m",
+    )
+    row = db._conn.execute(
+        "SELECT total, balance_due, memo, vendor_invoice_number FROM bills WHERE id = ?",
+        (bid,),
+    ).fetchone()
+    assert float(row["total"]) == pytest.approx(80.0)
+    assert float(row["balance_due"]) == pytest.approx(80.0)
+    assert row["memo"] == "m"
+    assert row["vendor_invoice_number"] == "X2"
+    business.record_ap_payment(db._conn, vid, "2024-04-15", 80.0, [(bid, 80.0)])
+    with pytest.raises(ValueError, match="payments"):
+        business.update_bill(db._conn, bid, vid, "2024-04-02", 50.0)

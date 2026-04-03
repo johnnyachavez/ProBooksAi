@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # scripts/build_desktop.sh
-# Build a standalone ProBooksAi desktop executable on macOS / Linux.
+# Build a standalone ProBooks+ai desktop executable on macOS / Linux (output: ProBooksPlusAi).
+# Bundles the docs/ tree (Help uses docs/ROADMAP.md); CI requires docs/ROADMAP.md to exist.
 #
 # Usage:
 #   chmod +x scripts/build_desktop.sh
@@ -13,15 +14,20 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$REPO_ROOT"
 
-# 1. Ensure PyInstaller is installed
+# 1. Ensure PyInstaller is installed (pip install -e ".[desktop]" first)
 python -m pip install --quiet pyinstaller
 
 # 2. Build
 python -m PyInstaller \
-    --name ProBooksAi \
+    --noconfirm \
+    --clean \
+    --name ProBooksPlusAi \
     --onefile \
     --windowed \
+    --paths "$REPO_ROOT" \
     --add-data "probooksai:probooksai" \
+    --add-data "desktop_app:desktop_app" \
+    --add-data "docs:docs" \
     desktop_app/main.py
 
 echo ""

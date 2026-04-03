@@ -459,7 +459,7 @@ class TestDashboard:
         ws = wb["Dashboard"]
         title = ws.cell(row=1, column=1).value
         assert title is not None
-        assert "ProBooksAi" in str(title)
+        assert "ProBooks+ai" in str(title)
 
 
 # ---------------------------------------------------------------------------

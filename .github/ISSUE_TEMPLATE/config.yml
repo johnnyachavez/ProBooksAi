@@ -1,2 +1,20 @@
 blank_issues_enabled: true
-contact_links: []
+contact_links:
+  - name: Contributing guide
+    url: https://github.com/johnnyachavez/ProBooksAi/blob/main/docs/CONTRIBUTING.md#naming-conventions
+    about: Product name, issue titles, branch names, PR titles, labels, and naming conventions.
+  - name: Continuous integration
+    url: https://github.com/johnnyachavez/ProBooksAi/blob/main/docs/CONTRIBUTING.md#continuous-integration
+    about: GitHub Actions workflows, ci_validate_layout scripts, contract-test table, issue template sync.
+  - name: Local preview (review.html)
+    url: https://github.com/johnnyachavez/ProBooksAi/blob/main/README.md#web-shell-review
+    about: Static UI hub via python -m http.server — not live books data; desktop app or probooks CLI for SQLite.
+  - name: Desktop app (PySide6)
+    url: https://github.com/johnnyachavez/ProBooksAi/blob/main/README.md#desktop-app-pyside6
+    about: pip install -e ".[desktop]", python -m desktop_app.main, Fusion theme, and Qt font stderr note.
+  - name: Running Tests (work-context)
+    url: https://github.com/johnnyachavez/ProBooksAi/blob/main/docs/CONTRIBUTING.md#running-tests
+    about: sync-workspace.ps1, integrations/work-context.example.json, pytest, and Qt headless note.
+  - name: Doc index (issues-backlog)
+    url: https://github.com/johnnyachavez/ProBooksAi/blob/main/docs/issues-backlog.md
+    about: Short links to BACKLOG, README Web shell + Desktop, ROADMAP snapshot, CONTRIBUTING (CI + Running Tests contacts), and work-context sample; review.html Issues backlog cards also name .github/ISSUE_TEMPLATE/config.yml; ROADMAP, BACKLOG, and CONTRIBUTING repeat the same issues-backlog.md hub blurb.
