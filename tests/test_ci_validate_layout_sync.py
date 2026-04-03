@@ -633,6 +633,12 @@ def test_github_issue_templates_reference_core_docs() -> None:
     assert "README.md#desktop-app-pyside6" in config, (
         "config.yml should include Desktop app contact link to README.md#desktop-app-pyside6"
     )
+    assert "name: Default database paths (Windows)" in config, (
+        "config.yml should define Default database paths contact label"
+    )
+    assert "README.md#default-database-paths-windows" in config, (
+        "config.yml should include Default database paths contact URL"
+    )
     assert "name: Excel workbook template (openpyxl)" in config, (
         "config.yml should define Excel workbook template contact label"
     )
@@ -644,8 +650,8 @@ def test_github_issue_templates_reference_core_docs() -> None:
     assert "help_epilog" in config[ex_start:ex_end], (
         "config.yml Excel workbook template about should mention help_epilog (chooser parity)"
     )
-    assert "README Web shell + Desktop + Excel workbook template" in config, (
-        "config.yml Doc index about should list Excel workbook template with Web shell + Desktop"
+    assert "README Web shell + Desktop + Default database paths + Excel workbook template" in config, (
+        "config.yml Doc index about should list Default database paths with Web shell + Desktop + Excel"
     )
     assert "help_epilog" in config, (
         "config.yml Doc index about should note help_epilog / CLI desktop --help (issues-backlog parity)"
@@ -705,6 +711,7 @@ def test_issues_backlog_orients_readme_docs_bar_and_github_config() -> None:
     assert "Running Tests, **Doc index (issues-backlog)**)." in text
     assert "Short index" in text
     assert "../README.md#desktop-app-pyside6" in text
+    assert "../README.md#default-database-paths-windows" in text
     assert "../README.md#excel-workbook-template-openpyxl" in text
     assert "Excel workbook template (openpyxl)" in text
     assert "integrations/work-context.example.json" in text
