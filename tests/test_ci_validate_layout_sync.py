@@ -352,7 +352,7 @@ def test_review_html_python_desktop_section_mentions_help_epilog() -> None:
 
 
 def test_static_shell_page_sub_mentions_help_epilog() -> None:
-    """index.html and invoice.html README hints mention help_epilog + --help (parity with review.html)."""
+    """index.html and invoice.html README hints mention help_epilog, --help, CI, and Running Tests (work-context)."""
     for name in ("index.html", "invoice.html"):
         text = (REPO_ROOT / name).read_text(encoding="utf-8")
         assert "probooks/help_epilog.py" in text, f"{name} should mention probooks/help_epilog.py"
@@ -366,6 +366,10 @@ def test_static_shell_page_sub_mentions_help_epilog() -> None:
         assert 'href="docs/CONTRIBUTING.md#continuous-integration"' in text, (
             f"{name} should link CONTRIBUTING CI (SQLite issue #21 bullet)"
         )
+        assert 'href="docs/CONTRIBUTING.md#running-tests"' in text, (
+            f"{name} should link CONTRIBUTING Running Tests (work-context / sync-workspace)"
+        )
+        assert "sync-workspace.ps1" in text, f"{name} should mention sync-workspace.ps1 in Running Tests hint"
 
 
 def test_review_html_links_contributing_doc_anchors() -> None:
