@@ -50,8 +50,11 @@ def test_is_sqlite_file_false_when_path_is_directory(tmp_path: Path) -> None:
 def test_cli_backup_returns_one_when_source_db_missing(tmp_path: Path) -> None:
     missing = tmp_path / "nope.db"
     out = tmp_path / "out.db"
-    assert cmd_backup(missing, out) == 1
+    err = io.StringIO()
+    with patch.object(sys, "stderr", err):
+        assert cmd_backup(missing, out) == 1
     assert not out.exists()
+    assert "No database at" in err.getvalue()
 
 
 def test_main_backup_prints_error_when_db_missing(tmp_path: Path) -> None:
@@ -274,7 +277,10 @@ def test_main_restore_replaces_existing_target_file(tmp_path: Path) -> None:
 def test_cli_restore_returns_one_when_backup_file_missing(tmp_path: Path) -> None:
     target = tmp_path / "live.db"
     missing_bak = tmp_path / "missing.db"
-    assert cmd_restore(target, missing_bak, yes=True) == 1
+    err = io.StringIO()
+    with patch.object(sys, "stderr", err):
+        assert cmd_restore(target, missing_bak, yes=True) == 1
+    assert "Backup file not found" in err.getvalue()
 
 
 def test_cli_backup_creates_nested_destination_parent(
@@ -318,8 +324,11 @@ def test_cli_backup_rejects_non_sqlite_source(tmp_path: Path) -> None:
     bad = tmp_path / "src.db"
     bad.write_text("not sqlite", encoding="utf-8")
     out = tmp_path / "out.db"
-    assert cmd_backup(bad, out) == 1
+    err = io.StringIO()
+    with patch.object(sys, "stderr", err):
+        assert cmd_backup(bad, out) == 1
     assert not out.exists()
+    assert "Not a SQLite" in err.getvalue()
 
 
 def test_cli_restore_without_yes_returns_two(tmp_path: Path) -> None:
@@ -330,7 +339,11 @@ def test_cli_restore_without_yes_returns_two(tmp_path: Path) -> None:
     run_migrations(conn, migration_files(mdir))
     conn.close()
     backup_database(db, bak)
-    assert cmd_restore(db, bak, yes=False) == 2
+    err = io.StringIO()
+    with patch.object(sys, "stderr", err):
+        assert cmd_restore(db, bak, yes=False) == 2
+    assert "--yes" in err.getvalue()
+    assert "confirm" in err.getvalue().lower()
 
 
 def test_restore_refuses_overwrite_false_when_target_exists(tmp_path: Path) -> None:
@@ -820,7 +833,10 @@ def test_cli_restore_rejects_non_sqlite_backup(tmp_path: Path) -> None:
     bad.write_text("not sqlite", encoding="utf-8")
     target = tmp_path / "company.db"
     target.write_text("anything", encoding="utf-8")
-    assert cmd_restore(target, bad, yes=True) == 1
+    err = io.StringIO()
+    with patch.object(sys, "stderr", err):
+        assert cmd_restore(target, bad, yes=True) == 1
+    assert "Not a SQLite" in err.getvalue()
 
 
 def test_backup_rejects_non_sqlite_source(tmp_path: Path) -> None:
