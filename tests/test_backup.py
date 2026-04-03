@@ -119,3 +119,6 @@ def test_backup_roundtrip(tmp_path: Path) -> None:
     conn = connect(dest)
     assert conn.execute("SELECT COUNT(*) FROM companies").fetchone()[0] >= 1
     conn.close()
+
+    assert not list(tmp_path.glob(".probooks-backup-*.tmp"))
+    assert not list(tmp_path.glob(".probooks-restore-*.tmp"))

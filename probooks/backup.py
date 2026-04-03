@@ -1,8 +1,14 @@
-"""Backup / restore SQLite database files (issue #28)."""
+"""Backup / restore SQLite database files (issue #28).
+
+Writes to a temporary file in the destination directory, then ``os.replace`` onto the
+final path so an interrupted copy does not truncate the target database.
+"""
 
 from __future__ import annotations
 
+import os
 import shutil
+import tempfile
 from pathlib import Path
 
 SQLITE_MAGIC = b"SQLite format 3\x00"
@@ -31,7 +37,23 @@ def backup_database(source_db: Path, destination: Path) -> None:
             f"(got {source_db!s} -> {destination!s})"
         )
     destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source_db, destination)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=".probooks-backup-",
+        suffix=".tmp",
+        dir=str(destination.parent),
+    )
+    os.close(fd)
+    tmp_path = Path(tmp_name)
+    try:
+        shutil.copy2(source_db, tmp_path)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
+    try:
+        os.replace(tmp_path, destination)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
 
 def restore_database(backup_file: Path, target_db: Path, *, overwrite: bool) -> None:
@@ -45,4 +67,20 @@ def restore_database(backup_file: Path, target_db: Path, *, overwrite: bool) -> 
     if target_db.exists() and not overwrite:
         raise FileExistsError(f"Refuse to overwrite without overwrite=True: {target_db}")
     target_db.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(backup_file, target_db)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=".probooks-restore-",
+        suffix=".tmp",
+        dir=str(target_db.parent),
+    )
+    os.close(fd)
+    tmp_path = Path(tmp_name)
+    try:
+        shutil.copy2(backup_file, tmp_path)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
+    try:
+        os.replace(tmp_path, target_db)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
