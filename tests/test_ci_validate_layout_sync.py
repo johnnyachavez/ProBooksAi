@@ -201,6 +201,14 @@ def test_static_html_links_readme_desktop_section() -> None:
         assert needle in text, f"{name} should include {needle!r}"
 
 
+def test_static_html_links_readme_excel_workbook_section() -> None:
+    """Static shell pages should deep-link README Excel workbook template where we surface it."""
+    needle = 'href="README.md#excel-workbook-template-openpyxl"'
+    for name in ("index.html", "invoice.html", "review.html"):
+        text = (_REPO / name).read_text(encoding="utf-8")
+        assert needle in text, f"{name} should include {needle!r}"
+
+
 def test_review_html_links_readme_web_shell_and_desktop_anchors() -> None:
     """review.html Documentation cards should deep-link README Web shell, Desktop, and Excel template sections."""
     text = (_REPO / "review.html").read_text(encoding="utf-8")
@@ -324,6 +332,7 @@ def test_pr_template_lists_readme_excel_workbook_anchor_checklist() -> None:
     for name in (
         "test_github_issue_templates_reference_core_docs",
         "test_review_html_links_readme_web_shell_and_desktop_anchors",
+        "test_static_html_links_readme_excel_workbook_section",
         "test_pr_template_lists_readme_excel_workbook_anchor_checklist",
         "test_contributing_ci_documents_readme_excel_workbook_anchor_bullet",
         "test_hub_docs_related_docs_link_readme_excel_workbook_template",
@@ -343,6 +352,8 @@ def test_contributing_ci_documents_readme_excel_workbook_anchor_bullet() -> None
     assert "**`config.yml`** (**Excel workbook template** contact link)" in chunk
     assert "**ROADMAP** / **BACKLOG** **Related docs**" in chunk
     assert "**README** top **Docs** line" in chunk
+    assert "**`index.html`** / **`invoice.html`** (README hints)" in chunk
+    assert "test_static_html_links_readme_excel_workbook_section" in chunk
     assert "test_pr_template_lists_readme_excel_workbook_anchor_checklist" in chunk
     assert "test_contributing_ci_documents_readme_excel_workbook_anchor_bullet" in chunk
     assert "test_hub_docs_related_docs_link_readme_excel_workbook_template" in chunk
