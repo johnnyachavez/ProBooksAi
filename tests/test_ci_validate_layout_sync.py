@@ -207,6 +207,20 @@ def test_roadmap_snapshot_why_not_one_db_points_at_issue_21_inventory() -> None:
     assert "**SQLite issue #21** bullet" in chunk
 
 
+def test_roadmap_snapshot_sqlite_backup_regression_cites_backup_tests() -> None:
+    """ROADMAP implementation snapshot should cite backup tests and the probooks.backup contract."""
+    text = DOCS_ROADMAP_MD.read_text(encoding="utf-8")
+    start = text.index("**SQLite online backup (regression):**")
+    end = text.index("**Why not one `.db` yet:**", start)
+    chunk = text[start:end]
+    assert "probooks/backup.py" in chunk
+    assert "tests/test_backup.py" in chunk
+    assert "tests/test_probooks_backup_contract.py" in chunk
+    assert "](CONTRIBUTING.md#continuous-integration)" in chunk
+    assert "Module contracts" in chunk
+    assert "#28" in chunk
+
+
 def test_readme_desktop_section_documents_theme_and_qt_font_filter() -> None:
     """README Desktop section stays aligned with Fusion theme + Windows Qt stderr filter."""
     readme = README_MD.read_text(encoding="utf-8")
@@ -746,6 +760,7 @@ def test_pr_template_lists_readme_default_database_paths_checklist() -> None:
     for name in (
         "test_readme_default_database_paths_notes_two_schemas_and_roadmap",
         "test_roadmap_snapshot_why_not_one_db_points_at_issue_21_inventory",
+        "test_roadmap_snapshot_sqlite_backup_regression_cites_backup_tests",
         "test_readme_docs_bar_links_default_database_paths_anchor",
         "test_review_html_links_readme_web_shell_and_desktop_anchors",
         "test_review_html_readme_default_database_paths_documentation_card",
@@ -788,6 +803,7 @@ def test_contributing_ci_documents_readme_default_database_paths_bullet() -> Non
     for name in (
         "test_readme_default_database_paths_notes_two_schemas_and_roadmap",
         "test_roadmap_snapshot_why_not_one_db_points_at_issue_21_inventory",
+        "test_roadmap_snapshot_sqlite_backup_regression_cites_backup_tests",
         "test_readme_docs_bar_links_default_database_paths_anchor",
         "test_review_html_links_readme_web_shell_and_desktop_anchors",
         "test_review_html_readme_default_database_paths_documentation_card",
@@ -1326,6 +1342,7 @@ def test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests() -> Non
         "test_hub_docs_related_docs_link_readme_python_cli_segment",
         "test_readme_default_database_paths_notes_two_schemas_and_roadmap",
         "test_roadmap_snapshot_why_not_one_db_points_at_issue_21_inventory",
+        "test_roadmap_snapshot_sqlite_backup_regression_cites_backup_tests",
         "test_readme_docs_bar_links_default_database_paths_anchor",
         "test_review_html_readme_default_database_paths_documentation_card",
         "test_review_html_links_readme_web_shell_and_desktop_anchors",
@@ -1380,6 +1397,7 @@ def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
     assert "tests/test_issue_21_schema_inventory.py" in text
     assert "test_readme_default_database_paths_notes_two_schemas_and_roadmap" in text
     assert "test_roadmap_snapshot_why_not_one_db_points_at_issue_21_inventory" in text
+    assert "test_roadmap_snapshot_sqlite_backup_regression_cites_backup_tests" in text
     assert "test_readme_docs_bar_links_default_database_paths_anchor" in text
     assert "README.md#default-database-paths-windows" in text
     for name in (
@@ -1446,6 +1464,7 @@ def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> Non
     assert "test_hub_docs_related_docs_link_readme_python_cli_segment" in chunk
     assert "test_readme_default_database_paths_notes_two_schemas_and_roadmap" in chunk
     assert "test_roadmap_snapshot_why_not_one_db_points_at_issue_21_inventory" in chunk
+    assert "test_roadmap_snapshot_sqlite_backup_regression_cites_backup_tests" in chunk
     assert "test_readme_docs_bar_links_default_database_paths_anchor" in chunk
     assert "Why not one `.db` yet" in chunk
     assert "test_review_html_readme_default_database_paths_documentation_card" in chunk
