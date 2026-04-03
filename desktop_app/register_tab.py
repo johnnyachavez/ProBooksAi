@@ -6,8 +6,8 @@ debit/credit columns, running balance, memo and COA inline edits, sortable colum
 (txn id on Date ``UserRole``; balance stays chronological), and footer totals.
 Payee column uses a two-line layout (description, then COA or memo sub-line).
 Number column shows reference on the first line and a short type tag (DEP / PMT /
-XFER / TXN) on the second. **Clr** shows **R** when the CSV import batch for that
-row is marked reconciled in Bank Import. Rows without a COA category are highlighted.
+XFER / TXN) on the second. **Clr** shows **C** when the row is marked cleared on the register, else **R** when the
+CSV import batch is marked reconciled in Bank Import. Rows without a COA category are highlighted.
 """
 
 from __future__ import annotations
@@ -252,6 +252,8 @@ class RegisterTab(QWidget):
         tools.addWidget(QPushButton("Transfer to…", clicked=self._transfer_dialog))
         tools.addWidget(QPushButton("Splits…", clicked=self._splits_dialog))
         tools.addWidget(QPushButton("Link payment…", clicked=self._link_payment_dialog))
+        tools.addWidget(QPushButton("Mark cleared", clicked=self._mark_cleared))
+        tools.addWidget(QPushButton("Clear cleared", clicked=self._clear_cleared))
         tools.addStretch()
         layout.addLayout(tools)
 
@@ -293,7 +295,7 @@ class RegisterTab(QWidget):
         tip = QLabel(
             "Deposits show in Debit; payments in Credit (cash-basis register). "
             "Payee shows description then COA or memo; Number shows reference then type (DEP / PMT / XFER). "
-            "Clr shows R when the CSV batch was marked reconciled in Bank Import. "
+            "Clr shows C when marked cleared here, else R when the CSV batch was reconciled in Bank Import. "
             "Assign a COA account to clear the highlight. "
             "Starred (★) items at the top of the COA list are hints from your rules "
             "and, when OPENAI_API_KEY is set, optional AI picks. "
@@ -398,6 +400,15 @@ class RegisterTab(QWidget):
         menu.addAction(
             "Open attachment…",
             partial(self._open_register_attachment, int(tid)),
+        )
+        tid_int = int(tid)
+        menu.addAction(
+            "Mark cleared",
+            partial(self._set_cleared_on_ids, [tid_int], 1),
+        )
+        menu.addAction(
+            "Clear cleared",
+            partial(self._set_cleared_on_ids, [tid_int], 0),
         )
         menu.addAction("Copy row", partial(copy_table_row_as_tsv, self._table, row))
         act_history = menu.addAction("View change history…")
@@ -536,16 +547,26 @@ class RegisterTab(QWidget):
             except (TypeError, ValueError):
                 b_key = None
             batch_rec = b_key is not None and rec_map.get(b_key, False)
-            clr_item = plain_display_table_item("R" if batch_rec else "")
+            txn_cleared = int(txn.get("cleared") or 0) == 1
+            if txn_cleared:
+                clr_disp = "C"
+                clr_tip = "Marked cleared on this register (per transaction)."
+                if batch_rec:
+                    clr_tip += " Import batch is also marked reconciled."
+            elif batch_rec:
+                clr_disp = "R"
+                clr_tip = "Statement batch reconciled (Bank Import)."
+            else:
+                clr_disp = ""
+                clr_tip = (
+                    "Not cleared. Use Mark cleared, or reconcile the CSV batch in Bank Import."
+                )
+            clr_item = plain_display_table_item(clr_disp)
             clr_item.setFlags(clr_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             clr_item.setTextAlignment(
                 Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop
             )
-            clr_item.setToolTip(
-                "Statement batch reconciled (Bank Import)."
-                if batch_rec
-                else "Not in a reconciled statement batch."
-            )
+            clr_item.setToolTip(clr_tip)
             if missing_coa:
                 clr_item.setBackground(brush)
 
@@ -744,6 +765,7 @@ class RegisterTab(QWidget):
             "Amount",
             "COA",
             "Posted",
+            "Register_cleared",
             "Batch_reconciled",
             "Match",
         ]
@@ -768,6 +790,7 @@ class RegisterTab(QWidget):
                 batch_rec = (
                     b_key is not None and rec_map.get(b_key, False)
                 )
+                reg_cleared = int(t.get("cleared") or 0) == 1
                 w.writerow(
                     [
                         t.get("txn_date", ""),
@@ -777,6 +800,7 @@ class RegisterTab(QWidget):
                         t.get("amount", ""),
                         t.get("coa_account", ""),
                         int(t["is_posted"] or 0) if "is_posted" in t else 0,
+                        "yes" if reg_cleared else "no",
                         "yes" if batch_rec else "no",
                         match_txt,
                     ]
@@ -846,6 +870,34 @@ class RegisterTab(QWidget):
                     self, "Cannot update", escape_ampersand_for_qt(str(exc))
                 )
         self._reload_current()
+
+    def _set_cleared_on_ids(self, ids: list, value: int) -> None:
+        for tid in ids:
+            try:
+                self._db.update_transaction(int(tid), cleared=value)
+            except ValueError as exc:
+                QMessageBox.warning(
+                    self, "Cannot update", escape_ampersand_for_qt(str(exc))
+                )
+        self._reload_current()
+
+    def _mark_cleared(self):
+        ids = self._selected_txn_ids()
+        if not ids:
+            QMessageBox.information(
+                self, "Cleared", "Select one or more rows."
+            )
+            return
+        self._set_cleared_on_ids(ids, 1)
+
+    def _clear_cleared(self):
+        ids = self._selected_txn_ids()
+        if not ids:
+            QMessageBox.information(
+                self, "Cleared", "Select one or more rows."
+            )
+            return
+        self._set_cleared_on_ids(ids, 0)
 
     def _clear_needs_receipt(self):
         for tid in self._selected_txn_ids():

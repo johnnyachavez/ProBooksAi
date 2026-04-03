@@ -462,6 +462,41 @@ class TestUpdateTransaction:
         with pytest.raises(ValueError, match="No transaction"):
             db.update_transaction(99999, memo="x")
 
+    def test_cleared_column(self, db):
+        tid = self._one_txn(db)
+        assert int(db.get_transaction(tid)["cleared"] or 0) == 0
+        db.update_transaction(tid, cleared=1)
+        assert int(db.get_transaction(tid)["cleared"] or 0) == 1
+        db.update_transaction(tid, cleared=0)
+        assert int(db.get_transaction(tid)["cleared"] or 0) == 0
+
+    def test_posted_transaction_allows_cleared_only(self, db):
+        from probooksai.gl import GLDatabase
+
+        aid = db.add_bank_account("CHK", gl_display_account="1010 – Cash")
+        bid = db.create_batch(aid)
+        db.import_transactions(
+            bid,
+            aid,
+            [
+                {
+                    "txn_date": "2024-01-01",
+                    "description": "Sale",
+                    "amount": 10.0,
+                    "ref_number": "",
+                }
+            ],
+        )
+        tid = db.list_transactions(aid)[0]["id"]
+        db.update_transaction(tid, coa_account="4000 – Revenue")
+        gdb = GLDatabase(db._conn)
+        gdb.post_transaction(tid, "1010 – Cash", "4000 – Revenue")
+        assert int(db.get_transaction(tid)["is_posted"] or 0) == 1
+        with pytest.raises(ValueError, match="posted"):
+            db.update_transaction(tid, memo="nope")
+        db.update_transaction(tid, cleared=1)
+        assert int(db.get_transaction(tid)["cleared"] or 0) == 1
+
 
 class TestImportProgressAndCancel:
     def test_cancel_stops_import(self, db):

@@ -8,7 +8,8 @@ Schema
   bank_accounts        – per-account configuration (name, number, bank, type)
   bank_import_batches  – one row per imported CSV file, with statement dates
                          and balances for reconciliation
-  bank_transactions    – individual transaction rows (outflows negative)
+  bank_transactions    – individual transaction rows (outflows negative); optional
+                         per-row ``cleared`` flag for the desktop register
 
 Reconciliation
 --------------
@@ -51,7 +52,7 @@ ACCOUNT_TYPES = ("checking", "savings", "credit_card", "other")
 # ---------------------------------------------------------------------------
 
 # Bump this number whenever you add a migration below.
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 _DDL_SCHEMA_VERSION = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -128,6 +129,10 @@ ALTER TABLE bank_accounts ADD COLUMN imp_csv_ref_col TEXT NOT NULL DEFAULT '';
 ALTER TABLE bank_transactions ADD COLUMN attachment_path TEXT NOT NULL DEFAULT '';
 ALTER TABLE bank_transactions ADD COLUMN needs_receipt INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE bank_transactions ADD COLUMN transfer_to_bank_account_id INTEGER REFERENCES bank_accounts(id) ON DELETE SET NULL;
+"""),
+    # v6 – register “cleared” tick (per transaction; independent of batch reconciliation)
+    (6, """
+ALTER TABLE bank_transactions ADD COLUMN cleared INTEGER NOT NULL DEFAULT 0;
 """),
 ]
 
@@ -830,6 +835,7 @@ class BankDatabase:
         attachment_path: Any = ...,
         needs_receipt: Any = ...,
         transfer_to_bank_account_id: Any = ...,
+        cleared: Any = ...,
     ) -> None:
         """
         Persist inline edits on a bank transaction.
@@ -837,18 +843,30 @@ class BankDatabase:
         Pass ``None`` to leave *memo* / *ref_number* / *coa_account* unchanged;
         pass ``""`` to clear *memo* or *coa_account*.
 
-        For *attachment_path*, *needs_receipt* (0/1), and *transfer_to_bank_account_id*,
-        pass the special default (ellipsis ``...``) to leave unchanged; pass a value
-        (including ``None`` for SQL NULL on transfer) to update.
+        For *attachment_path*, *needs_receipt* (0/1), *cleared* (0/1), and
+        *transfer_to_bank_account_id*, pass the special default (ellipsis ``...``)
+        to leave unchanged; pass a value (including ``None`` for SQL NULL on transfer)
+        to update.
 
-        Posted rows (when ``is_posted`` exists and is 1) cannot be modified.
+        Posted rows (when ``is_posted`` exists and is 1) cannot be modified **except**
+        for the *cleared* flag (register checkmark independent of GL posting).
         """
         row = self.get_transaction(txn_id)
         if row is None:
             raise ValueError(f"No transaction with id={txn_id}")
         keys = row.keys()
-        if "is_posted" in keys and int(row["is_posted"] or 0) == 1:
-            raise ValueError("Cannot modify a posted transaction")
+        posted = "is_posted" in keys and int(row["is_posted"] or 0) == 1
+        if posted:
+            disallowed = (
+                memo is not None
+                or ref_number is not None
+                or coa_account is not None
+                or attachment_path is not ...
+                or needs_receipt is not ...
+                or transfer_to_bank_account_id is not ...
+            )
+            if disallowed:
+                raise ValueError("Cannot modify a posted transaction except cleared flag")
 
         before = dict(row)
 
@@ -872,6 +890,9 @@ class BankDatabase:
         if transfer_to_bank_account_id is not ...:
             updates.append("transfer_to_bank_account_id = ?")
             params.append(transfer_to_bank_account_id)
+        if cleared is not ...:
+            updates.append("cleared = ?")
+            params.append(1 if int(cleared or 0) else 0)
 
         if not updates:
             return
@@ -910,6 +931,8 @@ class BankDatabase:
                     before.get("transfer_to_bank_account_id"),
                     transfer_to_bank_account_id,
                 )
+            if cleared is not ...:
+                _aud("cleared", before.get("cleared"), int(cleared or 0))
         except Exception:
             pass
 

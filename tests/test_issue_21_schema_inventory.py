@@ -124,6 +124,7 @@ _DESKTOP_BANK_TRANSACTIONS_COLUMNS = frozenset(
         "attachment_path",
         "needs_receipt",
         "transfer_to_bank_account_id",
+        "cleared",
     }
 )
 
