@@ -33,6 +33,32 @@ function Invoke-GhJson([string[]] $GhArgs) {
   }
 }
 
+function Test-GhAuthenticated {
+  $prev = $ErrorActionPreference
+  $ErrorActionPreference = "SilentlyContinue"
+  try {
+    $null = & gh auth status 2>$null
+    return ($LASTEXITCODE -eq 0)
+  } finally {
+    $ErrorActionPreference = $prev
+  }
+}
+
+function Get-OriginNameWithOwner {
+  param([string] $RepoRoot)
+  Push-Location $RepoRoot
+  try {
+    $url = git remote get-url origin 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $url) { return $null }
+    if ($url -match 'github\.com[:/]([^/]+)/([^/.]+)(?:\.git)?$') {
+      return "$($Matches[1])/$($Matches[2])"
+    }
+  } finally {
+    Pop-Location
+  }
+  return $null
+}
+
 $ErrorActionPreference = "Stop"
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $outDir = Join-Path $root "integrations"
@@ -52,36 +78,42 @@ if (-not $gh) {
 
 $issues = @()
 $pullRequests = @()
+$originOwnerRepo = Get-OriginNameWithOwner -RepoRoot $root.Path
 
 if ($gh) {
-  Push-Location $root
-  try {
-    $repoStr = Invoke-GhJson @("repo", "view", "--json", "nameWithOwner,url")
-    if ($repoStr) {
-      try { $repoInfo = $repoStr | ConvertFrom-Json } catch { $warnings.Add("Could not parse gh repo view JSON.") }
-    } else {
-      $warnings.Add("gh repo view failed. Use a git repo with a GitHub remote, or run: gh repo set-default")
-    }
+  if (-not (Test-GhAuthenticated)) {
+    $warnings.Add("GitHub CLI is not authenticated or the token is invalid. Run: gh auth login -h github.com")
+  } else {
+    Push-Location $root
+    try {
+      $repoStr = Invoke-GhJson @("repo", "view", "--json", "nameWithOwner,url")
+      if ($repoStr) {
+        try { $repoInfo = $repoStr | ConvertFrom-Json } catch { $warnings.Add("Could not parse gh repo view JSON.") }
+      } else {
+        $hint = if ($originOwnerRepo) { " Try: gh repo set-default $originOwnerRepo" } else { "" }
+        $warnings.Add("gh repo view failed.$hint")
+      }
 
-    $state = if ($IncludeClosed) { "all" } else { "open" }
-    $limit = if ($IncludeClosed) { 80 } else { 100 }
+      $state = if ($IncludeClosed) { "all" } else { "open" }
+      $limit = if ($IncludeClosed) { 80 } else { 100 }
 
-    $issuesRaw = Invoke-GhJson @("issue", "list", "--state", $state, "--limit", "$limit", "--json", "number,title,url,labels,state,author,createdAt,updatedAt")
-    if ($issuesRaw) {
-      try { $issues = $issuesRaw | ConvertFrom-Json } catch { $warnings.Add("Could not parse gh issue list JSON.") }
-    } else {
-      $warnings.Add("gh issue list failed (is this directory a GitHub repo?).")
-    }
+      $issuesRaw = Invoke-GhJson @("issue", "list", "--state", $state, "--limit", "$limit", "--json", "number,title,url,labels,state,author,createdAt,updatedAt")
+      if ($issuesRaw) {
+        try { $issues = $issuesRaw | ConvertFrom-Json } catch { $warnings.Add("Could not parse gh issue list JSON.") }
+      } elseif ($repoInfo) {
+        $warnings.Add("gh issue list failed unexpectedly.")
+      }
 
-    $prState = if ($IncludeClosed) { "all" } else { "open" }
-    $prsRaw = Invoke-GhJson @("pr", "list", "--state", $prState, "--limit", "$limit", "--json", "number,title,url,state,author,headRefName,baseRefName,createdAt,updatedAt,isDraft")
-    if ($prsRaw) {
-      try { $pullRequests = $prsRaw | ConvertFrom-Json } catch { $warnings.Add("Could not parse gh pr list JSON.") }
-    } else {
-      $warnings.Add("gh pr list failed (is this directory a GitHub repo?).")
+      $prState = if ($IncludeClosed) { "all" } else { "open" }
+      $prsRaw = Invoke-GhJson @("pr", "list", "--state", $prState, "--limit", "$limit", "--json", "number,title,url,state,author,headRefName,baseRefName,createdAt,updatedAt,isDraft")
+      if ($prsRaw) {
+        try { $pullRequests = $prsRaw | ConvertFrom-Json } catch { $warnings.Add("Could not parse gh pr list JSON.") }
+      } elseif ($repoInfo) {
+        $warnings.Add("gh pr list failed unexpectedly.")
+      }
+    } finally {
+      Pop-Location
     }
-  } finally {
-    Pop-Location
   }
 }
 
