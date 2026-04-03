@@ -90,4 +90,4 @@ The **`.[ci]`** extra (see `pyproject.toml`) matches the GitHub Actions **python
 
 ## Contributing
 
-Conventions, labels, CI, the **contract-test** table, and shared pytest fixtures (**`tests/conftest.py`**): [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) — [Continuous integration](docs/CONTRIBUTING.md#continuous-integration).
+Conventions, labels, CI, the **contract-test** table, and shared pytest fixtures (**`tests/conftest.py`**): [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) — [Continuous integration](docs/CONTRIBUTING.md#continuous-integration). **Layout** checks (**`ci_validate_layout.sh`** / **`ci_validate_layout.ps1`**, same as CI **validate**) are described in **Scripts** (`scripts/`) above.
