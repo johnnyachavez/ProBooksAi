@@ -171,6 +171,13 @@ def test_readme_python_cli_section_mentions_backup_restore_online_api() -> None:
         "File → Backup",
         "File → Restore",
         "**`--db`**",
+        "tests/test_backup.py",
+        "tests/test_probooks_backup_contract.py",
+        "docs/ROADMAP.md#implementation-snapshot-repository-2026-04",
+        "SQLite online backup (regression)",
+        "docs/CONTRIBUTING.md#continuous-integration",
+        "**Module contracts**",
+        "**#28**",
     ):
         assert needle in section, f"README Python CLI section should mention {needle!r}"
 

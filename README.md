@@ -28,6 +28,8 @@ probooks restore --input ./backups/demo-backup.db --yes
 
 **Backup / restore** use the SQLite online backup API via **`probooks.backup`** (the CLI commands above and the desktop app **File → Backup** / **File → Restore**), so you can back up the default **`--db`** even when another program still has that file open.
 
+**Regression tests:** **`tests/test_backup.py`** and **`tests/test_probooks_backup_contract.py`**; [Implementation snapshot](docs/ROADMAP.md#implementation-snapshot-repository-2026-04) (**SQLite online backup (regression)**) and [Continuous integration](docs/CONTRIBUTING.md#continuous-integration) (**Module contracts**, **#28**).
+
 ### CSV import (issues #31, #33, #34)
 
 Prepare a CSV with at least **date** and **amount** columns (0-based indices). A small demo file lives at **`examples/sample_bank.csv`** (CI asserts it is present; **pytest** imports it with the same column map as the example below). Example:
