@@ -363,13 +363,35 @@ def test_static_html_links_readme_excel_workbook_section() -> None:
         assert needle in text, f"{path.name} should include {needle!r}"
 
 
+def test_static_html_links_readme_python_cli_section() -> None:
+    """Static shell pages should deep-link README ## Python CLI where we surface backup/CLI hints."""
+    needle = 'href="README.md#python-cli"'
+    for path in (INDEX_HTML, INVOICE_HTML, REVIEW_HTML):
+        text = path.read_text(encoding="utf-8")
+        assert needle in text, f"{path.name} should include {needle!r}"
+
+
 def test_review_html_links_readme_web_shell_and_desktop_anchors() -> None:
-    """review.html Documentation cards should deep-link README Web shell, Desktop, default DB paths, and Excel template."""
+    """review.html Documentation cards should deep-link README Web shell, Python CLI, Desktop, default DB, Excel."""
     text = REVIEW_HTML.read_text(encoding="utf-8")
     assert 'href="README.md#web-shell-review"' in text
+    assert 'href="README.md#python-cli"' in text
     assert 'href="README.md#desktop-app-pyside6"' in text
     assert 'href="README.md#default-database-paths-windows"' in text
     assert 'href="README.md#excel-workbook-template-openpyxl"' in text
+
+
+def test_review_html_readme_python_cli_documentation_card_mentions_backup() -> None:
+    """review.html README — Python CLI Documentation card should mention probooks.backup + SQLite online backup."""
+    text = REVIEW_HTML.read_text(encoding="utf-8")
+    marker = '<a class="card" href="README.md#python-cli">'
+    start = text.index(marker)
+    end = text.index("</a>", start)
+    card = text[start:end]
+    assert "README.md#python-cli" in card
+    assert "<strong>README — Python CLI</strong>" in card
+    assert "probooks.backup" in card
+    assert "SQLite online backup" in card
 
 
 def test_review_html_readme_default_database_paths_documentation_card() -> None:
@@ -847,6 +869,9 @@ def test_contributing_ci_documents_readme_python_cli_anchor_bullet() -> None:
         "test_hub_docs_related_docs_link_readme_python_cli_segment",
         "test_contributing_ci_documents_hub_readme_python_cli_segment",
         "test_pr_template_lists_hub_docs_readme_python_cli_segment_checklist",
+        "test_review_html_links_readme_web_shell_and_desktop_anchors",
+        "test_review_html_readme_python_cli_documentation_card_mentions_backup",
+        "test_static_html_links_readme_python_cli_section",
     ):
         assert name in bullet, f"CONTRIBUTING Python CLI anchor bullet should mention {name!r}"
 
@@ -1304,6 +1329,8 @@ def test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests() -> Non
         "test_readme_docs_bar_links_default_database_paths_anchor",
         "test_review_html_readme_default_database_paths_documentation_card",
         "test_review_html_links_readme_web_shell_and_desktop_anchors",
+        "test_review_html_readme_python_cli_documentation_card_mentions_backup",
+        "test_static_html_links_readme_python_cli_section",
         "test_review_html_python_desktop_section_mentions_help_epilog",
         "test_static_shell_page_sub_mentions_help_epilog",
         "test_hub_docs_link_roadmap_supporting_cross_cutting_issues",
@@ -1328,6 +1355,10 @@ def test_pr_template_lists_readme_python_cli_anchor_checklist() -> None:
         "test_hub_docs_related_docs_link_readme_python_cli_segment",
         "test_contributing_ci_documents_hub_readme_python_cli_segment",
         "test_pr_template_lists_hub_docs_readme_python_cli_segment_checklist",
+        "test_review_html_links_readme_web_shell_and_desktop_anchors",
+        "test_review_html_readme_python_cli_documentation_card_mentions_backup",
+        "test_static_html_links_readme_python_cli_section",
+        "test_static_shell_page_sub_mentions_help_epilog",
     ):
         assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
 
@@ -1354,6 +1385,8 @@ def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
     for name in (
         "test_review_html_readme_default_database_paths_documentation_card",
         "test_review_html_links_readme_web_shell_and_desktop_anchors",
+        "test_review_html_readme_python_cli_documentation_card_mentions_backup",
+        "test_static_html_links_readme_python_cli_section",
         "test_review_html_python_desktop_section_mentions_help_epilog",
         "test_static_shell_page_sub_mentions_help_epilog",
         "test_ci_validate_layout_sh_require_paths_exist",
@@ -1417,6 +1450,8 @@ def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> Non
     assert "Why not one `.db` yet" in chunk
     assert "test_review_html_readme_default_database_paths_documentation_card" in chunk
     assert "test_review_html_links_readme_web_shell_and_desktop_anchors" in chunk
+    assert "test_review_html_readme_python_cli_documentation_card_mentions_backup" in chunk
+    assert "test_static_html_links_readme_python_cli_section" in chunk
     assert "test_review_html_python_desktop_section_mentions_help_epilog" in chunk
     assert "test_static_shell_page_sub_mentions_help_epilog" in chunk
     assert "test_github_issue_templates_reference_core_docs" in chunk
