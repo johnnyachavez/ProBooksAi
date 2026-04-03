@@ -402,6 +402,75 @@ def test_restore_database_unlinks_temp_file_when_backup_raises(tmp_path: Path) -
     assert not list(tmp_path.glob(".probooks-restore-*.tmp"))
 
 
+def test_backup_database_unlinks_temp_when_os_replace_fails(tmp_path: Path) -> None:
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    src = tmp_path / "live.db"
+    conn = connect(src)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    dest = tmp_path / "out.db"
+    with patch("probooks.backup.os.replace", side_effect=OSError("disk full")):
+        with pytest.raises(OSError, match="disk full"):
+            backup_database(src, dest)
+    assert not dest.exists()
+    assert not list(tmp_path.glob(".probooks-backup-*.tmp"))
+
+
+def test_restore_database_unlinks_temp_when_os_replace_fails(tmp_path: Path) -> None:
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    live = tmp_path / "live.db"
+    conn = connect(live)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    bak = tmp_path / "bak.db"
+    backup_database(live, bak)
+    target = tmp_path / "target.db"
+    assert not target.exists()
+    with patch("probooks.backup.os.replace", side_effect=OSError("replace denied")):
+        with pytest.raises(OSError, match="replace denied"):
+            restore_database(bak, target, overwrite=True)
+    assert not target.exists()
+    assert not list(tmp_path.glob(".probooks-restore-*.tmp"))
+
+
+def test_cmd_backup_returns_one_when_backup_api_raises(tmp_path: Path) -> None:
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    src = tmp_path / "live.db"
+    conn = connect(src)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    out = tmp_path / "out.db"
+    err = io.StringIO()
+    with patch(
+        "probooks.backup._backup_sqlite_file_to_path",
+        side_effect=sqlite3.OperationalError("backup api"),
+    ):
+        with patch.object(sys, "stderr", err):
+            assert cmd_backup(src, out) == 1
+    assert not out.exists()
+    assert "backup api" in err.getvalue()
+
+
+def test_cmd_restore_returns_one_when_restore_api_raises(tmp_path: Path) -> None:
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    live = tmp_path / "live.db"
+    conn = connect(live)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    bak = tmp_path / "bak.db"
+    backup_database(live, bak)
+    target = tmp_path / "t.db"
+    err = io.StringIO()
+    with patch(
+        "probooks.backup._backup_sqlite_file_to_path",
+        side_effect=sqlite3.OperationalError("restore api"),
+    ):
+        with patch.object(sys, "stderr", err):
+            assert cmd_restore(target, bak, yes=True) == 1
+    assert not target.exists()
+    assert "restore api" in err.getvalue()
+
+
 def test_cli_restore_rejects_non_sqlite_backup(tmp_path: Path) -> None:
     bad = tmp_path / "bak.db"
     bad.write_text("not sqlite", encoding="utf-8")
