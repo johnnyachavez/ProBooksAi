@@ -1,4 +1,4 @@
-"""SQLite table inventory for issue #21 (single file + merged migrations).
+"""SQLite DDL inventory (user table names) for issue #21 (single file + merged migrations).
 
 The ``probooks`` CLI applies SQL files under ``probooks/migrations/`` (ledger:
 ``schema_migrations``). The desktop :class:`~probooksai.bank_import.BankDatabase`
