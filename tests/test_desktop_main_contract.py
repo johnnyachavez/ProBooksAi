@@ -29,6 +29,13 @@ def test_desktop_main_cli_and_qt_app_strings_use_probooks_plus_ai() -> None:
     assert 'app.setOrganizationName("ProBooks+ai")' in text
 
 
+def test_register_tab_persists_header_state_via_qsettings() -> None:
+    """Register saves/restores horizontal header state like other desktop grids."""
+    text = (_MAIN.parent / "register_tab.py").read_text(encoding="utf-8")
+    assert "saveState()" in text and "restoreState" in text
+    assert "register/table_header_state_" in text
+
+
 def test_register_table_stylesheet_defines_cell_grid() -> None:
     """Bank register uses per-item borders; native QTable grid is often invisible under QSS."""
     from desktop_app.theme import register_table_style_sheet

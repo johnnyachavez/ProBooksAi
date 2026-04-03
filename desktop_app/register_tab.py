@@ -8,8 +8,10 @@ Payee column uses a two-line layout (description, then COA or memo sub-line).
 Number column shows reference on the first line and a short type tag (DEP / PMT /
 XFER / TXN) on the second. **Clr** shows **C** when the row is marked cleared on the register, else **R** when the
 CSV import batch is marked reconciled in Bank Import. Rows without a COA category are highlighted.
-The filter choice and last selected bank account persist in ``QSettings``, scoped by
-company SQLite path (same app profile as the main window).
+The filter choice, last selected bank account, and register table **column header widths**
+persist in ``QSettings``, scoped by company SQLite path (same app profile as the main window).
+**Ctrl+Shift+C** / **Ctrl+Shift+U** mark cleared / clear cleared when the Register tab (or its
+controls) has keyboard focus.
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import Qt, QSettings
-from PySide6.QtGui import QColor, QBrush
+from PySide6.QtGui import QBrush, QColor, QHideEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -287,6 +289,13 @@ class RegisterTab(QWidget):
         self._table.customContextMenuRequested.connect(self._on_register_context_menu)
         layout.addWidget(self._table)
 
+        sc_cleared = QShortcut(QKeySequence("Ctrl+Shift+C"), self)
+        sc_cleared.setContext(Qt.ShortcutContext.WidgetWithChildrenFocus)
+        sc_cleared.activated.connect(self._mark_cleared)
+        sc_uncleared = QShortcut(QKeySequence("Ctrl+Shift+U"), self)
+        sc_uncleared.setContext(Qt.ShortcutContext.WidgetWithChildrenFocus)
+        sc_uncleared.activated.connect(self._clear_cleared)
+
         foot = QHBoxLayout()
         self._lbl_debits = QLabel("Total debits: —")
         self._lbl_credits = QLabel("Total credits: —")
@@ -310,7 +319,8 @@ class RegisterTab(QWidget):
             "Starred (★) items at the top of the COA list are hints from your rules "
             "and, when OPENAI_API_KEY is set, optional AI picks. "
             "Balance is the running total in date order (not recalculated for other sorts). "
-            "Filter and last bank account choice are remembered per company file for the next session."
+            "Filter, last bank account, and column widths are remembered per company file for the next session. "
+            "With focus on this tab: Ctrl+Shift+C marks cleared, Ctrl+Shift+U clears cleared."
         )
         tip.setWordWrap(True)
         tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
@@ -319,6 +329,13 @@ class RegisterTab(QWidget):
     def showEvent(self, event):
         super().showEvent(event)
         self._refresh_account_combo()
+        raw = QSettings().value(self._register_table_header_state_key())
+        if raw:
+            self._table.horizontalHeader().restoreState(raw)
+
+    def hideEvent(self, event: QHideEvent) -> None:
+        self._persist_register_table_header_state()
+        super().hideEvent(event)
 
     def refresh_coa_choices(self):
         """Call when the chart of accounts changes (same DB connection)."""
@@ -338,6 +355,15 @@ class RegisterTab(QWidget):
 
     def _register_bank_account_settings_key(self) -> str:
         return f"register/last_bank_account_id_{self._register_prefs_id()}"
+
+    def _register_table_header_state_key(self) -> str:
+        return f"register/table_header_state_{self._register_prefs_id()}"
+
+    def _persist_register_table_header_state(self) -> None:
+        QSettings().setValue(
+            self._register_table_header_state_key(),
+            self._table.horizontalHeader().saveState(),
+        )
 
     def _restore_register_filter_from_settings(self) -> None:
         raw = QSettings().value(self._register_filter_settings_key(), "all")
