@@ -35,3 +35,7 @@ def test_repo_paths_pin_essential_repo_files() -> None:
     assert repo_paths.CI_VALIDATE_LAYOUT_PS1.is_file()
     assert repo_paths.SYNC_WORKSPACE_PS1.is_file()
     assert repo_paths.INTEGRATIONS_WORK_CONTEXT_EXAMPLE.is_file()
+    assert repo_paths.INDEX_HTML.is_file()
+    assert repo_paths.INVOICE_HTML.is_file()
+    assert repo_paths.REVIEW_HTML.is_file()
+    assert repo_paths.DOCS_ROADMAP_MD.is_file()

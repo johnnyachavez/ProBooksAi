@@ -18,6 +18,8 @@ from tests.repo_paths import (
     GITHUB_PULL_REQUEST_TEMPLATE_MD,
     GITHUB_WORKFLOW_CI_YML,
     GITHUB_WORKFLOW_UI_SCREENSHOT_YML,
+    INDEX_HTML,
+    INVOICE_HTML,
     README_MD,
     REVIEW_HTML,
     REPO_ROOT,
@@ -292,17 +294,17 @@ def test_hub_docs_related_docs_link_readme_default_database_paths() -> None:
 def test_static_html_links_readme_desktop_section() -> None:
     """Static shell pages that mention the desktop app should deep-link README Desktop."""
     needle = 'href="README.md#desktop-app-pyside6"'
-    for name in ("index.html", "invoice.html", "review.html"):
-        text = (REPO_ROOT / name).read_text(encoding="utf-8")
-        assert needle in text, f"{name} should include {needle!r}"
+    for path in (INDEX_HTML, INVOICE_HTML, REVIEW_HTML):
+        text = path.read_text(encoding="utf-8")
+        assert needle in text, f"{path.name} should include {needle!r}"
 
 
 def test_static_html_links_readme_excel_workbook_section() -> None:
     """Static shell pages should deep-link README Excel workbook template where we surface it."""
     needle = 'href="README.md#excel-workbook-template-openpyxl"'
-    for name in ("index.html", "invoice.html", "review.html"):
-        text = (REPO_ROOT / name).read_text(encoding="utf-8")
-        assert needle in text, f"{name} should include {needle!r}"
+    for path in (INDEX_HTML, INVOICE_HTML, REVIEW_HTML):
+        text = path.read_text(encoding="utf-8")
+        assert needle in text, f"{path.name} should include {needle!r}"
 
 
 def test_review_html_links_readme_web_shell_and_desktop_anchors() -> None:
@@ -355,23 +357,25 @@ def test_review_html_python_desktop_section_mentions_help_epilog() -> None:
 
 def test_static_shell_page_sub_mentions_help_epilog() -> None:
     """index.html and invoice.html README hints mention help_epilog, --help, CI, and Running Tests (work-context)."""
-    for name in ("index.html", "invoice.html"):
-        text = (REPO_ROOT / name).read_text(encoding="utf-8")
-        assert "probooks/help_epilog.py" in text, f"{name} should mention probooks/help_epilog.py"
-        assert "--help" in text, f"{name} should mention --help"
+    for path in (INDEX_HTML, INVOICE_HTML):
+        text = path.read_text(encoding="utf-8")
+        assert "probooks/help_epilog.py" in text, f"{path.name} should mention probooks/help_epilog.py"
+        assert "--help" in text, f"{path.name} should mention --help"
         assert 'href="README.md#default-database-paths-windows"' in text, (
-            f"{name} should deep-link README default database paths"
+            f"{path.name} should deep-link README default database paths"
         )
         assert "tests/test_issue_21_schema_inventory.py" in text, (
-            f"{name} should mention DDL inventory tests (issue #21)"
+            f"{path.name} should mention DDL inventory tests (issue #21)"
         )
         assert 'href="docs/CONTRIBUTING.md#continuous-integration"' in text, (
-            f"{name} should link CONTRIBUTING CI (SQLite issue #21 bullet)"
+            f"{path.name} should link CONTRIBUTING CI (SQLite issue #21 bullet)"
         )
         assert 'href="docs/CONTRIBUTING.md#running-tests"' in text, (
-            f"{name} should link CONTRIBUTING Running Tests (work-context / sync-workspace)"
+            f"{path.name} should link CONTRIBUTING Running Tests (work-context / sync-workspace)"
         )
-        assert "sync-workspace.ps1" in text, f"{name} should mention sync-workspace.ps1 in Running Tests hint"
+        assert "sync-workspace.ps1" in text, (
+            f"{path.name} should mention sync-workspace.ps1 in Running Tests hint"
+        )
 
 
 def test_review_html_links_contributing_doc_anchors() -> None:

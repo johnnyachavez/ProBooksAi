@@ -15,6 +15,8 @@ REQUIREMENTS_TXT = REPO_ROOT / "requirements.txt"
 GENERATE_WORKBOOK_PY = REPO_ROOT / "generate_workbook.py"
 README_MD = REPO_ROOT / "README.md"
 GITATTRIBUTES = REPO_ROOT / ".gitattributes"
+INDEX_HTML = REPO_ROOT / "index.html"
+INVOICE_HTML = REPO_ROOT / "invoice.html"
 REVIEW_HTML = REPO_ROOT / "review.html"
 
 # --- integrations/ (work-context sync sample) -------------------------------
