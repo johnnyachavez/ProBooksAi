@@ -318,6 +318,7 @@ def test_inbox_widget_context_menu_includes_keyboard_shortcuts_help() -> None:
     chunk = text[start:end]
     assert "act_keys.setToolTip" in chunk
     assert "act_copy.setToolTip" in chunk
+    assert "probooks.backup" in chunk
 
 
 def test_inbox_widget_table_has_hover_tooltip() -> None:
@@ -327,6 +328,7 @@ def test_inbox_widget_table_has_hover_tooltip() -> None:
     chunk = text[start:end]
     assert "self.setToolTip(" in chunk
     assert "Drag PDF or image files here" in chunk
+    assert "File → Backup" in chunk and "probooks backup" in chunk
 
 
 def test_main_help_menu_wires_register_keyboard_shortcuts_dialog() -> None:
@@ -945,7 +947,8 @@ def test_destructive_yes_no_message_boxes_use_shared_button_tooltips() -> None:
     assert "File → Backup" in bi[bdel : bdel + 220]
     main_t = _MAIN.read_text(encoding="utf-8")
     assert main_t.count("tip_message_box_buttons") >= 2
-    assert "Overwrite the company file" in main_t
+    assert "Overwrite the live company .db" in main_t
+    assert "File → Backup first" in main_t
     assert main_t.count("box.setToolTip(") >= 2
     assert "This path already exists; Yes opens it" in main_t
     assert "Restore overwrites the active company database" in main_t

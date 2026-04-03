@@ -214,7 +214,8 @@ class InboxWidget(QTableWidget):
         self.setToolTip(
             "Imported documents: click a row to open it in the detail pane. "
             "Drag PDF or image files here to import. F5 refreshes the list. "
-            "Right-click for Keyboard shortcuts… (including on empty area)."
+            "Right-click for Keyboard shortcuts… (including on empty area). "
+            "Rows live in the company SQLite file (File → Backup / probooks backup)."
         )
 
     def _on_context_menu(self, pos):
@@ -226,7 +227,7 @@ class InboxWidget(QTableWidget):
         )
         act_keys.setToolTip(
             "Same summary as Help → Document intake shortcuts… "
-            "(F5, Ctrl+O, File → Backup/Restore, View chords, links to other Help topics)."
+            "(F5, Ctrl+O, File → Backup/Restore via probooks.backup, View chords, links to other Help topics)."
         )
         if not idx.isValid():
             m.exec(self.viewport().mapToGlobal(pos))
@@ -1597,8 +1598,8 @@ class MainWindow(QMainWindow):
         )
         tip_message_box_buttons(
             box,
-            yes="Overwrite the company file with the selected backup.",
-            no="Cancel restore; keep the current file.",
+            yes="Overwrite the live company .db with the backup (probooks restore / File → Restore; probooks.backup).",
+            no="Cancel restore; keep the current file (File → Backup first if you want a copy).",
         )
         reply = box.exec()
         if reply != QMessageBox.StandardButton.Yes:
