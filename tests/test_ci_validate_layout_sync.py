@@ -185,10 +185,11 @@ def test_static_html_links_readme_desktop_section() -> None:
 
 
 def test_review_html_links_readme_web_shell_and_desktop_anchors() -> None:
-    """review.html Documentation cards should deep-link README Web shell and Desktop sections."""
+    """review.html Documentation cards should deep-link README Web shell, Desktop, and Excel template sections."""
     text = (_REPO / "review.html").read_text(encoding="utf-8")
     assert 'href="README.md#web-shell-review"' in text
     assert 'href="README.md#desktop-app-pyside6"' in text
+    assert 'href="README.md#excel-workbook-template-openpyxl"' in text
 
 
 def test_review_html_links_contributing_doc_anchors() -> None:
@@ -295,6 +296,33 @@ def test_pr_template_lists_hub_docs_issues_backlog_blurb_checklist() -> None:
         assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
 
 
+def test_pr_template_lists_readme_excel_workbook_anchor_checklist() -> None:
+    """PR template should remind editors to sync README Excel workbook template anchor + tests."""
+    text = (_REPO / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    assert "excel-workbook-template-openpyxl" in text
+    assert "### Excel workbook template (openpyxl)" in text
+    assert "**README Excel workbook template anchor**" in text
+    for name in (
+        "test_github_issue_templates_reference_core_docs",
+        "test_review_html_links_readme_web_shell_and_desktop_anchors",
+        "test_pr_template_lists_readme_excel_workbook_anchor_checklist",
+        "test_contributing_ci_documents_readme_excel_workbook_anchor_bullet",
+    ):
+        assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
+
+
+def test_contributing_ci_documents_readme_excel_workbook_anchor_bullet() -> None:
+    """Continuous integration section documents the README Excel workbook template anchor + tests."""
+    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    ci_start = md.index("### Continuous integration")
+    table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
+    chunk = md[ci_start:table_start]
+    assert "**README `### Excel workbook template (openpyxl)` anchor**" in chunk
+    assert "README.md#excel-workbook-template-openpyxl" in chunk
+    assert "test_pr_template_lists_readme_excel_workbook_anchor_checklist" in chunk
+    assert "test_contributing_ci_documents_readme_excel_workbook_anchor_bullet" in chunk
+
+
 def test_pr_template_issues_backlog_checklist_cites_layout_sync_tests() -> None:
     """PR template row for issues-backlog vs config.yml should list the layout-sync pytest names."""
     text = (_REPO / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
@@ -396,7 +424,7 @@ def test_pr_template_lists_hub_markdown_u2019_checklist() -> None:
 
 
 def test_github_issue_templates_reference_core_docs() -> None:
-    """Issue chooser + forms stay aligned with ROADMAP, BACKLOG, README web shell + Desktop, CONTRIBUTING naming."""
+    """Issue chooser + forms stay aligned with ROADMAP, BACKLOG, README web shell + Desktop + Excel template, CONTRIBUTING naming."""
     naming = "docs/CONTRIBUTING.md#naming-conventions"
     config = (_REPO / ".github" / "ISSUE_TEMPLATE" / "config.yml").read_text(encoding="utf-8")
     assert naming in config, "config.yml Contributing guide URL should include CONTRIBUTING.md#naming-conventions"
@@ -438,6 +466,7 @@ def test_github_issue_templates_reference_core_docs() -> None:
     roadmap_snap = "ROADMAP.md#implementation-snapshot-repository-2026-04"
     readme_shell = "README.md#web-shell-review"
     readme_desktop = "README.md#desktop-app-pyside6"
+    readme_excel = "README.md#excel-workbook-template-openpyxl"
     contrib_rt = "docs/CONTRIBUTING.md#running-tests"
     for label, text in (("bug_report.md", bug), ("feature_request.md", feat)):
         assert naming in text, f"{label} should link CONTRIBUTING.md#naming-conventions"
@@ -445,6 +474,7 @@ def test_github_issue_templates_reference_core_docs() -> None:
         assert roadmap_snap in text, f"{label} should deep-link ROADMAP implementation snapshot"
         assert readme_shell in text, f"{label} should deep-link README Web shell (review)"
         assert readme_desktop in text, f"{label} should deep-link README Desktop app (PySide6)"
+        assert readme_excel in text, f"{label} should deep-link README Excel workbook template"
         assert "docs/BACKLOG.md" in text, f"{label} should link BACKLOG.md"
         assert "docs/issues-backlog.md" in text, f"{label} should link issues-backlog.md"
 

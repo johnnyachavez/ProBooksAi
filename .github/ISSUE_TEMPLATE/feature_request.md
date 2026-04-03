@@ -11,6 +11,8 @@ labels: enhancement
 
 **Desktop:** [README — Desktop app](https://github.com/johnnyachavez/ProBooksAi/blob/main/README.md#desktop-app-pyside6) (`pip install -e ".[desktop]"`, **`python -m desktop_app.main`**, theme + Qt notes).
 
+**Excel COA template:** [README — Excel workbook template](https://github.com/johnnyachavez/ProBooksAi/blob/main/README.md#excel-workbook-template-openpyxl) (`python generate_workbook.py`, **openpyxl**).
+
 **Tests / work-context:** [CONTRIBUTING — Running Tests](https://github.com/johnnyachavez/ProBooksAi/blob/main/docs/CONTRIBUTING.md#running-tests) (**`pytest`**, **`sync-workspace.ps1`**, **`integrations/work-context.example.json`**).
 
 **Conventions:** [CONTRIBUTING — Naming](https://github.com/johnnyachavez/ProBooksAi/blob/main/docs/CONTRIBUTING.md#naming-conventions) (issue titles, **ProBooks+ai** spelling).
