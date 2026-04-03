@@ -72,7 +72,9 @@ def default_intake_sqlite_path() -> Path:
 
     Uses :func:`get_data_dir` so legacy ``ProBooksAi`` → ``ProBooks+ai`` migration
     runs before the path is returned (issue #21: keep this as the single resolver
-    when *db_path* is omitted).
+    when *db_path* is omitted). The leaf name matches ``INTAKE_DB_NAME`` from
+    ``probooks.paths``; for the same path *shape* without calling ``get_data_dir`` (e.g.
+    ``--help`` text), use ``probooks.paths.default_intake_db_path``.
     """
     return get_data_dir() / INTAKE_DB_NAME
 

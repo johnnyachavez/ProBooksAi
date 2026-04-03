@@ -1,4 +1,9 @@
-"""Shared pytest fixtures."""
+"""Shared pytest fixtures.
+
+``isolated_branded_app_data_env`` points Windows ``LOCALAPPDATA`` / ``APPDATA`` (or Unix
+``HOME``) at a temp tree so ``probooks.paths`` and ``probooksai.database.get_data_dir``
+tests do not touch the developer's real app data.
+"""
 
 from __future__ import annotations
 

@@ -19,3 +19,6 @@ def test_probooksai_database_uses_paths_app_dir_with_legacy_migration() -> None:
     assert "INTAKE_DB_NAME" in text
     assert "def default_intake_sqlite_path()" in text
     assert "default_intake_sqlite_path()" in text
+    assert "default_intake_db_path" in text, (
+        "database.py should cross-link probooks.paths.default_intake_db_path from default_intake_sqlite_path"
+    )
