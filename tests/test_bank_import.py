@@ -595,3 +595,27 @@ def test_register_number_two_line_plain_type_tags() -> None:
     assert _register_number_two_line_plain(
         {"ref_number": "z", "amount": 0.0, "transfer_to_bank_account_id": None}
     ) == "z\nTXN"
+
+
+def test_batch_reconciled_map_matches_import_batches(db) -> None:
+    from desktop_app.register_tab import _batch_reconciled_map
+
+    aid = db.add_bank_account("Main")
+    bid = db.create_batch(aid)
+    db.import_transactions(
+        bid,
+        aid,
+        [
+            {
+                "txn_date": "2024-01-01",
+                "description": "a",
+                "amount": -1.0,
+                "ref_number": "",
+            }
+        ],
+    )
+    rows = db.list_transactions(aid)
+    assert len(rows) == 1
+    assert _batch_reconciled_map(db._conn, rows).get(int(bid)) is False
+    db.mark_batch_reconciled(bid, True)
+    assert _batch_reconciled_map(db._conn, rows).get(int(bid)) is True

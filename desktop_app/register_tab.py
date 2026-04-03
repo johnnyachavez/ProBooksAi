@@ -6,7 +6,8 @@ debit/credit columns, running balance, memo and COA inline edits, sortable colum
 (txn id on Date ``UserRole``; balance stays chronological), and footer totals.
 Payee column uses a two-line layout (description, then COA or memo sub-line).
 Number column shows reference on the first line and a short type tag (DEP / PMT /
-XFER / TXN) on the second. Rows without a COA category are highlighted.
+XFER / TXN) on the second. **Clr** shows **R** when the CSV import batch for that
+row is marked reconciled in Bank Import. Rows without a COA category are highlighted.
 """
 
 from __future__ import annotations
@@ -72,9 +73,10 @@ _COL_PAYEE = 2
 _COL_MEMO = 3
 _COL_DEBIT = 4
 _COL_CREDIT = 5
-_COL_BAL = 6
-_COL_COA = 7
-_COL_LINK = 8
+_COL_CLR = 6
+_COL_BAL = 7
+_COL_COA = 8
+_COL_LINK = 9
 
 _HEADERS = [
     "Date",
@@ -83,6 +85,7 @@ _HEADERS = [
     "Memo",
     "Debit",
     "Credit",
+    "Clr",
     "Balance",
     "COA Account",
     "Match",
@@ -152,6 +155,32 @@ def _register_number_two_line_plain(txn: dict) -> str:
     line1 = ref if ref else "—"
     line2 = _register_number_type_tag(txn)
     return f"{line1}\n{line2}"
+
+
+def _batch_reconciled_map(conn: sqlite3.Connection, txns: list) -> dict[int, bool]:
+    """Map import *batch_id* -> True when ``bank_import_batches.is_reconciled`` is set."""
+    ids: set[int] = set()
+    for txn in txns:
+        d = dict(txn)
+        bid = d.get("batch_id")
+        if bid is None:
+            continue
+        try:
+            ids.add(int(bid))
+        except (TypeError, ValueError):
+            continue
+    if not ids:
+        return {}
+    qmarks = ",".join("?" * len(ids))
+    cur = conn.execute(
+        f"SELECT id, is_reconciled FROM bank_import_batches WHERE id IN ({qmarks})",
+        list(ids),
+    )
+    out: dict[int, bool] = {}
+    for row in cur.fetchall():
+        r = dict(row)
+        out[int(r["id"])] = int(r.get("is_reconciled") or 0) == 1
+    return out
 
 
 class RegisterTab(QWidget):
@@ -238,7 +267,8 @@ class RegisterTab(QWidget):
         self._table.setWordWrap(True)
         self._table.verticalHeader().setVisible(False)
         self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self._table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.Stretch)
+        self._table.horizontalHeader().setSectionResizeMode(_COL_COA, QHeaderView.ResizeMode.Stretch)
+        self._table.horizontalHeader().setSectionResizeMode(_COL_CLR, QHeaderView.ResizeMode.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(_COL_LINK, QHeaderView.ResizeMode.ResizeToContents)
         self._table.setSortingEnabled(True)
         self._table.itemChanged.connect(self._on_item_changed)
@@ -263,6 +293,7 @@ class RegisterTab(QWidget):
         tip = QLabel(
             "Deposits show in Debit; payments in Credit (cash-basis register). "
             "Payee shows description then COA or memo; Number shows reference then type (DEP / PMT / XFER). "
+            "Clr shows R when the CSV batch was marked reconciled in Bank Import. "
             "Assign a COA account to clear the highlight. "
             "Starred (★) items at the top of the COA list are hints from your rules "
             "and, when OPENAI_API_KEY is set, optional AI picks. "
@@ -396,6 +427,7 @@ class RegisterTab(QWidget):
         rows = self._db.list_transactions(
             bank_account_id, register_filter=self._register_filter_param()
         )
+        rec_map = _batch_reconciled_map(self._db._conn, rows)
         self._populating = True
         self._table.setSortingEnabled(False)
         self._table.blockSignals(True)
@@ -498,12 +530,32 @@ class RegisterTab(QWidget):
                 for it in (debit_item, credit_item, bal_item):
                     it.setBackground(brush)
 
+            bid = txn.get("batch_id")
+            try:
+                b_key = int(bid) if bid is not None else None
+            except (TypeError, ValueError):
+                b_key = None
+            batch_rec = b_key is not None and rec_map.get(b_key, False)
+            clr_item = plain_display_table_item("R" if batch_rec else "")
+            clr_item.setFlags(clr_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            clr_item.setTextAlignment(
+                Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop
+            )
+            clr_item.setToolTip(
+                "Statement batch reconciled (Bank Import)."
+                if batch_rec
+                else "Not in a reconciled statement batch."
+            )
+            if missing_coa:
+                clr_item.setBackground(brush)
+
             self._table.setItem(r, _COL_DATE, d_item)
             self._table.setItem(r, _COL_REF, ref_item)
             self._table.setItem(r, _COL_PAYEE, payee_item)
             self._table.setItem(r, _COL_MEMO, memo_item)
             self._table.setItem(r, _COL_DEBIT, debit_item)
             self._table.setItem(r, _COL_CREDIT, credit_item)
+            self._table.setItem(r, _COL_CLR, clr_item)
             self._table.setItem(r, _COL_BAL, bal_item)
 
             combo = QComboBox()
@@ -683,6 +735,7 @@ class RegisterTab(QWidget):
         rows = self._db.list_transactions(
             self._current_account_id, register_filter=self._register_filter_param()
         )
+        rec_map = _batch_reconciled_map(self._db._conn, rows)
         hdr = [
             "Date",
             "Ref",
@@ -691,6 +744,7 @@ class RegisterTab(QWidget):
             "Amount",
             "COA",
             "Posted",
+            "Batch_reconciled",
             "Match",
         ]
         with open(path, "w", newline="", encoding="utf-8") as fp:
@@ -706,6 +760,14 @@ class RegisterTab(QWidget):
                         match_txt = _bank_match_label(bm)
                     except sqlite3.OperationalError:
                         pass
+                bid = t.get("batch_id")
+                try:
+                    b_key = int(bid) if bid is not None else None
+                except (TypeError, ValueError):
+                    b_key = None
+                batch_rec = (
+                    b_key is not None and rec_map.get(b_key, False)
+                )
                 w.writerow(
                     [
                         t.get("txn_date", ""),
@@ -715,6 +777,7 @@ class RegisterTab(QWidget):
                         t.get("amount", ""),
                         t.get("coa_account", ""),
                         int(t["is_posted"] or 0) if "is_posted" in t else 0,
+                        "yes" if batch_rec else "no",
                         match_txt,
                     ]
                 )
