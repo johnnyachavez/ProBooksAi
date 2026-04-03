@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from tests.repo_paths import DESKTOP_APP_DIR
 
-_REPO = Path(__file__).resolve().parents[1]
-_LOCAL_DOCS = _REPO / "desktop_app" / "local_docs.py"
+_LOCAL_DOCS = DESKTOP_APP_DIR / "local_docs.py"
 
 
 def test_local_docs_targets_docs_roadmap_md() -> None:

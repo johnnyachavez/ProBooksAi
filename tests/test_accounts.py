@@ -5,10 +5,12 @@ from pathlib import Path
 from probooks.accounts import add_account, list_accounts
 from probooks.database import connect, migration_files, run_migrations
 
+from tests.repo_paths import PROBOOKS_MIGRATIONS_DIR
+
 
 def _fresh(tmp_path: Path) -> Path:
     db = tmp_path / "a.db"
-    mdir = Path(__file__).resolve().parents[1] / "probooks" / "migrations"
+    mdir = PROBOOKS_MIGRATIONS_DIR
     conn = connect(db)
     run_migrations(conn, migration_files(mdir))
     conn.close()

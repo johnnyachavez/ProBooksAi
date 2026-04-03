@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-_REPO = Path(__file__).resolve().parents[1]
-_WRAPPER = _REPO / "generate_workbook.py"
-_GENERATOR = _REPO / "probooksai" / "generator.py"
+from tests.repo_paths import GENERATE_WORKBOOK_PY, PROBOOKSAI_PACKAGE_DIR
+_WRAPPER = GENERATE_WORKBOOK_PY
+_GENERATOR = PROBOOKSAI_PACKAGE_DIR / "generator.py"
 
 
 def test_generate_workbook_delegates_to_probooksai_generator() -> None:

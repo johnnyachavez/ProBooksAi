@@ -1,6 +1,8 @@
 """Journal entry viewer (Phase 5 GL register).
 
 **F5** (when this tab or its children have focus) runs the same reload as **Refresh** (entry list + lines).
+**Help → More tab shortcuts (F5)…**; entry list and line-detail **right-click** menus set **QAction** tooltips for **Keyboard shortcuts…** and **Copy** (including empty area).
+The tab **root** has a hover hint. Date filter **labels**, fields, the entry / lines panes, the **splitter**, and footer **F5** hint use **setToolTip** on hover.
 """
 
 from __future__ import annotations
@@ -18,7 +20,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QMessageBox,
     QMenu,
     QPushButton,
     QSplitter,
@@ -28,7 +29,14 @@ from PySide6.QtWidgets import (
     QHeaderView,
 )
 
-from desktop_app.qt_mnemonic import escape_ampersand_for_qt
+from desktop_app.more_main_tabs_shortcuts import (
+    show_more_main_tabs_keyboard_shortcuts_dialog,
+)
+from desktop_app.qt_mnemonic import (
+    escape_ampersand_for_qt,
+    message_box_critical_ok,
+    message_box_information_ok,
+)
 from desktop_app.table_clipboard import (
     QLIST_PLAIN_TEXT_ROLE,
     NumericAmountTableItem,
@@ -47,15 +55,32 @@ class JournalTab(QWidget):
         self._refresh_list()
 
     def _build_ui(self):
+        self.setToolTip(
+            "General journal: browse entries and GL lines with a date filter; export CSV (F5 refreshes when Journal has focus)."
+        )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
 
         row = QHBoxLayout()
-        row.addWidget(QLabel("Filter from (yyyy-mm-dd):"))
+        lbl_j_from = QLabel("Filter from (yyyy-mm-dd):")
+        lbl_j_from.setToolTip(
+            "Lower bound for journal entry dates (ISO yyyy-mm-dd); the field to the right sets the value."
+        )
+        row.addWidget(lbl_j_from)
         self._start = QLineEdit()
+        self._start.setToolTip(
+            "Earliest entry date to include (ISO yyyy-mm-dd), optional; blank means no lower bound."
+        )
         row.addWidget(self._start)
-        row.addWidget(QLabel("to:"))
+        lbl_j_to = QLabel("to:")
+        lbl_j_to.setToolTip(
+            "Upper bound for journal entry dates; use the field to the right (optional)."
+        )
+        row.addWidget(lbl_j_to)
         self._end = QLineEdit()
+        self._end.setToolTip(
+            "Latest entry date to include (ISO yyyy-mm-dd), optional; blank means no upper bound."
+        )
         row.addWidget(self._end)
         b = QPushButton("Refresh")
         b.setToolTip(
@@ -64,12 +89,21 @@ class JournalTab(QWidget):
         )
         b.clicked.connect(self._refresh_list)
         row.addWidget(b)
-        row.addWidget(QPushButton("Export CSV…", clicked=self._export_csv))
+        btn_export = QPushButton("Export CSV…")
+        btn_export.setToolTip(
+            "Export journal entries in the current date filter range to CSV."
+        )
+        btn_export.clicked.connect(self._export_csv)
+        row.addWidget(btn_export)
         row.addStretch()
         layout.addLayout(row)
 
         split = QSplitter(Qt.Orientation.Horizontal)
         self._list = QListWidget()
+        self._list.setToolTip(
+            "Journal entries matching the date filter; select one to show its lines on the right. "
+            "Right-click for Keyboard shortcuts… (including on empty area)."
+        )
         self._list.currentRowChanged.connect(self._show_lines)
         self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._list.customContextMenuRequested.connect(self._on_journal_list_context_menu)
@@ -85,9 +119,27 @@ class JournalTab(QWidget):
         self._lines.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._lines.customContextMenuRequested.connect(self._on_lines_context_menu)
         self._lines.setSortingEnabled(True)
+        self._lines.setToolTip(
+            "GL lines for the selected journal entry. Right-click for Keyboard shortcuts… "
+            "(including on empty area)."
+        )
         split.addWidget(self._lines)
         split.setSizes([260, 600])
+        split.setToolTip(
+            "Entries list on the left; general-ledger lines for the selected entry on the right."
+        )
         layout.addWidget(split)
+
+        tip = QLabel(
+            "F5 reloads the entry list and lines for the current date filter. "
+            "Help → More tab shortcuts (F5)…; right-click either pane for Keyboard shortcuts…."
+        )
+        tip.setWordWrap(True)
+        tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        tip.setToolTip(
+            "Same as the text above: F5 Refresh; Help menu lists chords shared with COA, Reports, and Audit."
+        )
+        layout.addWidget(tip)
 
         sc_refresh = QShortcut(QKeySequence("F5"), self)
         sc_refresh.setContext(Qt.WidgetWithChildrenShortcut)
@@ -97,23 +149,47 @@ class JournalTab(QWidget):
 
     def _on_journal_list_context_menu(self, pos):
         idx = self._list.indexAt(pos)
+        m = QMenu(self)
+        act_keys = m.addAction(
+            "Keyboard shortcuts…",
+            lambda: show_more_main_tabs_keyboard_shortcuts_dialog(self),
+        )
+        act_keys.setToolTip(
+            "Same summary as Help → More tab shortcuts (F5)… (Journal, COA, Reports, Audit chords)."
+        )
         if not idx.isValid():
+            m.exec(self._list.viewport().mapToGlobal(pos))
             return
         row = idx.row()
-        m = QMenu(self)
-        m.addAction(
+        m.addSeparator()
+        act_copy = m.addAction(
             "Copy entry line",
             partial(copy_qlistwidget_row_text, self._list, row),
+        )
+        act_copy.setToolTip(
+            "Copy the selected journal entry summary line as plain text."
         )
         m.exec(self._list.viewport().mapToGlobal(pos))
 
     def _on_lines_context_menu(self, pos):
         idx = self._lines.indexAt(pos)
+        m = QMenu(self)
+        act_keys = m.addAction(
+            "Keyboard shortcuts…",
+            lambda: show_more_main_tabs_keyboard_shortcuts_dialog(self),
+        )
+        act_keys.setToolTip(
+            "Same summary as Help → More tab shortcuts (F5)… (Journal lines pane, F5 refresh)."
+        )
         if not idx.isValid():
+            m.exec(self._lines.viewport().mapToGlobal(pos))
             return
         row = idx.row()
-        m = QMenu(self)
-        m.addAction("Copy row", partial(copy_table_row_as_tsv, self._lines, row))
+        m.addSeparator()
+        act_copy = m.addAction("Copy row", partial(copy_table_row_as_tsv, self._lines, row))
+        act_copy.setToolTip(
+            "Copy this GL line row as tab-separated text for pasting into a spreadsheet or editor."
+        )
         m.exec(self._lines.viewport().mapToGlobal(pos))
 
     def _refresh_list(self):
@@ -148,14 +224,18 @@ class JournalTab(QWidget):
         try:
             n = write_journal_export_csv(path, rows)
         except OSError as exc:
-            QMessageBox.critical(
-                self, "Export failed", escape_ampersand_for_qt(str(exc))
+            message_box_critical_ok(
+                self,
+                "Export failed",
+                escape_ampersand_for_qt(str(exc)),
+                ok_tip="Close; check the path, permissions, and disk space.",
             )
             return
-        QMessageBox.information(
+        message_box_information_ok(
             self,
             "Export complete",
             f"Exported {n} journal line(s) to:\n{escape_ampersand_for_qt(path)}",
+            ok_tip="Close; open the CSV from the path shown.",
         )
 
     def _show_lines(self, row: int):

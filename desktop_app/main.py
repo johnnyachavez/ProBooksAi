@@ -11,6 +11,17 @@ Requires PySide6:
     pip install PySide6
 
 ``--help`` prints the shared Excel COA workbook line from ``probooks/help_epilog.py`` (see README Desktop + Excel template).
+
+The **central** **QWidget** (banner + tab widget) has a margin hover hint. The main **QToolBar** has a hover hint for Document Intake import/refresh. Document Intake: **F5** refreshes the inbox; **Help → Document intake shortcuts…** (``message_box_information_ok`` **Ok** tooltip) and inbox **right-click**
+**Keyboard shortcuts…** (including empty area) match that dialog. The **InboxWidget** grid has a hover **tooltip**
+(import, drag-and-drop, F5, shortcuts). The intake **QSplitter** has a resize hint on hover. **DetailPane** (**QScrollArea**) has a window-level hover hint; its inner **QWidget** has a content-area hint; preview, extracted **LineEdit** / spin fields, **Doc Type**,
+**COA Account**, **AI confidence** / **rationale** labels, and action buttons use **tooltips**.
+**Preview** / **Extracted Fields** / **Categorisation** group boxes and the **filename** / **status** labels
+also have hover hints. The banner **QFrame** and its **ProBooks+ai** / company **QLabel**s have tooltips.
+**Help → About** uses ``message_box_about_ok`` (rich text + **Ok** hover hint). The main **QTabWidget** sets a **setToolTip** on the tab strip area; its tab bar sets **setTabToolTip** on each top-level tab (Intake through Audit log). **Document Intake**’s root **QWidget** has a hover hint for the whole tab; the inbox **column** **QWidget** (left splitter pane) has a short margin hint.
+Destructive **Yes**/**No** prompts (new company file exists, database restore) use **tip_message_box_buttons** for button hover hints and **QMessageBox.setToolTip** for the dialog window.
+
+Main window **menu bar**: each ``QAction`` uses ``setStatusTip`` for the **status bar** and the same text via ``setToolTip`` for hover (``_menu_action_tip`` helper).
 """
 
 from __future__ import annotations
@@ -27,8 +38,15 @@ from PySide6.QtCore import (
     Qt, QThread, Signal, QMimeData, QSettings, QUrl, qInstallMessageHandler,
 )
 from PySide6.QtGui import (
-    QAction, QColor, QDesktopServices, QDragEnterEvent, QDropEvent,
-    QIcon, QPixmap,
+    QAction,
+    QColor,
+    QDesktopServices,
+    QDragEnterEvent,
+    QDropEvent,
+    QIcon,
+    QKeySequence,
+    QPixmap,
+    QShortcut,
 )
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QDoubleSpinBox, QFileDialog,
@@ -56,18 +74,63 @@ from desktop_app.coa_tab import COATab
 from desktop_app.register_tab import RegisterTab, show_register_keyboard_shortcuts_dialog
 from desktop_app.reports_tab import ReportsTab
 from desktop_app.journal_tab import JournalTab
-from desktop_app.extra_tabs import BusinessHub
+from desktop_app.extra_tabs import BusinessHub, show_business_keyboard_shortcuts_dialog
 from desktop_app.audit_tab import AuditTab
 from desktop_app.theme import apply_dark_theme, STATUS_COLORS as THEME_STATUS_COLORS
 from desktop_app.version import application_version
 from desktop_app.local_docs import resolve_local_roadmap_path
+from desktop_app.more_main_tabs_shortcuts import (
+    show_more_main_tabs_keyboard_shortcuts_dialog,
+)
 from desktop_app.table_clipboard import (
     IntSortTableItem,
     copy_table_row_as_tsv,
     plain_display_table_item,
     table_cell_clipboard_text,
 )
-from desktop_app.qt_mnemonic import escape_ampersand_for_qt
+from desktop_app.qt_mnemonic import (
+    escape_ampersand_for_qt,
+    message_box_about_ok,
+    message_box_critical_ok,
+    message_box_information_ok,
+    message_box_warning_ok,
+    tip_message_box_buttons,
+)
+
+
+def _document_intake_keyboard_shortcuts_help_text() -> str:
+    """Plain text for **Help → Document intake shortcuts…** (aligned with **F5** / **InboxWidget**)."""
+    return (
+        "These shortcuts apply when Document Intake or its controls have focus:\n\n"
+        "Menu bar: hover File, View, Edit, Help, or Tools to see shortcut and action hints "
+        "in the status bar and on hover for each menu item.\n\n"
+        "F5 — Refresh the document list (same as toolbar Refresh).\n\n"
+        "Detail pane: Run AI, Approve, Mark Posted, and Reject have short descriptions on hover.\n\n"
+        "File menu:\n"
+        "Ctrl+O — Import documents… (toolbar Import Documents is the same command).\n\n"
+        "View menu:\n"
+        "Ctrl+1 Document Intake, Ctrl+2 Bank Import, Ctrl+3 Register, Ctrl+4 Chart of Accounts, "
+        "Ctrl+5 Reports, Ctrl+6 Journal, Ctrl+7 Business, Ctrl+8 Audit log.\n\n"
+        "Right-click the inbox grid (including empty area) for Keyboard shortcuts… "
+        "(same as this dialog).\n\n"
+        "COA, Journal, Reports, Audit:\n"
+        "Help → More tab shortcuts (F5)…\n\n"
+        "Business:\n"
+        "Help → Business shortcuts…\n\n"
+        "Bank workflows:\n"
+        "Help → Bank import shortcuts…\n"
+        "Help → Bank register keyboard shortcuts…\n"
+    )
+
+
+def show_document_intake_keyboard_shortcuts_dialog(parent: QWidget) -> None:
+    message_box_information_ok(
+        parent,
+        "Document intake shortcuts",
+        _document_intake_keyboard_shortcuts_help_text(),
+        ok_tip="Close this help summary; shortcuts apply when Document Intake has focus.",
+    )
+
 
 # Accepted MIME types / file extensions
 ACCEPTED_MIMES = {"application/pdf", "image/jpeg", "image/png"}
@@ -116,7 +179,10 @@ class AIWorker(QThread):
 # ---------------------------------------------------------------------------
 
 class InboxWidget(QTableWidget):
-    """Displays imported documents with their statuses."""
+    """Displays imported documents with their statuses.
+
+    Context menu actions set **setToolTip** for **Keyboard shortcuts…** and **Copy row**.
+    """
 
     COLUMNS = ["#", "Filename", "Type", "Status", "Date"]
 
@@ -141,14 +207,31 @@ class InboxWidget(QTableWidget):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._on_context_menu)
         self.setSortingEnabled(True)
+        self.setToolTip(
+            "Imported documents: click a row to open it in the detail pane. "
+            "Drag PDF or image files here to import. F5 refreshes the list. "
+            "Right-click for Keyboard shortcuts… (including on empty area)."
+        )
 
     def _on_context_menu(self, pos):
         idx = self.indexAt(pos)
+        m = QMenu(self)
+        act_keys = m.addAction(
+            "Keyboard shortcuts…",
+            lambda: show_document_intake_keyboard_shortcuts_dialog(self),
+        )
+        act_keys.setToolTip(
+            "Same summary as Help → Document intake shortcuts… (F5, Ctrl+O, View chords, links to other Help topics)."
+        )
         if not idx.isValid():
+            m.exec(self.viewport().mapToGlobal(pos))
             return
         row = idx.row()
-        m = QMenu(self)
-        m.addAction("Copy row", partial(copy_table_row_as_tsv, self, row))
+        m.addSeparator()
+        act_copy = m.addAction("Copy row", partial(copy_table_row_as_tsv, self, row))
+        act_copy.setToolTip(
+            "Copy this inbox row as tab-separated text for pasting into a spreadsheet or editor."
+        )
         m.exec(self.viewport().mapToGlobal(pos))
 
     # -- drag & drop ---------------------------------------------------------
@@ -236,8 +319,14 @@ class DetailPane(QScrollArea):
         self._coa_list = coa_list
 
         inner = QWidget()
+        inner.setToolTip(
+            "Preview, extracted fields, categorization, and action buttons for the selected inbox row (scroll when content is tall)."
+        )
         self.setWidget(inner)
         self.setWidgetResizable(True)
+        self.setToolTip(
+            "Scroll the detail pane: preview, extracted fields, categorization, and workflow actions for the selected inbox row."
+        )
 
         layout = QVBoxLayout(inner)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -247,46 +336,75 @@ class DetailPane(QScrollArea):
         self._lbl_filename = QLabel("No document selected")
         self._lbl_filename.setTextFormat(Qt.TextFormat.PlainText)
         self._lbl_filename.setStyleSheet("font-weight: bold; font-size: 14px;")
+        self._lbl_filename.setToolTip(
+            "File name of the document selected in the inbox (left list)."
+        )
         layout.addWidget(self._lbl_filename)
 
         self._lbl_status = QLabel("")
+        self._lbl_status.setToolTip(
+            "Workflow status for the selected document (e.g. new, approved, posted)."
+        )
         layout.addWidget(self._lbl_status)
 
         # -- Preview ---------------------------------------------------------
         preview_group = QGroupBox("Preview")
+        preview_group.setToolTip(
+            "Visual preview of the selected document (first page or image) when available."
+        )
         preview_layout = QVBoxLayout(preview_group)
         self._preview_label = QLabel("(Select a document to preview)")
         self._preview_label.setTextFormat(Qt.TextFormat.PlainText)
         self._preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._preview_label.setMinimumHeight(180)
         self._preview_label.setStyleSheet("background: #f0f0f0; border: 1px solid #ccc;")
+        self._preview_label.setToolTip(
+            "First-page or image preview for the selected document when available."
+        )
         preview_layout.addWidget(self._preview_label)
         layout.addWidget(preview_group)
 
         # -- Extracted fields ------------------------------------------------
         fields_group = QGroupBox("Extracted Fields")
+        fields_group.setToolTip(
+            "Values from AI extraction or prior approval; edit before Approve or Run AI again."
+        )
         form = QFormLayout(fields_group)
 
         self._f_vendor   = QLineEdit()
+        self._f_vendor.setToolTip(
+            "Counterparty name from the document (editable; Approve saves with other fields)."
+        )
         self._f_doctype  = QComboBox()
         self._f_doctype.addItems(["invoice", "bill", "receipt", "credit_note", "other"])
+        self._f_doctype.setToolTip(
+            "Document kind for workflow and fields (invoice, bill, receipt, etc.)."
+        )
         self._f_inv_num  = QLineEdit()
+        self._f_inv_num.setToolTip("Invoice, bill, or reference number from extraction.")
         self._f_date     = QLineEdit()
+        self._f_date.setToolTip("Document date (often yyyy-mm-dd; match what appears on the source).")
         self._f_due_date = QLineEdit()
+        self._f_due_date.setToolTip("Due or pay-by date if present on the document.")
         self._f_subtotal = QDoubleSpinBox()
         self._f_subtotal.setMaximum(9_999_999)
         self._f_subtotal.setDecimals(2)
+        self._f_subtotal.setToolTip("Amount before tax.")
         self._f_tax      = QDoubleSpinBox()
         self._f_tax.setMaximum(9_999_999)
         self._f_tax.setDecimals(2)
+        self._f_tax.setToolTip("Tax amount for this document (not the percentage rate).")
         self._f_total    = QDoubleSpinBox()
         self._f_total.setMaximum(9_999_999)
         self._f_total.setDecimals(2)
+        self._f_total.setToolTip("Grand total including tax.")
         self._f_currency = QLineEdit()
         self._f_currency.setMaxLength(3)
         self._f_currency.setFixedWidth(55)
+        self._f_currency.setToolTip("ISO-style three-letter code (e.g. USD).")
         self._f_notes    = QPlainTextEdit()
         self._f_notes.setFixedHeight(60)
+        self._f_notes.setToolTip("Memo or notes from extraction; editable before Approve.")
 
         form.addRow("Vendor / Customer:", self._f_vendor)
         form.addRow("Doc Type:", self._f_doctype)
@@ -303,13 +421,23 @@ class DetailPane(QScrollArea):
 
         # -- Categorisation --------------------------------------------------
         cat_group = QGroupBox("Categorisation Suggestions")
+        cat_group.setToolTip(
+            "Suggested chart-of-accounts line and tax label from Run AI; confidence and rationale update here."
+        )
         cat_layout = QFormLayout(cat_group)
 
         self._f_coa      = QComboBox()
         self._fill_coa_combo(coa_list)
         self._f_coa.setEditable(True)
+        self._f_coa.setToolTip(
+            "Chart of accounts line for this document; choose from the list or type to match."
+        )
         self._f_tax_cat  = QLineEdit()
+        self._f_tax_cat.setToolTip("Optional tax bucket or category label when your workflow uses it.")
         self._f_confidence = QLabel("–")
+        self._f_confidence.setToolTip(
+            "Model-reported confidence for the suggested COA and tax category (after Run AI)."
+        )
 
         cat_layout.addRow("COA Account:", self._f_coa)
         cat_layout.addRow("Tax Category:", self._f_tax_cat)
@@ -319,6 +447,9 @@ class DetailPane(QScrollArea):
         self._lbl_rationale.setTextFormat(Qt.TextFormat.PlainText)
         self._lbl_rationale.setWordWrap(True)
         self._lbl_rationale.setStyleSheet("color: #555; font-style: italic;")
+        self._lbl_rationale.setToolTip(
+            "Short explanation from the categorization model for the suggested accounts."
+        )
         cat_layout.addRow("Rationale:", self._lbl_rationale)
 
         layout.addWidget(cat_group)
@@ -329,6 +460,15 @@ class DetailPane(QScrollArea):
         self._btn_approve = QPushButton("\u2705 Approve")
         self._btn_post    = QPushButton("\U0001f4e4 Mark Posted")
         self._btn_reject  = QPushButton("\u274c Reject")
+
+        self._btn_run.setToolTip(
+            "Run AI extraction and categorisation for the selected document."
+        )
+        self._btn_approve.setToolTip(
+            "Save the current fields and COA account as approved values."
+        )
+        self._btn_post.setToolTip("Mark this document as posted in the workflow.")
+        self._btn_reject.setToolTip("Mark this document as needing review.")
 
         for btn in (self._btn_run, self._btn_approve, self._btn_post, self._btn_reject):
             btn.setMinimumHeight(32)
@@ -576,6 +716,9 @@ class AppHeaderWidget(QFrame):
             f"background: {INBOX_HEADER_COLOR}; border-bottom: 2px solid #4a6fa8;"
         )
         self.setFixedHeight(44)
+        self.setToolTip(
+            "App banner; company name is the open SQLite file (switch via File → Open company database)."
+        )
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(14, 0, 14, 0)
@@ -585,6 +728,9 @@ class AppHeaderWidget(QFrame):
         lbl_app.setStyleSheet(
             "color: white; font-weight: bold; font-size: 16px; background: transparent;"
         )
+        lbl_app.setToolTip(
+            "ProBooks+ai — document intake, bank workflows, ledger, and business tools."
+        )
         layout.addWidget(lbl_app)
 
         layout.addStretch()
@@ -593,6 +739,9 @@ class AppHeaderWidget(QFrame):
         self._lbl_company.setTextFormat(Qt.TextFormat.PlainText)
         self._lbl_company.setStyleSheet(
             "color: #c8d8f0; font-size: 12px; background: transparent;"
+        )
+        self._lbl_company.setToolTip(
+            "Current company database or file name (updates when you open another company)."
         )
         layout.addWidget(self._lbl_company)
 
@@ -604,6 +753,13 @@ class AppHeaderWidget(QFrame):
 # ---------------------------------------------------------------------------
 # Main window
 # ---------------------------------------------------------------------------
+
+
+def _menu_action_tip(act: QAction, tip: str) -> None:
+    """Set status-bar hint and matching hover tooltip for main-window menu actions."""
+    act.setStatusTip(tip)
+    act.setToolTip(tip)
+
 
 class MainWindow(QMainWindow):
     def __init__(self, db_path: str | None = None):
@@ -632,20 +788,30 @@ class MainWindow(QMainWindow):
         # Toolbar
         toolbar = QToolBar("Main")
         toolbar.setMovable(False)
+        toolbar.setToolTip(
+            "Document Intake toolbar: import documents and refresh the inbox (File menu and F5 when Intake has focus)."
+        )
         self.addToolBar(toolbar)
 
         act_import = QAction("\U0001f4c2  Import Documents\u2026", self)
+        act_import.setToolTip(
+            "Import documents (same as File → Import documents…, Ctrl+O)."
+        )
         act_import.triggered.connect(self._on_import)
         toolbar.addAction(act_import)
 
         toolbar.addSeparator()
 
         act_refresh = QAction("\U0001f504  Refresh", self)
+        act_refresh.setToolTip("Refresh document list (F5 when Document Intake has focus).")
         act_refresh.triggered.connect(self._refresh_inbox)
         toolbar.addAction(act_refresh)
 
         # Container: header banner + tab widget
         container = QWidget()
+        container.setToolTip(
+            "Main workspace: company banner and tabbed areas (Document Intake through Audit log)."
+        )
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(0)
@@ -655,9 +821,17 @@ class MainWindow(QMainWindow):
 
         # Tab widget
         self._tabs = QTabWidget()
+        self._tabs.setToolTip(
+            "Main workspace: switch between Document Intake, Bank Import, Register, "
+            "Chart of Accounts, Reports, Journal, Business, and Audit log (hover each tab for a short summary)."
+        )
 
         # ── Tab 1: Document Intake ──────────────────────────────────────────
         intake_widget = QWidget()
+        intake_widget.setToolTip(
+            "Document Intake: import files, pick an inbox row, then review extraction and categorization on the right. "
+            "F5 refreshes the list when this tab has focus."
+        )
         intake_layout = QVBoxLayout(intake_widget)
         intake_layout.setContentsMargins(0, 0, 0, 0)
         intake_layout.setSpacing(0)
@@ -667,6 +841,9 @@ class MainWindow(QMainWindow):
 
         # Left: inbox
         left = QWidget()
+        left.setToolTip(
+            "Document inbox column: header and file list for the selected company; drag the splitter to resize against the detail pane."
+        )
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(0)
@@ -675,6 +852,9 @@ class MainWindow(QMainWindow):
         lbl_inbox.setStyleSheet(
             f"background: {INBOX_HEADER_COLOR}; color: white; font-weight: bold; "
             "font-size: 13px; padding: 6px;"
+        )
+        lbl_inbox.setToolTip(
+            "Imported documents: pick a row to load extraction and categorization in the detail pane."
         )
         left_layout.addWidget(lbl_inbox)
 
@@ -695,7 +875,14 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self._detail)
 
         splitter.setSizes([380, 720])
+        splitter.setToolTip(
+            "Drag the handle to resize the document inbox and the extraction detail pane."
+        )
         intake_layout.addWidget(splitter)
+
+        sc_intake_f5 = QShortcut(QKeySequence("F5"), intake_widget)
+        sc_intake_f5.setContext(Qt.WidgetWithChildrenShortcut)
+        sc_intake_f5.activated.connect(self._refresh_inbox)
 
         self._tabs.addTab(intake_widget, "📄  Document Intake")
 
@@ -717,6 +904,40 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(JournalTab(self._bank_db._conn), "📗  Journal")
         self._tabs.addTab(BusinessHub(self._bank_db._conn), "🧾  Business")
         self._tabs.addTab(AuditTab(self._bank_db._conn), "📜  Audit log")
+
+        main_tab_bar = self._tabs.tabBar()
+        main_tab_bar.setTabToolTip(
+            0,
+            "Import PDFs and images, run AI extraction, approve fields, and categorize to COA.",
+        )
+        main_tab_bar.setTabToolTip(
+            1,
+            "Bank CSV/PDF import, batches, transactions, and statement reconciliation.",
+        )
+        main_tab_bar.setTabToolTip(
+            2,
+            "Check-register view: categorize, splits, transfer links, cleared flags, post to GL.",
+        )
+        main_tab_bar.setTabToolTip(
+            3,
+            "Chart of accounts: add, edit, deactivate; used in journal, reports, and pickers.",
+        )
+        main_tab_bar.setTabToolTip(
+            4,
+            "Financial reports: trial balance, income statement, balance sheet, CSV export.",
+        )
+        main_tab_bar.setTabToolTip(
+            5,
+            "General journal: browse entries and lines by date (export CSV).",
+        )
+        main_tab_bar.setTabToolTip(
+            6,
+            "Business hub: rules, AR, AP, payroll runs, and default sales tax settings.",
+        )
+        main_tab_bar.setTabToolTip(
+            7,
+            "Audit trail: recent field-level changes (filter by entity type and id).",
+        )
 
         container_layout.addWidget(self._tabs)
         self.setCentralWidget(container)
@@ -743,38 +964,68 @@ class MainWindow(QMainWindow):
 
         act_import_docs = QAction("&Import documents\u2026", self)
         act_import_docs.setShortcut("Ctrl+O")
+        _menu_action_tip(
+            act_import_docs,
+            "Import PDF or images into the document inbox (Ctrl+O).",
+        )
         act_import_docs.triggered.connect(self._on_import)
         file_menu.addAction(act_import_docs)
 
         act_open_company = QAction("Open &company database\u2026", self)
         act_open_company.setShortcut("Ctrl+Shift+O")
+        _menu_action_tip(
+            act_open_company,
+            "Open a different company SQLite database (Ctrl+Shift+O).",
+        )
         act_open_company.triggered.connect(self._on_open_company_database)
         file_menu.addAction(act_open_company)
 
         act_new_company = QAction("&New company database\u2026", self)
+        _menu_action_tip(
+            act_new_company,
+            "Create a new empty company SQLite database at a path you choose.",
+        )
         act_new_company.triggered.connect(self._on_new_company_database)
         file_menu.addAction(act_new_company)
 
         act_backup = QAction("&Backup company file\u2026", self)
+        _menu_action_tip(
+            act_backup,
+            "Save a copy of the current company database to a backup file.",
+        )
         act_backup.triggered.connect(self._on_backup_company)
         file_menu.addAction(act_backup)
 
         act_restore = QAction("&Restore from backup\u2026", self)
+        _menu_action_tip(
+            act_restore,
+            "Replace the current company database from a backup file.",
+        )
         act_restore.triggered.connect(self._on_restore_company)
         file_menu.addAction(act_restore)
 
         act_copy_db_path = QAction("Copy company database &path", self)
         act_copy_db_path.setShortcut("Ctrl+Alt+P")
         act_copy_db_path.setShortcutContext(Qt.ApplicationShortcut)
+        _menu_action_tip(
+            act_copy_db_path,
+            "Copy the resolved company .db path to the clipboard (Ctrl+Alt+P).",
+        )
         act_copy_db_path.triggered.connect(self._on_copy_company_database_path)
         file_menu.addAction(act_copy_db_path)
 
         act_save = QAction("&Save", self)
         act_save.setShortcut("Ctrl+S")
+        _menu_action_tip(
+            act_save, "Save is not used in this desktop shell yet (Ctrl+S)."
+        )
         act_save.setEnabled(False)
         file_menu.addAction(act_save)
 
         act_save_as = QAction("Save &As \u2026", self)
+        _menu_action_tip(
+            act_save_as, "Save As is not used in this desktop shell yet."
+        )
         act_save_as.setEnabled(False)
         file_menu.addAction(act_save_as)
 
@@ -782,6 +1033,7 @@ class MainWindow(QMainWindow):
 
         act_exit = QAction("E&xit", self)
         act_exit.setShortcut("Ctrl+Q")
+        _menu_action_tip(act_exit, "Exit ProBooks+ai (Ctrl+Q).")
         act_exit.triggered.connect(self.close)
         file_menu.addAction(act_exit)
 
@@ -802,6 +1054,7 @@ class MainWindow(QMainWindow):
             act = QAction(label, self)
             act.setShortcut(sc)
             act.setShortcutContext(Qt.ApplicationShortcut)
+            _menu_action_tip(act, f"Show this main tab ({sc}).")
             act.triggered.connect(
                 lambda checked=False, i=idx: self._set_main_tab_index(i)
             )
@@ -812,43 +1065,94 @@ class MainWindow(QMainWindow):
 
         act_undo = QAction("&Undo", self)
         act_undo.setShortcut("Ctrl+Z")
+        _menu_action_tip(
+            act_undo, "Undo is not available in this version (Ctrl+Z)."
+        )
         act_undo.setEnabled(False)
         edit_menu.addAction(act_undo)
 
         act_redo = QAction("&Redo", self)
         act_redo.setShortcut("Ctrl+Y")
+        _menu_action_tip(
+            act_redo, "Redo is not available in this version (Ctrl+Y)."
+        )
         act_redo.setEnabled(False)
         edit_menu.addAction(act_redo)
 
         edit_menu.addSeparator()
 
         act_prefs = QAction("&Preferences \u2026", self)
+        _menu_action_tip(
+            act_prefs, "Application preferences are not available yet."
+        )
         act_prefs.setEnabled(False)
         edit_menu.addAction(act_prefs)
 
         # Tools menu
         tools_menu = mb.addMenu("&Tools")
         act_tools = QAction("(Coming soon)", self)
+        _menu_action_tip(
+            act_tools, "Additional tools are not available yet."
+        )
         act_tools.setEnabled(False)
         tools_menu.addAction(act_tools)
 
         # Help menu
         help_menu = mb.addMenu("&Help")
         act_roadmap = QAction("Product &roadmap (local file)\u2026", self)
+        _menu_action_tip(
+            act_roadmap, "Open docs/ROADMAP.md with the default application."
+        )
         act_roadmap.triggered.connect(self._on_help_roadmap)
         help_menu.addAction(act_roadmap)
+        act_intake_keys = QAction("Document &intake shortcuts…", self)
+        _menu_action_tip(
+            act_intake_keys,
+            "F5 refresh, Ctrl+O import, View chords, and links to other Help topics.",
+        )
+        act_intake_keys.triggered.connect(
+            lambda: show_document_intake_keyboard_shortcuts_dialog(self)
+        )
+        help_menu.addAction(act_intake_keys)
         act_bank_import_keys = QAction("Bank &import shortcuts…", self)
+        _menu_action_tip(
+            act_bank_import_keys,
+            "F5 refresh and context-menu shortcuts for Bank Import.",
+        )
         act_bank_import_keys.triggered.connect(
             lambda: show_bank_import_keyboard_shortcuts_dialog(self)
         )
         help_menu.addAction(act_bank_import_keys)
         act_register_keys = QAction("Bank &register keyboard shortcuts…", self)
+        _menu_action_tip(
+            act_register_keys,
+            "F5, Ctrl+Shift+G/E/C/U, and register grid shortcuts.",
+        )
         act_register_keys.triggered.connect(
             lambda: show_register_keyboard_shortcuts_dialog(self)
         )
         help_menu.addAction(act_register_keys)
+        act_business_keys = QAction("&Business shortcuts…", self)
+        _menu_action_tip(
+            act_business_keys,
+            "F5, Tax % Ctrl+S, and Business tab context menus.",
+        )
+        act_business_keys.triggered.connect(
+            lambda: show_business_keyboard_shortcuts_dialog(self)
+        )
+        help_menu.addAction(act_business_keys)
+        act_more_tab_keys = QAction("&More tab shortcuts (F5)…", self)
+        _menu_action_tip(
+            act_more_tab_keys,
+            "F5 refresh and View chords for COA, Journal, Reports, and Audit.",
+        )
+        act_more_tab_keys.triggered.connect(
+            lambda: show_more_main_tabs_keyboard_shortcuts_dialog(self)
+        )
+        help_menu.addAction(act_more_tab_keys)
         help_menu.addSeparator()
         act_about = QAction("&About ProBooks+ai", self)
+        _menu_action_tip(act_about, "Application name and version.")
         act_about.triggered.connect(self._on_about)
         help_menu.addAction(act_about)
 
@@ -868,10 +1172,11 @@ class MainWindow(QMainWindow):
     def _on_copy_company_database_path(self) -> None:
         raw = getattr(self._bank_db, "_db_path", None) or self._db_path or ""
         if not raw:
-            QMessageBox.information(
+            message_box_information_ok(
                 self,
                 "Copy path",
                 "No company database path is available.",
+                ok_tip="Open or create a company database first (File menu).",
             )
             return
         resolved = str(Path(raw).resolve())
@@ -883,31 +1188,35 @@ class MainWindow(QMainWindow):
     def _on_help_roadmap(self):
         path = resolve_local_roadmap_path()
         if path is None:
-            QMessageBox.information(
+            message_box_information_ok(
                 self,
                 "Product roadmap",
                 "Could not find docs/ROADMAP.md.\n\n"
                 "In development, it lives in the repository docs folder.\n"
                 "Reinstall or rebuild the desktop app if you expected a bundled copy.",
+                ok_tip="Close; open ROADMAP.md from the repo in your editor if you are developing.",
             )
             return
         url = QUrl.fromLocalFile(str(path))
         if not QDesktopServices.openUrl(url):
-            QMessageBox.warning(
+            message_box_warning_ok(
                 self,
                 "Product roadmap",
                 f"Unable to open the file (no default app for .md?):\n"
                 f"{escape_ampersand_for_qt(str(path))}",
+                ok_tip="Close; open the path in Explorer or associate a Markdown viewer.",
             )
 
     def _on_about(self):
         ver = application_version()
-        QMessageBox.about(
+        message_box_about_ok(
             self,
             "About ProBooks+ai",
             f"<b>ProBooks+ai</b><br>"
             f"Version {ver} \u2014 AI-powered bookkeeping for small business.<br><br>"
+            f"Keyboard shortcuts are summarized under <b>Help</b>.<br><br>"
             f"\u00a9 2026 ProBooks+ai",
+            ok_tip="Close; use Help menu for shortcut summaries and product info.",
         )
 
     def _on_import(self):
@@ -944,10 +1253,12 @@ class MainWindow(QMainWindow):
 
         self._refresh_inbox()
         if skipped:
-            QMessageBox.warning(
-                self, "Skipped Files",
+            message_box_warning_ok(
+                self,
+                "Skipped Files",
                 "The following files were skipped (unsupported type):\n"
                 + "\n".join(escape_ampersand_for_qt(s) for s in skipped),
+                ok_tip="Close; use PDF or supported images only for Intake import.",
             )
         if imported:
             self._status_bar.showMessage(f"Imported {imported} document(s).")
@@ -959,7 +1270,12 @@ class MainWindow(QMainWindow):
 
     def _on_run_ai(self, doc_id: int):
         if self._worker and self._worker.isRunning():
-            QMessageBox.information(self, "AI Running", "Please wait \u2013 AI extraction is already in progress.")
+            message_box_information_ok(
+                self,
+                "AI Running",
+                "Please wait \u2013 AI extraction is already in progress.",
+                ok_tip="Close; wait for the current extraction to finish before running again.",
+            )
             return
 
         row = self._db.get_document(doc_id)
@@ -968,11 +1284,13 @@ class MainWindow(QMainWindow):
 
         # Check API key
         if not os.environ.get("OPENAI_API_KEY"):
-            QMessageBox.warning(
-                self, "API Key Missing",
+            message_box_warning_ok(
+                self,
+                "API Key Missing",
                 "OPENAI_API_KEY is not set.\n\n"
                 "Set the environment variable before starting the application:\n"
                 "  set OPENAI_API_KEY=sk-...",
+                ok_tip="Close; set the key, restart the app, then run AI again.",
             )
             return
 
@@ -1000,10 +1318,11 @@ class MainWindow(QMainWindow):
     def _on_ai_error(self, doc_id: int, error: str):
         self._db.set_status(doc_id, "Error")
         self._refresh_inbox()
-        QMessageBox.critical(
+        message_box_critical_ok(
             self,
             "AI Extraction Failed",
             f"Error:\n{escape_ampersand_for_qt(error)}",
+            ok_tip="Close; check network, API key, and document format, then retry.",
         )
         self._status_bar.showMessage("AI extraction failed.")
 
@@ -1018,9 +1337,11 @@ class MainWindow(QMainWindow):
     def _on_mark_posted(self, doc_id: int):
         row = self._db.get_document(doc_id)
         if row and row["status"] != "Approved":
-            QMessageBox.warning(
-                self, "Not Yet Approved",
+            message_box_warning_ok(
+                self,
+                "Not Yet Approved",
                 "Please approve the document before marking it as Posted.",
+                ok_tip="Close; use Approve in the detail pane first.",
             )
             return
         self._db.set_status(doc_id, "Posted")
@@ -1120,10 +1441,11 @@ class MainWindow(QMainWindow):
 
     def _switch_company_database(self, path: str, *, create_new: bool = False) -> None:
         if self._worker and self._worker.isRunning():
-            QMessageBox.warning(
+            message_box_warning_ok(
                 self,
                 "Busy",
                 "Wait for AI extraction to finish before switching company files.",
+                ok_tip="Close; wait for AI to finish, then switch company files.",
             )
             return
 
@@ -1131,21 +1453,34 @@ class MainWindow(QMainWindow):
         if create_new:
             p.parent.mkdir(parents=True, exist_ok=True)
             if p.exists():
-                reply = QMessageBox.question(
-                    self,
-                    "File exists",
+                box = QMessageBox(self)
+                box.setIcon(QMessageBox.Icon.Question)
+                box.setWindowTitle("File exists")
+                box.setText(
                     "Open this existing file as the company database?\n\n"
-                    f"{escape_ampersand_for_qt(str(p))}",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.No,
+                    f"{escape_ampersand_for_qt(str(p))}"
                 )
+                box.setStandardButtons(
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                box.setDefaultButton(QMessageBox.StandardButton.No)
+                box.setToolTip(
+                    "This path already exists; Yes opens it as the company database (reload from disk), No cancels."
+                )
+                tip_message_box_buttons(
+                    box,
+                    yes="Switch to this database file (reload from disk).",
+                    no="Do not switch; cancel opening this path.",
+                )
+                reply = box.exec()
                 if reply != QMessageBox.StandardButton.Yes:
                     return
         elif not p.exists():
-            QMessageBox.warning(
+            message_box_warning_ok(
                 self,
                 "Not found",
                 f"File does not exist:\n{escape_ampersand_for_qt(str(p))}",
+                ok_tip="Close; pick an existing .db file or create a new one.",
             )
             return
 
@@ -1156,10 +1491,11 @@ class MainWindow(QMainWindow):
 
     def _on_backup_company(self):
         if self._worker and self._worker.isRunning():
-            QMessageBox.warning(
+            message_box_warning_ok(
                 self,
                 "Busy",
                 "Wait for AI extraction to finish before backing up.",
+                ok_tip="Close; wait for AI to finish, then back up again.",
             )
             return
         src = Path(self._bank_db._db_path).resolve()
@@ -1176,32 +1512,49 @@ class MainWindow(QMainWindow):
         try:
             shutil.copy2(src, path)
         except OSError as exc:
-            QMessageBox.critical(
-                self, "Backup failed", escape_ampersand_for_qt(str(exc))
+            message_box_critical_ok(
+                self,
+                "Backup failed",
+                escape_ampersand_for_qt(str(exc)),
+                ok_tip="Close; check disk space, path permissions, and that the file is not locked.",
             )
             return
-        QMessageBox.information(
+        message_box_information_ok(
             self,
             "Backup complete",
             f"Copied company file to:\n{escape_ampersand_for_qt(path)}",
+            ok_tip="Close; your backup copy is ready at the path shown.",
         )
 
     def _on_restore_company(self):
         if self._worker and self._worker.isRunning():
-            QMessageBox.warning(
+            message_box_warning_ok(
                 self,
                 "Busy",
                 "Wait for AI extraction to finish before restoring.",
+                ok_tip="Close; wait for AI to finish, then restore again.",
             )
             return
-        reply = QMessageBox.warning(
-            self,
-            "Restore company database",
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Restore company database")
+        box.setText(
             "The selected backup will overwrite your current company database file on disk. "
-            "Unsaved work in memory is discarded. This cannot be undone.\n\nContinue?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+            "Unsaved work in memory is discarded. This cannot be undone.\n\nContinue?"
         )
+        box.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        box.setDefaultButton(QMessageBox.StandardButton.No)
+        box.setToolTip(
+            "Restore overwrites the active company database on disk; unsaved in-memory work is discarded."
+        )
+        tip_message_box_buttons(
+            box,
+            yes="Overwrite the company file with the selected backup.",
+            no="Cancel restore; keep the current file.",
+        )
+        reply = box.exec()
         if reply != QMessageBox.StandardButton.Yes:
             return
         path, _ = QFileDialog.getOpenFileName(
@@ -1214,10 +1567,11 @@ class MainWindow(QMainWindow):
             return
         target = Path(self._bank_db._db_path).resolve()
         if Path(path).resolve() == target:
-            QMessageBox.information(
+            message_box_information_ok(
                 self,
                 "Restore",
                 "Choose a different file than the active company database.",
+                ok_tip="Close; pick a separate backup file to copy over the active company .db.",
             )
             return
         self._db.close()
@@ -1225,11 +1579,12 @@ class MainWindow(QMainWindow):
         try:
             shutil.copy2(path, target)
         except OSError as exc:
-            QMessageBox.critical(
+            message_box_critical_ok(
                 self,
                 "Restore failed",
                 f"{escape_ampersand_for_qt(str(exc))}\n\n"
                 "Try closing other apps using the database, then restart ProBooks+ai.",
+                ok_tip="Close; release file locks, restart the app if needed, then retry restore.",
             )
             try:
                 self._load_company_at_path(str(target))
@@ -1237,10 +1592,11 @@ class MainWindow(QMainWindow):
                 pass
             return
         self._load_company_at_path(str(target))
-        QMessageBox.information(
+        message_box_information_ok(
             self,
             "Restore complete",
             "Company data was reloaded from the backup.",
+            ok_tip="Close; you are now on the restored company database.",
         )
 
     def _on_open_company_database(self):

@@ -21,9 +21,11 @@ from pathlib import Path
 from probooks.database import connect, migration_files, run_migrations
 from probooksai.bank_import import BankDatabase
 
+from tests.repo_paths import PROBOOKS_MIGRATIONS_DIR
+
 
 def _migration_dir() -> Path:
-    return Path(__file__).resolve().parents[1] / "probooks" / "migrations"
+    return PROBOOKS_MIGRATIONS_DIR
 
 
 def _user_table_names(conn) -> frozenset[str]:

@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-_REPO = Path(__file__).resolve().parents[1]
-_DBMOD = _REPO / "probooksai" / "database.py"
+from tests.repo_paths import PROBOOKSAI_PACKAGE_DIR
+_DBMOD = PROBOOKSAI_PACKAGE_DIR / "database.py"
 
 
 def test_probooksai_database_uses_paths_app_dir_with_legacy_migration() -> None:

@@ -2,19 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-_REPO = Path(__file__).resolve().parents[1]
-_CLI = _REPO / "probooks" / "cli.py"
-_HELP_EPILOG = _REPO / "probooks" / "help_epilog.py"
+from tests.repo_paths import PROBOOKS_CLI, PROBOOKS_HELP_EPILOG
 
 
 def test_probooks_cli_description_epilog_and_default_db_help() -> None:
-    cli = _CLI.read_text(encoding="utf-8")
+    cli = PROBOOKS_CLI.read_text(encoding="utf-8")
     mod_doc_end = cli.index('"""', 3)
     mod_doc = cli[: mod_doc_end + 3]
     assert "help_epilog" in mod_doc
-    hel = _HELP_EPILOG.read_text(encoding="utf-8")
+    hel = PROBOOKS_HELP_EPILOG.read_text(encoding="utf-8")
     assert 'description="ProBooks+ai SQLite CLI"' in cli
     assert "python -m probooks" in cli
     assert "Default database" in cli

@@ -1,4 +1,12 @@
-"""Shared audit history dialog (Phase 23)."""
+"""Shared audit history dialog (Phase 23).
+
+Change history grid: **right-click** **Keyboard shortcuts…** (including empty area) explains
+**Copy row**; main-window **Help** shortcuts are on the main window.
+The dialog **window** has a hover hint; **Close** uses ``tip_qdialog_button_box``; the change-history **table** has a hover hint when rows are shown.
+The **empty-state** message label has a tooltip when there is no history yet.
+Context menu **Keyboard shortcuts…** and **Copy row** use **setToolTip** on each **QAction**.
+**Keyboard shortcuts…** help uses ``message_box_information_ok`` (hover **Ok** tooltip).
+"""
 
 from __future__ import annotations
 
@@ -18,20 +26,46 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from desktop_app.qt_mnemonic import escape_ampersand_for_qt
+from desktop_app.qt_mnemonic import (
+    escape_ampersand_for_qt,
+    message_box_information_ok,
+    tip_qdialog_button_box,
+)
 from desktop_app.table_clipboard import copy_table_row_as_tsv, plain_display_table_item
 from probooksai.audit_log import list_for_entity
+
+
+def _audit_history_shortcuts_help(parent: QWidget) -> None:
+    message_box_information_ok(
+        parent,
+        "Change history",
+        "Copy row — copies the selected row as tab-separated text.\n\n"
+        "For main-window shortcuts (F5, Help menus), use Help on the main window.",
+        ok_tip="Close this shortcuts summary.",
+    )
 
 
 def _audit_history_table_context_menu(
     table: QTableWidget, parent_widget: QWidget, pos
 ) -> None:
     idx = table.indexAt(pos)
+    m = QMenu(parent_widget)
+    act_keys = m.addAction(
+        "Keyboard shortcuts…",
+        lambda: _audit_history_shortcuts_help(parent_widget),
+    )
+    act_keys.setToolTip(
+        "This dialog’s shortcuts (Copy row); use the main window Help menu for global chords."
+    )
     if not idx.isValid():
+        m.exec(table.viewport().mapToGlobal(pos))
         return
     row = idx.row()
-    m = QMenu(parent_widget)
-    m.addAction("Copy row", partial(copy_table_row_as_tsv, table, row))
+    m.addSeparator()
+    act_copy = m.addAction("Copy row", partial(copy_table_row_as_tsv, table, row))
+    act_copy.setToolTip(
+        "Copy this audit row as tab-separated text for pasting into a spreadsheet or editor."
+    )
     m.exec(table.viewport().mapToGlobal(pos))
 
 
@@ -49,9 +83,14 @@ def show_entity_audit_history(
     dlg = QDialog(parent)
     dlg.setWindowTitle(escape_ampersand_for_qt(window_title))
     dlg.resize(640, 320)
+    dlg.setToolTip(
+        "Field-level audit trail for this record. Right-click the grid (when shown) for shortcuts and copy."
+    )
     lay = QVBoxLayout(dlg)
     if not rows:
-        lay.addWidget(QLabel(escape_ampersand_for_qt(empty_message)))
+        empty_lbl = QLabel(escape_ampersand_for_qt(empty_message))
+        empty_lbl.setToolTip("No field-level audit entries are stored for this record yet.")
+        lay.addWidget(empty_lbl)
     else:
         tbl = QTableWidget()
         tbl.setColumnCount(4)
@@ -83,8 +122,13 @@ def show_entity_audit_history(
         tbl.customContextMenuRequested.connect(
             lambda pos, t=tbl, d=dlg: _audit_history_table_context_menu(t, d, pos)
         )
+        tbl.setToolTip(
+            "Field-level changes for this record. Right-click for Keyboard shortcuts… "
+            "(including on empty area)."
+        )
         lay.addWidget(tbl)
     box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+    tip_qdialog_button_box(box, close="Close this change history dialog.")
     box.rejected.connect(dlg.reject)
     lay.addWidget(box)
     dlg.exec()

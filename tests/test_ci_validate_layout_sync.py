@@ -3,11 +3,26 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-_REPO = Path(__file__).resolve().parents[1]
-_SH = _REPO / "scripts" / "ci_validate_layout.sh"
-_PS1 = _REPO / "scripts" / "ci_validate_layout.ps1"
+from tests.repo_paths import (
+    CI_VALIDATE_LAYOUT_PS1 as _PS1,
+    CI_VALIDATE_LAYOUT_SH as _SH,
+    CURSOR_RULE_GITHUB_WORK_CONTEXT_MDC,
+    DOCS_BACKLOG_MD,
+    DOCS_CONTRIBUTING_MD,
+    DOCS_ISSUES_BACKLOG_MD,
+    DOCS_ROADMAP_MD,
+    GITHUB_ISSUE_TEMPLATE_BUG_REPORT_MD,
+    GITHUB_ISSUE_TEMPLATE_CONFIG_YML,
+    GITHUB_ISSUE_TEMPLATE_FEATURE_REQUEST_MD,
+    GITHUB_PULL_REQUEST_TEMPLATE_MD,
+    GITHUB_WORKFLOW_CI_YML,
+    GITHUB_WORKFLOW_UI_SCREENSHOT_YML,
+    README_MD,
+    REVIEW_HTML,
+    REPO_ROOT,
+    TESTS_DIR,
+)
 
 
 def _paths_from_sh(text: str) -> list[str]:
@@ -40,7 +55,7 @@ def test_ci_validate_layout_sh_and_ps1_same_paths_and_order() -> None:
 
 def test_ci_yml_validate_job_invokes_layout_shell_script() -> None:
     """Keep path checks in scripts/ci_validate_layout.sh, not re-inlined into the workflow YAML."""
-    yml = (_REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    yml = GITHUB_WORKFLOW_CI_YML.read_text(encoding="utf-8")
     assert re.search(r"(?m)^\s*run:\s+bash scripts/ci_validate_layout\.sh\s*$", yml), (
         ".github/workflows/ci.yml validate step must use: run: bash scripts/ci_validate_layout.sh"
     )
@@ -48,7 +63,7 @@ def test_ci_yml_validate_job_invokes_layout_shell_script() -> None:
 
 def test_ci_yml_python_job_uses_ci_extra_headless_pytest_and_wheel() -> None:
     """Main CI job should match docs: .[ci], offscreen Qt, pytest, Hatch wheel."""
-    yml = (_REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    yml = GITHUB_WORKFLOW_CI_YML.read_text(encoding="utf-8")
     assert 'python-version: "3.12"' in yml
     assert 'pip install -e ".[ci]"' in yml
     assert "QT_QPA_PLATFORM: offscreen" in yml
@@ -60,7 +75,7 @@ def test_ci_yml_python_job_uses_ci_extra_headless_pytest_and_wheel() -> None:
 
 def test_ui_screenshot_workflow_uses_xvfb_capture_script_and_desktop_extra() -> None:
     """PR screenshot workflow must stay headless-friendly and match README scripting."""
-    yml = (_REPO / ".github" / "workflows" / "ui-screenshot.yml").read_text(encoding="utf-8")
+    yml = GITHUB_WORKFLOW_UI_SCREENSHOT_YML.read_text(encoding="utf-8")
     assert "continue-on-error: true" in yml
     assert "xvfb-run" in yml
     assert "scripts/capture_ui_screenshot.py" in yml
@@ -71,8 +86,8 @@ def test_ui_screenshot_workflow_uses_xvfb_capture_script_and_desktop_extra() -> 
 
 def test_ci_and_ui_screenshot_workflows_use_matching_python_version() -> None:
     """Avoid drift between the main CI job and the optional screenshot job."""
-    ci = (_REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    shot = (_REPO / ".github" / "workflows" / "ui-screenshot.yml").read_text(encoding="utf-8")
+    ci = GITHUB_WORKFLOW_CI_YML.read_text(encoding="utf-8")
+    shot = GITHUB_WORKFLOW_UI_SCREENSHOT_YML.read_text(encoding="utf-8")
 
     def version_from(text: str) -> str:
         m = re.search(r'python-version:\s*"([^"]+)"', text)
@@ -88,7 +103,7 @@ def test_ci_and_ui_screenshot_workflows_use_matching_python_version() -> None:
 
 def test_contract_test_modules_are_registered_in_layout_validators() -> None:
     """Every tests/test_*_contract.py must appear in ci_validate_layout.sh and .ps1."""
-    tests_dir = _REPO / "tests"
+    tests_dir = TESTS_DIR
     names = sorted(p.name for p in tests_dir.glob("test_*_contract.py"))
     assert names, "expected at least one tests/test_*_contract.py"
     sh_text = _SH.read_text(encoding="utf-8")
@@ -101,9 +116,9 @@ def test_contract_test_modules_are_registered_in_layout_validators() -> None:
 
 def test_contributing_contract_table_rows_match_contract_modules() -> None:
     """docs/CONTRIBUTING.md table must list every tests/test_*_contract.py (onboarding + review)."""
-    tests_dir = _REPO / "tests"
+    tests_dir = TESTS_DIR
     names = sorted(p.name for p in tests_dir.glob("test_*_contract.py"))
-    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
     for name in names:
         row = f"| **`{name}`** |"
         assert row in md, f"add contract table row starting with {row!r} to docs/CONTRIBUTING.md"
@@ -111,7 +126,7 @@ def test_contributing_contract_table_rows_match_contract_modules() -> None:
 
 def test_readme_opener_mentions_shell_cli_desktop_sqlite() -> None:
     """README lede matches shipped surfaces (static shell, CLI, desktop, Excel workbook, SQLite)."""
-    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    readme = README_MD.read_text(encoding="utf-8")
     assert "Accounting app foundation:" in readme
     start = readme.index("Accounting app foundation:")
     line = readme[start : readme.find("\n", start)]
@@ -121,7 +136,7 @@ def test_readme_opener_mentions_shell_cli_desktop_sqlite() -> None:
 
 def test_readme_default_database_paths_notes_two_schemas_and_roadmap() -> None:
     """README should state CLI vs desktop DB files are not interchangeable and point at ROADMAP #21 note."""
-    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    readme = README_MD.read_text(encoding="utf-8")
     head = "### Default database paths (Windows)"
     start = readme.index(head)
     chunk = readme[start : readme.index("\n## ", start)]
@@ -141,7 +156,7 @@ def test_readme_default_database_paths_notes_two_schemas_and_roadmap() -> None:
 
 def test_roadmap_snapshot_why_not_one_db_points_at_issue_21_inventory() -> None:
     """ROADMAP Why not one .db yet should point at the CLI vs desktop DDL inventory tests."""
-    text = (_REPO / "docs" / "ROADMAP.md").read_text(encoding="utf-8")
+    text = DOCS_ROADMAP_MD.read_text(encoding="utf-8")
     start = text.index("**Why not one `.db` yet:**")
     end = text.index("\n| Roadmap phases |", start)
     chunk = text[start:end]
@@ -153,7 +168,7 @@ def test_roadmap_snapshot_why_not_one_db_points_at_issue_21_inventory() -> None:
 
 def test_readme_desktop_section_documents_theme_and_qt_font_filter() -> None:
     """README Desktop section stays aligned with Fusion theme + Windows Qt stderr filter."""
-    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    readme = README_MD.read_text(encoding="utf-8")
     head = "## Desktop app (PySide6)"
     start = readme.index(head)
     rest = readme[start + len(head) :]
@@ -178,7 +193,7 @@ def test_readme_desktop_section_documents_theme_and_qt_font_filter() -> None:
 
 def test_readme_links_contributing_continuous_integration_anchor() -> None:
     """README docs bar and Contributing section should deep-link CONTRIBUTING CI + Running Tests."""
-    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    readme = README_MD.read_text(encoding="utf-8")
     assert "[docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)" in readme
     assert "docs/CONTRIBUTING.md#continuous-integration" in readme
     assert "[Running Tests](docs/CONTRIBUTING.md#running-tests)" in readme
@@ -186,21 +201,21 @@ def test_readme_links_contributing_continuous_integration_anchor() -> None:
 
 def test_readme_links_roadmap_implementation_snapshot() -> None:
     """README docs bar and Issue-driven section should deep-link ROADMAP implementation snapshot."""
-    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    readme = README_MD.read_text(encoding="utf-8")
     needle = "docs/ROADMAP.md#implementation-snapshot-repository-2026-04"
     assert readme.count(needle) >= 2, f"expected at least two {needle!r} links (docs bar + body)"
 
 
 def test_readme_links_roadmap_supporting_cross_cutting() -> None:
     """README docs bar and Issue-driven section should deep-link ROADMAP Supporting / cross-cutting."""
-    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    readme = README_MD.read_text(encoding="utf-8")
     needle = "docs/ROADMAP.md#supporting-cross-cutting-issues"
     assert readme.count(needle) >= 2, f"expected at least two {needle!r} links (docs bar + body)"
 
 
 def test_readme_docs_bar_links_issues_backlog_short_index() -> None:
     """README docs bar should link docs/issues-backlog.md (short index)."""
-    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    readme = README_MD.read_text(encoding="utf-8")
     assert "[Short index](docs/issues-backlog.md)" in readme
 
 
@@ -211,25 +226,25 @@ def test_hub_docs_shared_issues_backlog_blurb_lists_config_and_review_cards() ->
         "**`review.html`** Issues cards)"
     )
     for rel in ("docs/ROADMAP.md", "docs/BACKLOG.md", "docs/CONTRIBUTING.md"):
-        text = (_REPO / rel).read_text(encoding="utf-8")
+        text = (REPO_ROOT / rel).read_text(encoding="utf-8")
         assert blurb in text, f"{rel} should include the shared issues-backlog.md blurb"
 
 
 def test_readme_docs_bar_links_desktop_app_anchor() -> None:
     """README top **Docs** line should jump to ## Desktop app (PySide6)."""
-    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    readme = README_MD.read_text(encoding="utf-8")
     assert "[Desktop app](#desktop-app-pyside6)" in readme
 
 
 def test_readme_docs_bar_links_default_database_paths_anchor() -> None:
     """README top **Docs** line should jump to ### Default database paths (Windows)."""
-    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    readme = README_MD.read_text(encoding="utf-8")
     assert "[Default DB paths](#default-database-paths-windows)" in readme
 
 
 def test_readme_excel_workbook_subsection_links_help_epilog_and_desktop() -> None:
     """README ### Excel workbook template should cross-link help_epilog and Desktop anchor."""
-    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    readme = README_MD.read_text(encoding="utf-8")
     head = "### Excel workbook template (openpyxl)"
     start = readme.index(head)
     rest = readme[start + len(head) :]
@@ -248,7 +263,7 @@ def test_readme_excel_workbook_subsection_links_help_epilog_and_desktop() -> Non
 
 def test_readme_docs_bar_links_excel_workbook_anchor() -> None:
     """README top **Docs** line should jump to ## Excel workbook template (openpyxl)."""
-    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    readme = README_MD.read_text(encoding="utf-8")
     assert "[Excel workbook](#excel-workbook-template-openpyxl)" in readme
 
 
@@ -259,7 +274,7 @@ def test_hub_docs_related_docs_link_readme_excel_workbook_template() -> None:
         "(**generate_workbook.py**, **openpyxl**; CLI/desktop **`--help`**: **`probooks/help_epilog.py`**)"
     )
     for rel in ("docs/ROADMAP.md", "docs/BACKLOG.md", "docs/CONTRIBUTING.md"):
-        text = (_REPO / rel).read_text(encoding="utf-8")
+        text = (REPO_ROOT / rel).read_text(encoding="utf-8")
         assert segment in text, f"{rel} should include the shared README Excel workbook segment"
 
 
@@ -270,7 +285,7 @@ def test_hub_docs_related_docs_link_readme_default_database_paths() -> None:
         "(CLI **`probooks.db`** vs desktop **`probooksai.db`**, **#21**)"
     )
     for rel in ("docs/ROADMAP.md", "docs/BACKLOG.md", "docs/CONTRIBUTING.md"):
-        text = (_REPO / rel).read_text(encoding="utf-8")
+        text = (REPO_ROOT / rel).read_text(encoding="utf-8")
         assert segment in text, f"{rel} should include the shared README default database paths segment"
 
 
@@ -278,7 +293,7 @@ def test_static_html_links_readme_desktop_section() -> None:
     """Static shell pages that mention the desktop app should deep-link README Desktop."""
     needle = 'href="README.md#desktop-app-pyside6"'
     for name in ("index.html", "invoice.html", "review.html"):
-        text = (_REPO / name).read_text(encoding="utf-8")
+        text = (REPO_ROOT / name).read_text(encoding="utf-8")
         assert needle in text, f"{name} should include {needle!r}"
 
 
@@ -286,13 +301,13 @@ def test_static_html_links_readme_excel_workbook_section() -> None:
     """Static shell pages should deep-link README Excel workbook template where we surface it."""
     needle = 'href="README.md#excel-workbook-template-openpyxl"'
     for name in ("index.html", "invoice.html", "review.html"):
-        text = (_REPO / name).read_text(encoding="utf-8")
+        text = (REPO_ROOT / name).read_text(encoding="utf-8")
         assert needle in text, f"{name} should include {needle!r}"
 
 
 def test_review_html_links_readme_web_shell_and_desktop_anchors() -> None:
     """review.html Documentation cards should deep-link README Web shell, Desktop, default DB paths, and Excel template."""
-    text = (_REPO / "review.html").read_text(encoding="utf-8")
+    text = REVIEW_HTML.read_text(encoding="utf-8")
     assert 'href="README.md#web-shell-review"' in text
     assert 'href="README.md#desktop-app-pyside6"' in text
     assert 'href="README.md#default-database-paths-windows"' in text
@@ -301,7 +316,7 @@ def test_review_html_links_readme_web_shell_and_desktop_anchors() -> None:
 
 def test_review_html_readme_default_database_paths_documentation_card() -> None:
     """review.html Documentation grid should surface README default DB paths + #21 next to Desktop/Excel cards."""
-    text = (_REPO / "review.html").read_text(encoding="utf-8")
+    text = REVIEW_HTML.read_text(encoding="utf-8")
     start = text.index("<strong>README — Default database paths</strong>")
     end = text.index("</a>", start)
     card = text[start:end]
@@ -313,7 +328,7 @@ def test_review_html_readme_default_database_paths_documentation_card() -> None:
 
 def test_review_html_readme_excel_documentation_card_mentions_help_epilog() -> None:
     """README — Excel workbook Documentation card should mention help_epilog next to generate_workbook."""
-    text = (_REPO / "review.html").read_text(encoding="utf-8")
+    text = REVIEW_HTML.read_text(encoding="utf-8")
     start = text.index("<strong>README — Excel workbook</strong>")
     end = text.index("</a>", start)
     card = text[start:end]
@@ -324,7 +339,7 @@ def test_review_html_readme_excel_documentation_card_mentions_help_epilog() -> N
 
 def test_review_html_python_desktop_section_mentions_help_epilog() -> None:
     """review.html Python + desktop lead should surface shared --help Excel line (probooks/help_epilog.py)."""
-    text = (_REPO / "review.html").read_text(encoding="utf-8")
+    text = REVIEW_HTML.read_text(encoding="utf-8")
     start = text.index('<h2>Python + desktop (SQLite)</h2>')
     end = text.index("</section>", start)
     chunk = text[start:end]
@@ -339,7 +354,7 @@ def test_review_html_python_desktop_section_mentions_help_epilog() -> None:
 def test_static_shell_page_sub_mentions_help_epilog() -> None:
     """index.html and invoice.html README hints mention help_epilog + --help (parity with review.html)."""
     for name in ("index.html", "invoice.html"):
-        text = (_REPO / name).read_text(encoding="utf-8")
+        text = (REPO_ROOT / name).read_text(encoding="utf-8")
         assert "probooks/help_epilog.py" in text, f"{name} should mention probooks/help_epilog.py"
         assert "--help" in text, f"{name} should mention --help"
         assert 'href="README.md#default-database-paths-windows"' in text, (
@@ -355,7 +370,7 @@ def test_static_shell_page_sub_mentions_help_epilog() -> None:
 
 def test_review_html_links_contributing_doc_anchors() -> None:
     """review.html Documentation section should link CONTRIBUTING Running Tests + Continuous integration."""
-    text = (_REPO / "review.html").read_text(encoding="utf-8")
+    text = REVIEW_HTML.read_text(encoding="utf-8")
     assert 'href="docs/CONTRIBUTING.md#running-tests"' in text
     assert 'href="docs/CONTRIBUTING.md#continuous-integration"' in text
     assert "blob/main/docs/CONTRIBUTING.md#running-tests" in text
@@ -364,7 +379,7 @@ def test_review_html_links_contributing_doc_anchors() -> None:
 
 def test_review_html_issues_backlog_card_mentions_issue_chooser_config() -> None:
     """review.html issues-backlog cards (local + GitHub blob) should name the same config path as docs/issues-backlog.md."""
-    text = (_REPO / "review.html").read_text(encoding="utf-8")
+    text = REVIEW_HTML.read_text(encoding="utf-8")
     assert 'href="docs/issues-backlog.md"' in text
     assert "blob/main/docs/issues-backlog.md" in text
     assert text.count("ROADMAP snapshot + Supporting / cross-cutting") >= 2, (
@@ -376,7 +391,7 @@ def test_review_html_issues_backlog_card_mentions_issue_chooser_config() -> None
 
 def test_readme_scripts_mention_work_context_example_json() -> None:
     """README Scripts section should point at work-context.example.json vs generated JSON."""
-    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    readme = README_MD.read_text(encoding="utf-8")
     assert "integrations/work-context.example.json" in readme
     assert "sync-workspace.ps1" in readme
     sync = readme.index("**`sync-workspace.ps1`**")
@@ -393,7 +408,7 @@ def test_readme_scripts_mention_work_context_example_json() -> None:
 
 def test_readme_ci_validate_layout_bullet_mentions_conftest() -> None:
     """README Scripts section should name tests/conftest.py next to layout validators (PR template parity)."""
-    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    readme = README_MD.read_text(encoding="utf-8")
     head = "## Scripts (`scripts/`)"
     start = readme.index(head)
     chunk = readme[start : readme.index("\n## ", start + 1)]
@@ -403,7 +418,7 @@ def test_readme_ci_validate_layout_bullet_mentions_conftest() -> None:
 
 def test_readme_contributing_section_mentions_conftest() -> None:
     """README ## Contributing should point readers at tests/conftest.py for shared fixtures."""
-    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    readme = README_MD.read_text(encoding="utf-8")
     start = readme.index("## Contributing")
     chunk = readme[start:]
     assert "contract-test" in chunk
@@ -412,7 +427,7 @@ def test_readme_contributing_section_mentions_conftest() -> None:
 
 def test_contributing_ci_documents_work_context_example_touchpoints() -> None:
     """Continuous integration section should list where work-context.example.json must stay in sync."""
-    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
     assert "### Continuous integration" in md
     ci_start = md.index("### Continuous integration")
     table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
@@ -424,7 +439,7 @@ def test_contributing_ci_documents_work_context_example_touchpoints() -> None:
 
 def test_contributing_ci_documents_contributing_md_anchor_touchpoints() -> None:
     """Continuous integration section documents CONTRIBUTING.md fragment sync + review.html tests."""
-    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
     ci_start = md.index("### Continuous integration")
     table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
     ci_chunk = md[ci_start:table_start]
@@ -434,7 +449,7 @@ def test_contributing_ci_documents_contributing_md_anchor_touchpoints() -> None:
 
 def test_contributing_ci_documents_issues_backlog_review_config_touchpoints() -> None:
     """Continuous integration section lists tests for issues-backlog.md vs review.html vs config.yml."""
-    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
     ci_start = md.index("### Continuous integration")
     table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
     ci_chunk = md[ci_start:table_start]
@@ -465,7 +480,7 @@ def test_contributing_ci_documents_issues_backlog_review_config_touchpoints() ->
 
 def test_contributing_ci_documents_hub_shared_issues_backlog_blurb() -> None:
     """Continuous integration section documents the ROADMAP/BACKLOG/CONTRIBUTING issues-backlog blurb test."""
-    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
     ci_start = md.index("### Continuous integration")
     table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
     ci_chunk = md[ci_start:table_start]
@@ -480,7 +495,7 @@ def test_contributing_ci_documents_hub_shared_issues_backlog_blurb() -> None:
 
 def test_contributing_ci_documents_hub_readme_default_database_paths_segment() -> None:
     """Continuous integration section documents the ROADMAP/BACKLOG/CONTRIBUTING README default DB hub segment test."""
-    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
     ci_start = md.index("### Continuous integration")
     table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
     ci_chunk = md[ci_start:table_start]
@@ -495,7 +510,7 @@ def test_contributing_ci_documents_hub_readme_default_database_paths_segment() -
 
 def test_pr_template_lists_hub_docs_issues_backlog_blurb_checklist() -> None:
     """PR template should remind editors to sync ROADMAP/BACKLOG/CONTRIBUTING issues-backlog blurb + tests."""
-    text = (_REPO / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    text = GITHUB_PULL_REQUEST_TEMPLATE_MD.read_text(encoding="utf-8")
     assert "Hub docs — issues-backlog link text" in text
     for name in (
         "test_hub_docs_shared_issues_backlog_blurb_lists_config_and_review_cards",
@@ -507,7 +522,7 @@ def test_pr_template_lists_hub_docs_issues_backlog_blurb_checklist() -> None:
 
 def test_pr_template_lists_hub_docs_readme_default_database_paths_checklist() -> None:
     """PR template should remind editors to sync ROADMAP/BACKLOG/CONTRIBUTING README default DB hub segment + tests."""
-    text = (_REPO / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    text = GITHUB_PULL_REQUEST_TEMPLATE_MD.read_text(encoding="utf-8")
     assert "Hub docs — README default database paths segment" in text
     for name in (
         "test_hub_docs_related_docs_link_readme_default_database_paths",
@@ -519,7 +534,7 @@ def test_pr_template_lists_hub_docs_readme_default_database_paths_checklist() ->
 
 def test_pr_template_lists_readme_excel_workbook_anchor_checklist() -> None:
     """PR template should remind editors to sync README Excel workbook template anchor + tests."""
-    text = (_REPO / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    text = GITHUB_PULL_REQUEST_TEMPLATE_MD.read_text(encoding="utf-8")
     assert "excel-workbook-template-openpyxl" in text
     assert "### Excel workbook template (openpyxl)" in text
     assert "**README Excel workbook template anchor**" in text
@@ -544,7 +559,7 @@ def test_pr_template_lists_readme_excel_workbook_anchor_checklist() -> None:
 
 def test_pr_template_readme_desktop_anchor_checklist_cites_help_epilog_tests() -> None:
     """PR template Desktop anchor row should cite help_epilog-related layout tests."""
-    text = (_REPO / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    text = GITHUB_PULL_REQUEST_TEMPLATE_MD.read_text(encoding="utf-8")
     assert "`## Desktop app (PySide6)`** was renamed" in text
     for name in (
         "test_review_html_python_desktop_section_mentions_help_epilog",
@@ -555,7 +570,7 @@ def test_pr_template_readme_desktop_anchor_checklist_cites_help_epilog_tests() -
 
 def test_pr_template_lists_readme_default_database_paths_checklist() -> None:
     """PR template should remind editors to sync README default DB paths + ROADMAP #21 note + tests."""
-    text = (_REPO / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    text = GITHUB_PULL_REQUEST_TEMPLATE_MD.read_text(encoding="utf-8")
     assert "### Default database paths (Windows)" in text
     assert "**README `### Default database paths (Windows)`**" in text
     assert "**`index.html`** / **`invoice.html`** README hints" in text
@@ -579,7 +594,7 @@ def test_pr_template_lists_readme_default_database_paths_checklist() -> None:
 
 def test_pr_template_lists_issue_21_schema_inventory_checklist() -> None:
     """PR template should remind editors to sync test_issue_21_schema_inventory when DDL changes."""
-    text = (_REPO / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    text = GITHUB_PULL_REQUEST_TEMPLATE_MD.read_text(encoding="utf-8")
     assert "**`probooks/migrations/*.sql`**" in text
     assert "**`probooksai/bank_import.py`**" in text
     assert "**`SCHEMA_VERSION`**" in text
@@ -593,7 +608,7 @@ def test_pr_template_lists_issue_21_schema_inventory_checklist() -> None:
 
 def test_contributing_ci_documents_readme_default_database_paths_bullet() -> None:
     """Continuous integration section documents README default database paths + layout tests."""
-    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
     ci_start = md.index("### Continuous integration")
     table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
     chunk = md[ci_start:table_start]
@@ -620,7 +635,7 @@ def test_contributing_ci_documents_readme_default_database_paths_bullet() -> Non
 
 def test_contributing_ci_documents_issue_21_schema_inventory_bullet() -> None:
     """Continuous integration section documents SQLite issue #21 schema inventory tests."""
-    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
     ci_start = md.index("### Continuous integration")
     table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
     chunk = md[ci_start:table_start]
@@ -643,7 +658,7 @@ def test_contributing_ci_documents_issue_21_schema_inventory_bullet() -> None:
 
 def test_contributing_ci_documents_readme_excel_workbook_anchor_bullet() -> None:
     """Continuous integration section documents the README Excel workbook template anchor + tests."""
-    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
     ci_start = md.index("### Continuous integration")
     table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
     chunk = md[ci_start:table_start]
@@ -667,7 +682,7 @@ def test_contributing_ci_documents_readme_excel_workbook_anchor_bullet() -> None
 
 def test_contributing_ci_documents_readme_desktop_help_epilog_layout_tests() -> None:
     """Continuous integration README Desktop bullet lists layout tests for help_epilog hub copy."""
-    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
     ci_start = md.index("### Continuous integration")
     table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
     chunk = md[ci_start:table_start]
@@ -683,7 +698,7 @@ def test_contributing_ci_documents_readme_desktop_help_epilog_layout_tests() -> 
 
 def test_pr_template_issues_backlog_checklist_cites_layout_sync_tests() -> None:
     """PR template row for issues-backlog vs config.yml should list the layout-sync pytest names."""
-    text = (_REPO / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    text = GITHUB_PULL_REQUEST_TEMPLATE_MD.read_text(encoding="utf-8")
     assert "docs/issues-backlog.md" in text
     assert "orienting paragraphs" in text
     assert "Canonical ordering" in text
@@ -707,7 +722,7 @@ def test_pr_template_issues_backlog_checklist_cites_layout_sync_tests() -> None:
 
 def test_contributing_running_tests_mentions_work_context_example() -> None:
     """Running Tests section should point contributors at work-context example + sync script."""
-    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
     chunk = md.split("## Running Tests", 1)[1].split("### Continuous integration", 1)[0]
     assert "integrations/work-context.example.json" in chunk
     assert "sync-workspace.ps1" in chunk
@@ -723,13 +738,13 @@ def test_contributing_running_tests_mentions_work_context_example() -> None:
 
 def test_contributing_other_docs_links_readme_contributing_section() -> None:
     """CONTRIBUTING intro should deep-link README ## Contributing (parity with docs bar)."""
-    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
     assert "../README.md#contributing" in md
 
 
 def test_contributing_intro_self_links_continuous_integration_and_running_tests() -> None:
     """CONTRIBUTING Other docs line should jump to CI + Running Tests on this page."""
-    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
     intro = md.split("## Naming Conventions", 1)[0]
     assert "[Continuous integration](#continuous-integration)" in intro
     assert "[Running Tests](#running-tests)" in intro
@@ -737,19 +752,19 @@ def test_contributing_intro_self_links_continuous_integration_and_running_tests(
 
 def test_contributing_other_docs_links_roadmap_implementation_snapshot() -> None:
     """CONTRIBUTING should deep-link ROADMAP implementation snapshot (same anchor as BACKLOG / issues-backlog)."""
-    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
     assert "ROADMAP.md#implementation-snapshot-repository-2026-04" in md
 
 
 def test_contributing_other_docs_links_roadmap_supporting_cross_cutting() -> None:
     """CONTRIBUTING Other docs should deep-link ROADMAP Supporting / cross-cutting fragment."""
-    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
     assert "](ROADMAP.md#supporting-cross-cutting-issues)" in md
 
 
 def test_contributing_other_docs_links_issues_backlog_short_index() -> None:
     """CONTRIBUTING intro should link the minimal issues-backlog index."""
-    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
     assert "](issues-backlog.md)" in md
 
 
@@ -762,13 +777,13 @@ def test_hub_markdown_avoids_unicode_apostrophe_u2019() -> None:
         "docs/BACKLOG.md",
         "docs/issues-backlog.md",
     ):
-        text = (_REPO / rel).read_text(encoding="utf-8")
+        text = (REPO_ROOT / rel).read_text(encoding="utf-8")
         assert "\u2019" not in text, f"{rel} must not contain U+2019; use ASCII ' instead"
 
 
 def test_contributing_ci_documents_hub_markdown_u2019_bullet() -> None:
     """Continuous integration section documents the hub Markdown U+2019 contract test."""
-    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
     ci_start = md.index("### Continuous integration")
     table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
     chunk = md[ci_start:table_start]
@@ -780,7 +795,7 @@ def test_contributing_ci_documents_hub_markdown_u2019_bullet() -> None:
 
 def test_pr_template_lists_hub_markdown_u2019_checklist() -> None:
     """PR template should remind editors about ASCII apostrophes in hub Markdown."""
-    text = (_REPO / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    text = GITHUB_PULL_REQUEST_TEMPLATE_MD.read_text(encoding="utf-8")
     assert "**Markdown (hub files)**" in text
     assert "U+2019" in text
     for name in (
@@ -794,7 +809,7 @@ def test_pr_template_lists_hub_markdown_u2019_checklist() -> None:
 def test_github_issue_templates_reference_core_docs() -> None:
     """Issue chooser + forms stay aligned with ROADMAP, BACKLOG, README web shell + Desktop + Excel template, CONTRIBUTING naming."""
     naming = "docs/CONTRIBUTING.md#naming-conventions"
-    config = (_REPO / ".github" / "ISSUE_TEMPLATE" / "config.yml").read_text(encoding="utf-8")
+    config = GITHUB_ISSUE_TEMPLATE_CONFIG_YML.read_text(encoding="utf-8")
     assert naming in config, "config.yml Contributing guide URL should include CONTRIBUTING.md#naming-conventions"
     assert "CONTRIBUTING.md#running-tests" in config, (
         "config.yml should include Running Tests contact link to CONTRIBUTING.md#running-tests"
@@ -870,8 +885,8 @@ def test_github_issue_templates_reference_core_docs() -> None:
     assert "ROADMAP snapshot + Supporting / cross-cutting" in config, (
         "config.yml Doc index about should note ROADMAP Supporting / cross-cutting (issues-backlog parity)"
     )
-    bug = (_REPO / ".github" / "ISSUE_TEMPLATE" / "bug_report.md").read_text(encoding="utf-8")
-    feat = (_REPO / ".github" / "ISSUE_TEMPLATE" / "feature_request.md").read_text(encoding="utf-8")
+    bug = GITHUB_ISSUE_TEMPLATE_BUG_REPORT_MD.read_text(encoding="utf-8")
+    feat = GITHUB_ISSUE_TEMPLATE_FEATURE_REQUEST_MD.read_text(encoding="utf-8")
     roadmap_snap = "ROADMAP.md#implementation-snapshot-repository-2026-04"
     roadmap_supporting = "docs/ROADMAP.md#supporting-cross-cutting-issues"
     readme_shell = "README.md#web-shell-review"
@@ -908,7 +923,7 @@ def test_github_issue_templates_reference_core_docs() -> None:
 
 def test_contributing_ci_documents_config_doc_index_about_review_hub() -> None:
     """ISSUE_TEMPLATE CI bullet should note Doc index about ↔ review.html, config.yml, hub blurb."""
-    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
     ci_start = md.index("### Continuous integration")
     table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
     chunk = md[ci_start:table_start]
@@ -927,26 +942,26 @@ def test_docs_indexes_link_contributing_ci_section() -> None:
     """ROADMAP, BACKLOG, and issues-backlog index should deep-link CONTRIBUTING CI (contract table)."""
     needle = "CONTRIBUTING.md#continuous-integration"
     for rel in ("docs/ROADMAP.md", "docs/BACKLOG.md", "docs/issues-backlog.md"):
-        text = (_REPO / rel).read_text(encoding="utf-8")
+        text = (REPO_ROOT / rel).read_text(encoding="utf-8")
         assert needle in text, f"{rel} should contain {needle!r}"
 
 
 def test_hub_docs_link_roadmap_supporting_cross_cutting_issues() -> None:
     """Hub docs + review.html deep-link ROADMAP Supporting / cross-cutting via explicit HTML anchor + stable fragment."""
-    roadmap = (_REPO / "docs" / "ROADMAP.md").read_text(encoding="utf-8")
+    roadmap = DOCS_ROADMAP_MD.read_text(encoding="utf-8")
     assert '<a id="supporting-cross-cutting-issues"></a>' in roadmap
-    assert "](ROADMAP.md#supporting-cross-cutting-issues)" in (_REPO / "docs" / "BACKLOG.md").read_text(encoding="utf-8")
-    assert "](ROADMAP.md#supporting-cross-cutting-issues)" in (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
-    assert "](ROADMAP.md#supporting-cross-cutting-issues)" in (_REPO / "docs" / "issues-backlog.md").read_text(encoding="utf-8")
+    assert "](ROADMAP.md#supporting-cross-cutting-issues)" in DOCS_BACKLOG_MD.read_text(encoding="utf-8")
+    assert "](ROADMAP.md#supporting-cross-cutting-issues)" in DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
+    assert "](ROADMAP.md#supporting-cross-cutting-issues)" in DOCS_ISSUES_BACKLOG_MD.read_text(encoding="utf-8")
     assert "](#supporting-cross-cutting-issues)" in roadmap
-    review = (_REPO / "review.html").read_text(encoding="utf-8")
+    review = REVIEW_HTML.read_text(encoding="utf-8")
     assert 'href="docs/ROADMAP.md#supporting-cross-cutting-issues"' in review
     assert "blob/main/docs/ROADMAP.md#supporting-cross-cutting-issues" in review
 
 
 def test_contributing_ci_documents_roadmap_supporting_cross_cutting_bullet() -> None:
     """Continuous integration section documents ROADMAP Supporting / cross-cutting anchor + layout-sync test."""
-    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
     ci_start = md.index("### Continuous integration")
     table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
     chunk = md[ci_start:table_start]
@@ -966,7 +981,7 @@ def test_contributing_ci_documents_roadmap_supporting_cross_cutting_bullet() -> 
 
 def test_pr_template_roadmap_row_cites_supporting_cross_cutting_layout_sync_test() -> None:
     """PR template ROADMAP checklist row should cite supporting-cross-cutting anchor + pytest names."""
-    text = (_REPO / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    text = GITHUB_PULL_REQUEST_TEMPLATE_MD.read_text(encoding="utf-8")
     assert "supporting-cross-cutting-issues" in text
     assert "README.md" in text
     assert "Python + desktop" in text
@@ -980,7 +995,7 @@ def test_pr_template_roadmap_row_cites_supporting_cross_cutting_layout_sync_test
 
 def test_issues_backlog_orients_readme_docs_bar_and_github_config() -> None:
     """issues-backlog explains BACKLOG vs this index + README Short index + config.yml chooser."""
-    text = (_REPO / "docs" / "issues-backlog.md").read_text(encoding="utf-8")
+    text = DOCS_ISSUES_BACKLOG_MD.read_text(encoding="utf-8")
     assert "](ROADMAP.md#supporting-cross-cutting-issues)" in text
     assert ".github/ISSUE_TEMPLATE/config.yml" in text
     assert "Running Tests, **Doc index (issues-backlog)**)." in text
@@ -1006,7 +1021,7 @@ def test_issues_backlog_orients_readme_docs_bar_and_github_config() -> None:
 
 def test_issues_backlog_documents_excel_help_epilog() -> None:
     """issues-backlog short index should mention help_epilog + both entrypoints (hub parity with BACKLOG)."""
-    text = (_REPO / "docs" / "issues-backlog.md").read_text(encoding="utf-8")
+    text = DOCS_ISSUES_BACKLOG_MD.read_text(encoding="utf-8")
     assert "probooks/help_epilog.py" in text
     assert "python -m probooks" in text
     assert "python -m desktop_app.main" in text
@@ -1014,13 +1029,13 @@ def test_issues_backlog_documents_excel_help_epilog() -> None:
 
 def test_backlog_links_readme_desktop_app_section() -> None:
     """BACKLOG implementation row should deep-link README Desktop (theme + Qt notes)."""
-    text = (_REPO / "docs" / "BACKLOG.md").read_text(encoding="utf-8")
+    text = DOCS_BACKLOG_MD.read_text(encoding="utf-8")
     assert "../README.md#desktop-app-pyside6" in text
 
 
 def test_backlog_phase1_storage_row_documents_issue_21_schema_inventory() -> None:
     """BACKLOG Phase 1 storage row should point implementers at the CLI vs desktop DDL inventory tests."""
-    text = (_REPO / "docs" / "BACKLOG.md").read_text(encoding="utf-8")
+    text = DOCS_BACKLOG_MD.read_text(encoding="utf-8")
     assert "| Phase 1 storage |" in text
     assert "tests/test_issue_21_schema_inventory.py" in text
     assert "](CONTRIBUTING.md#continuous-integration)" in text
@@ -1029,7 +1044,7 @@ def test_backlog_phase1_storage_row_documents_issue_21_schema_inventory() -> Non
 
 def test_backlog_implementation_row_documents_excel_help_epilog() -> None:
     """BACKLOG MVP-in-repo row stays aligned with ROADMAP Phase 22 / README Desktop --help note."""
-    text = (_REPO / "docs" / "BACKLOG.md").read_text(encoding="utf-8")
+    text = DOCS_BACKLOG_MD.read_text(encoding="utf-8")
     assert "probooks/help_epilog.py" in text
     assert "python -m probooks" in text
     assert "python -m desktop_app.main" in text
@@ -1042,7 +1057,7 @@ def test_hub_docs_link_issues_backlog_short_index() -> None:
     """ROADMAP and BACKLOG Related docs should link issues-backlog.md (same folder)."""
     needle = "](issues-backlog.md)"
     for rel in ("docs/ROADMAP.md", "docs/BACKLOG.md"):
-        text = (_REPO / rel).read_text(encoding="utf-8")
+        text = (REPO_ROOT / rel).read_text(encoding="utf-8")
         assert needle in text, f"{rel} should link issues-backlog.md"
 
 
@@ -1050,7 +1065,7 @@ def test_docs_indexes_link_readme_web_shell_review() -> None:
     """Hub docs should deep-link README ## Web shell (review) (ROADMAP blockquote, BACKLOG, issues-backlog, CONTRIBUTING)."""
     needle = "../README.md#web-shell-review"
     for rel in ("docs/ROADMAP.md", "docs/BACKLOG.md", "docs/issues-backlog.md", "docs/CONTRIBUTING.md"):
-        text = (_REPO / rel).read_text(encoding="utf-8")
+        text = (REPO_ROOT / rel).read_text(encoding="utf-8")
         assert needle in text, f"{rel} should contain {needle!r}"
 
 
@@ -1058,7 +1073,7 @@ def test_hub_docs_link_readme_desktop_app_section() -> None:
     """Hub docs deep-link README ## Desktop app (PySide6) (parity with README docs bar)."""
     needle = "../README.md#desktop-app-pyside6"
     for rel in ("docs/ROADMAP.md", "docs/BACKLOG.md", "docs/issues-backlog.md", "docs/CONTRIBUTING.md"):
-        text = (_REPO / rel).read_text(encoding="utf-8")
+        text = (REPO_ROOT / rel).read_text(encoding="utf-8")
         assert needle in text, f"{rel} should contain {needle!r}"
 
 
@@ -1066,15 +1081,15 @@ def test_hub_docs_link_contributing_running_tests_section() -> None:
     """Hub docs deep-link CONTRIBUTING ## Running Tests (work-context / sync-workspace)."""
     needle = "CONTRIBUTING.md#running-tests"
     for rel in ("docs/ROADMAP.md", "docs/BACKLOG.md", "docs/issues-backlog.md"):
-        text = (_REPO / rel).read_text(encoding="utf-8")
+        text = (REPO_ROOT / rel).read_text(encoding="utf-8")
         assert needle in text, f"{rel} should contain {needle!r}"
-    contrib = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    contrib = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
     assert "[Running Tests](#running-tests)" in contrib
 
 
 def test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests() -> None:
     """PR template CI/layout checklist should cover .cursor rule edits + layout-sync pytest names."""
-    text = (_REPO / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    text = GITHUB_PULL_REQUEST_TEMPLATE_MD.read_text(encoding="utf-8")
     assert "**`tests/conftest.py`**" in text, (
         "PR template CI row should remind editors to sync CONTRIBUTING when conftest changes"
     )
@@ -1103,7 +1118,7 @@ def test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests() -> Non
 
 def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
     """Cursor work-context rule should point hub doc edits at CONTRIBUTING CI + layout-sync tests."""
-    text = (_REPO / ".cursor" / "rules" / "github-work-context.mdc").read_text(encoding="utf-8")
+    text = CURSOR_RULE_GITHUB_WORK_CONTEXT_MDC.read_text(encoding="utf-8")
     assert "issues-backlog.md" in text
     assert "bug_report.md" in text
     assert "test_github_issue_templates_reference_core_docs" in text
@@ -1149,7 +1164,7 @@ def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
 
 def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> None:
     """Continuous integration section should list the Cursor rule contract test."""
-    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
     ci_start = md.index("### Continuous integration")
     table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
     chunk = md[ci_start:table_start]

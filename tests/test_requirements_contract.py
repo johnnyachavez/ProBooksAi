@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-_REPO = Path(__file__).resolve().parents[1]
-_REQ = _REPO / "requirements.txt"
+from tests.repo_paths import REQUIREMENTS_TXT as _REQ
 
 
 def test_requirements_txt_lists_core_runtime_and_test_stack() -> None:

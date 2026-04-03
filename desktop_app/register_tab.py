@@ -13,7 +13,14 @@ persist in ``QSettings``, scoped by company SQLite path (same app profile as the
 **Ctrl+Shift+C** / **Ctrl+Shift+U** mark cleared / clear cleared; **Ctrl+Shift+E** runs **Export CSV…**;
 **Ctrl+Shift+G** runs **Post selected to GL**; **F5** refreshes the grid when the Register tab (or its
 controls) has keyboard focus. **Help** → **Bank register keyboard shortcuts…** (dialog also points at **Bank import shortcuts…**) or
-**right-click** the grid (including empty area) for **Keyboard shortcuts…**.
+**right-click** the grid (including empty area) for **Keyboard shortcuts…** and row actions with **QAction** **setToolTip**; the register grid has a hover **tooltip**
+(shortcuts summary). **Link payment…** dialog: **Current link** (when present), **Suggested matches** / **Manual link**
+headings, and the suggestions list have hover **tooltips**. **Right-click** the list (empty area OK) for
+**Keyboard shortcuts…** (same **Help** dialog as the register grid).
+The tools row, **Refresh** / **Post** / **Export**, **Mark cleared** / **Clear cleared**, and **Link payment…** /
+**Transfer** / **Splits** / **Link payment** modal **windows** and buttons use **setToolTip** for hover hints.
+Footer **debit** / **credit** / **net** totals and the long gray **help** paragraph also have tooltips.
+The tab **root** **QWidget** has a hover hint. **Bank account** and **Filter** combos (and their **QLabel** prompts) use **setToolTip**.
 """
 
 from __future__ import annotations
@@ -42,7 +49,6 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMenu,
-    QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -58,7 +64,12 @@ from probooksai.gl import GLDatabase
 
 from desktop_app.audit_dialog import show_entity_audit_history
 from desktop_app.open_attachment import open_local_attachment
-from desktop_app.qt_mnemonic import escape_ampersand_for_qt
+from desktop_app.qt_mnemonic import (
+    escape_ampersand_for_qt,
+    message_box_information_ok,
+    message_box_warning_ok,
+    tip_qdialog_button_box,
+)
 from desktop_app.table_clipboard import (
     QLIST_PLAIN_TEXT_ROLE,
     QTABLE_PLAIN_TEXT_ROLE,
@@ -194,11 +205,22 @@ def _register_keyboard_shortcuts_help_text() -> str:
     """Plain text for Register shortcuts (keep aligned with ``QShortcut`` wiring)."""
     return (
         "These shortcuts apply when the Register tab or its controls have focus:\n\n"
+        "Link payment… — suggested-matches list: right-click (including empty area) for "
+        "Keyboard shortcuts… (same as this dialog).\n\n"
         "F5 — Refresh\n"
         "Ctrl+Shift+G — Post selected to GL\n"
         "Ctrl+Shift+E — Export CSV…\n"
         "Ctrl+Shift+C — Mark cleared (selected rows)\n"
         "Ctrl+Shift+U — Clear cleared (selected rows)\n"
+        "\n"
+        "Document Intake:\n"
+        "Help → Document intake shortcuts…\n"
+        "\n"
+        "COA, Journal, Reports, Audit:\n"
+        "Help → More tab shortcuts (F5)…\n"
+        "\n"
+        "Business tab:\n"
+        "Help → Business shortcuts…\n"
         "\n"
         "Bank import tab:\n"
         "Help → Bank import shortcuts…\n"
@@ -207,10 +229,11 @@ def _register_keyboard_shortcuts_help_text() -> str:
 
 def show_register_keyboard_shortcuts_dialog(parent: QWidget) -> None:
     """Same content as the grid context menu **Keyboard shortcuts…** (shared with **Help** menu)."""
-    QMessageBox.information(
+    message_box_information_ok(
         parent,
         "Register keyboard shortcuts",
         _register_keyboard_shortcuts_help_text(),
+        ok_tip="Close this help summary; shortcuts apply when Bank register has focus.",
     )
 
 
@@ -236,13 +259,24 @@ class RegisterTab(QWidget):
         self._build_ui()
 
     def _build_ui(self):
+        self.setToolTip(
+            "Bank register for one account: categorize, splits, transfer links, cleared flags, attachments, and post to GL "
+            "(F5 refreshes when Register has focus)."
+        )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
 
         row = QHBoxLayout()
-        row.addWidget(QLabel("Bank account:"))
+        lbl_bank_acct = QLabel("Bank account:")
+        lbl_bank_acct.setToolTip(
+            "Prompt for the register account picker; use the combo to switch which bank you are viewing."
+        )
+        row.addWidget(lbl_bank_acct)
         self._acct_combo = QComboBox()
         self._acct_combo.setMinimumWidth(240)
+        self._acct_combo.setToolTip(
+            "Choose which bank account register to view and edit."
+        )
         self._acct_combo.currentIndexChanged.connect(self._on_account_changed)
         row.addWidget(self._acct_combo)
         btn_refresh = QPushButton("Refresh")
@@ -270,7 +304,11 @@ class RegisterTab(QWidget):
         layout.addLayout(row)
 
         filt = QHBoxLayout()
-        filt.addWidget(QLabel("Filter:"))
+        lbl_register_filter = QLabel("Filter:")
+        lbl_register_filter.setToolTip(
+            "Prompt for the row filter; the combo limits visible transactions without changing accounts."
+        )
+        filt.addWidget(lbl_register_filter)
         self._filter_combo = QComboBox()
         self._filter_combo.addItem("All transactions", "all")
         self._filter_combo.addItem("Flagged: needs receipt", "needs_receipt")
@@ -282,6 +320,10 @@ class RegisterTab(QWidget):
         self._filter_combo.addItem("Not cleared", "not_cleared")
         self._filter_combo.addItem("Batch reconciled (import)", "batch_reconciled")
         self._filter_combo.addItem("Batch not reconciled", "batch_not_reconciled")
+        self._filter_combo.setToolTip(
+            "Narrow rows by receipt flag, attachment, payment link, cleared state, "
+            "or CSV batch reconciliation."
+        )
         self._restore_register_filter_from_settings()
         self._filter_combo.currentIndexChanged.connect(self._on_register_filter_changed)
         filt.addWidget(self._filter_combo)
@@ -289,17 +331,44 @@ class RegisterTab(QWidget):
         layout.addLayout(filt)
 
         tools = QHBoxLayout()
-        tools.addWidget(
-            QPushButton("Flag needs receipt", clicked=self._mark_needs_receipt)
+        reg_flag_rcpt = QPushButton("Flag needs receipt")
+        reg_flag_rcpt.setToolTip(
+            "Set the needs-receipt flag on selected rows (posted rows may not allow changes)."
         )
-        tools.addWidget(
-            QPushButton("Clear needs receipt", clicked=self._clear_needs_receipt)
+        reg_flag_rcpt.clicked.connect(self._mark_needs_receipt)
+        tools.addWidget(reg_flag_rcpt)
+        reg_clear_rcpt = QPushButton("Clear needs receipt")
+        reg_clear_rcpt.setToolTip("Clear the needs-receipt flag on selected rows.")
+        reg_clear_rcpt.clicked.connect(self._clear_needs_receipt)
+        tools.addWidget(reg_clear_rcpt)
+        reg_attach = QPushButton("Attach file…")
+        reg_attach.setToolTip(
+            "Choose a file and store its path on all selected rows as the attachment."
         )
-        tools.addWidget(QPushButton("Attach file…", clicked=self._attach_file))
-        tools.addWidget(QPushButton("Clear attachment", clicked=self._clear_attachment))
-        tools.addWidget(QPushButton("Transfer to…", clicked=self._transfer_dialog))
-        tools.addWidget(QPushButton("Splits…", clicked=self._splits_dialog))
-        tools.addWidget(QPushButton("Link payment…", clicked=self._link_payment_dialog))
+        reg_attach.clicked.connect(self._attach_file)
+        tools.addWidget(reg_attach)
+        reg_clear_att = QPushButton("Clear attachment")
+        reg_clear_att.setToolTip("Clear the attachment path on selected rows.")
+        reg_clear_att.clicked.connect(self._clear_attachment)
+        tools.addWidget(reg_clear_att)
+        reg_transfer = QPushButton("Transfer to…")
+        reg_transfer.setToolTip(
+            "Mark selected rows as transfers, choosing the other bank account (counterparty)."
+        )
+        reg_transfer.clicked.connect(self._transfer_dialog)
+        tools.addWidget(reg_transfer)
+        reg_splits = QPushButton("Splits…")
+        reg_splits.setToolTip(
+            "Split one unposted transaction into two COA lines (amounts must sum to the bank amount)."
+        )
+        reg_splits.clicked.connect(self._splits_dialog)
+        tools.addWidget(reg_splits)
+        reg_link_pay = QPushButton("Link payment…")
+        reg_link_pay.setToolTip(
+            "Link one selected row to an AR payment, AP payment, or payroll run (or clear an existing link)."
+        )
+        reg_link_pay.clicked.connect(self._link_payment_dialog)
+        tools.addWidget(reg_link_pay)
         self._btn_mark_cleared = QPushButton("Mark cleared", clicked=self._mark_cleared)
         self._btn_mark_cleared.setToolTip(
             "Set cleared on selected rows. Shortcut: Ctrl+Shift+C (when Register has focus)."
@@ -339,6 +408,11 @@ class RegisterTab(QWidget):
         self._table.cellDoubleClicked.connect(self._on_register_cell_double_clicked)
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._on_register_context_menu)
+        self._table.setToolTip(
+            "Transactions for the selected bank account and filter; edit memo/COA inline where allowed. "
+            "Right-click for Keyboard shortcuts… (empty area OK). F5 refresh; Ctrl+Shift+G post; "
+            "Ctrl+Shift+C / Ctrl+Shift+U cleared; Ctrl+Shift+E export."
+        )
         layout.addWidget(self._table)
 
         sc_cleared = QShortcut(QKeySequence("Ctrl+Shift+C"), self)
@@ -359,8 +433,17 @@ class RegisterTab(QWidget):
 
         foot = QHBoxLayout()
         self._lbl_debits = QLabel("Total debits: —")
+        self._lbl_debits.setToolTip(
+            "Sum of debit amounts for rows currently visible in the grid (respects the filter)."
+        )
         self._lbl_credits = QLabel("Total credits: —")
+        self._lbl_credits.setToolTip(
+            "Sum of credit amounts for rows currently visible in the grid (respects the filter)."
+        )
         self._lbl_net = QLabel("Net: —")
+        self._lbl_net.setToolTip(
+            "Debits minus credits for visible rows (running balance order may differ when sorted)."
+        )
         for w in (self._lbl_debits, self._lbl_credits, self._lbl_net):
             w.setStyleSheet("font-weight: bold;")
         foot.addWidget(self._lbl_debits)
@@ -388,6 +471,10 @@ class RegisterTab(QWidget):
         )
         tip.setWordWrap(True)
         tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        tip.setToolTip(
+            "Register layout, debits/credits, Clr column, COA hints (★), shortcuts (F5, Ctrl+Shift+…), "
+            "and Help / right-click for Keyboard shortcuts…."
+        )
         layout.addWidget(tip)
 
     def showEvent(self, event):
@@ -553,8 +640,11 @@ class RegisterTab(QWidget):
         try:
             self._db.update_transaction(int(tid), cleared=0 if cur else 1)
         except ValueError as exc:
-            QMessageBox.warning(
-                self, "Cannot update", escape_ampersand_for_qt(str(exc))
+            message_box_warning_ok(
+                self,
+                "Cannot update",
+                escape_ampersand_for_qt(str(exc)),
+                ok_tip="Close; cleared state may be blocked for posted or reconciled rows.",
             )
             return
         self._reload_current()
@@ -565,8 +655,11 @@ class RegisterTab(QWidget):
     def _on_register_context_menu(self, pos):
         idx = self._table.indexAt(pos)
         menu = QMenu(self)
-        menu.addAction(
+        act_keys = menu.addAction(
             "Keyboard shortcuts…", self._show_register_keyboard_shortcuts_help
+        )
+        act_keys.setToolTip(
+            "Same summary as Help → Bank register keyboard shortcuts… (F5, export, post, cleared chords)."
         )
         if not idx.isValid():
             menu.exec(self._table.viewport().mapToGlobal(pos))
@@ -578,21 +671,30 @@ class RegisterTab(QWidget):
             return
         tid = it.data(Qt.ItemDataRole.UserRole)
         menu.addSeparator()
-        menu.addAction(
+        act_att = menu.addAction(
             "Open attachment…",
             partial(self._open_register_attachment, int(tid)),
         )
+        act_att.setToolTip("Open the linked file for this register row if a path is set.")
         tid_int = int(tid)
-        menu.addAction(
+        act_clr = menu.addAction(
             "Mark cleared",
             partial(self._set_cleared_on_ids, [tid_int], 1),
         )
-        menu.addAction(
+        act_clr.setToolTip("Set the cleared flag on this row (register cleared column).")
+        act_uclr = menu.addAction(
             "Clear cleared",
             partial(self._set_cleared_on_ids, [tid_int], 0),
         )
-        menu.addAction("Copy row", partial(copy_table_row_as_tsv, self._table, row))
+        act_uclr.setToolTip("Clear the cleared flag on this row.")
+        act_copy = menu.addAction("Copy row", partial(copy_table_row_as_tsv, self._table, row))
+        act_copy.setToolTip(
+            "Copy this register row as tab-separated text for pasting into a spreadsheet or editor."
+        )
         act_history = menu.addAction("View change history…")
+        act_history.setToolTip(
+            "Open field-level audit history for this bank transaction."
+        )
         chosen = menu.exec(self._table.viewport().mapToGlobal(pos))
         if chosen == act_history:
             show_entity_audit_history(
@@ -762,6 +864,10 @@ class RegisterTab(QWidget):
 
             combo = QComboBox()
             combo.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            combo.setToolTip(
+                "Chart-of-accounts line for this row. Starred (★) items are suggested from "
+                "your categorization rules."
+            )
             combo.addItem("(Uncategorized)", "")
             insert_at = 1
             try:
@@ -863,28 +969,40 @@ class RegisterTab(QWidget):
                 self._populating = False
                 self._resize_register_row(row)
         except ValueError as exc:
-            QMessageBox.warning(
-                self, "Cannot save", escape_ampersand_for_qt(str(exc))
+            message_box_warning_ok(
+                self,
+                "Cannot save",
+                escape_ampersand_for_qt(str(exc)),
+                ok_tip="Close; fix the value and try again.",
             )
 
     def _post_selected(self):
         if self._gl is None or self._current_account_id is None:
-            QMessageBox.information(
-                self, "Posting", "GL is not available for this session."
+            message_box_information_ok(
+                self,
+                "Posting",
+                "GL is not available for this session.",
+                ok_tip="Close; open a company database that includes GL support.",
             )
             return
         acct = self._db.get_bank_account(self._current_account_id)
         bank_gl = (dict(acct).get("gl_display_account") or "").strip()
         if not bank_gl:
-            QMessageBox.warning(
+            message_box_warning_ok(
                 self,
                 "GL mapping",
                 "Set the GL cash account on this bank account (Manage Accounts in Bank Import).",
+                ok_tip="Close; Bank Import → Manage Accounts → edit this account → map GL cash.",
             )
             return
         sel = sorted({i.row() for i in self._table.selectedIndexes()})
         if not sel:
-            QMessageBox.information(self, "Posting", "Select one or more rows.")
+            message_box_information_ok(
+                self,
+                "Posting",
+                "Select one or more rows.",
+                ok_tip="Close; click rows in the register grid, then Post again.",
+            )
             return
         posted = 0
         errors: list[str] = []
@@ -922,8 +1040,11 @@ class RegisterTab(QWidget):
             msg += "\n\n" + "\n".join(errors[:8])
             if len(errors) > 8:
                 msg += "\n…"
-        QMessageBox.information(
-            self, "Posting", escape_ampersand_for_qt(msg)
+        message_box_information_ok(
+            self,
+            "Posting",
+            escape_ampersand_for_qt(msg),
+            ok_tip="Close; fix any errors listed, then post remaining rows.",
         )
 
     def _export_csv(self):
@@ -986,10 +1107,11 @@ class RegisterTab(QWidget):
                         match_txt,
                     ]
                 )
-        QMessageBox.information(
+        message_box_information_ok(
             self,
             "Export",
             f"Saved {escape_ampersand_for_qt(Path(path).name)}",
+            ok_tip="Close; open the CSV from the path you chose.",
         )
 
     def _on_coa_changed(self, txn_id: int, combo: QComboBox, _index: int):
@@ -1001,8 +1123,11 @@ class RegisterTab(QWidget):
         try:
             self._db.update_transaction(txn_id, coa_account=val)
         except ValueError as exc:
-            QMessageBox.warning(
-                self, "Cannot save", escape_ampersand_for_qt(str(exc))
+            message_box_warning_ok(
+                self,
+                "Cannot save",
+                escape_ampersand_for_qt(str(exc)),
+                ok_tip="Close; pick a valid COA line or leave uncategorized.",
             )
             return
         self._restyle_row_for_coa(combo, val)
@@ -1047,8 +1172,11 @@ class RegisterTab(QWidget):
             try:
                 self._db.update_transaction(tid, needs_receipt=1)
             except ValueError as exc:
-                QMessageBox.warning(
-                    self, "Cannot update", escape_ampersand_for_qt(str(exc))
+                message_box_warning_ok(
+                    self,
+                    "Cannot update",
+                    escape_ampersand_for_qt(str(exc)),
+                    ok_tip="Close; this flag may be blocked for some rows.",
                 )
         self._reload_current()
 
@@ -1057,16 +1185,22 @@ class RegisterTab(QWidget):
             try:
                 self._db.update_transaction(int(tid), cleared=value)
             except ValueError as exc:
-                QMessageBox.warning(
-                    self, "Cannot update", escape_ampersand_for_qt(str(exc))
+                message_box_warning_ok(
+                    self,
+                    "Cannot update",
+                    escape_ampersand_for_qt(str(exc)),
+                    ok_tip="Close; cleared state may be blocked for posted rows.",
                 )
         self._reload_current()
 
     def _mark_cleared(self):
         ids = self._selected_txn_ids()
         if not ids:
-            QMessageBox.information(
-                self, "Cleared", "Select one or more rows."
+            message_box_information_ok(
+                self,
+                "Cleared",
+                "Select one or more rows.",
+                ok_tip="Close; select register rows, then Mark cleared again.",
             )
             return
         self._set_cleared_on_ids(ids, 1)
@@ -1074,8 +1208,11 @@ class RegisterTab(QWidget):
     def _clear_cleared(self):
         ids = self._selected_txn_ids()
         if not ids:
-            QMessageBox.information(
-                self, "Cleared", "Select one or more rows."
+            message_box_information_ok(
+                self,
+                "Cleared",
+                "Select one or more rows.",
+                ok_tip="Close; select register rows, then Clear cleared again.",
             )
             return
         self._set_cleared_on_ids(ids, 0)
@@ -1085,15 +1222,23 @@ class RegisterTab(QWidget):
             try:
                 self._db.update_transaction(tid, needs_receipt=0)
             except ValueError as exc:
-                QMessageBox.warning(
-                    self, "Cannot update", escape_ampersand_for_qt(str(exc))
+                message_box_warning_ok(
+                    self,
+                    "Cannot update",
+                    escape_ampersand_for_qt(str(exc)),
+                    ok_tip="Close; needs-receipt flag may be blocked for some rows.",
                 )
         self._reload_current()
 
     def _attach_file(self):
         ids = self._selected_txn_ids()
         if not ids:
-            QMessageBox.information(self, "Attachment", "Select one or more rows.")
+            message_box_information_ok(
+                self,
+                "Attachment",
+                "Select one or more rows.",
+                ok_tip="Close; select rows, then attach again.",
+            )
             return
         path, _ = QFileDialog.getOpenFileName(
             self, "Attachment", "", "All files (*.*)"
@@ -1104,8 +1249,11 @@ class RegisterTab(QWidget):
             try:
                 self._db.update_transaction(tid, attachment_path=path)
             except ValueError as exc:
-                QMessageBox.warning(
-                    self, "Cannot update", escape_ampersand_for_qt(str(exc))
+                message_box_warning_ok(
+                    self,
+                    "Cannot update",
+                    escape_ampersand_for_qt(str(exc)),
+                    ok_tip="Close; attachment path may be invalid or row locked.",
                 )
         self._reload_current()
 
@@ -1114,22 +1262,37 @@ class RegisterTab(QWidget):
             try:
                 self._db.update_transaction(tid, attachment_path="")
             except ValueError as exc:
-                QMessageBox.warning(
-                    self, "Cannot update", escape_ampersand_for_qt(str(exc))
+                message_box_warning_ok(
+                    self,
+                    "Cannot update",
+                    escape_ampersand_for_qt(str(exc)),
+                    ok_tip="Close; clearing attachment may be blocked for some rows.",
                 )
         self._reload_current()
 
     def _transfer_dialog(self):
         ids = self._selected_txn_ids()
         if not ids:
-            QMessageBox.information(self, "Transfer", "Select at least one row.")
+            message_box_information_ok(
+                self,
+                "Transfer",
+                "Select at least one row.",
+                ok_tip="Close; select rows, then open Transfer again.",
+            )
             return
         if self._current_account_id is None:
             return
         d = QDialog(self)
         d.setWindowTitle("Transfer to bank account")
+        d.setToolTip(
+            "Set or clear a transfer link to another bank account for all selected register rows."
+        )
         f = QFormLayout(d)
         cb = QComboBox()
+        cb.setToolTip(
+            "Other bank account for a transfer between your accounts. "
+            "Choose “not a transfer” to clear an existing link."
+        )
         cb.addItem("(not a transfer)", None)
         for acct in self._db.list_bank_accounts():
             if acct["id"] == self._current_account_id:
@@ -1140,6 +1303,11 @@ class RegisterTab(QWidget):
         f.addRow("Counterparty account", cb)
         bb = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        tip_qdialog_button_box(
+            bb,
+            ok="Apply this counterparty bank account as the transfer link on all selected rows.",
+            cancel="Close without updating transfer links.",
         )
         bb.accepted.connect(d.accept)
         bb.rejected.connect(d.reject)
@@ -1153,47 +1321,68 @@ class RegisterTab(QWidget):
                     tid, transfer_to_bank_account_id=target
                 )
             except ValueError as exc:
-                QMessageBox.warning(
-                    self, "Cannot update", escape_ampersand_for_qt(str(exc))
+                message_box_warning_ok(
+                    self,
+                    "Cannot update",
+                    escape_ampersand_for_qt(str(exc)),
+                    ok_tip="Close; transfer link rules may reject this combination.",
                 )
         self._reload_current()
 
     def _splits_dialog(self):
         ids = self._selected_txn_ids()
         if len(ids) != 1:
-            QMessageBox.information(
-                self, "Splits", "Select exactly one transaction to split."
+            message_box_information_ok(
+                self,
+                "Splits",
+                "Select exactly one transaction to split.",
+                ok_tip="Close; select a single row, then Splits again.",
             )
             return
         tid = ids[0]
         txn = self._db.get_transaction(tid)
         if txn is None or _txn_posted(dict(txn)):
-            QMessageBox.information(
-                self, "Splits", "Unposted transactions only."
+            message_box_information_ok(
+                self,
+                "Splits",
+                "Unposted transactions only.",
+                ok_tip="Close; pick an unposted row or reverse the GL post first.",
             )
             return
         amt = float(txn["amount"])
         d = QDialog(self)
         d.setWindowTitle("Split amounts (must sum to bank amount)")
+        d.setToolTip(
+            "Split one unposted bank transaction into two COA lines; split amounts must sum to the bank amount."
+        )
         f = QFormLayout(d)
         a1 = QDoubleSpinBox()
         a1.setRange(-9_999_999, 9_999_999)
         a1.setDecimals(2)
         a1.setValue(round(amt / 2.0, 2))
+        a1.setToolTip("First split amount; with Amount 2 must sum to the bank transaction amount.")
         c1 = QLineEdit()
         c1.setPlaceholderText("COA line 1")
+        c1.setToolTip("Chart-of-accounts display text for the first split (required).")
         a2 = QDoubleSpinBox()
         a2.setRange(-9_999_999, 9_999_999)
         a2.setDecimals(2)
         a2.setValue(round(amt - a1.value(), 2))
+        a2.setToolTip("Second split amount; with Amount 1 must sum to the bank transaction amount.")
         c2 = QLineEdit()
         c2.setPlaceholderText("COA line 2")
+        c2.setToolTip("Chart-of-accounts display text for the second split (required).")
         f.addRow("Amount 1", a1)
         f.addRow("COA 1", c1)
         f.addRow("Amount 2", a2)
         f.addRow("COA 2", c2)
         bb = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        tip_qdialog_button_box(
+            bb,
+            ok="Save two split lines; amounts must sum to the bank transaction amount.",
+            cancel="Close without saving split lines.",
         )
         bb.accepted.connect(d.accept)
         bb.rejected.connect(d.reject)
@@ -1203,7 +1392,12 @@ class RegisterTab(QWidget):
         s1 = (c1.text() or "").strip()
         s2 = (c2.text() or "").strip()
         if not s1 or not s2:
-            QMessageBox.warning(self, "Splits", "Both COA lines are required.")
+            message_box_warning_ok(
+                self,
+                "Splits",
+                "Both COA lines are required.",
+                ok_tip="Close; enter COA text for both split lines.",
+            )
             return
         try:
             business.replace_splits(
@@ -1215,23 +1409,37 @@ class RegisterTab(QWidget):
                 ],
             )
         except ValueError as exc:
-            QMessageBox.warning(
-                self, "Splits", escape_ampersand_for_qt(str(exc))
+            message_box_warning_ok(
+                self,
+                "Splits",
+                escape_ampersand_for_qt(str(exc)),
+                ok_tip="Close; amounts must sum to the bank transaction amount.",
             )
             return
-        QMessageBox.information(self, "Splits", "Split lines saved.")
+        message_box_information_ok(
+            self,
+            "Splits",
+            "Split lines saved.",
+            ok_tip="Close; splits are stored for this transaction.",
+        )
         self._reload_current()
 
     def _link_payment_dialog(self):
         ids = self._selected_txn_ids()
         if len(ids) != 1:
-            QMessageBox.information(
-                self, "Link", "Select exactly one bank transaction."
+            message_box_information_ok(
+                self,
+                "Link",
+                "Select exactly one bank transaction.",
+                ok_tip="Close; select one row, then Link payment again.",
             )
             return
         tid = ids[0]
         d = QDialog(self)
         d.setWindowTitle("Link bank transaction")
+        d.setToolTip(
+            "Link this bank row to AR, AP, or payroll; clear an existing link or pick from suggestions."
+        )
         d.setMinimumWidth(520)
         outer = QVBoxLayout(d)
 
@@ -1242,26 +1450,45 @@ class RegisterTab(QWidget):
         state = {"handled": False}
 
         if existing:
-            lbl = QLabel(
+            lbl_current_link = QLabel(
                 "Current link: "
                 f"{escape_ampersand_for_qt(_bank_match_label(existing))}"
             )
-            outer.addWidget(lbl)
-            btn_clear = QPushButton("Clear link")
-            outer.addWidget(btn_clear)
+            lbl_current_link.setToolTip(
+                "AR, AP, or payroll record already linked to this bank transaction; use Clear link to remove."
+            )
+            outer.addWidget(lbl_current_link)
+            reg_link_btn_clear = QPushButton("Clear link")
+            reg_link_btn_clear.setToolTip(
+                "Remove the existing AR/AP/payroll link for this bank transaction."
+            )
+            outer.addWidget(reg_link_btn_clear)
 
             def clear_link():
                 business.unlink_bank_transaction(self._db._conn, tid)
                 state["handled"] = True
                 d.accept()
                 self._reload_current()
-                QMessageBox.information(self, "Link", "Link cleared.")
+                message_box_information_ok(
+                    self,
+                    "Link",
+                    "Link cleared.",
+                    ok_tip="Close; the bank row no longer points at AR/AP/payroll.",
+                )
 
-            btn_clear.clicked.connect(clear_link)
+            reg_link_btn_clear.clicked.connect(clear_link)
 
-        outer.addWidget(QLabel("Suggested matches (by amount and date):"))
+        lbl_link_suggestions = QLabel("Suggested matches (by amount and date):")
+        lbl_link_suggestions.setToolTip(
+            "Auto-suggested AR/AP/payroll records by amount and date; pick one or use Manual link below."
+        )
+        outer.addWidget(lbl_link_suggestions)
         sug_list = QListWidget()
         sug_list.setMinimumHeight(140)
+        sug_list.setToolTip(
+            "Candidates by amount and near-date; double-click a row or use Link selected suggestion. "
+            "Right-click for Keyboard shortcuts… (empty area OK)."
+        )
         suggestions: list = []
         try:
             suggestions = business.suggest_bank_match_candidates(self._db._conn, tid)
@@ -1276,13 +1503,25 @@ class RegisterTab(QWidget):
 
         def on_sug_context_menu(pos):
             idx = sug_list.indexAt(pos)
+            m = QMenu(d)
+            act_keys = m.addAction(
+                "Keyboard shortcuts…",
+                lambda: show_register_keyboard_shortcuts_dialog(self),
+            )
+            act_keys.setToolTip(
+                "Same summary as Help → Bank register keyboard shortcuts… (grid and link dialog)."
+            )
             if not idx.isValid():
+                m.exec(sug_list.viewport().mapToGlobal(pos))
                 return
             row = idx.row()
-            m = QMenu(d)
-            m.addAction(
+            m.addSeparator()
+            act_copy = m.addAction(
                 "Copy suggestion line",
                 partial(copy_qlistwidget_row_text, sug_list, row),
+            )
+            act_copy.setToolTip(
+                "Copy this suggestion line as plain text for pasting elsewhere."
             )
             m.exec(sug_list.viewport().mapToGlobal(pos))
 
@@ -1293,7 +1532,12 @@ class RegisterTab(QWidget):
         def apply_suggestion():
             cur = sug_list.currentItem()
             if cur is None:
-                QMessageBox.information(self, "Link", "Select a suggestion.")
+                message_box_information_ok(
+                    self,
+                    "Link",
+                    "Select a suggestion.",
+                    ok_tip="Close; click a row in the list or use Manual link.",
+                )
                 return
             data = cur.data(Qt.ItemDataRole.UserRole)
             if not data:
@@ -1303,21 +1547,39 @@ class RegisterTab(QWidget):
             state["handled"] = True
             d.accept()
             self._reload_current()
-            QMessageBox.information(self, "Link", "Link saved.")
+            message_box_information_ok(
+                self,
+                "Link",
+                "Link saved.",
+                ok_tip="Close; this bank line now matches the chosen record.",
+            )
 
         sug_list.itemDoubleClicked.connect(lambda _item: apply_suggestion())
         row_sug = QHBoxLayout()
-        row_sug.addWidget(QPushButton("Link selected suggestion", clicked=apply_suggestion))
+        reg_link_suggestion = QPushButton("Link selected suggestion")
+        reg_link_suggestion.setToolTip(
+            "Apply the highlighted suggestion (double-click a row for the same)."
+        )
+        reg_link_suggestion.clicked.connect(apply_suggestion)
+        row_sug.addWidget(reg_link_suggestion)
         outer.addLayout(row_sug)
 
-        outer.addWidget(QLabel("Manual link"))
+        lbl_link_manual = QLabel("Manual link")
+        lbl_link_manual.setToolTip(
+            "Choose payment type and record when no suggestion fits, or to override the list."
+        )
+        outer.addWidget(lbl_link_manual)
         f = QFormLayout()
         kind = QComboBox()
         kind.addItem("AR payment", "ar_payment")
         kind.addItem("AP payment", "ap_payment")
         kind.addItem("Payroll run", "payroll_run")
+        kind.setToolTip(
+            "Kind of business record to link: customer payment, vendor payment, or payroll run."
+        )
         pay = QComboBox()
         pay.setMinimumWidth(360)
+        pay.setToolTip("Specific payment or payroll run to link this bank transaction to.")
         f.addRow("Type", kind)
         f.addRow("Record", pay)
         outer.addLayout(f)
@@ -1355,6 +1617,11 @@ class RegisterTab(QWidget):
         bb = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
+        tip_qdialog_button_box(
+            bb,
+            ok="Save a manual link using Type and Record below (ignored if you already linked or cleared).",
+            cancel="Close without applying a manual link.",
+        )
         bb.accepted.connect(d.accept)
         bb.rejected.connect(d.reject)
         outer.addWidget(bb)
@@ -1368,5 +1635,10 @@ class RegisterTab(QWidget):
         business.link_bank_transaction(
             self._db._conn, tid, str(kind.currentData()), int(pid)
         )
-        QMessageBox.information(self, "Link", "Link saved.")
+        message_box_information_ok(
+            self,
+            "Link",
+            "Link saved.",
+            ok_tip="Close; manual link is stored on this bank transaction.",
+        )
         self._reload_current()

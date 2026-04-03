@@ -1,6 +1,9 @@
 """Recent audit log entries (Phase 23).
 
 **F5** (when this tab or its children have focus) runs the same reload as **Refresh**.
+**Help → More tab shortcuts (F5)…**; log grid **right-click** **Keyboard shortcuts…** (including empty area).
+The tab **root** has a hover hint. **Entity type** / **Entity id** labels and controls use **setToolTip**; the hint line and log grid have hover hints.
+The log grid **right-click** menu sets **QAction** tooltips for **Keyboard shortcuts…** and **Copy row**.
 """
 
 from __future__ import annotations
@@ -22,10 +25,17 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QHeaderView,
-    QMessageBox,
 )
 
-from desktop_app.qt_mnemonic import escape_ampersand_for_qt
+from desktop_app.more_main_tabs_shortcuts import (
+    show_more_main_tabs_keyboard_shortcuts_dialog,
+)
+from desktop_app.qt_mnemonic import (
+    escape_ampersand_for_qt,
+    message_box_critical_ok,
+    message_box_information_ok,
+    message_box_warning_ok,
+)
 from desktop_app.table_clipboard import (
     IntSortTableItem,
     copy_table_row_as_tsv,
@@ -38,6 +48,9 @@ class AuditTab(QWidget):
     def __init__(self, conn: sqlite3.Connection, parent=None):
         super().__init__(parent)
         self._conn = conn
+        self.setToolTip(
+            "Audit trail: field-level changes with optional entity type and id filter; export CSV (F5 refreshes when Audit has focus)."
+        )
         lay = QVBoxLayout(self)
         row = QHBoxLayout()
         btn_refresh = QPushButton("Refresh")
@@ -47,21 +60,45 @@ class AuditTab(QWidget):
         )
         btn_refresh.clicked.connect(self._refresh)
         row.addWidget(btn_refresh)
-        row.addWidget(QPushButton("Export CSV…", clicked=self._export_csv))
+        btn_export = QPushButton("Export CSV…")
+        btn_export.setToolTip(
+            "Export the current audit log grid to CSV (respects Entity type and optional id)."
+        )
+        btn_export.clicked.connect(self._export_csv)
+        row.addWidget(btn_export)
         row.addStretch()
-        row.addWidget(QLabel("Entity type:"))
+        lbl_audit_ent_type = QLabel("Entity type:")
+        lbl_audit_ent_type.setToolTip(
+            "Which kind of record to focus on, or All recent for mixed changes."
+        )
+        row.addWidget(lbl_audit_ent_type)
         self._ent_type = QComboBox()
         self._ent_type.addItem("All recent", "")
         self._ent_type.addItem("bank_transaction", "bank_transaction")
         self._ent_type.addItem("bank_import_batch", "bank_import_batch")
         self._ent_type.addItem("coa_account", "coa_account")
+        self._ent_type.setToolTip(
+            "Limit the log to one entity kind, or All recent for the latest changes across types."
+        )
         row.addWidget(self._ent_type)
-        row.addWidget(QLabel("Entity id:"))
+        lbl_audit_ent_id = QLabel("Entity id:")
+        lbl_audit_ent_id.setToolTip(
+            "Numeric primary key of the record when a specific entity type is selected."
+        )
+        row.addWidget(lbl_audit_ent_id)
         self._ent_id = QLineEdit()
         self._ent_id.setFixedWidth(90)
         self._ent_id.setPlaceholderText("optional")
+        self._ent_id.setToolTip(
+            "Optional numeric id: with a specific entity type, show only changes for that record."
+        )
         row.addWidget(self._ent_id)
-        row.addWidget(QPushButton("Apply filter", clicked=self._refresh))
+        btn_apply = QPushButton("Apply filter")
+        btn_apply.setToolTip(
+            "Reload the log using Entity type and optional id (same as Refresh / F5)."
+        )
+        btn_apply.clicked.connect(self._refresh)
+        row.addWidget(btn_apply)
         lay.addLayout(row)
         hint = QLabel(
             "Leave type as “All recent” for the latest changes. "
@@ -71,6 +108,10 @@ class AuditTab(QWidget):
         )
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        hint.setToolTip(
+            "Summary: All recent shows latest edits; type + id narrows to one record. "
+            "F5 and Refresh reload the grid."
+        )
         lay.addWidget(hint)
         self._tbl = QTableWidget()
         self._tbl.setColumnCount(6)
@@ -82,6 +123,10 @@ class AuditTab(QWidget):
         self._tbl.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._tbl.customContextMenuRequested.connect(self._on_audit_context_menu)
         self._tbl.setSortingEnabled(True)
+        self._tbl.setToolTip(
+            "Change history for the current filter. Right-click for Keyboard shortcuts… "
+            "(including on empty area)."
+        )
         lay.addWidget(self._tbl)
         sc_f5 = QShortcut(QKeySequence("F5"), self)
         sc_f5.setContext(Qt.WidgetWithChildrenShortcut)
@@ -90,11 +135,23 @@ class AuditTab(QWidget):
 
     def _on_audit_context_menu(self, pos):
         idx = self._tbl.indexAt(pos)
+        m = QMenu(self)
+        act_keys = m.addAction(
+            "Keyboard shortcuts…",
+            lambda: show_more_main_tabs_keyboard_shortcuts_dialog(self),
+        )
+        act_keys.setToolTip(
+            "Same summary as Help → More tab shortcuts (F5)… (Audit log, filters, export)."
+        )
         if not idx.isValid():
+            m.exec(self._tbl.viewport().mapToGlobal(pos))
             return
         row = idx.row()
-        m = QMenu(self)
-        m.addAction("Copy row", partial(copy_table_row_as_tsv, self._tbl, row))
+        m.addSeparator()
+        act_copy = m.addAction("Copy row", partial(copy_table_row_as_tsv, self._tbl, row))
+        act_copy.setToolTip(
+            "Copy this audit log row as tab-separated text for pasting into a spreadsheet or editor."
+        )
         m.exec(self._tbl.viewport().mapToGlobal(pos))
 
     def _export_csv(self):
@@ -105,7 +162,12 @@ class AuditTab(QWidget):
             try:
                 eid = int(id_txt)
             except ValueError:
-                QMessageBox.warning(self, "Audit log", "Entity id must be an integer.")
+                message_box_warning_ok(
+                    self,
+                    "Audit log",
+                    "Entity id must be an integer.",
+                    ok_tip="Close; enter digits only or clear Entity id to filter by type.",
+                )
                 return
         if et and eid is None:
             rows = list_filtered(self._conn, entity_type=et, entity_id=None, limit=500)
@@ -129,14 +191,18 @@ class AuditTab(QWidget):
         try:
             n = write_audit_csv(path, list(rows))
         except OSError as exc:
-            QMessageBox.critical(
-                self, "Export failed", escape_ampersand_for_qt(str(exc))
+            message_box_critical_ok(
+                self,
+                "Export failed",
+                escape_ampersand_for_qt(str(exc)),
+                ok_tip="Close; check the path, permissions, and disk space.",
             )
             return
-        QMessageBox.information(
+        message_box_information_ok(
             self,
             "Export complete",
             f"Exported {n} row(s) to:\n{escape_ampersand_for_qt(path)}",
+            ok_tip="Close; open the CSV from the path shown.",
         )
 
     def _refresh(self):
@@ -147,7 +213,12 @@ class AuditTab(QWidget):
             try:
                 eid = int(id_txt)
             except ValueError:
-                QMessageBox.warning(self, "Audit log", "Entity id must be an integer.")
+                message_box_warning_ok(
+                    self,
+                    "Audit log",
+                    "Entity id must be an integer.",
+                    ok_tip="Close; enter digits only or clear Entity id to filter by type.",
+                )
                 return
         if et and eid is None:
             rows = list_filtered(self._conn, entity_type=et, entity_id=None, limit=500)

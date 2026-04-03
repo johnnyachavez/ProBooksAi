@@ -7,12 +7,15 @@ Issue #41 – COA editor (minimal): UI to view/add/edit/deactivate COA accounts.
 COA entries populate category dropdowns throughout the app.
 
 **F5** (when this tab or its children have focus) reloads the grid from the database (same as after
-add/edit/deactivate; respects **Show inactive**).
+add/edit/deactivate; respects **Show inactive**). **Help → More tab shortcuts (F5)…**; grid **right-click**
+**Keyboard shortcuts…** / **Copy** / **View change history** use **QAction** **setToolTip** (including empty area). The grid has a hover **tooltip**.
+The **COATab** root **QWidget** has a hover hint. The account **count** line and footer **F5** hint use **setToolTip** on hover.
+Deactivate confirm **Yes**/**No** use **tip_message_box_buttons**.
 
 Widgets
 -------
   COATab          – top-level QWidget (intended as a tab in MainWindow)
-  AddEditCOADialog – dialog for creating or editing a single COA account
+  AddEditCOADialog – dialog for creating or editing a single COA account (window + field + **Save**/**Cancel** via ``tip_qdialog_button_box``)
 """
 
 from __future__ import annotations
@@ -48,7 +51,16 @@ from PySide6.QtWidgets import (
 from probooksai.coa_db import COADatabase, COA_ACCOUNT_TYPES
 
 from desktop_app.audit_dialog import show_entity_audit_history
-from desktop_app.qt_mnemonic import escape_ampersand_for_qt
+from desktop_app.more_main_tabs_shortcuts import (
+    show_more_main_tabs_keyboard_shortcuts_dialog,
+)
+from desktop_app.qt_mnemonic import (
+    escape_ampersand_for_qt,
+    message_box_critical_ok,
+    message_box_warning_ok,
+    tip_message_box_buttons,
+    tip_qdialog_button_box,
+)
 from desktop_app.table_clipboard import (
     QTABLE_PLAIN_TEXT_ROLE,
     copy_table_row_as_tsv,
@@ -103,6 +115,9 @@ class AddEditCOADialog(QDialog):
         self._account_id = account_id
         self.setWindowTitle("Edit Account" if account_id else "Add Account")
         self.resize(420, 340)
+        self.setToolTip(
+            "Add or edit one chart-of-accounts row: number, name, type, optional sub-type and description."
+        )
         self._build_ui()
         if account_id is not None:
             self._load(account_id)
@@ -118,23 +133,38 @@ class AddEditCOADialog(QDialog):
         self._f_number = QLineEdit()
         self._f_number.setMaxLength(20)
         self._f_number.setPlaceholderText("e.g. 1010")
+        self._f_number.setToolTip(
+            "Unique account number or code used in reports and journal entries (required)."
+        )
 
         self._f_name = QLineEdit()
         self._f_name.setPlaceholderText("e.g. Checking Account")
         self._f_name.setMinimumWidth(200)
+        self._f_name.setToolTip("Display name for this account in lists and reports (required).")
 
         self._f_type = QComboBox()
         for key, label in _TYPE_LABELS.items():
             self._f_type.addItem(label, userData=key)
+        self._f_type.setToolTip(
+            "High-level category (asset, liability, equity, income, expense). "
+            "Determines normal debit/credit balance."
+        )
 
         self._f_subtype = QLineEdit()
         self._f_subtype.setPlaceholderText("e.g. Cash and Cash Equivalents")
+        self._f_subtype.setToolTip(
+            "Optional finer grouping (e.g. current asset, operating expense) for your own organization."
+        )
 
         self._f_description = QLineEdit()
         self._f_description.setPlaceholderText("Optional description")
+        self._f_description.setToolTip("Optional longer notes shown when editing this account.")
 
         self._f_active = QCheckBox("Active")
         self._f_active.setChecked(True)
+        self._f_active.setToolTip(
+            "Inactive accounts are hidden from pickers unless you choose to show them elsewhere."
+        )
 
         form.addRow("Account #:", self._f_number)
         form.addRow("Name:",      self._f_name)
@@ -149,6 +179,11 @@ class AddEditCOADialog(QDialog):
         btns = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save
             | QDialogButtonBox.StandardButton.Cancel
+        )
+        tip_qdialog_button_box(
+            btns,
+            save="Save this COA account and close the dialog.",
+            cancel="Close without saving changes to this account.",
         )
         btns.accepted.connect(self._save)
         btns.rejected.connect(self.reject)
@@ -176,10 +211,20 @@ class AddEditCOADialog(QDialog):
         number = self._f_number.text().strip()
         name   = self._f_name.text().strip()
         if not number:
-            QMessageBox.warning(self, "Validation", "Account number is required.")
+            message_box_warning_ok(
+                self,
+                "Validation",
+                "Account number is required.",
+                ok_tip="Close; enter an account number before saving.",
+            )
             return
         if not name:
-            QMessageBox.warning(self, "Validation", "Account name is required.")
+            message_box_warning_ok(
+                self,
+                "Validation",
+                "Account name is required.",
+                ok_tip="Close; enter an account name before saving.",
+            )
             return
 
         acct_type   = self._f_type.currentData()
@@ -213,8 +258,11 @@ class AddEditCOADialog(QDialog):
                     is_active=is_active,
                 )
         except (ValueError, sqlite3.IntegrityError) as exc:
-            QMessageBox.critical(
-                self, "Error", escape_ampersand_for_qt(str(exc))
+            message_box_critical_ok(
+                self,
+                "Error",
+                escape_ampersand_for_qt(str(exc)),
+                ok_tip="Close; fix duplicates or invalid values and try again.",
             )
             return
 
@@ -244,17 +292,28 @@ class COATab(QWidget):
     # -- UI ------------------------------------------------------------------
 
     def _build_ui(self):
+        self.setToolTip(
+            "Chart of accounts: add, edit, or deactivate rows; grid and shortcuts (F5 reloads when this tab has focus)."
+        )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
 
         # Toolbar
         toolbar = QHBoxLayout()
         self._btn_add = QPushButton("+ Add Account")
+        self._btn_add.setToolTip("Create a new chart-of-accounts entry.")
         self._btn_edit = QPushButton("Edit")
         self._btn_edit.setEnabled(False)
+        self._btn_edit.setToolTip("Edit the selected account (double-click a row or use Edit).")
         self._btn_deactivate = QPushButton("Deactivate")
         self._btn_deactivate.setEnabled(False)
+        self._btn_deactivate.setToolTip(
+            "Deactivate the selected account (show it again with Show inactive)."
+        )
         self._chk_inactive = QCheckBox("Show inactive")
+        self._chk_inactive.setToolTip(
+            "Include inactive accounts. F5 reloads the grid from the database."
+        )
 
         self._btn_add.clicked.connect(self._on_add)
         self._btn_edit.clicked.connect(self._on_edit)
@@ -289,10 +348,17 @@ class COATab(QWidget):
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._on_coa_context_menu)
         self._table.setSortingEnabled(True)
+        self._table.setToolTip(
+            "Chart of accounts: double-click to edit; right-click for Keyboard shortcuts… and "
+            "change history (empty area OK). F5 reloads when this tab has focus."
+        )
         layout.addWidget(self._table)
 
         # Footer
         self._lbl_count = QLabel("")
+        self._lbl_count.setToolTip(
+            "Number of accounts shown and inactive count when Show inactive is on."
+        )
         layout.addWidget(self._lbl_count)
 
         tip = QLabel(
@@ -301,6 +367,9 @@ class COATab(QWidget):
         )
         tip.setWordWrap(True)
         tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        tip.setToolTip(
+            "F5 refreshes this grid; double-click a row to edit; right-click for shortcuts and change history."
+        )
         layout.addWidget(tip)
 
         sc_refresh = QShortcut(QKeySequence("F5"), self)
@@ -345,18 +414,32 @@ class COATab(QWidget):
 
     def _on_coa_context_menu(self, pos):
         idx = self._table.indexAt(pos)
+        menu = QMenu(self)
+        act_keys = menu.addAction(
+            "Keyboard shortcuts…",
+            lambda: show_more_main_tabs_keyboard_shortcuts_dialog(self),
+        )
+        act_keys.setToolTip(
+            "Same summary as Help → More tab shortcuts (F5)… (COA, Journal, Reports, Audit chords)."
+        )
         if not idx.isValid():
+            menu.exec(self._table.viewport().mapToGlobal(pos))
             return
         row = idx.row()
         item = self._table.item(row, 0)
-        if item is None:
+        if item is None or item.data(Qt.ItemDataRole.UserRole) is None:
+            menu.exec(self._table.viewport().mapToGlobal(pos))
             return
         aid = item.data(Qt.ItemDataRole.UserRole)
-        if aid is None:
-            return
-        menu = QMenu(self)
-        menu.addAction("Copy row", partial(copy_table_row_as_tsv, self._table, row))
+        menu.addSeparator()
+        act_copy = menu.addAction("Copy row", partial(copy_table_row_as_tsv, self._table, row))
+        act_copy.setToolTip(
+            "Copy this COA row as tab-separated text for pasting into a spreadsheet or editor."
+        )
         act_history = menu.addAction("View change history…")
+        act_history.setToolTip(
+            "Open field-level audit history for this chart-of-accounts account."
+        )
         chosen = menu.exec(self._table.viewport().mapToGlobal(pos))
         if chosen == act_history:
             show_entity_audit_history(
@@ -400,13 +483,26 @@ class COATab(QWidget):
         name = row["account_name"]
         currently_active = bool(row["is_active"])
         if currently_active:
-            confirm = QMessageBox.question(
-                self,
-                "Deactivate Account",
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Icon.Question)
+            box.setWindowTitle("Deactivate Account")
+            box.setText(
                 "Deactivate '"
                 f"{escape_ampersand_for_qt(name or '')}"
-                "'? It will no longer appear in dropdowns.",
+                "'? It will no longer appear in dropdowns."
             )
+            box.setStandardButtons(
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            box.setToolTip(
+                "Deactivated accounts stay in the database but are hidden from COA pickers until shown again."
+            )
+            tip_message_box_buttons(
+                box,
+                yes="Deactivate this account; it hides from pick lists (data is kept).",
+                no="Keep the account active.",
+            )
+            confirm = box.exec()
             if confirm != QMessageBox.StandardButton.Yes:
                 return
         self._set_account_active(row, acct_id, not currently_active)

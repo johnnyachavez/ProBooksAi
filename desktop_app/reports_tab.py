@@ -2,6 +2,9 @@
 
 **F5** (when this tab or its children have focus) re-runs the last report you opened
 (Trial Balance, Income Statement, or Balance Sheet), if any.
+**Help → More tab shortcuts (F5)…**; results grid **right-click** sets **QAction** tooltips for **Keyboard shortcuts…** and **Copy row** (including empty area).
+The tab **root** **QWidget** has a hover hint. **Start** / **End** date fields use **setToolTip** (ISO yyyy-mm-dd); the date-range **QGroupBox** has a hover hint.
+The results table, **summary** line, and footer **F5** hint label have hover tooltips.
 """
 
 from __future__ import annotations
@@ -20,7 +23,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMenu,
-    QMessageBox,
     QPushButton,
     QTableWidget,
     QVBoxLayout,
@@ -28,7 +30,14 @@ from PySide6.QtWidgets import (
     QHeaderView,
 )
 
-from desktop_app.qt_mnemonic import escape_ampersand_for_qt
+from desktop_app.more_main_tabs_shortcuts import (
+    show_more_main_tabs_keyboard_shortcuts_dialog,
+)
+from desktop_app.qt_mnemonic import (
+    escape_ampersand_for_qt,
+    message_box_critical_ok,
+    message_box_information_ok,
+)
 from desktop_app.table_clipboard import (
     FloatSortTableItem,
     copy_table_row_as_tsv,
@@ -46,27 +55,57 @@ class ReportsTab(QWidget):
         self._build_ui()
 
     def _build_ui(self):
+        self.setToolTip(
+            "Financial reports: trial balance, income statement, and balance sheet with optional date range and CSV export "
+            "(F5 re-runs the last report you opened when this tab has focus)."
+        )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
 
         filt = QGroupBox("Date range (ISO yyyy-mm-dd, optional)")
+        filt.setToolTip(
+            "Optional inclusive date bounds for the report; blank start or end means no cutoff on that side."
+        )
         fl = QFormLayout(filt)
         self._start = QLineEdit()
+        self._start.setToolTip(
+            "Report start date (ISO yyyy-mm-dd), optional; leave blank for no start cutoff."
+        )
         self._end = QLineEdit()
+        self._end.setToolTip("Report end date (ISO yyyy-mm-dd), optional.")
         fl.addRow("Start", self._start)
         fl.addRow("End", self._end)
         layout.addWidget(filt)
 
         row = QHBoxLayout()
-        for label, fn in (
-            ("Trial Balance", self._show_tb),
-            ("Income Statement", self._show_pl),
-            ("Balance Sheet", self._show_bs),
+        for label, fn, tip in (
+            (
+                "Trial Balance",
+                self._show_tb,
+                "Run trial balance. F5 re-runs whichever report you opened last "
+                "(trial balance, income statement, or balance sheet).",
+            ),
+            (
+                "Income Statement",
+                self._show_pl,
+                "Run income statement (P&L). F5 re-runs the last report you opened.",
+            ),
+            (
+                "Balance Sheet",
+                self._show_bs,
+                "Run balance sheet. F5 re-runs the last report you opened.",
+            ),
         ):
             b = QPushButton(label)
+            b.setToolTip(tip)
             b.clicked.connect(fn)
             row.addWidget(b)
-        row.addWidget(QPushButton("Export CSV…", clicked=self._export_csv))
+        btn_export = QPushButton("Export CSV…")
+        btn_export.setToolTip(
+            "Export the current report table to CSV (run a report first)."
+        )
+        btn_export.clicked.connect(self._export_csv)
+        row.addWidget(btn_export)
         row.addStretch()
         layout.addLayout(row)
 
@@ -75,10 +114,17 @@ class ReportsTab(QWidget):
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._on_report_context_menu)
         self._table.setSortingEnabled(True)
+        self._table.setToolTip(
+            "Report results after you run Trial Balance, Income Statement, or Balance Sheet. "
+            "Right-click for Keyboard shortcuts… (including on empty area)."
+        )
         layout.addWidget(self._table)
 
         self._summary = QLabel("")
         self._summary.setWordWrap(True)
+        self._summary.setToolTip(
+            "Summary line after you run a report (totals, row count, or validation notes)."
+        )
         layout.addWidget(self._summary)
 
         tip = QLabel(
@@ -86,6 +132,9 @@ class ReportsTab(QWidget):
         )
         tip.setWordWrap(True)
         tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        tip.setToolTip(
+            "Shortcut reminder: F5 repeats the last report you opened (trial balance, P&L, or balance sheet)."
+        )
         layout.addWidget(tip)
 
         sc_f5 = QShortcut(QKeySequence("F5"), self)
@@ -102,11 +151,23 @@ class ReportsTab(QWidget):
 
     def _on_report_context_menu(self, pos):
         idx = self._table.indexAt(pos)
+        m = QMenu(self)
+        act_keys = m.addAction(
+            "Keyboard shortcuts…",
+            lambda: show_more_main_tabs_keyboard_shortcuts_dialog(self),
+        )
+        act_keys.setToolTip(
+            "Same summary as Help → More tab shortcuts (F5)… (Reports, F5 re-run last report)."
+        )
         if not idx.isValid():
+            m.exec(self._table.viewport().mapToGlobal(pos))
             return
         row = idx.row()
-        m = QMenu(self)
-        m.addAction("Copy row", partial(copy_table_row_as_tsv, self._table, row))
+        m.addSeparator()
+        act_copy = m.addAction("Copy row", partial(copy_table_row_as_tsv, self._table, row))
+        act_copy.setToolTip(
+            "Copy this report row as tab-separated text for pasting into a spreadsheet or editor."
+        )
         m.exec(self._table.viewport().mapToGlobal(pos))
 
     def _fill_table(
@@ -212,10 +273,11 @@ class ReportsTab(QWidget):
 
     def _export_csv(self):
         if not self._last_export:
-            QMessageBox.information(
+            message_box_information_ok(
                 self,
                 "Reports",
                 "Run Trial Balance, Income Statement, or Balance Sheet first, then export.",
+                ok_tip="Close; open a report, then use Export CSV again.",
             )
             return
         path, _ = QFileDialog.getSaveFileName(
@@ -236,12 +298,16 @@ class ReportsTab(QWidget):
                 preamble=self._last_export["preamble"],
             )
         except OSError as exc:
-            QMessageBox.critical(
-                self, "Export failed", escape_ampersand_for_qt(str(exc))
+            message_box_critical_ok(
+                self,
+                "Export failed",
+                escape_ampersand_for_qt(str(exc)),
+                ok_tip="Close; check the path, permissions, and disk space.",
             )
             return
-        QMessageBox.information(
+        message_box_information_ok(
             self,
             "Export complete",
             f"Exported {n} row(s) to:\n{escape_ampersand_for_qt(path)}",
+            ok_tip="Close; open the CSV from the path shown.",
         )

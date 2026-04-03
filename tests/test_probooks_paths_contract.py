@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-_REPO = Path(__file__).resolve().parents[1]
-_PATHS = _REPO / "probooks" / "paths.py"
+from tests.repo_paths import PROBOOKS_PACKAGE_DIR
+_PATHS = PROBOOKS_PACKAGE_DIR / "paths.py"
 
 
 def test_probooks_paths_use_branded_app_dir_and_cli_db_name() -> None:

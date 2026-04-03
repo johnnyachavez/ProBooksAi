@@ -3,6 +3,8 @@
 ``isolated_branded_app_data_env`` points Windows ``LOCALAPPDATA`` / ``APPDATA`` (or Unix
 ``HOME``) at a temp tree so ``probooks.paths`` and ``probooksai.database.get_data_dir``
 tests do not touch the developer's real app data.
+
+Repository path constants for source-only contract tests live in ``tests/repo_paths.py``.
 """
 
 from __future__ import annotations

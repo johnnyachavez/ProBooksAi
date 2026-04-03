@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-_REPO = Path(__file__).resolve().parents[1]
-_TOML = _REPO / "pyproject.toml"
+from tests.repo_paths import PYPROJECT_TOML as _TOML
 
 
 def test_pyproject_wheel_name_scripts_and_packages() -> None:

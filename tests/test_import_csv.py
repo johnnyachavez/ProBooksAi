@@ -6,10 +6,12 @@ from probooks.accounts import add_account
 from probooks.database import connect, migration_files, run_migrations
 from probooks.import_csv import ColumnMap, count_transactions, import_bank_csv
 
+from tests.repo_paths import EXAMPLES_DIR, PROBOOKS_MIGRATIONS_DIR
+
 
 def _db_with_account(tmp_path: Path) -> tuple[Path, int]:
     db = tmp_path / "i.db"
-    mdir = Path(__file__).resolve().parents[1] / "probooks" / "migrations"
+    mdir = PROBOOKS_MIGRATIONS_DIR
     conn = connect(db)
     run_migrations(conn, migration_files(mdir))
     aid = add_account(conn, name="Checking", account_type="checking")
@@ -42,8 +44,7 @@ def test_import_csv_basic(tmp_path: Path) -> None:
 
 def test_import_examples_sample_bank_csv_matches_readme_recipe(tmp_path: Path) -> None:
     """README CSV example uses this file and column indices; keep them aligned."""
-    repo_root = Path(__file__).resolve().parents[1]
-    csv_path = repo_root / "examples" / "sample_bank.csv"
+    csv_path = EXAMPLES_DIR / "sample_bank.csv"
     assert csv_path.is_file()
     db, aid = _db_with_account(tmp_path)
     conn = connect(db)

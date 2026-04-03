@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
-_REPO = Path(__file__).resolve().parents[1]
-_EXAMPLE = _REPO / "integrations" / "work-context.example.json"
+from tests.repo_paths import INTEGRATIONS_WORK_CONTEXT_EXAMPLE as _EXAMPLE
 
 
 def test_work_context_example_is_valid_json_with_expected_keys() -> None:
