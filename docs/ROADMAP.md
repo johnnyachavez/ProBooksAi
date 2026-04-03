@@ -83,7 +83,7 @@ The phases below are still the **product roadmap**; this table summarizes what e
 
 ## Current Status
 
-Open issues and pull requests change on GitHub continuously. Use **[Issues](https://github.com/johnnyachavez/ProBooksAi/issues)** and **[Pull requests](https://github.com/johnnyachavez/ProBooksAi/pulls)** for live state. **[BACKLOG.md](BACKLOG.md)** orders planned epics; the **[implementation snapshot](#implementation-snapshot-repository-2026-04)** (above) describes what is already in this repository.
+Open issues and pull requests change on GitHub continuously. Use **[Issues](https://github.com/johnnyachavez/ProBooksAi/issues)** and **[Pull requests](https://github.com/johnnyachavez/ProBooksAi/pulls)** for live state. **[BACKLOG.md](BACKLOG.md)** orders planned epics; the **[implementation snapshot](#implementation-snapshot-repository-2026-04)** (above) describes what is already in this repository. **Supporting / Cross-cutting Issues** near the end of this file lists cross-phase work such as **[#21](https://github.com/johnnyachavez/ProBooksAi/issues/21)** (single SQLite path + merged CLI/desktop migrations).
 
 ---
 
