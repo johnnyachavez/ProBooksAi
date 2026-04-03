@@ -734,6 +734,7 @@ def test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests() -> Non
         "test_cursor_rule_github_work_context_points_at_contributing_ci",
         "test_contributing_ci_documents_cursor_github_work_context_rule_test",
         "test_ci_validate_layout_sh_and_ps1_same_paths_and_order",
+        "test_hub_docs_related_docs_link_readme_excel_workbook_template",
     ):
         assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
 
