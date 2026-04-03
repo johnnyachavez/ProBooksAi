@@ -292,7 +292,8 @@ class ManageAccountsDialog(QDialog):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         box.setToolTip(
-            "Permanently removes this bank account and all imported transactions for it; cannot be undone."
+            "Permanently removes this bank account and all imported transactions for it; cannot be undone. "
+            "Back up the company .db from File → Backup / probooks backup first."
         )
         tip_message_box_buttons(
             box,

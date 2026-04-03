@@ -681,7 +681,8 @@ class RulesTab(QWidget):
         )
         box.setDefaultButton(QMessageBox.StandardButton.No)
         box.setToolTip(
-            "Import deletes every existing rule and replaces them with the chosen CSV; confirm to continue."
+            "Import deletes every existing rule and replaces them with the chosen CSV; confirm to continue. "
+            "Use File → Backup / probooks backup first if you may need the old rules."
         )
         tip_message_box_buttons(
             box,

@@ -448,6 +448,8 @@ def test_desktop_main_cli_and_qt_app_strings_use_probooks_plus_ai() -> None:
     assert "setStatusTip" in mod_doc and "status bar" in mod_doc
     assert "DetailPane" in mod_doc and "tooltips" in mod_doc
     hel = PROBOOKS_HELP_EPILOG.read_text(encoding="utf-8")
+    assert "probooks.backup" in hel
+    assert "File → Backup" in hel
     assert 'description="ProBooks+ai desktop application"' in text
     assert "epilog=" in text
     assert "EXCEL_COA_WORKBOOK_ARGPARSE_EPILOG" in text
@@ -930,11 +932,17 @@ def test_destructive_yes_no_message_boxes_use_shared_button_tooltips() -> None:
         "Remove this categorization rule from the company database", 1
     )[1][:400]
     assert "Import deletes every existing rule" in et
+    ridx = et.index("Import deletes every existing rule and replaces")
+    assert "File → Backup" in et[ridx : ridx + 280]
     coa = (_DESKTOP_APP_DIR / "coa_tab.py").read_text(encoding="utf-8")
     assert "tip_message_box_buttons" in coa
     assert "hides from pick lists" in coa
+    cde = coa.index("Deactivated accounts stay in the database")
+    assert "File → Backup" in coa[cde : cde + 220]
     bi = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
     assert "tip_message_box_buttons" in bi
+    bdel = bi.index("Permanently removes this bank account")
+    assert "File → Backup" in bi[bdel : bdel + 220]
     main_t = _MAIN.read_text(encoding="utf-8")
     assert main_t.count("tip_message_box_buttons") >= 2
     assert "Overwrite the company file" in main_t

@@ -11,6 +11,8 @@ def test_probooks_cli_description_epilog_and_default_db_help() -> None:
     mod_doc = cli[: mod_doc_end + 3]
     assert "help_epilog" in mod_doc
     hel = PROBOOKS_HELP_EPILOG.read_text(encoding="utf-8")
+    assert "probooks.backup" in hel
+    assert "File → Backup" in hel
     assert 'description="ProBooks+ai SQLite CLI"' in cli
     assert "python -m probooks" in cli
     assert "Default database" in cli

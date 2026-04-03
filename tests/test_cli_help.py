@@ -51,3 +51,5 @@ def test_probooks_help_epilog_and_exit_zero() -> None:
     assert "Default database" in text
     assert "generate_workbook.py" in text
     assert "Excel COA workbook" in text
+    assert "probooks.backup" in text
+    assert "File → Backup" in text

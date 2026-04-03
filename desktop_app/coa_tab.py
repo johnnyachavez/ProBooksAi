@@ -496,7 +496,8 @@ class COATab(QWidget):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
             box.setToolTip(
-                "Deactivated accounts stay in the database but are hidden from COA pickers until shown again."
+                "Deactivated accounts stay in the database but are hidden from COA pickers until shown again. "
+                "Consider File → Backup / probooks backup before bulk COA changes."
             )
             tip_message_box_buttons(
                 box,
