@@ -26,6 +26,7 @@ Require-File "docs/issues-backlog.md"
 
 Require-File "probooks/__main__.py"
 Require-File "probooks/cli.py"
+Require-File "probooks/help_epilog.py"
 Require-File "desktop_app/main.py"
 
 Require-File "scripts/capture_ui_screenshot.py"

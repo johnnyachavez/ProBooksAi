@@ -718,6 +718,7 @@ def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> Non
     table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
     chunk = md[ci_start:table_start]
     assert "**Layout + workflow contracts**" in chunk
+    assert "probooks/help_epilog.py" in chunk
     assert "test_cursor_rule_github_work_context_points_at_contributing_ci" in chunk
     assert "test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests" in chunk
     assert "**`.cursor/rules/github-work-context.mdc`**" in chunk

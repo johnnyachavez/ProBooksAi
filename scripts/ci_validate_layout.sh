@@ -27,6 +27,7 @@ require docs/issues-backlog.md
 
 require probooks/__main__.py
 require probooks/cli.py
+require probooks/help_epilog.py
 require desktop_app/main.py
 
 require scripts/capture_ui_screenshot.py
