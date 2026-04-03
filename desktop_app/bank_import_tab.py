@@ -3,6 +3,9 @@ desktop_app.bank_import_tab
 ============================
 PySide6 widget for bank account setup, CSV import, and statement reconciliation.
 
+**F5** (when this tab or its children have focus) reloads accounts and import batches and
+re-selects the same batch when it still exists, refreshing transactions and reconciliation.
+
 Tabs / widgets
 --------------
   BankImportTab          – top-level QWidget (intended as a tab in MainWindow)
@@ -21,7 +24,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import QDate, QSettings, Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -788,9 +791,36 @@ class BankImportTab(QWidget):
 
         outer.addWidget(splitter)
 
+        sc_reload = QShortcut(QKeySequence("F5"), self)
+        sc_reload.setContext(Qt.WidgetWithChildrenShortcut)
+        sc_reload.activated.connect(self._reload_bank_import_view)
+
     # -----------------------------------------------------------------------
     # Account helpers
     # -----------------------------------------------------------------------
+
+    def _reload_bank_import_view(self) -> None:
+        """Reload account combo and batches; re-open the same import batch when it still exists."""
+        saved_account = self._current_account_id
+        saved_batch = self._current_batch_id
+        self._refresh_accounts()
+        if saved_account is None or saved_batch is None:
+            return
+        for r in range(self._batch_table.rowCount()):
+            it = self._batch_table.item(r, 0)
+            if it is None:
+                continue
+            bid = it.data(Qt.ItemDataRole.UserRole)
+            if bid is None:
+                continue
+            try:
+                if int(bid) != int(saved_batch):
+                    continue
+            except (TypeError, ValueError):
+                continue
+            self._batch_table.selectRow(r)
+            self._on_batch_selected()
+            return
 
     def _refresh_accounts(self):
         self._acct_combo.blockSignals(True)
