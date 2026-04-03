@@ -249,6 +249,12 @@ def test_readme_desktop_section_documents_theme_and_qt_font_filter() -> None:
         "probooks/help_epilog.py",
         "generate_workbook.py",
         "excel-workbook-template-openpyxl",
+        "File → Backup",
+        "File → Restore",
+        "probooks.backup",
+        "[Python CLI](#python-cli)",
+        "**Regression tests**",
+        "**#28**",
     ):
         assert needle in section, f"README Desktop section should mention {needle!r}"
 
