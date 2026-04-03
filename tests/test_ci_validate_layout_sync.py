@@ -383,6 +383,7 @@ def test_contributing_ci_documents_issues_backlog_review_config_touchpoints() ->
     assert "**issues-backlog + GitHub chooser**" in ci_chunk
     assert "the following paragraph ties **Doc index (issues-backlog)** **`about`**" in ci_chunk
     assert "another paragraph notes **ROADMAP** / **BACKLOG** / **Other docs** hub blurb parity" in ci_chunk
+    assert "another orienting paragraph notes the shared **README — Default database paths** hub segment" in ci_chunk
     assert "Issues backlog Documentation cards" in ci_chunk
     assert "blob/.../issues-backlog.md" in ci_chunk
     assert "test_issues_backlog_orients_readme_docs_bar_and_github_config" in ci_chunk
@@ -585,6 +586,9 @@ def test_pr_template_issues_backlog_checklist_cites_layout_sync_tests() -> None:
         "test_github_issue_templates_reference_core_docs",
         "test_review_html_issues_backlog_card_mentions_issue_chooser_config",
         "test_contributing_ci_documents_config_doc_index_about_review_hub",
+        "test_hub_docs_related_docs_link_readme_default_database_paths",
+        "test_contributing_ci_documents_hub_readme_default_database_paths_segment",
+        "test_pr_template_lists_hub_docs_readme_default_database_paths_checklist",
     ):
         assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
     assert "**Doc index (issues-backlog)** **`about`**" in text
@@ -773,6 +777,7 @@ def test_contributing_ci_documents_config_doc_index_about_review_hub() -> None:
     assert "shared **issues-backlog.md** hub blurb" in issue_bullet
     assert "test_github_issue_templates_reference_core_docs" in issue_bullet
     assert "test_contributing_ci_documents_config_doc_index_about_review_hub" in issue_bullet
+    assert "**Triaging** lists README **Desktop app**" in issue_bullet
 
 
 def test_docs_indexes_link_contributing_ci_section() -> None:
