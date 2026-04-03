@@ -411,6 +411,7 @@ def test_review_html_python_desktop_section_mentions_help_epilog() -> None:
     assert "sync-workspace.ps1" in chunk
     assert "probooks.backup" in chunk
     assert "SQLite online backup" in chunk
+    assert 'href="README.md#python-cli"' in chunk
 
 
 def test_static_shell_page_sub_mentions_help_epilog() -> None:
@@ -436,6 +437,9 @@ def test_static_shell_page_sub_mentions_help_epilog() -> None:
         )
         assert "probooks.backup" in text, f"{path.name} should mention probooks.backup (SQLite online backup)"
         assert "SQLite online backup" in text, f"{path.name} should mention SQLite online backup"
+        assert 'href="README.md#python-cli"' in text, (
+            f"{path.name} should deep-link README ## Python CLI for backup/restore hints"
+        )
 
 
 def test_review_html_links_contributing_doc_anchors() -> None:
