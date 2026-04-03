@@ -1111,6 +1111,7 @@ def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
         "test_review_html_links_readme_web_shell_and_desktop_anchors",
         "test_review_html_python_desktop_section_mentions_help_epilog",
         "test_static_shell_page_sub_mentions_help_epilog",
+        "test_readme_ci_validate_layout_bullet_mentions_conftest",
         "test_contributing_ci_documents_issue_21_schema_inventory_bullet",
         "test_pr_template_lists_issue_21_schema_inventory_checklist",
     ):
