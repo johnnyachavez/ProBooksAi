@@ -30,4 +30,5 @@ def test_repo_paths_pin_essential_repo_files() -> None:
     assert repo_paths.PROBOOKS_MIGRATIONS_DIR.is_dir()
     assert repo_paths.GITHUB_WORKFLOW_CI_YML.is_file()
     assert repo_paths.CI_VALIDATE_LAYOUT_SH.is_file()
+    assert repo_paths.CI_VALIDATE_LAYOUT_PS1.is_file()
     assert repo_paths.INTEGRATIONS_WORK_CONTEXT_EXAMPLE.is_file()
