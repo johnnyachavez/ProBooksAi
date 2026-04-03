@@ -131,8 +131,22 @@ def test_readme_default_database_paths_notes_two_schemas_and_roadmap() -> None:
         "#21",
         "Why not one",
         "docs/ROADMAP.md#implementation-snapshot-repository-2026-04",
+        "tests/test_issue_21_schema_inventory.py",
+        "docs/CONTRIBUTING.md#continuous-integration",
+        "SQLite issue #21",
     ):
         assert needle in chunk, f"README default DB section should mention {needle!r}"
+
+
+def test_roadmap_snapshot_why_not_one_db_points_at_issue_21_inventory() -> None:
+    """ROADMAP Why not one .db yet should point at the CLI vs desktop DDL inventory tests."""
+    text = (_REPO / "docs" / "ROADMAP.md").read_text(encoding="utf-8")
+    start = text.index("**Why not one `.db` yet:**")
+    end = text.index("\n| Roadmap phases |", start)
+    chunk = text[start:end]
+    assert "tests/test_issue_21_schema_inventory.py" in chunk
+    assert "](CONTRIBUTING.md#continuous-integration)" in chunk
+    assert "**SQLite issue #21** bullet" in chunk
 
 
 def test_readme_desktop_section_documents_theme_and_qt_font_filter() -> None:
@@ -513,6 +527,7 @@ def test_pr_template_lists_readme_default_database_paths_checklist() -> None:
     assert "**README `### Default database paths (Windows)`**" in text
     for name in (
         "test_readme_default_database_paths_notes_two_schemas_and_roadmap",
+        "test_roadmap_snapshot_why_not_one_db_points_at_issue_21_inventory",
         "test_readme_docs_bar_links_default_database_paths_anchor",
         "test_review_html_links_readme_web_shell_and_desktop_anchors",
         "test_review_html_readme_default_database_paths_documentation_card",
@@ -551,6 +566,7 @@ def test_contributing_ci_documents_readme_default_database_paths_bullet() -> Non
     assert "**Hub docs — README default database paths segment**" in chunk
     for name in (
         "test_readme_default_database_paths_notes_two_schemas_and_roadmap",
+        "test_roadmap_snapshot_why_not_one_db_points_at_issue_21_inventory",
         "test_readme_docs_bar_links_default_database_paths_anchor",
         "test_review_html_links_readme_web_shell_and_desktop_anchors",
         "test_review_html_readme_default_database_paths_documentation_card",
@@ -1014,6 +1030,7 @@ def test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests() -> Non
         "test_hub_docs_related_docs_link_readme_excel_workbook_template",
         "test_hub_docs_related_docs_link_readme_default_database_paths",
         "test_readme_default_database_paths_notes_two_schemas_and_roadmap",
+        "test_roadmap_snapshot_why_not_one_db_points_at_issue_21_inventory",
         "test_readme_docs_bar_links_default_database_paths_anchor",
         "test_review_html_readme_default_database_paths_documentation_card",
         "test_review_html_links_readme_web_shell_and_desktop_anchors",
@@ -1041,6 +1058,7 @@ def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
     assert "probooksai/bank_import.py" in text
     assert "tests/test_issue_21_schema_inventory.py" in text
     assert "test_readme_default_database_paths_notes_two_schemas_and_roadmap" in text
+    assert "test_roadmap_snapshot_why_not_one_db_points_at_issue_21_inventory" in text
     assert "test_readme_docs_bar_links_default_database_paths_anchor" in text
     assert "README.md#default-database-paths-windows" in text
     for name in (
@@ -1077,6 +1095,7 @@ def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> Non
     assert "test_hub_docs_related_docs_link_readme_excel_workbook_template" in chunk
     assert "test_hub_docs_related_docs_link_readme_default_database_paths" in chunk
     assert "test_readme_default_database_paths_notes_two_schemas_and_roadmap" in chunk
+    assert "test_roadmap_snapshot_why_not_one_db_points_at_issue_21_inventory" in chunk
     assert "test_readme_docs_bar_links_default_database_paths_anchor" in chunk
     assert "Why not one `.db` yet" in chunk
     assert "test_review_html_readme_default_database_paths_documentation_card" in chunk
