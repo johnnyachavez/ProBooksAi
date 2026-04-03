@@ -32,7 +32,7 @@ The following duplicate issues have been superseded. Only the **canonical** issu
 | [#51](https://github.com/johnnyachavez/ProBooksAi/issues/51) | [**#79**](https://github.com/johnnyachavez/ProBooksAi/issues/79) | Rule-based auto-categorization (no AI) |
 | [#52](https://github.com/johnnyachavez/ProBooksAi/issues/52) | [**#80**](https://github.com/johnnyachavez/ProBooksAi/issues/80) | Receipt/document workflow improvements |
 | [#53](https://github.com/johnnyachavez/ProBooksAi/issues/53) | [**#81**](https://github.com/johnnyachavez/ProBooksAi/issues/81) | Audit log of edits (change history) |
-| [#54](https://github.com/johnnyachavez/ProBooksAi/issues/54) | [**#82**](https://github.com/johnnyachavez/ProBooksAi/issues/82) | Export tools (CSV export + reconciliation report) |
+| [#54](https://github.com/johnnyachavez/ProBooksAi/issues/54) | [**#82**](https://github.com/johnnyachavez/ProBooksAi/issues/82) | Export tools (CSV export + reconciliation report + Excel COA workbook via **`generate_workbook.py`** / **`openpyxl`**) |
 | [#55](https://github.com/johnnyachavez/ProBooksAi/issues/55) | [**#83**](https://github.com/johnnyachavez/ProBooksAi/issues/83) | Multi-company / multiple books support |
 | [#56](https://github.com/johnnyachavez/ProBooksAi/issues/56) | [**#66**](https://github.com/johnnyachavez/ProBooksAi/issues/66) | Invoicing (MVP) — create invoice + line items + PDF export |
 | [#57](https://github.com/johnnyachavez/ProBooksAi/issues/57) | [**#67**](https://github.com/johnnyachavez/ProBooksAi/issues/67) | Receive payments (AR) — apply payment to invoice(s) |
@@ -448,16 +448,18 @@ Keep the UI responsive for large files.
 
 ### Phase 22 – Export Tools
 
-Export data to CSV and generate reconciliation reports.
+Export data to CSV, generate reconciliation reports, and ship an **Excel COA workbook** template for chart setup (**`generate_workbook.py`** / **`probooksai/generator.py`**, **`openpyxl`**; see **[README — Excel workbook template](../README.md#excel-workbook-template-openpyxl)**).
 
 - Export the current register view to CSV (respects active filters and selected account).
 - Reconciliation report per batch: statement period, beginning/ending balances, expected ending, difference, included transaction list.
 - Exports include totals and consistent date/amount formatting.
+- **Excel workbook:** **`python generate_workbook.py`** writes the documented **`.xlsx`** (COA validation, etc.) in the working directory.
 
 **Related issues:** [#54](https://github.com/johnnyachavez/ProBooksAi/issues/54) / [#82](https://github.com/johnnyachavez/ProBooksAi/issues/82) (Export Tools — #82 is canonical)
 
 **Definition of done**
 - Exported CSV matches what's on screen; reconciliation report matches the computed reconciliation panel.
+- **`generate_workbook.py`** output matches the **[README Excel workbook template](../README.md#excel-workbook-template-openpyxl)** section (filename, sheets, and validation behavior).
 
 ---
 
