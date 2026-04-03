@@ -1178,6 +1178,12 @@ def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> Non
     table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
     chunk = md[ci_start:table_start]
     assert "**Layout + workflow contracts**" in chunk
+    layout_start = chunk.index("- **Layout + workflow contracts**")
+    layout_end = chunk.index("\n- **Markdown (hub files)**", layout_start)
+    layout_bullet = chunk[layout_start:layout_end]
+    assert "**`.gitattributes`**" in layout_bullet, (
+        "Layout + workflow contracts bullet should mention .gitattributes in the path-list parity clause"
+    )
     assert "probooks/help_epilog.py" in chunk
     assert "tests/conftest.py" in chunk
     assert "isolated_branded_app_data_env" in chunk
