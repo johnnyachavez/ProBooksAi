@@ -67,6 +67,16 @@ def get_docs_dir() -> Path:
     return docs
 
 
+def default_intake_sqlite_path() -> Path:
+    """Default SQLite file for document intake + desktop bank data.
+
+    Uses :func:`get_data_dir` so legacy ``ProBooksAi`` → ``ProBooks+ai`` migration
+    runs before the path is returned (issue #21: keep this as the single resolver
+    when *db_path* is omitted).
+    """
+    return get_data_dir() / INTAKE_DB_NAME
+
+
 # ---------------------------------------------------------------------------
 # Database setup
 # ---------------------------------------------------------------------------
@@ -141,7 +151,7 @@ def _now() -> str:
 def _connect(db_path: Optional[str] = None) -> sqlite3.Connection:
     """Open (or create) the SQLite database and return a connection."""
     if db_path is None:
-        db_path = str(get_data_dir() / INTAKE_DB_NAME)
+        db_path = str(default_intake_sqlite_path())
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.executescript(_DDL)
