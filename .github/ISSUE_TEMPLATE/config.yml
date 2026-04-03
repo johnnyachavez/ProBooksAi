@@ -20,4 +20,4 @@ contact_links:
     about: sync-workspace.ps1, integrations/work-context.example.json, pytest, and Qt headless note.
   - name: Doc index (issues-backlog)
     url: https://github.com/johnnyachavez/ProBooksAi/blob/main/docs/issues-backlog.md
-    about: Short links to BACKLOG, README Web shell + Desktop + Excel workbook template, ROADMAP snapshot, CONTRIBUTING (CI + Running Tests contacts), and work-context sample; review.html Issues backlog cards also name .github/ISSUE_TEMPLATE/config.yml; ROADMAP, BACKLOG, and CONTRIBUTING repeat the same issues-backlog.md hub blurb.
+    about: Short links to BACKLOG, README Web shell + Desktop + Excel workbook template, ROADMAP snapshot, CONTRIBUTING (CI + Running Tests contacts), and work-context sample; review.html Issues backlog cards also name .github/ISSUE_TEMPLATE/config.yml; ROADMAP, BACKLOG, and CONTRIBUTING repeat the same issues-backlog.md hub blurb; issues-backlog.md also orients probooks/help_epilog.py and CLI/desktop --help with README Desktop.

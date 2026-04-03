@@ -561,6 +561,9 @@ def test_github_issue_templates_reference_core_docs() -> None:
     assert "README Web shell + Desktop + Excel workbook template" in config, (
         "config.yml Doc index about should list Excel workbook template with Web shell + Desktop"
     )
+    assert "help_epilog" in config, (
+        "config.yml Doc index about should note help_epilog / CLI desktop --help (issues-backlog parity)"
+    )
     assert "docs/issues-backlog.md" in config, (
         "config.yml should include Doc index contact link to docs/issues-backlog.md"
     )
@@ -698,6 +701,7 @@ def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
     text = (_REPO / ".cursor" / "rules" / "github-work-context.mdc").read_text(encoding="utf-8")
     assert "issues-backlog.md" in text
     assert "config.yml" in text
+    assert "help_epilog" in text
     assert "review.html" in text
     assert "test_ci_validate_layout_sync.py" in text
     assert "CONTRIBUTING.md#continuous-integration" in text
