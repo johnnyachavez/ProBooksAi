@@ -1,6 +1,6 @@
 # Issue backlog
 
-> Minimal index — the phased issue table lives in **[BACKLOG.md](BACKLOG.md)**. This file is also **Short index** in the root **[README](../README.md)** **Docs** line and **Doc index (issues-backlog)** in the GitHub **New issue** chooser (**`.github/ISSUE_TEMPLATE/config.yml`**: Contributing guide, **Continuous integration**, Local preview, Desktop app, Running Tests, **Doc index (issues-backlog)**).
+> Minimal index — the phased issue table lives in **[BACKLOG.md](BACKLOG.md)**. This file is also **Short index** in the root **[README](../README.md)** **Docs** line and **Doc index (issues-backlog)** in the GitHub **New issue** chooser (**`.github/ISSUE_TEMPLATE/config.yml`**: Contributing guide, **Continuous integration**, Local preview, Desktop app, Excel workbook template (openpyxl), Running Tests, **Doc index (issues-backlog)**).
 
 The **Doc index (issues-backlog)** contact **`about`** text in **`.github/ISSUE_TEMPLATE/config.yml`** (shown in the GitHub **New issue** chooser) and both **Issues backlog** cards on **`review.html`** should stay aligned with each other and with **ROADMAP** / **BACKLOG** / **CONTRIBUTING** hub lines ([CONTRIBUTING.md — Continuous integration](CONTRIBUTING.md#continuous-integration)).
 
@@ -11,6 +11,8 @@ Canonical ordering and GitHub links: **[BACKLOG.md](BACKLOG.md)**.
 Install, CLI, desktop, **`review.html`** hub: **[README.md](../README.md#web-shell-review)**.
 
 PySide6 run, **Fusion** dark theme, and **Qt** font stderr note: **[README.md — Desktop app](../README.md#desktop-app-pyside6)**.
+
+**Excel COA workbook** (**`generate_workbook.py`**, **openpyxl**): **[README.md — Excel workbook template](../README.md#excel-workbook-template-openpyxl)**.
 
 Phased roadmap and in-repo implementation snapshot: **[ROADMAP.md — Implementation snapshot](ROADMAP.md#implementation-snapshot-repository-2026-04)**.
 

@@ -302,6 +302,8 @@ def test_pr_template_lists_readme_excel_workbook_anchor_checklist() -> None:
     assert "excel-workbook-template-openpyxl" in text
     assert "### Excel workbook template (openpyxl)" in text
     assert "**README Excel workbook template anchor**" in text
+    assert "**`config.yml`**" in text
+    assert "issues-backlog.md" in text
     for name in (
         "test_github_issue_templates_reference_core_docs",
         "test_review_html_links_readme_web_shell_and_desktop_anchors",
@@ -319,6 +321,7 @@ def test_contributing_ci_documents_readme_excel_workbook_anchor_bullet() -> None
     chunk = md[ci_start:table_start]
     assert "**README `### Excel workbook template (openpyxl)` anchor**" in chunk
     assert "README.md#excel-workbook-template-openpyxl" in chunk
+    assert "**`config.yml`** (**Excel workbook template** contact link)" in chunk
     assert "test_pr_template_lists_readme_excel_workbook_anchor_checklist" in chunk
     assert "test_contributing_ci_documents_readme_excel_workbook_anchor_bullet" in chunk
 
@@ -458,6 +461,15 @@ def test_github_issue_templates_reference_core_docs() -> None:
     assert "README.md#desktop-app-pyside6" in config, (
         "config.yml should include Desktop app contact link to README.md#desktop-app-pyside6"
     )
+    assert "name: Excel workbook template (openpyxl)" in config, (
+        "config.yml should define Excel workbook template contact label"
+    )
+    assert "README.md#excel-workbook-template-openpyxl" in config, (
+        "config.yml should include Excel workbook template contact URL to README.md#excel-workbook-template-openpyxl"
+    )
+    assert "README Web shell + Desktop + Excel workbook template" in config, (
+        "config.yml Doc index about should list Excel workbook template with Web shell + Desktop"
+    )
     assert "docs/issues-backlog.md" in config, (
         "config.yml should include Doc index contact link to docs/issues-backlog.md"
     )
@@ -510,6 +522,8 @@ def test_issues_backlog_orients_readme_docs_bar_and_github_config() -> None:
     assert "Running Tests, **Doc index (issues-backlog)**)." in text
     assert "Short index" in text
     assert "../README.md#desktop-app-pyside6" in text
+    assert "../README.md#excel-workbook-template-openpyxl" in text
+    assert "Excel workbook template (openpyxl)" in text
     assert "integrations/work-context.example.json" in text
     assert "](CONTRIBUTING.md#running-tests)" in text
     assert "Continuous integration" in text
