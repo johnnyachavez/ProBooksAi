@@ -307,7 +307,7 @@ class TestGetDataDirMigration:
 
         legacy = _legacy_data_dir()
         legacy.mkdir(parents=True, exist_ok=True)
-        (legacy / "probooksai.db").write_bytes(b"legacy-db-marker")
+        (legacy / INTAKE_DB_NAME).write_bytes(b"legacy-db-marker")
         docs = legacy / "documents"
         docs.mkdir()
         (docs / "a.txt").write_text("x", encoding="utf-8")
