@@ -734,7 +734,8 @@ class AppHeaderWidget(QFrame):
             "color: white; font-weight: bold; font-size: 16px; background: transparent;"
         )
         lbl_app.setToolTip(
-            "ProBooks+ai — document intake, bank workflows, ledger, and business tools."
+            "ProBooks+ai — document intake, bank workflows, ledger, and business tools. "
+            "File → Backup copies the open company .db (probooks.backup / probooks backup)."
         )
         layout.addWidget(lbl_app)
 
@@ -795,13 +796,15 @@ class MainWindow(QMainWindow):
         toolbar = QToolBar("Main")
         toolbar.setMovable(False)
         toolbar.setToolTip(
-            "Document Intake toolbar: import documents and refresh the inbox (File menu and F5 when Intake has focus)."
+            "Document Intake toolbar: import documents and refresh the inbox (File menu and F5 when Intake has focus). "
+            "Company .db backup: File → Backup / probooks backup."
         )
         self.addToolBar(toolbar)
 
         act_import = QAction("\U0001f4c2  Import Documents\u2026", self)
         act_import.setToolTip(
-            "Import documents (same as File → Import documents…, Ctrl+O)."
+            "Import documents (same as File → Import documents…, Ctrl+O). "
+            "Back up the company .db from File → Backup / probooks backup before risky changes."
         )
         act_import.triggered.connect(self._on_import)
         toolbar.addAction(act_import)
@@ -816,7 +819,8 @@ class MainWindow(QMainWindow):
         # Container: header banner + tab widget
         container = QWidget()
         container.setToolTip(
-            "Main workspace: company banner and tabbed areas (Document Intake through Audit log)."
+            "Main workspace: company banner and tabbed areas (Document Intake through Audit log). "
+            "All tabs share the open SQLite company file (File → Backup / Restore, probooks.backup)."
         )
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
@@ -829,14 +833,16 @@ class MainWindow(QMainWindow):
         self._tabs = QTabWidget()
         self._tabs.setToolTip(
             "Main workspace: switch between Document Intake, Bank Import, Register, "
-            "Chart of Accounts, Reports, Journal, Business, and Audit log (hover each tab for a short summary)."
+            "Chart of Accounts, Reports, Journal, Business, and Audit log (hover each tab for a short summary). "
+            "File → Backup / Restore applies to the whole company database (CLI: probooks backup / restore)."
         )
 
         # ── Tab 1: Document Intake ──────────────────────────────────────────
         intake_widget = QWidget()
         intake_widget.setToolTip(
             "Document Intake: import files, pick an inbox row, then review extraction and categorization on the right. "
-            "F5 refreshes the list when this tab has focus."
+            "F5 refreshes the list when this tab has focus. "
+            "Help → Document intake shortcuts lists File → Backup/Restore (probooks.backup)."
         )
         intake_layout = QVBoxLayout(intake_widget)
         intake_layout.setContentsMargins(0, 0, 0, 0)
@@ -953,7 +959,7 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self._status_bar)
         self._status_bar.showMessage(
             escape_ampersand_for_qt(
-                "Ready \u2013 drag & drop documents or use Import."
+                "Ready \u2013 drag & drop documents or use Import; File → Backup saves the company .db."
             )
         )
 
@@ -972,7 +978,8 @@ class MainWindow(QMainWindow):
         act_import_docs.setShortcut("Ctrl+O")
         _menu_action_tip(
             act_import_docs,
-            "Import PDF or images into the document inbox (Ctrl+O).",
+            "Import PDF or images into the document inbox (Ctrl+O). "
+            "Back up the company .db from File → Backup / probooks backup before risky changes.",
         )
         act_import_docs.triggered.connect(self._on_import)
         file_menu.addAction(act_import_docs)
@@ -1410,7 +1417,7 @@ class MainWindow(QMainWindow):
         p = getattr(self._bank_db, "_db_path", None) or self._db_path or ""
         self._status_bar.showMessage(
             escape_ampersand_for_qt(
-                f"Company: {p}  \u2013  drag & drop documents or use Import."
+                f"Company: {p}  \u2013  drag & drop or Import; File → Backup copies this .db."
             )
         )
         if p:
@@ -1465,7 +1472,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Busy",
                 "Wait for AI extraction to finish before switching company files.",
-                ok_tip="Close; wait for AI to finish, then switch company files.",
+                ok_tip="Close; wait for AI, then switch; consider File → Backup / probooks backup before replacing the .db.",
             )
             return
 
@@ -1485,7 +1492,8 @@ class MainWindow(QMainWindow):
                 )
                 box.setDefaultButton(QMessageBox.StandardButton.No)
                 box.setToolTip(
-                    "This path already exists; Yes opens it as the company database (reload from disk), No cancels."
+                    "This path already exists; Yes opens it as the company database (reload from disk), No cancels. "
+                    "File → Backup / probooks backup can copy your current .db before switching."
                 )
                 tip_message_box_buttons(
                     box,
@@ -1500,7 +1508,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Not found",
                 f"File does not exist:\n{escape_ampersand_for_qt(str(p))}",
-                ok_tip="Close; pick an existing .db file or create a new one.",
+                ok_tip="Close; pick an existing .db or use File → New company; back up live data with File → Backup (probooks.backup).",
             )
             return
 
@@ -1566,7 +1574,7 @@ class MainWindow(QMainWindow):
             return
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Warning)
-        box.setWindowTitle("Restore company database")
+        box.setWindowTitle("Restore company database (probooks restore)")
         box.setText(
             "The selected backup will overwrite your current company database file on disk. "
             "Unsaved work in memory is discarded. This cannot be undone.\n\n"
@@ -1649,7 +1657,7 @@ class MainWindow(QMainWindow):
         start_dir = str(Path(prev).parent) if prev else ""
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Open company database",
+            "Open company database (File → Backup copies the current .db first)",
             start_dir,
             "SQLite Database (*.db);;All Files (*.*)",
         )
@@ -1661,7 +1669,7 @@ class MainWindow(QMainWindow):
         start_dir = str(Path(prev).parent) if prev else ""
         path, _ = QFileDialog.getSaveFileName(
             self,
-            "New company database",
+            "New company database (back up any existing .db from File → Backup first)",
             start_dir,
             "SQLite Database (*.db);;All Files (*.*)",
         )

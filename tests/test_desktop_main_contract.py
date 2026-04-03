@@ -172,6 +172,30 @@ def test_backup_restore_success_and_confirm_copy_mentions_probooks_cli_parity() 
     assert "Restore complete" in rs
     assert "probooks restore" in rs
     assert "Select backup to restore (probooks restore)" in rs
+    assert 'box.setWindowTitle("Restore company database (probooks restore)")' in rs
+
+
+def test_open_new_company_qfiledialog_titles_mention_backup() -> None:
+    text = _MAIN.read_text(encoding="utf-8")
+    assert (
+        "Open company database (File → Backup copies the current .db first)" in text
+    )
+    assert (
+        "New company database (back up any existing .db from File → Backup first)"
+        in text
+    )
+
+
+def test_main_workspace_status_and_switch_company_copy_mentions_backup() -> None:
+    text = _MAIN.read_text(encoding="utf-8")
+    assert "File → Backup saves the company .db" in text
+    assert "File → Backup copies this .db" in text
+    assert "probooks backup / restore" in text
+    sc = text.split("def _switch_company_database", 1)[1].split(
+        "def _on_backup_company", 1
+    )[0]
+    assert "File → Backup" in sc
+    assert "probooks.backup" in sc
 
 
 def test_detail_pane_action_buttons_have_tooltips() -> None:
@@ -247,7 +271,8 @@ def test_main_toolbar_import_tooltip_echoes_file_menu_ctrl_o() -> None:
     text = _MAIN.read_text(encoding="utf-8")
     assert "act_import.setToolTip" in text
     i = text.index("act_import.setToolTip")
-    assert "Ctrl+O" in text[i : i + 220]
+    assert "Ctrl+O" in text[i : i + 420]
+    assert "File → Backup" in text[i : i + 420]
 
 
 def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
@@ -569,6 +594,7 @@ def test_detail_pane_scroll_and_main_toolbar_have_hover_tooltips() -> None:
     assert "Preview, extracted fields, categorization" in chunk
     assert "toolbar.setToolTip" in text
     assert "Document Intake toolbar" in text
+    assert "probooks backup" in text.split("toolbar.setToolTip", 1)[1][:400]
 
 
 def test_rules_tab_toolbar_buttons_have_tooltips() -> None:
