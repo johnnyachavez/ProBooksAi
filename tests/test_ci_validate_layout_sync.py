@@ -428,6 +428,30 @@ def test_pr_template_readme_desktop_anchor_checklist_cites_help_epilog_tests() -
         assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
 
 
+def test_pr_template_lists_readme_default_database_paths_checklist() -> None:
+    """PR template should remind editors to sync README default DB paths + ROADMAP #21 note + tests."""
+    text = (_REPO / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    assert "### Default database paths (Windows)" in text
+    assert "**README `### Default database paths (Windows)`**" in text
+    for name in (
+        "test_readme_default_database_paths_notes_two_schemas_and_roadmap",
+        "test_pr_template_lists_readme_default_database_paths_checklist",
+        "test_contributing_ci_documents_readme_default_database_paths_bullet",
+    ):
+        assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
+
+
+def test_contributing_ci_documents_readme_default_database_paths_bullet() -> None:
+    """Continuous integration section documents README default database paths + layout tests."""
+    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    ci_start = md.index("### Continuous integration")
+    table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
+    chunk = md[ci_start:table_start]
+    assert "**README `### Default database paths (Windows)`**" in chunk
+    assert "Why not one `.db` yet" in chunk
+    assert "test_readme_default_database_paths_notes_two_schemas_and_roadmap" in chunk
+
+
 def test_contributing_ci_documents_readme_excel_workbook_anchor_bullet() -> None:
     """Continuous integration section documents the README Excel workbook template anchor + tests."""
     md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
