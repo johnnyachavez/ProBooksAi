@@ -955,4 +955,4 @@ def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> Non
     assert "**`.cursor/rules/github-work-context.mdc`**" in chunk
     assert "both **`require`** **`.cursor/rules/github-work-context.mdc`**" in chunk
     assert "documented in that file" in chunk
-    assert "**Layout validators** paragraph" in chunk
+    assert "**Layout validators** paragraph, which references this **Layout + workflow contracts** bullet" in chunk
