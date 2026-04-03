@@ -159,6 +159,18 @@ def test_backup_company_uses_shared_backup_helper() -> None:
     assert "backup_database(" in chunk
 
 
+def test_backup_restore_success_and_confirm_copy_mentions_probooks_cli_parity() -> None:
+    """Backup/restore dialogs remind users the desktop path matches the probooks CLI."""
+    text = _MAIN.read_text(encoding="utf-8")
+    bk = text.split("def _on_backup_company", 1)[1].split("def _on_restore_company", 1)[0]
+    assert "Backup complete" in bk
+    assert "probooks backup" in bk
+    assert "probooks.backup" in bk
+    rs = text.split("def _on_restore_company", 1)[1].split("def _on_open_company_database", 1)[0]
+    assert "Same engine as probooks restore (probooks.backup)" in rs
+    assert "Restore complete" in rs
+
+
 def test_detail_pane_action_buttons_have_tooltips() -> None:
     text = _MAIN.read_text(encoding="utf-8")
     assert "_btn_run.setToolTip" in text

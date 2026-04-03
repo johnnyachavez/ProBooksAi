@@ -1538,7 +1538,8 @@ class MainWindow(QMainWindow):
         message_box_information_ok(
             self,
             "Backup complete",
-            f"Backup saved to:\n{escape_ampersand_for_qt(path)}",
+            f"Backup saved to:\n{escape_ampersand_for_qt(path)}\n\n"
+            "Same engine as probooks backup (probooks.backup).",
             ok_tip="Close; the backup file is ready at the path shown.",
         )
 
@@ -1556,14 +1557,17 @@ class MainWindow(QMainWindow):
         box.setWindowTitle("Restore company database")
         box.setText(
             "The selected backup will overwrite your current company database file on disk. "
-            "Unsaved work in memory is discarded. This cannot be undone.\n\nContinue?"
+            "Unsaved work in memory is discarded. This cannot be undone.\n\n"
+            "Same engine as probooks restore (probooks.backup).\n\n"
+            "Continue?"
         )
         box.setStandardButtons(
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         box.setDefaultButton(QMessageBox.StandardButton.No)
         box.setToolTip(
-            "Restore overwrites the active company database on disk; unsaved in-memory work is discarded."
+            "Restore overwrites the active company database on disk via probooks.backup; "
+            "unsaved in-memory work is discarded."
         )
         tip_message_box_buttons(
             box,
@@ -1623,7 +1627,8 @@ class MainWindow(QMainWindow):
         message_box_information_ok(
             self,
             "Restore complete",
-            "Company data was reloaded from the backup.",
+            "Company data was reloaded from the backup.\n\n"
+            "Same engine as probooks restore (probooks.backup).",
             ok_tip="Close; you are now on the restored company database.",
         )
 
