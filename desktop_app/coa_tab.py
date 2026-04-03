@@ -501,8 +501,8 @@ class COATab(QWidget):
             )
             tip_message_box_buttons(
                 box,
-                yes="Deactivate this account; it hides from pick lists (data is kept).",
-                no="Keep the account active.",
+                yes="Deactivate this account; it hides from pick lists (data stays in the company .db — File → Backup before wide COA changes).",
+                no="Keep the account active (cancel deactivation).",
             )
             confirm = box.exec()
             if confirm != QMessageBox.StandardButton.Yes:

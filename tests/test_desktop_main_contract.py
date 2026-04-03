@@ -615,6 +615,11 @@ def test_bank_import_manage_and_account_edit_dialogs_have_window_tooltips() -> N
     assert "Add, edit, or delete bank accounts used for CSV/PDF import" in bit
     mad = bit.split("class ManageAccountsDialog", 1)[1].split("def _build_ui", 1)[0]
     assert "File → Backup" in mad and "probooks backup" in mad
+    mad_ui = bit.split("class ManageAccountsDialog", 1)[1].split(
+        "def _on_accounts_table_context_menu", 1
+    )[0]
+    di = mad_ui.index("_btn_del.setToolTip(")
+    assert "File → Backup" in mad_ui[di : di + 200]
     assert "Bank account label, institution, type" in bit
 
 
@@ -948,6 +953,7 @@ def test_destructive_yes_no_message_boxes_use_shared_button_tooltips() -> None:
     coa = (_DESKTOP_APP_DIR / "coa_tab.py").read_text(encoding="utf-8")
     assert "tip_message_box_buttons" in coa
     assert "hides from pick lists" in coa
+    assert "File → Backup before wide COA changes" in coa
     cde = coa.index("Deactivated accounts stay in the database")
     assert "File → Backup" in coa[cde : cde + 220]
     bi = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
@@ -1008,6 +1014,9 @@ def test_manage_accounts_dialog_accounts_table_opens_bank_import_shortcuts_help(
     assert "Confirm Delete" in bit
     assert "box.setToolTip(" in bit
     assert "Permanently removes this bank account" in bit
+    ak = bit.index("def _on_accounts_table_context_menu")
+    ak2 = bit.index("act_keys.setToolTip(", ak)
+    assert "probooks.backup" in bit[ak2 : ak2 + 220]
 
 
 def test_grids_context_menus_use_qaction_hover_tooltips() -> None:

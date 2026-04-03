@@ -178,7 +178,10 @@ class ManageAccountsDialog(QDialog):
         self._btn_edit.setToolTip("Edit the selected account.")
         self._btn_edit.clicked.connect(self._on_edit)
         self._btn_del = QPushButton("🗑️  Delete")
-        self._btn_del.setToolTip("Delete the selected account and its transactions.")
+        self._btn_del.setToolTip(
+            "Delete the selected account and its transactions. "
+            "Back up the company .db from File → Backup / probooks backup first."
+        )
         self._btn_del.clicked.connect(self._on_delete)
         btn_row.addWidget(self._btn_add)
         btn_row.addWidget(self._btn_edit)
@@ -198,7 +201,8 @@ class ManageAccountsDialog(QDialog):
             lambda: show_bank_import_keyboard_shortcuts_dialog(self),
         )
         act_keys.setToolTip(
-            "Same summary as Help → Bank import shortcuts… (F5, batches, transactions, Manage Accounts)."
+            "Same summary as Help → Bank import shortcuts… "
+            "(F5, batches, transactions, Manage Accounts, File → Backup / probooks.backup)."
         )
         if not idx.isValid():
             m.exec(self._table.viewport().mapToGlobal(pos))
@@ -902,8 +906,9 @@ class BankImportTab(QWidget):
 
         btn_manage = QPushButton("Manage Accounts…")
         btn_manage.setToolTip(
-            "Add, edit, or delete bank accounts. The accounts table context menu includes "
-            "Keyboard shortcuts… (including on empty area)."
+            "Add, edit, or delete bank accounts (writes to the company .db). "
+            "The accounts table context menu includes Keyboard shortcuts… (including on empty area). "
+            "Use File → Backup / probooks backup before destructive changes."
         )
         btn_manage.clicked.connect(self._on_manage_accounts)
         hdr_row.addWidget(btn_manage)
@@ -931,13 +936,15 @@ class BankImportTab(QWidget):
         # Left: batch list
         left = QWidget()
         left.setToolTip(
-            "Import batches column for the selected bank account; pick a batch to load transactions and reconciliation on the right."
+            "Import batches column for the selected bank account; pick a batch to load transactions and reconciliation on the right. "
+            "Batches and transactions live in the company SQLite file (File → Backup / Restore, probooks.backup)."
         )
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
         lbl_import_batches = QLabel("Import Batches:")
         lbl_import_batches.setToolTip(
-            "CSV import batches for the selected bank account; choose one to load transactions and reconciliation."
+            "CSV import batches for the selected bank account; choose one to load transactions and reconciliation. "
+            "Same shared company .db as the rest of the app (File → Backup / probooks backup)."
         )
         left_layout.addWidget(lbl_import_batches)
         self._batch_table = QTableWidget()
