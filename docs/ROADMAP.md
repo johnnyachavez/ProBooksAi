@@ -4,7 +4,7 @@
 > This roadmap reflects the MVP-first, bank-centric build order for ProBooks+ai.  
 > Each phase maps to one or more focused pull requests.
 >
-> **Related docs:** [BACKLOG.md](BACKLOG.md) (issue order) · [issues-backlog.md](issues-backlog.md) (short index; **config.yml** chooser + **`review.html`** Issues cards) · [README — Web shell](../README.md#web-shell-review) (install, CLI; **`review.html`** hub) · [README — Desktop app](../README.md#desktop-app-pyside6) (PySide6 theme + Qt notes) · [README — Default database paths](../README.md#default-database-paths-windows) (CLI **`probooks.db`** vs desktop **`probooksai.db`**, **#21**) · [README — Excel workbook template](../README.md#excel-workbook-template-openpyxl) (**generate_workbook.py**, **openpyxl**; CLI/desktop **`--help`**: **`probooks/help_epilog.py`**) · [CONTRIBUTING.md](CONTRIBUTING.md#continuous-integration) (CI, **contract-test** table, PRs, naming) · [CONTRIBUTING — Running Tests](CONTRIBUTING.md#running-tests) (**`sync-workspace.ps1`**, **`work-context.example.json`**) · [In-repo snapshot ↓](#implementation-snapshot-repository-2026-04)
+> **Related docs:** [BACKLOG.md](BACKLOG.md) (issue order) · [issues-backlog.md](issues-backlog.md) (short index; **config.yml** chooser + **`review.html`** Issues cards) · [README — Web shell](../README.md#web-shell-review) (install, CLI; **`review.html`** hub) · [README — Desktop app](../README.md#desktop-app-pyside6) (PySide6 theme + Qt notes) · [README — Default database paths](../README.md#default-database-paths-windows) (CLI **`probooks.db`** vs desktop **`probooksai.db`**, **#21**) · [README — Excel workbook template](../README.md#excel-workbook-template-openpyxl) (**generate_workbook.py**, **openpyxl**; CLI/desktop **`--help`**: **`probooks/help_epilog.py`**) · [CONTRIBUTING.md](CONTRIBUTING.md#continuous-integration) (CI, **contract-test** table, PRs, naming) · [CONTRIBUTING — Running Tests](CONTRIBUTING.md#running-tests) (**`sync-workspace.ps1`**, **`work-context.example.json`**) · [In-repo snapshot ↓](#implementation-snapshot-repository-2026-04) · [Cross-phase issues ↓](#supporting-cross-cutting-issues) (**#21** + table at end)
 >
 > **Note on duplicate issues:** Several features were filed more than once as the backlog grew.
 > Where duplicates exist both issue numbers are listed; the higher-numbered one is canonical.
@@ -83,7 +83,7 @@ The phases below are still the **product roadmap**; this table summarizes what e
 
 ## Current Status
 
-Open issues and pull requests change on GitHub continuously. Use **[Issues](https://github.com/johnnyachavez/ProBooksAi/issues)** and **[Pull requests](https://github.com/johnnyachavez/ProBooksAi/pulls)** for live state. **[BACKLOG.md](BACKLOG.md)** orders planned epics; the **[implementation snapshot](#implementation-snapshot-repository-2026-04)** (above) describes what is already in this repository. **Supporting / Cross-cutting Issues** near the end of this file lists cross-phase work such as **[#21](https://github.com/johnnyachavez/ProBooksAi/issues/21)** (single SQLite path + merged CLI/desktop migrations).
+Open issues and pull requests change on GitHub continuously. Use **[Issues](https://github.com/johnnyachavez/ProBooksAi/issues)** and **[Pull requests](https://github.com/johnnyachavez/ProBooksAi/pulls)** for live state. **[BACKLOG.md](BACKLOG.md)** orders planned epics; the **[implementation snapshot](#implementation-snapshot-repository-2026-04)** (above) describes what is already in this repository. **[Supporting / Cross-cutting Issues](#supporting-cross-cutting-issues)** near the end of this file lists cross-phase work such as **[#21](https://github.com/johnnyachavez/ProBooksAi/issues/21)** (single SQLite path + merged CLI/desktop migrations).
 
 ---
 
@@ -496,6 +496,8 @@ Support more than one set of books in the same installation.
 - Switching company fully switches data (with or without a controlled restart); no data leakage.
 
 ---
+
+<a id="supporting-cross-cutting-issues"></a>
 
 ## Supporting / Cross-cutting Issues
 

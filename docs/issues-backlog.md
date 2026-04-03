@@ -22,6 +22,8 @@ Shared **Excel** **`--help`** line (**`probooks/help_epilog.py`**; **`python -m 
 
 Phased roadmap and in-repo implementation snapshot: **[ROADMAP.md — Implementation snapshot](ROADMAP.md#implementation-snapshot-repository-2026-04)**.
 
+Cross-phase issues (**#21**, packaging, backup UI, theme, CI tests): **[ROADMAP.md — Supporting / cross-cutting](ROADMAP.md#supporting-cross-cutting-issues)**.
+
 Contributing (CI, **contract-test** table, PRs, naming): **[CONTRIBUTING.md](CONTRIBUTING.md#continuous-integration)**.
 
 Optional **GitHub CLI** workspace snapshot (**`integrations/work-context.example.json`**, **`scripts/sync-workspace.ps1`**): **[CONTRIBUTING.md — Running Tests](CONTRIBUTING.md#running-tests)**.

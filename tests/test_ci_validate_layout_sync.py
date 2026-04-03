@@ -639,6 +639,12 @@ def test_contributing_other_docs_links_roadmap_implementation_snapshot() -> None
     assert "ROADMAP.md#implementation-snapshot-repository-2026-04" in md
 
 
+def test_contributing_other_docs_links_roadmap_supporting_cross_cutting() -> None:
+    """CONTRIBUTING Other docs should deep-link ROADMAP Supporting / cross-cutting fragment."""
+    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    assert "](ROADMAP.md#supporting-cross-cutting-issues)" in md
+
+
 def test_contributing_other_docs_links_issues_backlog_short_index() -> None:
     """CONTRIBUTING intro should link the minimal issues-backlog index."""
     md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
@@ -797,9 +803,40 @@ def test_docs_indexes_link_contributing_ci_section() -> None:
         assert needle in text, f"{rel} should contain {needle!r}"
 
 
+def test_hub_docs_link_roadmap_supporting_cross_cutting_issues() -> None:
+    """Hub docs deep-link ROADMAP Supporting / cross-cutting via explicit HTML anchor + stable fragment."""
+    roadmap = (_REPO / "docs" / "ROADMAP.md").read_text(encoding="utf-8")
+    assert '<a id="supporting-cross-cutting-issues"></a>' in roadmap
+    assert "](ROADMAP.md#supporting-cross-cutting-issues)" in (_REPO / "docs" / "BACKLOG.md").read_text(encoding="utf-8")
+    assert "](ROADMAP.md#supporting-cross-cutting-issues)" in (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    assert "](ROADMAP.md#supporting-cross-cutting-issues)" in (_REPO / "docs" / "issues-backlog.md").read_text(encoding="utf-8")
+    assert "](#supporting-cross-cutting-issues)" in roadmap
+
+
+def test_contributing_ci_documents_roadmap_supporting_cross_cutting_bullet() -> None:
+    """Continuous integration section documents ROADMAP Supporting / cross-cutting anchor + layout-sync test."""
+    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    ci_start = md.index("### Continuous integration")
+    table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
+    chunk = md[ci_start:table_start]
+    start = chunk.index("**ROADMAP Supporting / cross-cutting**")
+    end = chunk.index("\n- **README `## Web shell (review)` anchor**", start)
+    bullet = chunk[start:end]
+    assert "supporting-cross-cutting-issues" in bullet
+    assert "test_hub_docs_link_roadmap_supporting_cross_cutting_issues" in bullet
+
+
+def test_pr_template_roadmap_row_cites_supporting_cross_cutting_layout_sync_test() -> None:
+    """PR template ROADMAP checklist row should cite supporting-cross-cutting anchor + pytest name."""
+    text = (_REPO / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    assert "supporting-cross-cutting-issues" in text
+    assert "test_hub_docs_link_roadmap_supporting_cross_cutting_issues" in text
+
+
 def test_issues_backlog_orients_readme_docs_bar_and_github_config() -> None:
     """issues-backlog explains BACKLOG vs this index + README Short index + config.yml chooser."""
     text = (_REPO / "docs" / "issues-backlog.md").read_text(encoding="utf-8")
+    assert "](ROADMAP.md#supporting-cross-cutting-issues)" in text
     assert ".github/ISSUE_TEMPLATE/config.yml" in text
     assert "Running Tests, **Doc index (issues-backlog)**)." in text
     assert "Short index" in text
