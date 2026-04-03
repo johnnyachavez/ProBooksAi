@@ -702,7 +702,7 @@ class MainWindow(QMainWindow):
 
         # ── Tab 3: Bank register (Phase 3) ──────────────────────────────────
         self._register_tab = RegisterTab(self._bank_db, self._coa_db, self._gl_db)
-        self._tabs.addTab(self._register_tab, "📒  Register")
+        self._tabs.addTab(self._register_tab, "📒  Bank register")
 
         # ── Tab 4: Chart of Accounts Editor ─────────────────────────────────
         self._coa_tab = COATab(self._coa_db)
@@ -1074,7 +1074,7 @@ class MainWindow(QMainWindow):
                 w.deleteLater()
         tab_specs = [
             ("🏦  Bank Import", BankImportTab(self._bank_db, self._coa_db)),
-            ("📒  Register", RegisterTab(self._bank_db, self._coa_db, self._gl_db)),
+            ("📒  Bank register", RegisterTab(self._bank_db, self._coa_db, self._gl_db)),
             ("📊  Chart of Accounts", COATab(self._coa_db)),
             ("📈  Reports", ReportsTab(self._bank_db._conn)),
             ("📗  Journal", JournalTab(self._bank_db._conn)),
