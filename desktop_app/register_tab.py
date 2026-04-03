@@ -278,6 +278,7 @@ class RegisterTab(QWidget):
         self._table.horizontalHeader().setSectionResizeMode(_COL_LINK, QHeaderView.ResizeMode.ResizeToContents)
         self._table.setSortingEnabled(True)
         self._table.itemChanged.connect(self._on_item_changed)
+        self._table.cellDoubleClicked.connect(self._on_register_cell_double_clicked)
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._on_register_context_menu)
         layout.addWidget(self._table)
@@ -299,7 +300,8 @@ class RegisterTab(QWidget):
         tip = QLabel(
             "Deposits show in Debit; payments in Credit (cash-basis register). "
             "Payee shows description then COA or memo; Number shows reference then type (DEP / PMT / XFER). "
-            "Clr shows C when marked cleared here, else R when the CSV batch was reconciled in Bank Import. "
+            "Clr shows C when marked cleared here, else R when the CSV batch was reconciled in Bank Import "
+            "(double-click Clr to toggle cleared). "
             "Assign a COA account to clear the highlight. "
             "Starred (★) items at the top of the COA list are hints from your rules "
             "and, when OPENAI_API_KEY is set, optional AI picks. "
@@ -388,6 +390,29 @@ class RegisterTab(QWidget):
             if tid is not None:
                 ids.append(tid)
         return ids
+
+    def _on_register_cell_double_clicked(self, row: int, col: int) -> None:
+        """Toggle per-row *cleared* when the user double-clicks the Clr column."""
+        if col != _COL_CLR:
+            return
+        id_item = self._table.item(row, _COL_DATE)
+        if id_item is None:
+            return
+        tid = id_item.data(Qt.ItemDataRole.UserRole)
+        if tid is None:
+            return
+        txn = self._db.get_transaction(int(tid))
+        if txn is None:
+            return
+        cur = int(dict(txn).get("cleared") or 0) == 1
+        try:
+            self._db.update_transaction(int(tid), cleared=0 if cur else 1)
+        except ValueError as exc:
+            QMessageBox.warning(
+                self, "Cannot update", escape_ampersand_for_qt(str(exc))
+            )
+            return
+        self._reload_current()
 
     def _on_register_context_menu(self, pos):
         idx = self._table.indexAt(pos)
