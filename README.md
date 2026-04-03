@@ -26,7 +26,7 @@ probooks backup --output ./backups/demo-backup.db
 probooks restore --input ./backups/demo-backup.db --yes
 ```
 
-**Backup / restore** use the SQLite online backup API (`probooks.backup`), so the CLI can copy the default `--db` even when another program (including the desktop app) still has that file open.
+**Backup / restore** use the SQLite online backup API via **`probooks.backup`** (the CLI commands above and the desktop app **File → Backup** / **File → Restore**), so you can back up the default **`--db`** even when another program still has that file open.
 
 ### CSV import (issues #31, #33, #34)
 
