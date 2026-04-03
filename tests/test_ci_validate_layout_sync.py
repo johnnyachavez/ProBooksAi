@@ -889,6 +889,7 @@ def test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests() -> Non
         "test_review_html_readme_default_database_paths_documentation_card",
         "test_review_html_links_readme_web_shell_and_desktop_anchors",
         "test_review_html_python_desktop_section_mentions_help_epilog",
+        "test_github_issue_templates_reference_core_docs",
     ):
         assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
 
@@ -940,6 +941,7 @@ def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> Non
     assert "test_review_html_readme_default_database_paths_documentation_card" in chunk
     assert "test_review_html_links_readme_web_shell_and_desktop_anchors" in chunk
     assert "test_review_html_python_desktop_section_mentions_help_epilog" in chunk
+    assert "test_github_issue_templates_reference_core_docs" in chunk
     assert "README.md#default-database-paths-windows" in chunk
     assert "test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests" in chunk
     assert "**`.cursor/rules/github-work-context.mdc`**" in chunk
