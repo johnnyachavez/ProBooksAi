@@ -5,6 +5,10 @@ The ``probooks`` CLI applies SQL files under ``probooks/migrations/`` (ledger:
 uses ``schema_version`` plus embedded DDL. Both live in the same branded data
 folder today as separate files (``probooks.db`` vs ``probooksai.db``).
 
+``BankDatabase(db_path=None)`` resolves the file via
+``probooksai.database.default_intake_sqlite_path`` (runs ``get_data_dir`` / legacy copy),
+not ``probooks.paths.default_intake_db_path`` alone — see ``probooks/paths.py`` module doc.
+
 When you add CLI migrations or desktop bank migrations, update the expected sets
 below so merge work stays explicit.
 """
