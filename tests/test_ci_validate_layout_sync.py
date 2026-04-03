@@ -336,6 +336,17 @@ def test_hub_docs_related_docs_link_readme_default_database_paths() -> None:
         assert segment in text, f"{rel} should include the shared README default database paths segment"
 
 
+def test_hub_docs_related_docs_link_readme_python_cli_segment() -> None:
+    """ROADMAP, BACKLOG, and CONTRIBUTING should share the same README Python CLI segment in Related/Other docs."""
+    segment = (
+        "[README — Python CLI](../README.md#python-cli) "
+        "(**`probooks.backup`**, SQLite online backup)"
+    )
+    for rel in ("docs/ROADMAP.md", "docs/BACKLOG.md", "docs/CONTRIBUTING.md"):
+        text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+        assert segment in text, f"{rel} should include the shared README Python CLI segment"
+
+
 def test_static_html_links_readme_desktop_section() -> None:
     """Static shell pages that mention the desktop app should deep-link README Desktop."""
     needle = 'href="README.md#desktop-app-pyside6"'
@@ -561,6 +572,7 @@ def test_contributing_ci_documents_issues_backlog_review_config_touchpoints() ->
     assert "the following paragraph ties **Doc index (issues-backlog)** **`about`**" in ibullet
     assert "another paragraph notes **ROADMAP** / **BACKLOG** / **Other docs** hub blurb parity" in ibullet
     assert "another orienting paragraph notes the shared **README — Default database paths** hub segment" in ibullet
+    assert "another orienting paragraph notes the shared **README — Python CLI** hub segment" in ibullet
     assert "Issues backlog Documentation cards" in ibullet
     assert "blob/.../issues-backlog.md" in ibullet
     for name in (
@@ -570,6 +582,9 @@ def test_contributing_ci_documents_issues_backlog_review_config_touchpoints() ->
         "test_hub_docs_related_docs_link_readme_default_database_paths",
         "test_contributing_ci_documents_hub_readme_default_database_paths_segment",
         "test_pr_template_lists_hub_docs_readme_default_database_paths_checklist",
+        "test_hub_docs_related_docs_link_readme_python_cli_segment",
+        "test_contributing_ci_documents_hub_readme_python_cli_segment",
+        "test_pr_template_lists_hub_docs_readme_python_cli_segment_checklist",
     ):
         assert name in ibullet, f"issues-backlog + GitHub chooser bullet should mention {name!r}"
     assert "**`PULL_REQUEST_TEMPLATE.md`**" in ibullet
@@ -602,11 +617,26 @@ def test_contributing_ci_documents_hub_readme_default_database_paths_segment() -
     ci_chunk = md[ci_start:table_start]
     assert "**Hub docs — README default database paths segment**" in ci_chunk
     hub = ci_chunk.index("**Hub docs — README default database paths segment**")
-    hub_end = ci_chunk.index("\n- **ROADMAP snapshot anchor**", hub)
+    hub_end = ci_chunk.index("\n- **Hub docs — README Python CLI segment**", hub)
     hub_bullet = ci_chunk[hub:hub_end]
     assert "test_hub_docs_related_docs_link_readme_default_database_paths" in hub_bullet
     assert "test_contributing_ci_documents_hub_readme_default_database_paths_segment" in hub_bullet
     assert "test_pr_template_lists_hub_docs_readme_default_database_paths_checklist" in hub_bullet
+
+
+def test_contributing_ci_documents_hub_readme_python_cli_segment() -> None:
+    """Continuous integration section documents the ROADMAP/BACKLOG/CONTRIBUTING README Python CLI hub segment test."""
+    md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
+    ci_start = md.index("### Continuous integration")
+    table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
+    ci_chunk = md[ci_start:table_start]
+    assert "**Hub docs — README Python CLI segment**" in ci_chunk
+    hub = ci_chunk.index("**Hub docs — README Python CLI segment**")
+    hub_end = ci_chunk.index("\n- **ROADMAP snapshot anchor**", hub)
+    hub_bullet = ci_chunk[hub:hub_end]
+    assert "test_hub_docs_related_docs_link_readme_python_cli_segment" in hub_bullet
+    assert "test_contributing_ci_documents_hub_readme_python_cli_segment" in hub_bullet
+    assert "test_pr_template_lists_hub_docs_readme_python_cli_segment_checklist" in hub_bullet
 
 
 def test_pr_template_lists_hub_docs_issues_backlog_blurb_checklist() -> None:
@@ -629,6 +659,18 @@ def test_pr_template_lists_hub_docs_readme_default_database_paths_checklist() ->
         "test_hub_docs_related_docs_link_readme_default_database_paths",
         "test_contributing_ci_documents_hub_readme_default_database_paths_segment",
         "test_pr_template_lists_hub_docs_readme_default_database_paths_checklist",
+    ):
+        assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
+
+
+def test_pr_template_lists_hub_docs_readme_python_cli_segment_checklist() -> None:
+    """PR template should remind editors to sync ROADMAP/BACKLOG/CONTRIBUTING README Python CLI hub segment + tests."""
+    text = GITHUB_PULL_REQUEST_TEMPLATE_MD.read_text(encoding="utf-8")
+    assert "Hub docs — README Python CLI segment" in text
+    for name in (
+        "test_hub_docs_related_docs_link_readme_python_cli_segment",
+        "test_contributing_ci_documents_hub_readme_python_cli_segment",
+        "test_pr_template_lists_hub_docs_readme_python_cli_segment_checklist",
     ):
         assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
 
@@ -798,6 +840,9 @@ def test_contributing_ci_documents_readme_python_cli_anchor_bullet() -> None:
         "test_issues_backlog_documents_excel_help_epilog",
         "test_pr_template_lists_readme_python_cli_anchor_checklist",
         "test_contributing_ci_documents_readme_python_cli_anchor_bullet",
+        "test_hub_docs_related_docs_link_readme_python_cli_segment",
+        "test_contributing_ci_documents_hub_readme_python_cli_segment",
+        "test_pr_template_lists_hub_docs_readme_python_cli_segment_checklist",
     ):
         assert name in bullet, f"CONTRIBUTING Python CLI anchor bullet should mention {name!r}"
 
@@ -837,6 +882,9 @@ def test_pr_template_issues_backlog_checklist_cites_layout_sync_tests() -> None:
         "test_hub_docs_related_docs_link_readme_default_database_paths",
         "test_contributing_ci_documents_hub_readme_default_database_paths_segment",
         "test_pr_template_lists_hub_docs_readme_default_database_paths_checklist",
+        "test_hub_docs_related_docs_link_readme_python_cli_segment",
+        "test_contributing_ci_documents_hub_readme_python_cli_segment",
+        "test_pr_template_lists_hub_docs_readme_python_cli_segment_checklist",
     ):
         assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
     assert "**Doc index (issues-backlog)** **`about`**" in text
@@ -1144,6 +1192,7 @@ def test_issues_backlog_orients_readme_docs_bar_and_github_config() -> None:
     assert "both **Issues backlog** cards" in text
     assert "**Hub docs — issues-backlog link text**" in text
     assert "**Hub docs — README default database paths segment**" in text
+    assert "**Hub docs — README Python CLI segment**" in text
     assert "verbatim-aligned" in text
     assert "**SQLite issue #21**" in text
     assert "tests/test_issue_21_schema_inventory.py" in text
@@ -1245,6 +1294,7 @@ def test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests() -> Non
         "test_readme_docs_bar_links_python_cli_anchor",
         "test_hub_docs_related_docs_link_readme_excel_workbook_template",
         "test_hub_docs_related_docs_link_readme_default_database_paths",
+        "test_hub_docs_related_docs_link_readme_python_cli_segment",
         "test_readme_default_database_paths_notes_two_schemas_and_roadmap",
         "test_roadmap_snapshot_why_not_one_db_points_at_issue_21_inventory",
         "test_readme_docs_bar_links_default_database_paths_anchor",
@@ -1271,6 +1321,9 @@ def test_pr_template_lists_readme_python_cli_anchor_checklist() -> None:
         "test_issues_backlog_documents_excel_help_epilog",
         "test_pr_template_lists_readme_python_cli_anchor_checklist",
         "test_contributing_ci_documents_readme_python_cli_anchor_bullet",
+        "test_hub_docs_related_docs_link_readme_python_cli_segment",
+        "test_contributing_ci_documents_hub_readme_python_cli_segment",
+        "test_pr_template_lists_hub_docs_readme_python_cli_segment_checklist",
     ):
         assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
 
@@ -1306,6 +1359,7 @@ def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
         "test_readme_contributing_section_mentions_conftest",
         "test_readme_python_cli_section_mentions_backup_restore_online_api",
         "test_readme_docs_bar_links_python_cli_anchor",
+        "test_hub_docs_related_docs_link_readme_python_cli_segment",
         "test_contributing_ci_documents_issue_21_schema_inventory_bullet",
         "test_pr_template_lists_issue_21_schema_inventory_checklist",
     ):
@@ -1352,6 +1406,7 @@ def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> Non
     assert "test_cursor_rule_github_work_context_points_at_contributing_ci" in chunk
     assert "test_hub_docs_related_docs_link_readme_excel_workbook_template" in chunk
     assert "test_hub_docs_related_docs_link_readme_default_database_paths" in chunk
+    assert "test_hub_docs_related_docs_link_readme_python_cli_segment" in chunk
     assert "test_readme_default_database_paths_notes_two_schemas_and_roadmap" in chunk
     assert "test_roadmap_snapshot_why_not_one_db_points_at_issue_21_inventory" in chunk
     assert "test_readme_docs_bar_links_default_database_paths_anchor" in chunk

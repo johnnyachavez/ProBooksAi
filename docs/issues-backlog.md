@@ -8,6 +8,8 @@ The **Related docs** / **Other docs** lines on **[ROADMAP.md](ROADMAP.md)**, **[
 
 The same three hub lines also repeat the same **README — Default database paths** segment (link + CLI vs desktop parenthetical); keep them verbatim-aligned ([CONTRIBUTING.md — Continuous integration](CONTRIBUTING.md#continuous-integration), **Hub docs — README default database paths segment**).
 
+The same three hub lines also repeat the same **README — Python CLI** segment (**`probooks.backup`**, SQLite online backup); keep them verbatim-aligned ([CONTRIBUTING.md — Continuous integration](CONTRIBUTING.md#continuous-integration), **Hub docs — README Python CLI segment**).
+
 **SQLite issue #21** (CLI vs desktop bank DDL): changing **`probooks/migrations/`** or **`probooksai/bank_import.py`** requires updating **`tests/test_issue_21_schema_inventory.py`** per [CONTRIBUTING.md — Continuous integration](CONTRIBUTING.md#continuous-integration) (**SQLite issue #21** bullet).
 
 Canonical ordering and GitHub links: **[BACKLOG.md](BACKLOG.md)**.
