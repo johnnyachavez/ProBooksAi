@@ -1,7 +1,10 @@
 """Backup / restore tests."""
 
+import io
 import sqlite3
+import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -42,6 +45,46 @@ def test_cli_backup_returns_one_when_source_db_missing(tmp_path: Path) -> None:
     out = tmp_path / "out.db"
     assert cmd_backup(missing, out) == 1
     assert not out.exists()
+
+
+def test_main_backup_prints_error_when_db_missing(tmp_path: Path) -> None:
+    from probooks.cli import main
+
+    missing = tmp_path / "nope.db"
+    out = tmp_path / "out.db"
+    err = io.StringIO()
+    with patch.object(sys, "stderr", err):
+        code = main(["--db", str(missing), "backup", "-o", str(out)])
+    assert code == 1
+    assert not out.exists()
+    assert "No database at" in err.getvalue()
+
+
+def test_main_backup_and_restore_roundtrip(tmp_path: Path) -> None:
+    from probooks.cli import main
+
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    db = tmp_path / "company.db"
+    conn = connect(db)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+
+    snap = tmp_path / "snap.db"
+    stdout_bak = io.StringIO()
+    with patch.object(sys, "stdout", stdout_bak):
+        assert main(["--db", str(db), "backup", "--output", str(snap)]) == 0
+    assert is_sqlite_file(snap)
+    assert "Backed up to" in stdout_bak.getvalue()
+
+    restored = tmp_path / "restored.db"
+    stdout_restore = io.StringIO()
+    with patch.object(sys, "stdout", stdout_restore):
+        assert main(["--db", str(restored), "restore", "-i", str(snap), "--yes"]) == 0
+    assert is_sqlite_file(restored)
+    assert "Restored database from" in stdout_restore.getvalue()
+    conn = connect(restored)
+    assert conn.execute("SELECT COUNT(*) FROM companies").fetchone()[0] >= 1
+    conn.close()
 
 
 def test_cli_restore_returns_one_when_backup_file_missing(tmp_path: Path) -> None:
