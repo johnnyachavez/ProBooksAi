@@ -458,6 +458,9 @@ def test_desktop_main_cli_and_qt_app_strings_use_probooks_plus_ai() -> None:
     assert "default_intake_db_path().name" in text, (
         "desktop --database help should derive the default filename from probooks.paths"
     )
+    didx = text.index('"--database"')
+    assert "File → Backup" in text[didx : didx + 700]
+    assert "probooks backup" in text[didx : didx + 700]
     assert 'app.setApplicationName("ProBooks+ai")' in text
     assert 'app.setOrganizationName("ProBooks+ai")' in text
     assert "Keyboard shortcuts are summarized under" in text
@@ -923,6 +926,9 @@ def test_destructive_yes_no_message_boxes_use_shared_button_tooltips() -> None:
     assert et.count("tip_message_box_buttons") >= 2
     assert "Permanently remove this rule" in et
     assert "Remove this categorization rule from the company database" in et
+    assert "File → Backup" in et and "probooks backup" in et.split(
+        "Remove this categorization rule from the company database", 1
+    )[1][:400]
     assert "Import deletes every existing rule" in et
     coa = (_DESKTOP_APP_DIR / "coa_tab.py").read_text(encoding="utf-8")
     assert "tip_message_box_buttons" in coa

@@ -617,7 +617,8 @@ class RulesTab(QWidget):
         )
         box.setDefaultButton(QMessageBox.StandardButton.No)
         box.setToolTip(
-            "Remove this categorization rule from the company database after you confirm."
+            "Remove this categorization rule from the company database after you confirm. "
+            "Consider File → Backup / probooks backup before bulk deletes."
         )
         tip_message_box_buttons(
             box,
@@ -2852,7 +2853,7 @@ class PayrollTaxTab(QWidget):
                 "Payroll taxes",
                 "Tax tables are missing. Restart the app or open a company file "
                 "that has been upgraded to the latest schema.",
-                ok_tip="Close; restart ProBooks+ai or use an upgraded company database.",
+                ok_tip="Close; restart or open an upgraded company .db; File → Backup / probooks backup first if the file has data you need.",
             )
             return
         d = QDialog(self)

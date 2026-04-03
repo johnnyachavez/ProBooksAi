@@ -242,7 +242,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write a SQLite online backup of --db to another file",
         description=(
             "Uses SQLite online backup API (--db may be open in another program). "
-            "Requires SQLite at --db and an --output that is a different path than --db after resolving."
+            "Requires SQLite at --db and an --output that is a different path than --db after resolving. "
+            "Same engine as ProBooks+ai File → Backup (probooks.backup)."
         ),
     )
     bp.add_argument(
@@ -258,7 +259,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Replace --db from a SQLite backup file (online backup API)",
         description=(
             "Uses SQLite online backup API into --db (temp file, then atomic replace). "
-            "Requires SQLite at --input and a different path than --db after resolving."
+            "Requires SQLite at --input and a different path than --db after resolving. "
+            "Same engine as ProBooks+ai File → Restore (probooks.backup)."
         ),
     )
     rp.add_argument(

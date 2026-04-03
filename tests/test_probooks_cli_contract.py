@@ -45,6 +45,8 @@ def test_probooks_cli_backup_restore_argparse_help_and_flags() -> None:
         "Requires SQLite at --input and a different path than --db after resolving."
         in cli
     )
+    assert "Same engine as ProBooks+ai File → Backup (probooks.backup)." in cli
+    assert "Same engine as ProBooks+ai File → Restore (probooks.backup)." in cli
     assert 'help="Destination .db path (must not be the same file as --db)."' in cli
     assert 'help="Backup .db to read from (must not be the same file as --db)."' in cli
     assert 'bp.add_argument(\n        "--output",' in cli

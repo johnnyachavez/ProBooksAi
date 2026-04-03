@@ -1734,7 +1734,8 @@ def main():
             "SQLite database path; if omitted, uses the last company file from settings "
             "when it still exists, otherwise the default "
             f"{default_intake_db_path().name!r} from probooksai.database.get_data_dir() "
-            "(see README: Default database paths)."
+            "(see README: Default database paths). "
+            "Back up this file from the app (File → Backup) or CLI (probooks backup; probooks.backup)."
         ),
     )
     args = parser.parse_args()
