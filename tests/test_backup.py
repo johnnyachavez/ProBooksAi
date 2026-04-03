@@ -113,6 +113,22 @@ def test_main_restore_accepts_long_input_flag(tmp_path: Path) -> None:
     assert "Restored database from" in stdout.getvalue()
 
 
+def test_main_backup_argparse_requires_output(tmp_path: Path) -> None:
+    from probooks.cli import main
+
+    with pytest.raises(SystemExit) as exc:
+        main(["backup"])
+    assert exc.value.code == 2
+
+
+def test_main_restore_argparse_requires_input(tmp_path: Path) -> None:
+    from probooks.cli import main
+
+    with pytest.raises(SystemExit) as exc:
+        main(["restore", "--yes"])
+    assert exc.value.code == 2
+
+
 def test_main_restore_without_yes_returns_two(tmp_path: Path) -> None:
     from probooks.cli import main
 
@@ -547,6 +563,37 @@ def test_restore_database_unlinks_temp_when_os_replace_fails(tmp_path: Path) -> 
     assert not target.exists()
     with patch("probooks.backup.os.replace", side_effect=OSError("replace denied")):
         with pytest.raises(OSError, match="replace denied"):
+            restore_database(bak, target, overwrite=True)
+    assert not target.exists()
+    assert not list(tmp_path.glob(".probooks-restore-*.tmp"))
+
+
+def test_backup_database_raises_when_mkstemp_fails(tmp_path: Path) -> None:
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    src = tmp_path / "live.db"
+    conn = connect(src)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    dest = tmp_path / "out.db"
+    with patch("probooks.backup.tempfile.mkstemp", side_effect=OSError("mkstemp failed")):
+        with pytest.raises(OSError, match="mkstemp failed"):
+            backup_database(src, dest)
+    assert not dest.exists()
+    assert not list(tmp_path.glob(".probooks-backup-*.tmp"))
+
+
+def test_restore_database_raises_when_mkstemp_fails(tmp_path: Path) -> None:
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    live = tmp_path / "live.db"
+    conn = connect(live)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    bak = tmp_path / "bak.db"
+    backup_database(live, bak)
+    target = tmp_path / "target.db"
+    assert not target.exists()
+    with patch("probooks.backup.tempfile.mkstemp", side_effect=OSError("mkstemp failed")):
+        with pytest.raises(OSError, match="mkstemp failed"):
             restore_database(bak, target, overwrite=True)
     assert not target.exists()
     assert not list(tmp_path.glob(".probooks-restore-*.tmp"))
