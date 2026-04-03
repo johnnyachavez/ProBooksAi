@@ -205,6 +205,35 @@ def test_backup_roundtrip_while_other_connection_open(tmp_path: Path) -> None:
         holder.close()
 
 
+def test_backup_database_creates_parent_directories_for_destination(tmp_path: Path) -> None:
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    src = tmp_path / "live.db"
+    conn = connect(src)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    nested = tmp_path / "snapshots" / "2026" / "copy.db"
+    assert not nested.parent.exists()
+    backup_database(src, nested)
+    assert is_sqlite_file(nested)
+
+
+def test_restore_database_creates_parent_directories_for_target(tmp_path: Path) -> None:
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    live = tmp_path / "live.db"
+    conn = connect(live)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    bak = tmp_path / "bak.db"
+    backup_database(live, bak)
+    nested_target = tmp_path / "restore" / "here" / "company.db"
+    assert not nested_target.parent.exists()
+    restore_database(bak, nested_target, overwrite=True)
+    assert is_sqlite_file(nested_target)
+    conn = connect(nested_target)
+    assert conn.execute("SELECT COUNT(*) FROM companies").fetchone()[0] >= 1
+    conn.close()
+
+
 def test_backup_roundtrip(tmp_path: Path) -> None:
     mdir = PROBOOKS_MIGRATIONS_DIR
     src = tmp_path / "live.db"
