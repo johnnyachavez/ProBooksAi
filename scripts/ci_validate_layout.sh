@@ -65,6 +65,7 @@ require tests/test_package_name_contract.py
 require tests/test_integrations_example_contract.py
 require tests/test_generate_workbook_contract.py
 require tests/test_desktop_main_contract.py
+require tests/test_probooks_backup_contract.py
 require tests/test_probooks_cli_contract.py
 require tests/test_probooks_paths_contract.py
 require tests/test_probooksai_database_contract.py
