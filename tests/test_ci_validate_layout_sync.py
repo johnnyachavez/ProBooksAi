@@ -198,6 +198,12 @@ def test_readme_docs_bar_links_desktop_app_anchor() -> None:
     assert "[Desktop app](#desktop-app-pyside6)" in readme
 
 
+def test_readme_docs_bar_links_default_database_paths_anchor() -> None:
+    """README top **Docs** line should jump to ### Default database paths (Windows)."""
+    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    assert "[Default DB paths](#default-database-paths-windows)" in readme
+
+
 def test_readme_excel_workbook_subsection_links_help_epilog_and_desktop() -> None:
     """README ### Excel workbook template should cross-link help_epilog and Desktop anchor."""
     readme = (_REPO / "README.md").read_text(encoding="utf-8")
@@ -448,6 +454,7 @@ def test_pr_template_lists_readme_default_database_paths_checklist() -> None:
     assert "**README `### Default database paths (Windows)`**" in text
     for name in (
         "test_readme_default_database_paths_notes_two_schemas_and_roadmap",
+        "test_readme_docs_bar_links_default_database_paths_anchor",
         "test_review_html_links_readme_web_shell_and_desktop_anchors",
         "test_review_html_readme_default_database_paths_documentation_card",
         "test_review_html_python_desktop_section_mentions_help_epilog",
@@ -467,6 +474,7 @@ def test_contributing_ci_documents_readme_default_database_paths_bullet() -> Non
     assert "Why not one `.db` yet" in chunk
     for name in (
         "test_readme_default_database_paths_notes_two_schemas_and_roadmap",
+        "test_readme_docs_bar_links_default_database_paths_anchor",
         "test_review_html_links_readme_web_shell_and_desktop_anchors",
         "test_review_html_readme_default_database_paths_documentation_card",
         "test_review_html_python_desktop_section_mentions_help_epilog",
@@ -809,6 +817,7 @@ def test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests() -> Non
         "test_ci_validate_layout_sh_and_ps1_same_paths_and_order",
         "test_hub_docs_related_docs_link_readme_excel_workbook_template",
         "test_readme_default_database_paths_notes_two_schemas_and_roadmap",
+        "test_readme_docs_bar_links_default_database_paths_anchor",
         "test_review_html_readme_default_database_paths_documentation_card",
         "test_review_html_links_readme_web_shell_and_desktop_anchors",
         "test_review_html_python_desktop_section_mentions_help_epilog",
@@ -826,6 +835,7 @@ def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
     assert "### Default database paths (Windows)" in text
     assert "Why not one `.db` yet" in text
     assert "test_readme_default_database_paths_notes_two_schemas_and_roadmap" in text
+    assert "test_readme_docs_bar_links_default_database_paths_anchor" in text
     assert "README.md#default-database-paths-windows" in text
     for name in (
         "test_review_html_readme_default_database_paths_documentation_card",
@@ -853,6 +863,7 @@ def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> Non
     assert "test_cursor_rule_github_work_context_points_at_contributing_ci" in chunk
     assert "test_hub_docs_related_docs_link_readme_excel_workbook_template" in chunk
     assert "test_readme_default_database_paths_notes_two_schemas_and_roadmap" in chunk
+    assert "test_readme_docs_bar_links_default_database_paths_anchor" in chunk
     assert "Why not one `.db` yet" in chunk
     assert "test_review_html_readme_default_database_paths_documentation_card" in chunk
     assert "test_review_html_links_readme_web_shell_and_desktop_anchors" in chunk
