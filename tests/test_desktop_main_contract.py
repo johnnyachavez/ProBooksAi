@@ -295,6 +295,8 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
     assert "_menu_action_tip(" in chunk[ex : ex + 400]
     assert "\n            act_intake_keys,\n" in chunk
     assert "\n            act_more_tab_keys,\n" in chunk
+    assert chunk.count("_view_tab_tip_suffix") == 2
+    assert 'f"Show this main tab ({sc}).{_view_tab_tip_suffix}"' in chunk
 
 
 def test_main_help_menu_wires_document_intake_shortcuts_dialog() -> None:
@@ -922,6 +924,8 @@ def test_intake_and_bank_import_splitters_have_resize_tooltips() -> None:
     main_t = _MAIN.read_text(encoding="utf-8")
     assert "splitter.setToolTip" in main_t
     assert "document inbox" in main_t
+    sp = main_t.index("Drag the handle to resize the document inbox")
+    assert "File → Backup" in main_t[sp : sp + 220]
     bi = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
     assert "splitter.setToolTip" in bi
     assert "right_splitter.setToolTip" in bi

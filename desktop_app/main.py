@@ -898,7 +898,8 @@ class MainWindow(QMainWindow):
 
         splitter.setSizes([380, 720])
         splitter.setToolTip(
-            "Drag the handle to resize the document inbox and the extraction detail pane."
+            "Drag the handle to resize the document inbox and the extraction detail pane. "
+            "Both sides use the same company SQLite file (File → Backup / probooks backup)."
         )
         intake_layout.addWidget(splitter)
 
@@ -1077,6 +1078,9 @@ class MainWindow(QMainWindow):
 
         # View menu — tab shortcuts (tabs are created later; shortcuts fire after UI exists)
         view_menu = mb.addMenu("&View")
+        _view_tab_tip_suffix = (
+            " Same company SQLite file (File → Backup / Restore, probooks.backup)."
+        )
         for idx, (sc, label) in enumerate(
             [
                 ("Ctrl+1", "Document &Intake"),
@@ -1092,7 +1096,7 @@ class MainWindow(QMainWindow):
             act = QAction(label, self)
             act.setShortcut(sc)
             act.setShortcutContext(Qt.ApplicationShortcut)
-            _menu_action_tip(act, f"Show this main tab ({sc}).")
+            _menu_action_tip(act, f"Show this main tab ({sc}).{_view_tab_tip_suffix}")
             act.triggered.connect(
                 lambda checked=False, i=idx: self._set_main_tab_index(i)
             )
