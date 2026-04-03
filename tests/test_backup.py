@@ -5,9 +5,26 @@ from pathlib import Path
 import pytest
 
 from probooks.backup import backup_database, is_sqlite_file, restore_database
+from probooks.cli import cmd_backup, cmd_restore
 from probooks.database import connect, migration_files, run_migrations
 
 from tests.repo_paths import PROBOOKS_MIGRATIONS_DIR
+
+
+def test_cli_backup_rejects_non_sqlite_source(tmp_path: Path) -> None:
+    bad = tmp_path / "src.db"
+    bad.write_text("not sqlite", encoding="utf-8")
+    out = tmp_path / "out.db"
+    assert cmd_backup(bad, out) == 1
+    assert not out.exists()
+
+
+def test_cli_restore_rejects_non_sqlite_backup(tmp_path: Path) -> None:
+    bad = tmp_path / "bak.db"
+    bad.write_text("not sqlite", encoding="utf-8")
+    target = tmp_path / "company.db"
+    target.write_text("anything", encoding="utf-8")
+    assert cmd_restore(target, bad, yes=True) == 1
 
 
 def test_backup_rejects_non_sqlite_source(tmp_path: Path) -> None:
