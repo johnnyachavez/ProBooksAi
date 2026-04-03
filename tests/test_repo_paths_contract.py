@@ -42,3 +42,4 @@ def test_repo_paths_pin_essential_repo_files() -> None:
     assert repo_paths.TESTS_CONFTEST.is_file()
     assert repo_paths.CURSOR_RULE_GITHUB_WORK_CONTEXT_MDC.is_file()
     assert repo_paths.GITHUB_PULL_REQUEST_TEMPLATE_MD.is_file()
+    assert repo_paths.TESTS_CI_VALIDATE_LAYOUT_SYNC_PY.is_file()
