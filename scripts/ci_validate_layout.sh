@@ -2,6 +2,7 @@
 # ProBooks+ai — same path checks as .github/workflows/ci.yml validate job.
 # Twin: scripts/ci_validate_layout.ps1 (Windows when bash is not on PATH). Keep both lists identical.
 # Run from repo root: bash scripts/ci_validate_layout.sh (Git Bash / WSL / Unix). See README Scripts.
+# Pytest: tests/test_ci_validate_layout_sync.py::test_ci_validate_layout_sh_require_paths_exist (each require path must exist).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

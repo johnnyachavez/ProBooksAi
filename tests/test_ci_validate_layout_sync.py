@@ -66,6 +66,16 @@ def test_ci_validate_layout_sh_require_paths_exist() -> None:
         )
 
 
+def test_layout_validator_hub_cites_require_paths_pytest() -> None:
+    """Layout scripts + ci.yml validate comments should point at the pytest that mirrors ``require`` / ``Require-File``."""
+    needle = "test_ci_validate_layout_sh_require_paths_exist"
+    yml_head = "\n".join(GITHUB_WORKFLOW_CI_YML.read_text(encoding="utf-8").splitlines()[:24])
+    assert needle in yml_head, "ci.yml validate job comments should cite pytest require-path test"
+    for path, label in ((_SH, "ci_validate_layout.sh"), (_PS1, "ci_validate_layout.ps1")):
+        head = "\n".join(path.read_text(encoding="utf-8").splitlines()[:16])
+        assert needle in head, f"{label} header should cite pytest {needle!r}"
+
+
 def test_ci_yml_validate_job_invokes_layout_shell_script() -> None:
     """Keep path checks in scripts/ci_validate_layout.sh, not re-inlined into the workflow YAML."""
     yml = GITHUB_WORKFLOW_CI_YML.read_text(encoding="utf-8")
@@ -1165,6 +1175,7 @@ def test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests() -> Non
         "test_contributing_ci_documents_cursor_github_work_context_rule_test",
         "test_ci_validate_layout_sh_and_ps1_same_paths_and_order",
         "test_ci_validate_layout_sh_require_paths_exist",
+        "test_layout_validator_hub_cites_require_paths_pytest",
         "test_layout_validator_windows_bash_path_guidance_in_hub_ci_scripts_and_cursor_rule",
         "test_readme_ci_validate_layout_bullet_mentions_conftest",
         "test_readme_contributing_section_mentions_conftest",
@@ -1209,6 +1220,7 @@ def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
         "test_review_html_python_desktop_section_mentions_help_epilog",
         "test_static_shell_page_sub_mentions_help_epilog",
         "test_ci_validate_layout_sh_require_paths_exist",
+        "test_layout_validator_hub_cites_require_paths_pytest",
         "test_layout_validator_windows_bash_path_guidance_in_hub_ci_scripts_and_cursor_rule",
         "test_readme_ci_validate_layout_bullet_mentions_conftest",
         "test_readme_contributing_section_mentions_conftest",
@@ -1250,6 +1262,7 @@ def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> Non
     assert "isolated_branded_app_data_env" in chunk
     assert "test_layout_validator_windows_bash_path_guidance_in_hub_ci_scripts_and_cursor_rule" in chunk
     assert "test_ci_validate_layout_sh_require_paths_exist" in chunk
+    assert "test_layout_validator_hub_cites_require_paths_pytest" in chunk
     assert "test_readme_ci_validate_layout_bullet_mentions_conftest" in chunk
     assert "test_readme_contributing_section_mentions_conftest" in chunk
     assert "test_cursor_rule_github_work_context_points_at_contributing_ci" in chunk
