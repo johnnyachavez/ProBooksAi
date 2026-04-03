@@ -231,11 +231,35 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("status", help="Show database path and row counts")
 
-    bp = sub.add_parser("backup", help="Copy database to a backup file")
-    bp.add_argument("--output", "-o", type=Path, required=True)
+    bp = sub.add_parser(
+        "backup",
+        help="Copy the SQLite database to a backup file",
+        description=(
+            "Copies only if --db is a SQLite file and --output resolves to a different path than --db."
+        ),
+    )
+    bp.add_argument(
+        "--output",
+        "-o",
+        type=Path,
+        required=True,
+        help="Destination path for the copied .db (must not be the same file as --db).",
+    )
 
-    rp = sub.add_parser("restore", help="Replace database from a backup file")
-    rp.add_argument("--input", "-i", type=Path, required=True)
+    rp = sub.add_parser(
+        "restore",
+        help="Replace the SQLite database from a backup file",
+        description=(
+            "Copies only if --input is a SQLite file and resolves to a different path than --db."
+        ),
+    )
+    rp.add_argument(
+        "--input",
+        "-i",
+        type=Path,
+        required=True,
+        help="Backup .db to copy from (must not be the same file as --db).",
+    )
     rp.add_argument("--yes", action="store_true", help="Confirm overwrite")
 
     al = sub.add_parser("accounts", help="Bank accounts")

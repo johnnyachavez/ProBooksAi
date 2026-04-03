@@ -9,6 +9,32 @@ from unittest.mock import patch
 import pytest
 
 
+def test_probooks_backup_help_mentions_sqlite_and_distinct_paths() -> None:
+    from probooks.cli import main
+
+    buf = io.StringIO()
+    with patch.object(sys, "stdout", buf):
+        with pytest.raises(SystemExit) as exc:
+            main(["backup", "--help"])
+    assert exc.value.code == 0
+    text = buf.getvalue()
+    assert "SQLite" in text
+    assert "different path" in text
+
+
+def test_probooks_restore_help_mentions_sqlite_and_distinct_paths() -> None:
+    from probooks.cli import main
+
+    buf = io.StringIO()
+    with patch.object(sys, "stdout", buf):
+        with pytest.raises(SystemExit) as exc:
+            main(["restore", "--help"])
+    assert exc.value.code == 0
+    text = buf.getvalue()
+    assert "SQLite" in text
+    assert "different path" in text
+
+
 def test_probooks_help_epilog_and_exit_zero() -> None:
     from probooks.cli import main
 
