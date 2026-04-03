@@ -1180,6 +1180,10 @@ def test_github_issue_templates_reference_core_docs() -> None:
         assert "help_epilog" in text, f"{label} should mention help_epilog with Excel workbook template"
         assert "docs/BACKLOG.md" in text, f"{label} should link BACKLOG.md"
         assert "docs/issues-backlog.md" in text, f"{label} should link issues-backlog.md"
+        assert "tests/test_backup.py" in text, f"{label} should cite tests/test_backup.py (backup regression)"
+        assert "tests/test_probooks_backup_contract.py" in text, (
+            f"{label} should cite tests/test_probooks_backup_contract.py (backup contract)"
+        )
 
 
 def test_contributing_ci_documents_config_doc_index_about_review_hub() -> None:
