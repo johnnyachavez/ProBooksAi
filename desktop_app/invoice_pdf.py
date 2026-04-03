@@ -12,6 +12,19 @@ from probooksai.html_escape import escape_html_text as _he
 
 
 def save_invoice_pdf(conn: sqlite3.Connection, invoice_id: int, file_path: str) -> None:
+    """
+    Render an invoice as HTML and print it to a PDF file using Qt.
+
+    IMPORTANT: Qt requires an application instance (Q(Core/Gui)Application)
+    to exist before constructing QPrinter. In CLI/subprocess contexts (like pytest),
+    there usually isn't one yet, so we create it if needed.
+    """
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+
     from probooksai import business
 
     inv, lines = business.get_invoice_detail(conn, invoice_id)
