@@ -74,6 +74,8 @@ def test_main_window_tab_bar_has_tab_tooltips() -> None:
     text = _MAIN.read_text(encoding="utf-8")
     assert "main_tab_bar = self._tabs.tabBar()" in text
     assert "main_tab_bar.setTabToolTip" in text
+    z = text.index("main_tab_bar.setTabToolTip(\n            0,")
+    assert "File → Backup" in text[z : z + 320]
     assert "Bank CSV/PDF import" in text
     assert "Business hub:" in text
     assert "self._tabs.setToolTip(" in text
@@ -300,6 +302,7 @@ def test_main_help_menu_wires_document_intake_shortcuts_dialog() -> None:
     assert "def _document_intake_keyboard_shortcuts_help_text" in text
     assert "Document &intake shortcuts" in text
     assert "Ctrl+7 Business" in text and "Ctrl+8 Audit log" in text
+    assert "all tabs share the open" in text
     assert "Help → Business shortcuts" in text
     assert "toolbar Import Documents is the same command" in text
     assert "status bar" in text
@@ -621,6 +624,7 @@ def test_detail_pane_scroll_and_main_toolbar_have_hover_tooltips() -> None:
     assert "Scroll the detail pane" in chunk
     assert "inner.setToolTip(" in chunk
     assert "Preview, extracted fields, categorization" in chunk
+    assert "File → Backup" in chunk
     assert "toolbar.setToolTip" in text
     assert "Document Intake toolbar" in text
     assert "probooks backup" in text.split("toolbar.setToolTip", 1)[1][:400]
@@ -951,6 +955,7 @@ def test_destructive_yes_no_message_boxes_use_shared_button_tooltips() -> None:
     assert "File → Backup first" in main_t
     assert main_t.count("box.setToolTip(") >= 2
     assert "This path already exists; Yes opens it" in main_t
+    assert "File → Backup / probooks backup on the current file first" in main_t
     assert "Restore overwrites the active company database" in main_t
 
 

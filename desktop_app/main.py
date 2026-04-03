@@ -113,7 +113,8 @@ def _document_intake_keyboard_shortcuts_help_text() -> str:
         "same path as the CLI; no default shortcuts — hover each action for status-bar tips.\n\n"
         "View menu:\n"
         "Ctrl+1 Document Intake, Ctrl+2 Bank Import, Ctrl+3 Register, Ctrl+4 Chart of Accounts, "
-        "Ctrl+5 Reports, Ctrl+6 Journal, Ctrl+7 Business, Ctrl+8 Audit log.\n\n"
+        "Ctrl+5 Reports, Ctrl+6 Journal, Ctrl+7 Business, Ctrl+8 Audit log — all tabs share the open "
+        "company SQLite file (File → Backup / Restore, probooks.backup).\n\n"
         "Right-click the inbox grid (including empty area) for Keyboard shortcuts… "
         "(same as this dialog).\n\n"
         "COA, Journal, Reports, Audit:\n"
@@ -326,12 +327,14 @@ class DetailPane(QScrollArea):
 
         inner = QWidget()
         inner.setToolTip(
-            "Preview, extracted fields, categorization, and action buttons for the selected inbox row (scroll when content is tall)."
+            "Preview, extracted fields, categorization, and action buttons for the selected inbox row (scroll when content is tall). "
+            "Approve/Posted values write to the company SQLite file (File → Backup / probooks backup)."
         )
         self.setWidget(inner)
         self.setWidgetResizable(True)
         self.setToolTip(
-            "Scroll the detail pane: preview, extracted fields, categorization, and workflow actions for the selected inbox row."
+            "Scroll the detail pane: preview, extracted fields, categorization, and workflow actions for the selected inbox row. "
+            "Same company .db as the rest of the app (File → Backup / Restore)."
         )
 
         layout = QVBoxLayout(inner)
@@ -927,7 +930,8 @@ class MainWindow(QMainWindow):
         main_tab_bar = self._tabs.tabBar()
         main_tab_bar.setTabToolTip(
             0,
-            "Import PDFs and images, run AI extraction, approve fields, and categorize to COA.",
+            "Import PDFs and images, run AI extraction, approve fields, and categorize to COA. "
+            "Shared company .db; File → Backup / probooks backup before risky bulk work.",
         )
         main_tab_bar.setTabToolTip(
             1,
@@ -1504,8 +1508,8 @@ class MainWindow(QMainWindow):
                 )
                 tip_message_box_buttons(
                     box,
-                    yes="Switch to this database file (reload from disk).",
-                    no="Do not switch; cancel opening this path.",
+                    yes="Switch to this .db (reload from disk); use File → Backup / probooks backup on the current file first if needed.",
+                    no="Cancel; keep the current company file (back it up with File → Backup before switching if unsure).",
                 )
                 reply = box.exec()
                 if reply != QMessageBox.StandardButton.Yes:
