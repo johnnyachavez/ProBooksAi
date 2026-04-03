@@ -105,13 +105,14 @@ class AuditTab(QWidget):
             "Leave type as “All recent” for the latest changes. "
             "Pick a type and id to view history for one bank transaction or COA row. "
             "You can also open change history from the Register, Bank Import, or COA tab "
-            "(right-click a row). F5 refreshes like the Refresh button."
+            "(right-click a row). F5 refreshes like the Refresh button. "
+            "The log reflects the open company SQLite file (File → Backup / probooks backup)."
         )
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #A0A0B0; font-size: 11px;")
         hint.setToolTip(
             "Summary: All recent shows latest edits; type + id narrows to one record. "
-            "F5 and Refresh reload the grid."
+            "F5 and Refresh reload the grid. Audit rows reflect the open company .db (File → Backup)."
         )
         lay.addWidget(hint)
         self._tbl = QTableWidget()
@@ -126,7 +127,7 @@ class AuditTab(QWidget):
         self._tbl.setSortingEnabled(True)
         self._tbl.setToolTip(
             "Change history for the current filter. Right-click for Keyboard shortcuts… "
-            "(including on empty area)."
+            "(including on empty area). Logged against the company SQLite file (probooks.backup / File → Backup)."
         )
         lay.addWidget(self._tbl)
         sc_f5 = QShortcut(QKeySequence("F5"), self)
@@ -142,7 +143,8 @@ class AuditTab(QWidget):
             lambda: show_more_main_tabs_keyboard_shortcuts_dialog(self),
         )
         act_keys.setToolTip(
-            "Same summary as Help → More tab shortcuts (F5)… (Audit log, filters, export)."
+            "Same summary as Help → More tab shortcuts (F5)… "
+            "(Audit log, filters, export, File → Backup / probooks.backup)."
         )
         if not idx.isValid():
             m.exec(self._tbl.viewport().mapToGlobal(pos))

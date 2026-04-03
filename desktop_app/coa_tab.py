@@ -351,7 +351,8 @@ class COATab(QWidget):
         self._table.setSortingEnabled(True)
         self._table.setToolTip(
             "Chart of accounts: double-click to edit; right-click for Keyboard shortcuts… and "
-            "change history (empty area OK). F5 reloads when this tab has focus."
+            "change history (empty area OK). F5 reloads when this tab has focus. "
+            "COA rows live in the company .db (File → Backup / Restore, probooks.backup)."
         )
         layout.addWidget(self._table)
 
@@ -364,12 +365,14 @@ class COATab(QWidget):
 
         tip = QLabel(
             "F5 reloads the chart from the database (respects Show inactive). "
-            "Journal and Bank import tabs also use F5 to refresh."
+            "Journal and Bank import tabs also use F5 to refresh. "
+            "Company SQLite: File → Backup / Restore (probooks.backup, CLI probooks backup/restore)."
         )
         tip.setWordWrap(True)
         tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
         tip.setToolTip(
-            "F5 refreshes this grid; double-click a row to edit; right-click for shortcuts and change history."
+            "F5 refreshes this grid; double-click a row to edit; right-click for shortcuts and change history. "
+            "Back up the company .db from File → Backup / probooks backup before bulk COA edits."
         )
         layout.addWidget(tip)
 
@@ -421,7 +424,8 @@ class COATab(QWidget):
             lambda: show_more_main_tabs_keyboard_shortcuts_dialog(self),
         )
         act_keys.setToolTip(
-            "Same summary as Help → More tab shortcuts (F5)… (COA, Journal, Reports, Audit chords)."
+            "Same summary as Help → More tab shortcuts (F5)… "
+            "(COA, Journal, Reports, Audit chords; File → Backup / probooks.backup)."
         )
         if not idx.isValid():
             menu.exec(self._table.viewport().mapToGlobal(pos))

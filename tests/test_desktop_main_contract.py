@@ -1045,19 +1045,23 @@ def test_grids_context_menus_use_qaction_hover_tooltips() -> None:
     js = jt.index("def _on_journal_list_context_menu")
     je = jt.index("def _on_lines_context_menu", js)
     assert "act_keys.setToolTip" in jt[js:je]
+    assert "probooks.backup" in jt[js:je]
     ls = jt.index("def _on_lines_context_menu")
     le = jt.index("def _refresh_list", ls)
     assert "act_copy.setToolTip" in jt[ls:le]
+    assert "probooks.backup" in jt[ls:le]
 
     rep = (_DESKTOP_APP_DIR / "reports_tab.py").read_text(encoding="utf-8")
     rps = rep.index("def _on_report_context_menu")
     rpe = rep.index("def _fill_table", rps)
     assert "act_keys.setToolTip" in rep[rps:rpe]
+    assert "probooks.backup" in rep[rps:rpe]
 
     at = (_DESKTOP_APP_DIR / "audit_tab.py").read_text(encoding="utf-8")
     aus = at.index("def _on_audit_context_menu")
     aue = at.index("def _export_csv", aus)
     assert "act_copy.setToolTip" in at[aus:aue]
+    assert "probooks.backup" in at[aus:aue]
 
     ad = (_DESKTOP_APP_DIR / "audit_dialog.py").read_text(encoding="utf-8")
     assert "act_keys.setToolTip" in ad
@@ -1067,6 +1071,7 @@ def test_grids_context_menus_use_qaction_hover_tooltips() -> None:
     cs = coa.index("def _on_coa_context_menu")
     ce = coa.index("def _on_selection", cs)
     assert "act_history.setToolTip" in coa[cs:ce]
+    assert "probooks.backup" in coa[cs:ce]
 
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
     acs = et.index("def _attach_table_copy_row_menu")
