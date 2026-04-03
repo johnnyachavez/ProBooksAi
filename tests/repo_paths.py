@@ -26,17 +26,23 @@ INTEGRATIONS_WORK_CONTEXT_EXAMPLE = INTEGRATIONS_DIR / "work-context.example.jso
 # --- Application packages ----------------------------------------------------
 DESKTOP_APP_DIR = REPO_ROOT / "desktop_app"
 EXAMPLES_DIR = REPO_ROOT / "examples"
+EXAMPLES_SAMPLE_BANK_CSV = EXAMPLES_DIR / "sample_bank.csv"
 PROBOOKS_PACKAGE_DIR = REPO_ROOT / "probooks"
 PROBOOKS_MIGRATIONS_DIR = PROBOOKS_PACKAGE_DIR / "migrations"
+PROBOOKS_MAIN_PY = PROBOOKS_PACKAGE_DIR / "__main__.py"
 PROBOOKS_CLI = PROBOOKS_PACKAGE_DIR / "cli.py"
 PROBOOKS_HELP_EPILOG = PROBOOKS_PACKAGE_DIR / "help_epilog.py"
 PROBOOKSAI_PACKAGE_DIR = REPO_ROOT / "probooksai"
+DESKTOP_APP_MAIN_PY = DESKTOP_APP_DIR / "main.py"
 
 # --- scripts/, tests/, docs/, GitHub, Cursor rules ----------------------------
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 CI_VALIDATE_LAYOUT_SH = SCRIPTS_DIR / "ci_validate_layout.sh"
 CI_VALIDATE_LAYOUT_PS1 = SCRIPTS_DIR / "ci_validate_layout.ps1"
 SYNC_WORKSPACE_PS1 = SCRIPTS_DIR / "sync-workspace.ps1"
+SCRIPTS_CAPTURE_UI_SCREENSHOT_PY = SCRIPTS_DIR / "capture_ui_screenshot.py"
+SCRIPTS_BUILD_DESKTOP_PS1 = SCRIPTS_DIR / "build_desktop.ps1"
+SCRIPTS_BUILD_DESKTOP_SH = SCRIPTS_DIR / "build_desktop.sh"
 TESTS_DIR = REPO_ROOT / "tests"
 TESTS_CONFTEST = TESTS_DIR / "conftest.py"
 TESTS_CI_VALIDATE_LAYOUT_SYNC_PY = TESTS_DIR / "test_ci_validate_layout_sync.py"
