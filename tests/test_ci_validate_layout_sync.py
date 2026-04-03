@@ -753,6 +753,7 @@ def test_github_issue_templates_reference_core_docs() -> None:
     bug = (_REPO / ".github" / "ISSUE_TEMPLATE" / "bug_report.md").read_text(encoding="utf-8")
     feat = (_REPO / ".github" / "ISSUE_TEMPLATE" / "feature_request.md").read_text(encoding="utf-8")
     roadmap_snap = "ROADMAP.md#implementation-snapshot-repository-2026-04"
+    roadmap_supporting = "docs/ROADMAP.md#supporting-cross-cutting-issues"
     readme_shell = "README.md#web-shell-review"
     readme_desktop = "README.md#desktop-app-pyside6"
     readme_excel = "README.md#excel-workbook-template-openpyxl"
@@ -765,10 +766,17 @@ def test_github_issue_templates_reference_core_docs() -> None:
         "bug_report.md triaging line should list README Desktop, then Default database paths, then Excel "
         "(same order as ROADMAP/BACKLOG/CONTRIBUTING Related docs)"
     )
+    assert bug.index(roadmap_snap) < bug.index(roadmap_supporting), (
+        "bug_report.md triaging line should list ROADMAP implementation snapshot before Supporting / cross-cutting"
+    )
+    assert feat.index(roadmap_snap) < feat.index(roadmap_supporting), (
+        "feature_request.md should list ROADMAP implementation snapshot before Supporting / cross-cutting"
+    )
     for label, text in (("bug_report.md", bug), ("feature_request.md", feat)):
         assert naming in text, f"{label} should link CONTRIBUTING.md#naming-conventions"
         assert contrib_rt in text, f"{label} should deep-link CONTRIBUTING Running Tests"
         assert roadmap_snap in text, f"{label} should deep-link ROADMAP implementation snapshot"
+        assert roadmap_supporting in text, f"{label} should deep-link ROADMAP Supporting / cross-cutting"
         assert readme_shell in text, f"{label} should deep-link README Web shell (review)"
         assert readme_desktop in text, f"{label} should deep-link README Desktop app (PySide6)"
         assert readme_excel in text, f"{label} should deep-link README Excel workbook template"
@@ -792,7 +800,7 @@ def test_contributing_ci_documents_config_doc_index_about_review_hub() -> None:
     assert "shared **issues-backlog.md** hub blurb" in issue_bullet
     assert "test_github_issue_templates_reference_core_docs" in issue_bullet
     assert "test_contributing_ci_documents_config_doc_index_about_review_hub" in issue_bullet
-    assert "**Triaging** lists README **Desktop app**" in issue_bullet
+    assert "**Triaging** lists **ROADMAP** implementation snapshot then **Supporting / cross-cutting**" in issue_bullet
 
 
 def test_docs_indexes_link_contributing_ci_section() -> None:
@@ -828,7 +836,9 @@ def test_contributing_ci_documents_roadmap_supporting_cross_cutting_bullet() -> 
     assert "supporting-cross-cutting-issues" in bullet
     assert "**`review.html`** Documentation cards" in bullet
     assert "blob" in bullet
+    assert "**`bug_report.md`**" in bullet
     assert "test_hub_docs_link_roadmap_supporting_cross_cutting_issues" in bullet
+    assert "test_github_issue_templates_reference_core_docs" in bullet
 
 
 def test_pr_template_roadmap_row_cites_supporting_cross_cutting_layout_sync_test() -> None:

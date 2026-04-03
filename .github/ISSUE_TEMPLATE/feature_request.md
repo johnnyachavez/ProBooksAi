@@ -5,7 +5,7 @@ title: "[Feature] "
 labels: enhancement
 ---
 
-**Product:** ProBooks+ai — check the [implementation roadmap / in-repo snapshot](https://github.com/johnnyachavez/ProBooksAi/blob/main/docs/ROADMAP.md#implementation-snapshot-repository-2026-04) for phased scope and what already exists, [BACKLOG.md](https://github.com/johnnyachavez/ProBooksAi/blob/main/docs/BACKLOG.md) for canonical issue order (avoid near-duplicates; see the duplicate matrix there), and [issues-backlog.md](https://github.com/johnnyachavez/ProBooksAi/blob/main/docs/issues-backlog.md) for a short index of doc entry points.
+**Product:** ProBooks+ai — check the [implementation roadmap / in-repo snapshot](https://github.com/johnnyachavez/ProBooksAi/blob/main/docs/ROADMAP.md#implementation-snapshot-repository-2026-04) for phased scope and what already exists, [Supporting / cross-cutting issues](https://github.com/johnnyachavez/ProBooksAi/blob/main/docs/ROADMAP.md#supporting-cross-cutting-issues) (**#21**, packaging, backup UI, theme, CI tests), [BACKLOG.md](https://github.com/johnnyachavez/ProBooksAi/blob/main/docs/BACKLOG.md) for canonical issue order (avoid near-duplicates; see the duplicate matrix there), and [issues-backlog.md](https://github.com/johnnyachavez/ProBooksAi/blob/main/docs/issues-backlog.md) for a short index of doc entry points.
 
 **Local preview:** [README — Web shell](https://github.com/johnnyachavez/ProBooksAi/blob/main/README.md#web-shell-review) (`python -m http.server`, **`review.html`** hub).
 
