@@ -56,7 +56,8 @@ class JournalTab(QWidget):
 
     def _build_ui(self):
         self.setToolTip(
-            "General journal: browse entries and GL lines with a date filter; export CSV (F5 refreshes when Journal has focus)."
+            "General journal: browse entries and GL lines with a date filter; export CSV (F5 refreshes when Journal has focus). "
+            "Same company SQLite database as other main tabs; File → Backup / Restore (probooks.backup)."
         )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)

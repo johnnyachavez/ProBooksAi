@@ -366,6 +366,26 @@ def test_more_main_tabs_shortcuts_module_exposes_help_dialog() -> None:
     assert "Help → Document intake shortcuts" in text
     assert "status bar" in text
     assert "per-item hover tooltips" in text
+    assert "probooks.backup" in text
+    assert "ok_tip=" in text
+
+
+def test_main_tab_root_tooltips_mention_shared_company_backup() -> None:
+    needle = "Same company SQLite database as other main tabs; File → Backup / Restore (probooks.backup)."
+    for rel in (
+        "bank_import_tab.py",
+        "register_tab.py",
+        "coa_tab.py",
+        "reports_tab.py",
+        "journal_tab.py",
+        "audit_tab.py",
+    ):
+        t = (_DESKTOP_APP_DIR / rel).read_text(encoding="utf-8")
+        assert needle in t, rel
+    et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
+    hub = et.split("class BusinessHub", 1)[1].split("def _refresh_current_subtab", 1)[0]
+    assert needle in hub
+    assert "File → Backup / probooks backup" in hub
 
 
 def test_audit_dialog_change_history_context_menu_includes_shortcuts_help() -> None:

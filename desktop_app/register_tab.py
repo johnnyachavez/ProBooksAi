@@ -261,7 +261,8 @@ class RegisterTab(QWidget):
     def _build_ui(self):
         self.setToolTip(
             "Bank register for one account: categorize, splits, transfer links, cleared flags, attachments, and post to GL "
-            "(F5 refreshes when Register has focus)."
+            "(F5 refreshes when Register has focus). "
+            "Same company SQLite database as other main tabs; File → Backup / Restore (probooks.backup)."
         )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -982,7 +983,7 @@ class RegisterTab(QWidget):
                 self,
                 "Posting",
                 "GL is not available for this session.",
-                ok_tip="Close; open a company database that includes GL support.",
+                ok_tip="Close; open a company .db that includes GL support; back it up with File → Backup / probooks backup.",
             )
             return
         acct = self._db.get_bank_account(self._current_account_id)

@@ -57,7 +57,8 @@ class ReportsTab(QWidget):
     def _build_ui(self):
         self.setToolTip(
             "Financial reports: trial balance, income statement, and balance sheet with optional date range and CSV export "
-            "(F5 re-runs the last report you opened when this tab has focus)."
+            "(F5 re-runs the last report you opened when this tab has focus). "
+            "Same company SQLite database as other main tabs; File → Backup / Restore (probooks.backup)."
         )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)

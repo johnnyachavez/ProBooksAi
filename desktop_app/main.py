@@ -812,7 +812,10 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
 
         act_refresh = QAction("\U0001f504  Refresh", self)
-        act_refresh.setToolTip("Refresh document list (F5 when Document Intake has focus).")
+        act_refresh.setToolTip(
+            "Refresh document list (F5 when Document Intake has focus). "
+            "Company .db backup: File → Backup / probooks backup."
+        )
         act_refresh.triggered.connect(self._refresh_inbox)
         toolbar.addAction(act_refresh)
 
@@ -854,7 +857,8 @@ class MainWindow(QMainWindow):
         # Left: inbox
         left = QWidget()
         left.setToolTip(
-            "Document inbox column: header and file list for the selected company; drag the splitter to resize against the detail pane."
+            "Document inbox column: header and file list for the selected company; drag the splitter to resize against the detail pane. "
+            "Same company .db as other tabs; File → Backup / Restore (probooks.backup)."
         )
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
@@ -866,7 +870,8 @@ class MainWindow(QMainWindow):
             "font-size: 13px; padding: 6px;"
         )
         lbl_inbox.setToolTip(
-            "Imported documents: pick a row to load extraction and categorization in the detail pane."
+            "Imported documents: pick a row to load extraction and categorization in the detail pane. "
+            "Back up the company file from File → Backup / probooks backup before bulk deletes or experiments."
         )
         left_layout.addWidget(lbl_inbox)
 

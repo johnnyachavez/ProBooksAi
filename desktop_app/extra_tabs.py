@@ -3602,12 +3602,14 @@ class BusinessHub(QWidget):
     def __init__(self, conn: sqlite3.Connection, parent=None):
         super().__init__(parent)
         self.setToolTip(
-            "Business hub: Rules, AR invoices, AP bills, Payroll, and default Tax % (F5 refreshes the active list sub-tab)."
+            "Business hub: Rules, AR invoices, AP bills, Payroll, and default Tax % (F5 refreshes the active list sub-tab). "
+            "Same company SQLite database as other main tabs; File → Backup / Restore (probooks.backup)."
         )
         self._business_subtabs = QTabWidget()
         self._business_subtabs.setToolTip(
             "Switch between Rules, Invoices (AR), Bills (AP), Payroll, and Tax % "
-            "(hover each sub-tab for a summary; F5 refreshes list subtabs)."
+            "(hover each sub-tab for a summary; F5 refreshes list subtabs). "
+            "All sub-tabs share the open company .db (File → Backup / probooks backup)."
         )
         self._business_subtabs.addTab(RulesTab(conn), "Rules")
         self._business_subtabs.addTab(ARTab(conn), "Invoices (AR)")

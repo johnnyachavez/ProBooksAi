@@ -36,5 +36,6 @@ def show_more_main_tabs_keyboard_shortcuts_dialog(parent: QWidget) -> None:
         parent,
         "More tab shortcuts (F5)",
         more_main_tabs_keyboard_shortcuts_help_text(),
-        ok_tip="Close this help summary; shortcuts apply when COA, Journal, Reports, or Audit has focus.",
+        ok_tip="Close; shortcuts apply when COA, Journal, Reports, or Audit has focus. "
+        "File → Backup / Restore covers the shared company .db (probooks.backup).",
     )

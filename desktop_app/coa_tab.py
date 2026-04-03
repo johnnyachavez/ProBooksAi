@@ -293,7 +293,8 @@ class COATab(QWidget):
 
     def _build_ui(self):
         self.setToolTip(
-            "Chart of accounts: add, edit, or deactivate rows; grid and shortcuts (F5 reloads when this tab has focus)."
+            "Chart of accounts: add, edit, or deactivate rows; grid and shortcuts (F5 reloads when this tab has focus). "
+            "Same company SQLite database as other main tabs; File → Backup / Restore (probooks.backup)."
         )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
