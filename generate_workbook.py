@@ -7,6 +7,9 @@ Run:
     python generate_workbook.py
 
 See **[README — Excel workbook template](README.md#excel-workbook-template-openpyxl)** (repository root).
+
+The same **Excel COA workbook** sentence appears on ``python -m probooks --help`` and
+``python -m desktop_app.main --help`` (defined in ``probooks/help_epilog.py``).
 """
 
 # Re-export everything so existing imports keep working

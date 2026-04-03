@@ -242,6 +242,17 @@ def test_review_html_links_readme_web_shell_and_desktop_anchors() -> None:
     assert 'href="README.md#excel-workbook-template-openpyxl"' in text
 
 
+def test_review_html_readme_excel_documentation_card_mentions_help_epilog() -> None:
+    """README — Excel workbook Documentation card should mention help_epilog next to generate_workbook."""
+    text = (_REPO / "review.html").read_text(encoding="utf-8")
+    start = text.index("<strong>README — Excel workbook</strong>")
+    end = text.index("</a>", start)
+    card = text[start:end]
+    assert "generate_workbook.py" in card
+    assert "help_epilog" in card
+    assert "--help" in card
+
+
 def test_review_html_python_desktop_section_mentions_help_epilog() -> None:
     """review.html Python + desktop lead should surface shared --help Excel line (probooks/help_epilog.py)."""
     text = (_REPO / "review.html").read_text(encoding="utf-8")
@@ -385,6 +396,7 @@ def test_pr_template_lists_readme_excel_workbook_anchor_checklist() -> None:
         "test_review_html_python_desktop_section_mentions_help_epilog",
         "test_static_shell_page_sub_mentions_help_epilog",
         "test_readme_excel_workbook_subsection_links_help_epilog_and_desktop",
+        "test_review_html_readme_excel_documentation_card_mentions_help_epilog",
     ):
         assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
 
@@ -421,6 +433,7 @@ def test_contributing_ci_documents_readme_excel_workbook_anchor_bullet() -> None
     assert "test_review_html_python_desktop_section_mentions_help_epilog" in chunk
     assert "test_static_shell_page_sub_mentions_help_epilog" in chunk
     assert "test_readme_excel_workbook_subsection_links_help_epilog_and_desktop" in chunk
+    assert "test_review_html_readme_excel_documentation_card_mentions_help_epilog" in chunk
 
 
 def test_contributing_ci_documents_readme_desktop_help_epilog_layout_tests() -> None:

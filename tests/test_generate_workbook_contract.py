@@ -14,3 +14,4 @@ def test_generate_workbook_delegates_to_probooksai_generator() -> None:
     assert "build_workbook" in text
     assert "if __name__" in text
     assert "build_workbook()" in text
+    assert "probooks/help_epilog.py" in text
