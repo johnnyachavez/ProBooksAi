@@ -1285,7 +1285,12 @@ def _suppress_qt_font_pointsize_stderr_spam() -> None:
 def main():
     _suppress_qt_font_pointsize_stderr_spam()
     ver = application_version()
-    parser = argparse.ArgumentParser(description="ProBooks+ai desktop application")
+    parser = argparse.ArgumentParser(
+        description="ProBooks+ai desktop application",
+        epilog=(
+            "Excel COA workbook (openpyxl): python generate_workbook.py; see README (Excel workbook template)."
+        ),
+    )
     parser.add_argument(
         "--version",
         action="version",

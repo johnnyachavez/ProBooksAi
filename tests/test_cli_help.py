@@ -21,3 +21,5 @@ def test_probooks_help_epilog_and_exit_zero() -> None:
     assert "python -m probooks" in text
     assert "README" in text
     assert "Default database" in text
+    assert "generate_workbook.py" in text
+    assert "Excel COA workbook" in text

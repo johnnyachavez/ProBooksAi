@@ -10,7 +10,10 @@ _MAIN = _REPO / "desktop_app" / "main.py"
 
 def test_desktop_main_cli_and_qt_app_strings_use_probooks_plus_ai() -> None:
     text = _MAIN.read_text(encoding="utf-8")
-    assert 'ArgumentParser(description="ProBooks+ai desktop application")' in text
+    assert 'description="ProBooks+ai desktop application"' in text
+    assert "epilog=" in text
+    assert "generate_workbook.py" in text
+    assert "Excel COA workbook" in text
     assert "Default database paths" in text
     assert "probooksai.database.get_data_dir" in text
     assert 'app.setApplicationName("ProBooks+ai")' in text
