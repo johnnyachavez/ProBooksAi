@@ -338,7 +338,7 @@ def test_review_html_readme_excel_documentation_card_mentions_help_epilog() -> N
 
 
 def test_review_html_python_desktop_section_mentions_help_epilog() -> None:
-    """review.html Python + desktop lead should surface shared --help Excel line (probooks/help_epilog.py)."""
+    """review.html Python + desktop section: help_epilog, CI, Running Tests / sync-workspace."""
     text = REVIEW_HTML.read_text(encoding="utf-8")
     start = text.index('<h2>Python + desktop (SQLite)</h2>')
     end = text.index("</section>", start)
@@ -349,6 +349,8 @@ def test_review_html_python_desktop_section_mentions_help_epilog() -> None:
     assert 'href="docs/ROADMAP.md#supporting-cross-cutting-issues"' in chunk
     assert "tests/test_issue_21_schema_inventory.py" in chunk
     assert 'href="docs/CONTRIBUTING.md#continuous-integration"' in chunk
+    assert 'href="docs/CONTRIBUTING.md#running-tests"' in chunk
+    assert "sync-workspace.ps1" in chunk
 
 
 def test_static_shell_page_sub_mentions_help_epilog() -> None:
