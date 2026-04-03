@@ -136,6 +136,27 @@ def test_main_restore_argparse_requires_input(tmp_path: Path) -> None:
     assert exc.value.code == 2
 
 
+def test_build_parser_backup_output_short_and_long_form_equivalent() -> None:
+    from probooks.cli import build_parser
+
+    p = build_parser()
+    args_short = p.parse_args(["--db", "src.db", "backup", "-o", "out.db"])
+    args_long = p.parse_args(["--db", "src.db", "backup", "--output", "out.db"])
+    assert args_short.command == "backup"
+    assert args_short.output == args_long.output == Path("out.db")
+
+
+def test_build_parser_restore_input_short_and_long_form_equivalent() -> None:
+    from probooks.cli import build_parser
+
+    p = build_parser()
+    args_short = p.parse_args(["--db", "t.db", "restore", "-i", "bak.db", "--yes"])
+    args_long = p.parse_args(["--db", "t.db", "restore", "--input", "bak.db", "--yes"])
+    assert args_short.command == "restore"
+    assert args_short.input == args_long.input == Path("bak.db")
+    assert args_short.yes is args_long.yes is True
+
+
 def test_main_restore_without_yes_returns_two(tmp_path: Path) -> None:
     from probooks.cli import main
 
