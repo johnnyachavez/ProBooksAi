@@ -37,6 +37,19 @@ def test_is_sqlite_file_true_at_minimum_size(tmp_path: Path) -> None:
     assert is_sqlite_file(p)
 
 
+def test_cli_backup_returns_one_when_source_db_missing(tmp_path: Path) -> None:
+    missing = tmp_path / "nope.db"
+    out = tmp_path / "out.db"
+    assert cmd_backup(missing, out) == 1
+    assert not out.exists()
+
+
+def test_cli_restore_returns_one_when_backup_file_missing(tmp_path: Path) -> None:
+    target = tmp_path / "live.db"
+    missing_bak = tmp_path / "missing.db"
+    assert cmd_restore(target, missing_bak, yes=True) == 1
+
+
 def test_cli_backup_rejects_non_sqlite_source(tmp_path: Path) -> None:
     bad = tmp_path / "src.db"
     bad.write_text("not sqlite", encoding="utf-8")
