@@ -425,6 +425,43 @@ def test_readme_ci_validate_layout_bullet_mentions_conftest() -> None:
     )
 
 
+def test_layout_validator_windows_bash_path_guidance_in_hub_ci_scripts_and_cursor_rule() -> None:
+    """Keep README, CONTRIBUTING, ci.yml comments, script headers, and .mdc aligned on Windows bash PATH vs .ps1."""
+    readme = README_MD.read_text(encoding="utf-8")
+    scripts_start = readme.index("## Scripts (`scripts/`)")
+    scripts_chunk = readme[scripts_start : readme.index("\n## ", scripts_start + 1)]
+    assert "PATH" in scripts_chunk
+    assert "bash" in scripts_chunk.lower()
+    assert "ci_validate_layout.ps1" in scripts_chunk
+
+    md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
+    ci_start = md.index("### Continuous integration")
+    table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
+    ci_pre_table = md[ci_start:table_start]
+    yml_bullet = next(
+        ln
+        for ln in ci_pre_table.splitlines()
+        if ln.strip().startswith("- **`.github/workflows/ci.yml`**")
+    )
+    assert "PATH" in yml_bullet and "README" in yml_bullet and "Scripts" in yml_bullet
+
+    yml = GITHUB_WORKFLOW_CI_YML.read_text(encoding="utf-8")
+    assert "bash" in yml.lower()
+    assert "PowerShell" in yml or "powershell" in yml.lower()
+
+    sh_top = "\n".join(_SH.read_text(encoding="utf-8").splitlines()[:6])
+    ps1_top = "\n".join(_PS1.read_text(encoding="utf-8").splitlines()[:6])
+    assert "PATH" in sh_top
+    assert "PATH" in ps1_top
+
+    mdc = CURSOR_RULE_GITHUB_WORK_CONTEXT_MDC.read_text(encoding="utf-8")
+    layout_lines = [ln for ln in mdc.splitlines() if ln.startswith("**Layout validators:**")]
+    assert len(layout_lines) == 1
+    layout_para = layout_lines[0]
+    assert "PATH" in layout_para
+    assert "Git Bash" in layout_para
+
+
 def test_readme_contributing_section_mentions_conftest() -> None:
     """README ## Contributing should point readers at tests/conftest.py for shared fixtures."""
     readme = README_MD.read_text(encoding="utf-8")
@@ -1110,6 +1147,7 @@ def test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests() -> Non
         "test_cursor_rule_github_work_context_points_at_contributing_ci",
         "test_contributing_ci_documents_cursor_github_work_context_rule_test",
         "test_ci_validate_layout_sh_and_ps1_same_paths_and_order",
+        "test_layout_validator_windows_bash_path_guidance_in_hub_ci_scripts_and_cursor_rule",
         "test_readme_ci_validate_layout_bullet_mentions_conftest",
         "test_readme_contributing_section_mentions_conftest",
         "test_hub_docs_related_docs_link_readme_excel_workbook_template",
@@ -1152,6 +1190,7 @@ def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
         "test_review_html_links_readme_web_shell_and_desktop_anchors",
         "test_review_html_python_desktop_section_mentions_help_epilog",
         "test_static_shell_page_sub_mentions_help_epilog",
+        "test_layout_validator_windows_bash_path_guidance_in_hub_ci_scripts_and_cursor_rule",
         "test_readme_ci_validate_layout_bullet_mentions_conftest",
         "test_readme_contributing_section_mentions_conftest",
         "test_contributing_ci_documents_issue_21_schema_inventory_bullet",
@@ -1190,6 +1229,7 @@ def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> Non
     assert "probooks/help_epilog.py" in chunk
     assert "tests/conftest.py" in chunk
     assert "isolated_branded_app_data_env" in chunk
+    assert "test_layout_validator_windows_bash_path_guidance_in_hub_ci_scripts_and_cursor_rule" in chunk
     assert "test_readme_ci_validate_layout_bullet_mentions_conftest" in chunk
     assert "test_readme_contributing_section_mentions_conftest" in chunk
     assert "test_cursor_rule_github_work_context_points_at_contributing_ci" in chunk
