@@ -580,6 +580,14 @@ def test_backlog_links_readme_desktop_app_section() -> None:
     assert "../README.md#desktop-app-pyside6" in text
 
 
+def test_backlog_implementation_row_documents_excel_help_epilog() -> None:
+    """BACKLOG MVP-in-repo row stays aligned with ROADMAP Phase 22 / README Desktop --help note."""
+    text = (_REPO / "docs" / "BACKLOG.md").read_text(encoding="utf-8")
+    assert "probooks/help_epilog.py" in text
+    assert "python -m probooks" in text
+    assert "python -m desktop_app.main" in text
+
+
 def test_hub_docs_link_issues_backlog_short_index() -> None:
     """ROADMAP and BACKLOG Related docs should link issues-backlog.md (same folder)."""
     needle = "](issues-backlog.md)"
