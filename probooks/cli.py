@@ -76,6 +76,9 @@ def cmd_backup(db: Path, output: Path) -> int:
     except ValueError as e:
         print(e, file=sys.stderr)
         return 1
+    except OSError as e:
+        print(e, file=sys.stderr)
+        return 1
     print(f"Backed up to {output}")
     return 0
 
@@ -90,6 +93,9 @@ def cmd_restore(db: Path, source: Path, yes: bool) -> int:
     try:
         restore_database(source, db, overwrite=True)
     except ValueError as e:
+        print(e, file=sys.stderr)
+        return 1
+    except OSError as e:
         print(e, file=sys.stderr)
         return 1
     print(f"Restored database from {source} to {db}")

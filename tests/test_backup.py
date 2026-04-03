@@ -19,6 +19,29 @@ def test_cli_backup_rejects_non_sqlite_source(tmp_path: Path) -> None:
     assert not out.exists()
 
 
+def test_cli_restore_without_yes_returns_two(tmp_path: Path) -> None:
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    db = tmp_path / "live.db"
+    bak = tmp_path / "bak.db"
+    conn = connect(db)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    backup_database(db, bak)
+    assert cmd_restore(db, bak, yes=False) == 2
+
+
+def test_restore_refuses_overwrite_false_when_target_exists(tmp_path: Path) -> None:
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    target = tmp_path / "live.db"
+    bak = tmp_path / "bak.db"
+    conn = connect(target)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    backup_database(target, bak)
+    with pytest.raises(FileExistsError, match="overwrite"):
+        restore_database(bak, target, overwrite=False)
+
+
 def test_cli_restore_rejects_non_sqlite_backup(tmp_path: Path) -> None:
     bad = tmp_path / "bak.db"
     bad.write_text("not sqlite", encoding="utf-8")
