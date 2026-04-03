@@ -9,7 +9,7 @@
 | Area | Issues | Status |
 |------|--------|--------|
 | Phase 0 dark UI shell | #17, #20, #29 | **Partial** — `index.html`, `invoice.html`, `review.html` |
-| Phase 1 storage | #21, #27, #28 | **MVP** — Python `probooks` package: migrations, `%LOCALAPPDATA%\ProBooks+ai\probooks.db`, backup/restore CLI; desktop/intake default DB lives in the **same folder** (`probooksai.db`) — see [README](../README.md#default-database-paths-windows). CLI vs desktop bank DDL inventory: **`tests/test_issue_21_schema_inventory.py`** ([CONTRIBUTING.md — Continuous integration](CONTRIBUTING.md#continuous-integration), **SQLite issue #21** bullet). |
+| Phase 1 storage | #21, #27, #28 | **MVP** — Python `probooks` package: migrations, `%LOCALAPPDATA%\ProBooks+ai\probooks.db`, backup/restore CLI; desktop/intake default DB lives in the **same folder** (`probooksai.db`) — see [README](../README.md#default-database-paths-windows). CLI vs desktop bank DDL inventory: **`tests/test_issue_21_schema_inventory.py`** ([CONTRIBUTING.md — Continuous integration](CONTRIBUTING.md#continuous-integration), **SQLite issue #21** bullet). SQLite online backup regression: **`tests/test_backup.py`**, **`tests/test_probooks_backup_contract.py`** — [ROADMAP.md — Implementation snapshot](ROADMAP.md#implementation-snapshot-repository-2026-04) (**SQLite online backup (regression)**; **#28**). |
 | Phase 2 bank accounts | #30 | **MVP** — `bank_accounts` table + `probooks accounts list/add` |
 | Phase 2 import + txn model | #31, #33, #34 | **MVP** — `import_batches`, `bank_transactions`, `probooks import csv`, `--errors-out`, `probooks transactions` |
 | Phase 2 remainder → Phase 24 (desktop) | #35+ and later-phase issues below | **MVP in repo** — register, reconciliation, dedupe, COA, bank↔GL, posting, reports, Journal, Rules, digital-PDF text import, Business (AR/AP), payroll/tax, CSV worker, exports (CSV surfaces + **Excel COA workbook** via **`generate_workbook.py`** / **`openpyxl`**, see **[README — Excel workbook template](../README.md#excel-workbook-template-openpyxl)**; **`probooks/help_epilog.py`** — shared **Excel** **`--help`** line for **`python -m probooks`** / **`python -m desktop_app.main`**, see [README — Desktop app](../README.md#desktop-app-pyside6)), audit, company file (`python -m desktop_app.main`). **Not** live data in static `index.html`. Remaining gaps per [ROADMAP.md — Implementation snapshot](ROADMAP.md#implementation-snapshot-repository-2026-04) and [Supporting / cross-cutting](ROADMAP.md#supporting-cross-cutting-issues) (e.g. OCR/vision, packaging, #21 single DB path). **#29** on desktop: global **Fusion** + QSS via **`apply_dark_theme`** / **`desktop_app/theme.py`** (see [README — Desktop app](../README.md#desktop-app-pyside6)). |
@@ -40,7 +40,7 @@ This file orders **open** work so implementation can proceed top-to-bottom. “C
 |----------|-------|------|
 | P1 | [#21](https://github.com/johnnyachavez/ProBooksAi/issues/21) | Single SQLite DB + versioned migrations |
 | P1 | [#27](https://github.com/johnnyachavez/ProBooksAi/issues/27) | Schema versioning + safe migrations (detailed) |
-| P1 | [#28](https://github.com/johnnyachavez/ProBooksAi/issues/28) | Backup / restore DB from UI |
+| P1 | [#28](https://github.com/johnnyachavez/ProBooksAi/issues/28) | **MVP in repo** — CLI (`probooks backup` / `restore`) + desktop **File → Backup** / **Restore** (`probooks.backup`); [ROADMAP snapshot](ROADMAP.md#implementation-snapshot-repository-2026-04) **SQLite online backup (regression)** |
 
 ## Phase 2 — Banking: accounts, import, register, reconciliation
 
@@ -159,7 +159,7 @@ As of the last backlog pass, about **48** issues stayed open after duplicate clo
 When starting the desktop + SQLite app:
 
 1. **#21** / **#27** — migrations + DB path  
-2. **#28** — backup / restore  
+2. **#28** — backup / restore (**MVP** in repo; enhancements on issue)  
 3. **#30** — bank accounts CRUD  
 4. **#31** — CSV import per account  
 5. **#34** — transaction model  

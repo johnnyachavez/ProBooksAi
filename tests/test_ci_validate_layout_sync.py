@@ -1271,6 +1271,17 @@ def test_backlog_phase1_storage_row_documents_issue_21_schema_inventory() -> Non
     assert "**SQLite issue #21** bullet" in text
 
 
+def test_backlog_phase1_storage_row_documents_sqlite_backup_regression() -> None:
+    """BACKLOG Phase 1 storage row should cite backup tests + ROADMAP SQLite online backup snapshot."""
+    text = DOCS_BACKLOG_MD.read_text(encoding="utf-8")
+    assert "| Phase 1 storage |" in text
+    assert "tests/test_backup.py" in text
+    assert "tests/test_probooks_backup_contract.py" in text
+    assert "](ROADMAP.md#implementation-snapshot-repository-2026-04)" in text
+    assert "SQLite online backup (regression)" in text
+    assert "**#28**" in text
+
+
 def test_backlog_implementation_row_documents_excel_help_epilog() -> None:
     """BACKLOG MVP-in-repo row stays aligned with ROADMAP Phase 22 / README Desktop --help note."""
     text = DOCS_BACKLOG_MD.read_text(encoding="utf-8")
