@@ -42,6 +42,24 @@ def test_restore_refuses_overwrite_false_when_target_exists(tmp_path: Path) -> N
         restore_database(bak, target, overwrite=False)
 
 
+def test_restore_overwrite_false_creates_target_when_missing(tmp_path: Path) -> None:
+    """overwrite=False only blocks replacing an existing file."""
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    live = tmp_path / "live.db"
+    conn = connect(live)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    bak = tmp_path / "bak.db"
+    backup_database(live, bak)
+    new_target = tmp_path / "new_company.db"
+    assert not new_target.exists()
+    restore_database(bak, new_target, overwrite=False)
+    assert is_sqlite_file(new_target)
+    conn = connect(new_target)
+    assert conn.execute("SELECT COUNT(*) FROM companies").fetchone()[0] >= 1
+    conn.close()
+
+
 def test_cli_restore_rejects_non_sqlite_backup(tmp_path: Path) -> None:
     bad = tmp_path / "bak.db"
     bad.write_text("not sqlite", encoding="utf-8")
