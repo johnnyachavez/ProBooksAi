@@ -20,6 +20,7 @@ def test_probooks_backup_help_mentions_sqlite_and_distinct_paths() -> None:
     text = buf.getvalue()
     assert "SQLite" in text
     assert "different path" in text
+    assert "online backup" in text.lower()
 
 
 def test_probooks_restore_help_mentions_sqlite_and_distinct_paths() -> None:
@@ -33,6 +34,7 @@ def test_probooks_restore_help_mentions_sqlite_and_distinct_paths() -> None:
     text = buf.getvalue()
     assert "SQLite" in text
     assert "different path" in text
+    assert "online backup" in text.lower()
 
 
 def test_probooks_help_epilog_and_exit_zero() -> None:

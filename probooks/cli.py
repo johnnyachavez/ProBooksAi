@@ -239,9 +239,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     bp = sub.add_parser(
         "backup",
-        help="Copy the SQLite database to a backup file",
+        help="Write a SQLite online backup of --db to another file",
         description=(
-            "Copies only if --db is a SQLite file and --output resolves to a different path than --db."
+            "Uses SQLite online backup API (--db may be open in another program). "
+            "Requires SQLite at --db and an --output that is a different path than --db after resolving."
         ),
     )
     bp.add_argument(
@@ -249,14 +250,15 @@ def build_parser() -> argparse.ArgumentParser:
         "-o",
         type=Path,
         required=True,
-        help="Destination path for the copied .db (must not be the same file as --db).",
+        help="Destination .db path (must not be the same file as --db).",
     )
 
     rp = sub.add_parser(
         "restore",
-        help="Replace the SQLite database from a backup file",
+        help="Replace --db from a SQLite backup file (online backup API)",
         description=(
-            "Copies only if --input is a SQLite file and resolves to a different path than --db."
+            "Uses SQLite online backup API into --db (temp file, then atomic replace). "
+            "Requires SQLite at --input and a different path than --db after resolving."
         ),
     )
     rp.add_argument(
@@ -264,7 +266,7 @@ def build_parser() -> argparse.ArgumentParser:
         "-i",
         type=Path,
         required=True,
-        help="Backup .db to copy from (must not be the same file as --db).",
+        help="Backup .db to read from (must not be the same file as --db).",
     )
     rp.add_argument("--yes", action="store_true", help="Confirm overwrite")
 
