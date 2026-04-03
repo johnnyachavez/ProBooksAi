@@ -38,6 +38,12 @@ def app_data_dir() -> Path:
 
 
 def default_db_path() -> Path:
+    """``app_data_dir()`` / :data:`_DB_NAME` (CLI ledger SQLite file).
+
+    The CLI does not reuse ``probooksai.database.get_data_dir`` — there is no legacy
+    ``ProBooksAi`` folder copy on this path; see README *Default database paths*
+    and issue #21.
+    """
     return app_data_dir() / _DB_NAME
 
 

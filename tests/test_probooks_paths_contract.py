@@ -14,6 +14,7 @@ def test_probooks_paths_use_branded_app_dir_and_cli_db_name() -> None:
     assert '_APP_DIR_NAME = "ProBooks+ai"' in text
     assert '_DB_NAME = "probooks.db"' in text
     assert 'INTAKE_DB_NAME = "probooksai.db"' in text
+    assert "def default_db_path()" in text
     assert "def default_intake_db_path()" in text
     assert "default_intake_sqlite_path" in text, (
         "paths.py should point runtime default DB resolution at probooksai.database"
@@ -40,3 +41,24 @@ def test_default_intake_db_path_matches_app_dir_and_intake_name(tmp_path, monkey
     from probooks.paths import INTAKE_DB_NAME, app_data_dir, default_intake_db_path
 
     assert default_intake_db_path() == app_data_dir() / INTAKE_DB_NAME
+
+
+def test_default_db_path_matches_app_dir_and_cli_name(tmp_path, monkeypatch) -> None:
+    if sys.platform == "win32":
+        local = tmp_path / "Local"
+        roaming = tmp_path / "Roaming"
+        local.mkdir()
+        roaming.mkdir()
+        monkeypatch.setenv("LOCALAPPDATA", str(local))
+        monkeypatch.setenv("APPDATA", str(roaming))
+    else:
+        monkeypatch.delenv("APPDATA", raising=False)
+        monkeypatch.delenv("LOCALAPPDATA", raising=False)
+        monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setenv("HOME", str(fake_home))
+
+    from probooks.paths import app_data_dir, default_db_path
+
+    assert default_db_path() == app_data_dir() / "probooks.db"
