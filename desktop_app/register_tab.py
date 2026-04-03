@@ -298,10 +298,10 @@ class RegisterTab(QWidget):
         layout.addWidget(self._table)
 
         sc_cleared = QShortcut(QKeySequence("Ctrl+Shift+C"), self)
-        sc_cleared.setContext(Qt.ShortcutContext.WidgetWithChildrenFocus)
+        sc_cleared.setContext(Qt.WidgetWithChildrenShortcut)
         sc_cleared.activated.connect(self._mark_cleared)
         sc_uncleared = QShortcut(QKeySequence("Ctrl+Shift+U"), self)
-        sc_uncleared.setContext(Qt.ShortcutContext.WidgetWithChildrenFocus)
+        sc_uncleared.setContext(Qt.WidgetWithChildrenShortcut)
         sc_uncleared.activated.connect(self._clear_cleared)
 
         foot = QHBoxLayout()
