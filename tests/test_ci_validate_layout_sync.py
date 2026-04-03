@@ -182,6 +182,25 @@ def test_readme_docs_bar_links_desktop_app_anchor() -> None:
     assert "[Desktop app](#desktop-app-pyside6)" in readme
 
 
+def test_readme_excel_workbook_subsection_links_help_epilog_and_desktop() -> None:
+    """README ### Excel workbook template should cross-link help_epilog and Desktop anchor."""
+    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    head = "### Excel workbook template (openpyxl)"
+    start = readme.index(head)
+    rest = readme[start + len(head) :]
+    next_h3 = rest.index("\n### ")
+    section = rest[:next_h3]
+    for needle in (
+        "probooks/help_epilog.py",
+        "--help",
+        "python -m probooks",
+        "python -m desktop_app.main",
+        "Excel COA workbook",
+        "#desktop-app-pyside6",
+    ):
+        assert needle in section, f"README Excel workbook subsection should mention {needle!r}"
+
+
 def test_readme_docs_bar_links_excel_workbook_anchor() -> None:
     """README top **Docs** line should jump to ## Excel workbook template (openpyxl)."""
     readme = (_REPO / "README.md").read_text(encoding="utf-8")
@@ -365,6 +384,7 @@ def test_pr_template_lists_readme_excel_workbook_anchor_checklist() -> None:
         "test_readme_docs_bar_links_excel_workbook_anchor",
         "test_review_html_python_desktop_section_mentions_help_epilog",
         "test_static_shell_page_sub_mentions_help_epilog",
+        "test_readme_excel_workbook_subsection_links_help_epilog_and_desktop",
     ):
         assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
 
@@ -400,6 +420,7 @@ def test_contributing_ci_documents_readme_excel_workbook_anchor_bullet() -> None
     assert "test_readme_docs_bar_links_excel_workbook_anchor" in chunk
     assert "test_review_html_python_desktop_section_mentions_help_epilog" in chunk
     assert "test_static_shell_page_sub_mentions_help_epilog" in chunk
+    assert "test_readme_excel_workbook_subsection_links_help_epilog_and_desktop" in chunk
 
 
 def test_contributing_ci_documents_readme_desktop_help_epilog_layout_tests() -> None:

@@ -46,6 +46,8 @@ python generate_workbook.py
 
 Writes `ProBooksAi_Accounting.xlsx` in the working directory (legacy default filename; see `probooksai.generator`). CI asserts **`generate_workbook.py`** is present in the repo root.
 
+**`--help`** on **`python -m probooks`** or **`python -m desktop_app.main`** prints the same **Excel COA workbook** sentence from **`probooks/help_epilog.py`**; see [Desktop app](#desktop-app-pyside6) for the PySide6 run line and **Qt** notes.
+
 ### Default database paths (Windows)
 
 - **`probooks` CLI** (`probooks.paths`): `%LOCALAPPDATA%\ProBooks+ai\probooks.db`
