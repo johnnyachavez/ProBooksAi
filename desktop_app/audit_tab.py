@@ -1,4 +1,7 @@
-"""Recent audit log entries (Phase 23)."""
+"""Recent audit log entries (Phase 23).
+
+**F5** (when this tab or its children have focus) runs the same reload as **Refresh**.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +9,7 @@ import sqlite3
 from functools import partial
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -36,7 +40,13 @@ class AuditTab(QWidget):
         self._conn = conn
         lay = QVBoxLayout(self)
         row = QHBoxLayout()
-        row.addWidget(QPushButton("Refresh", clicked=self._refresh))
+        btn_refresh = QPushButton("Refresh")
+        btn_refresh.setToolTip(
+            "Reload the audit grid with the current filter. "
+            "Shortcut: F5 (when Audit has focus)."
+        )
+        btn_refresh.clicked.connect(self._refresh)
+        row.addWidget(btn_refresh)
         row.addWidget(QPushButton("Export CSV…", clicked=self._export_csv))
         row.addStretch()
         row.addWidget(QLabel("Entity type:"))
@@ -57,7 +67,7 @@ class AuditTab(QWidget):
             "Leave type as “All recent” for the latest changes. "
             "Pick a type and id to view history for one bank transaction or COA row. "
             "You can also open change history from the Register, Bank Import, or COA tab "
-            "(right-click a row)."
+            "(right-click a row). F5 refreshes like the Refresh button."
         )
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #A0A0B0; font-size: 11px;")
@@ -73,6 +83,9 @@ class AuditTab(QWidget):
         self._tbl.customContextMenuRequested.connect(self._on_audit_context_menu)
         self._tbl.setSortingEnabled(True)
         lay.addWidget(self._tbl)
+        sc_f5 = QShortcut(QKeySequence("F5"), self)
+        sc_f5.setContext(Qt.WidgetWithChildrenShortcut)
+        sc_f5.activated.connect(self._refresh)
         self._refresh()
 
     def _on_audit_context_menu(self, pos):

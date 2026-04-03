@@ -1,11 +1,17 @@
-"""Financial reports: trial balance, P&L, balance sheet (Phase 5)."""
+"""Financial reports: trial balance, P&L, balance sheet (Phase 5).
+
+**F5** (when this tab or its children have focus) re-runs the last report you opened
+(Trial Balance, Income Statement, or Balance Sheet), if any.
+"""
 
 from __future__ import annotations
 
 import sqlite3
 from functools import partial
+from typing import Literal, Optional
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
@@ -36,6 +42,7 @@ class ReportsTab(QWidget):
         super().__init__(parent)
         self._conn = conn
         self._last_export: dict | None = None
+        self._last_report_kind: Optional[Literal["tb", "pl", "bs"]] = None
         self._build_ui()
 
     def _build_ui(self):
@@ -73,6 +80,25 @@ class ReportsTab(QWidget):
         self._summary = QLabel("")
         self._summary.setWordWrap(True)
         layout.addWidget(self._summary)
+
+        tip = QLabel(
+            "F5 re-runs the last Trial Balance, Income Statement, or Balance Sheet you ran (if any)."
+        )
+        tip.setWordWrap(True)
+        tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        layout.addWidget(tip)
+
+        sc_f5 = QShortcut(QKeySequence("F5"), self)
+        sc_f5.setContext(Qt.WidgetWithChildrenShortcut)
+        sc_f5.activated.connect(self._rerun_last_report)
+
+    def _rerun_last_report(self) -> None:
+        if self._last_report_kind == "tb":
+            self._show_tb()
+        elif self._last_report_kind == "pl":
+            self._show_pl()
+        elif self._last_report_kind == "bs":
+            self._show_bs()
 
     def _on_report_context_menu(self, pos):
         idx = self._table.indexAt(pos)
@@ -125,12 +151,14 @@ class ReportsTab(QWidget):
             "headers": headers,
             "rows": rows,
         }
+        self._last_report_kind = "tb"
 
     def _show_pl(self):
         start = self._start.text().strip()
         end = self._end.text().strip()
         if not start or not end:
             self._last_export = None
+            self._last_report_kind = None
             self._summary.setText(
                 escape_ampersand_for_qt("Enter start and end dates for P&L.")
             )
@@ -156,6 +184,7 @@ class ReportsTab(QWidget):
             "headers": headers,
             "rows": table_rows,
         }
+        self._last_report_kind = "pl"
 
     def _show_bs(self):
         end = self._end.text().strip() or self._start.text().strip() or None
@@ -179,6 +208,7 @@ class ReportsTab(QWidget):
             "headers": headers,
             "rows": table_rows,
         }
+        self._last_report_kind = "bs"
 
     def _export_csv(self):
         if not self._last_export:
