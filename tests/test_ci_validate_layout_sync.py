@@ -119,6 +119,22 @@ def test_readme_opener_mentions_shell_cli_desktop_sqlite() -> None:
         assert needle in line, f"README lede should mention {needle!r}: {line!r}"
 
 
+def test_readme_default_database_paths_notes_two_schemas_and_roadmap() -> None:
+    """README should state CLI vs desktop DB files are not interchangeable and point at ROADMAP #21 note."""
+    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    head = "### Default database paths (Windows)"
+    start = readme.index(head)
+    chunk = readme[start : readme.index("\n## ", start)]
+    for needle in (
+        "probooks.db",
+        "probooksai.db",
+        "#21",
+        "Why not one",
+        "docs/ROADMAP.md#implementation-snapshot-repository-2026-04",
+    ):
+        assert needle in chunk, f"README default DB section should mention {needle!r}"
+
+
 def test_readme_desktop_section_documents_theme_and_qt_font_filter() -> None:
     """README Desktop section stays aligned with Fusion theme + Windows Qt stderr filter."""
     readme = (_REPO / "README.md").read_text(encoding="utf-8")
