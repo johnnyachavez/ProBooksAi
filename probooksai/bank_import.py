@@ -37,6 +37,8 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from probooks.paths import INTAKE_DB_NAME
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -361,7 +363,8 @@ class BankDatabase:
     def __init__(self, db_path: Optional[str] = None):
         if db_path is None:
             from probooksai.database import get_data_dir
-            db_path = str(get_data_dir() / "probooksai.db")
+
+            db_path = str(get_data_dir() / INTAKE_DB_NAME)
         self._db_path = db_path
         self._conn = _connect(db_path)
 

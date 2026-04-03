@@ -1,4 +1,9 @@
-"""Standard data directory and database path (Windows-friendly)."""
+"""Standard data directory and database path (Windows-friendly).
+
+The ``probooks`` CLI default file is :data:`_DB_NAME` (``probooks.db``). The PySide6
+desktop and document intake stack use :data:`INTAKE_DB_NAME` (``probooksai.db``) in
+the same per-user folder until a single merged schema exists (issue #21).
+"""
 
 from __future__ import annotations
 
@@ -8,6 +13,7 @@ from pathlib import Path
 
 _APP_DIR_NAME = "ProBooks+ai"
 _DB_NAME = "probooks.db"
+INTAKE_DB_NAME = "probooksai.db"
 
 
 def app_data_dir() -> Path:
@@ -27,6 +33,11 @@ def app_data_dir() -> Path:
 
 def default_db_path() -> Path:
     return app_data_dir() / _DB_NAME
+
+
+def default_intake_db_path() -> Path:
+    """Default SQLite path for desktop + document intake (see :data:`INTAKE_DB_NAME`)."""
+    return app_data_dir() / INTAKE_DB_NAME
 
 
 def ensure_app_dirs() -> Path:

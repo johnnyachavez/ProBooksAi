@@ -20,6 +20,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from probooks.paths import INTAKE_DB_NAME, app_data_dir, ensure_app_dirs
+
 
 # ---------------------------------------------------------------------------
 # Application data directory (Windows-friendly)
@@ -36,18 +38,17 @@ def get_data_dir() -> Path:
     """Return (and create) the per-user data directory for intake + desktop default DB.
 
     Uses :func:`probooks.paths.app_data_dir` (same branded folder as the ``probooks`` CLI).
-    If ``probooksai.db`` exists only under the legacy ``ProBooksAi`` folder, it is copied
-    here once (along with ``documents/`` when present).
+    If the intake DB (``INTAKE_DB_NAME`` / ``probooksai.db``) exists only under the
+    legacy ``ProBooksAi`` folder, it is copied here once (along with ``documents/``
+    when present).
     """
-    from probooks.paths import app_data_dir, ensure_app_dirs
-
     ensure_app_dirs()
     dest = app_data_dir()
     dest.mkdir(parents=True, exist_ok=True)
 
-    dest_db = dest / "probooksai.db"
+    dest_db = dest / INTAKE_DB_NAME
     legacy_root = _legacy_data_dir()
-    legacy_db = legacy_root / "probooksai.db"
+    legacy_db = legacy_root / INTAKE_DB_NAME
 
     if not dest_db.is_file() and legacy_db.is_file():
         shutil.copy2(legacy_db, dest_db)
@@ -140,7 +141,7 @@ def _now() -> str:
 def _connect(db_path: Optional[str] = None) -> sqlite3.Connection:
     """Open (or create) the SQLite database and return a connection."""
     if db_path is None:
-        db_path = str(get_data_dir() / "probooksai.db")
+        db_path = str(get_data_dir() / INTAKE_DB_NAME)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.executescript(_DDL)

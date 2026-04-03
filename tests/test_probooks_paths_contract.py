@@ -12,4 +12,6 @@ def test_probooks_paths_use_branded_app_dir_and_cli_db_name() -> None:
     text = _PATHS.read_text(encoding="utf-8")
     assert '_APP_DIR_NAME = "ProBooks+ai"' in text
     assert '_DB_NAME = "probooks.db"' in text
+    assert 'INTAKE_DB_NAME = "probooksai.db"' in text
+    assert "def default_intake_db_path()" in text
     assert "ProBooks+ai" in text

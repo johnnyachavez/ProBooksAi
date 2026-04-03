@@ -142,6 +142,6 @@ A flat **`requirements.txt`** is also checked in for environments that prefer it
 | **`test_generate_workbook_contract.py`** | **`generate_workbook.py`** → **`probooksai.generator`**; docstrings note **`probooks/help_epilog.py`** / **`--help`** (**`generate_workbook.py`** + **`probooksai/generator.py`**) |
 | **`test_desktop_main_contract.py`** | **`desktop_app/main.py`** module doc + argparse (**`--help`** epilog via **`EXCEL_COA_WORKBOOK_ARGPARSE_EPILOG`**) / **Qt** app strings + **`qInstallMessageHandler`** before **`QApplication`** (filters **`QFont::setPointSize`** stderr noise); **`desktop_app/theme.py`** Fusion style + pixel-sized app font ( **`FONT_SIZE_NORMAL`**) before/after **`setStyleSheet`**; Excel epilog text lives in **`probooks/help_epilog.py`** |
 | **`test_probooks_cli_contract.py`** | **`probooks/cli.py`** module doc + argparse / epilog ( **`EXCEL_COA_WORKBOOK_ARGPARSE_EPILOG`** from **`probooks/help_epilog.py`**: **Excel COA workbook** / **`generate_workbook.py`**) |
-| **`test_probooks_paths_contract.py`** | **`probooks/paths.py`** **`ProBooks+ai`** app dir |
+| **`test_probooks_paths_contract.py`** | **`probooks/paths.py`** **`ProBooks+ai`** app dir, **`INTAKE_DB_NAME`** / **`default_intake_db_path()`** (desktop + intake vs CLI **`probooks.db`**) |
 | **`test_probooksai_database_contract.py`** | **`probooksai/database.py`** **`get_data_dir`** ↔ **`probooks.paths.app_data_dir`** + legacy **`ProBooksAi`** migration |
 | **`test_local_docs_contract.py`** | **`desktop_app/local_docs.py`** → **`docs/ROADMAP.md`** |
