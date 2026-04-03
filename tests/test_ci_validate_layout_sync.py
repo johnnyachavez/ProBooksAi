@@ -942,6 +942,10 @@ def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> Non
     assert "test_review_html_links_readme_web_shell_and_desktop_anchors" in chunk
     assert "test_review_html_python_desktop_section_mentions_help_epilog" in chunk
     assert "test_github_issue_templates_reference_core_docs" in chunk
+    assert (
+        ", and **`test_github_issue_templates_reference_core_docs`** for **`.github/ISSUE_TEMPLATE/`** / **`config.yml`** / **`bug_report.md`** **Triaging**"
+        in chunk
+    )
     assert "README.md#default-database-paths-windows" in chunk
     assert "test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests" in chunk
     assert "**`.cursor/rules/github-work-context.mdc`**" in chunk
