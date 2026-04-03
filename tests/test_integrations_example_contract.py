@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import json
 
-from tests.repo_paths import INTEGRATIONS_WORK_CONTEXT_EXAMPLE as _EXAMPLE, REPO_ROOT
+from tests.repo_paths import (
+    INTEGRATIONS_WORK_CONTEXT_EXAMPLE as _EXAMPLE,
+    SYNC_WORKSPACE_PS1,
+)
 
 
 def test_work_context_example_is_valid_json_with_expected_keys() -> None:
@@ -66,7 +69,7 @@ def test_work_context_example_is_valid_json_with_expected_keys() -> None:
 def test_work_context_example_warnings_literals_exist_in_sync_workspace_ps1() -> None:
     """Sample warnings[] entries must match strings sync-workspace.ps1 actually emits."""
     data = json.loads(_EXAMPLE.read_text(encoding="utf-8"))
-    script = (REPO_ROOT / "scripts" / "sync-workspace.ps1").read_text(encoding="utf-8")
+    script = SYNC_WORKSPACE_PS1.read_text(encoding="utf-8")
     for w in data["warnings"]:
         assert isinstance(w, str) and w.strip(), w
         assert w in script, (
