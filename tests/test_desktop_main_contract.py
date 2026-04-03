@@ -22,6 +22,9 @@ def test_desktop_main_cli_and_qt_app_strings_use_probooks_plus_ai() -> None:
     assert "Excel COA workbook" in hel
     assert "Default database paths" in text
     assert "probooksai.database.get_data_dir" in text
+    assert "default_intake_db_path().name" in text, (
+        "desktop --database help should derive the default filename from probooks.paths"
+    )
     assert 'app.setApplicationName("ProBooks+ai")' in text
     assert 'app.setOrganizationName("ProBooks+ai")' in text
 

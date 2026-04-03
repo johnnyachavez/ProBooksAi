@@ -40,6 +40,7 @@ from PySide6.QtWidgets import (
 )
 
 from probooks.help_epilog import EXCEL_COA_WORKBOOK_ARGPARSE_EPILOG
+from probooks.paths import default_intake_db_path
 from probooksai.database import DocumentDatabase
 from probooksai.html_escape import escape_html_text
 from probooksai.coa import coa_display_list, load_coa
@@ -1303,8 +1304,9 @@ def main():
         default=None,
         help=(
             "SQLite database path; if omitted, uses the last company file from settings "
-            "when it still exists, otherwise the default file from "
-            "probooksai.database.get_data_dir (see README: Default database paths)."
+            "when it still exists, otherwise the default "
+            f"{default_intake_db_path().name!r} from probooksai.database.get_data_dir() "
+            "(see README: Default database paths)."
         ),
     )
     args = parser.parse_args()
