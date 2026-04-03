@@ -448,6 +448,9 @@ def test_review_html_python_desktop_section_mentions_help_epilog() -> None:
     assert "probooks.backup" in chunk
     assert "SQLite online backup" in chunk
     assert 'href="README.md#python-cli"' in chunk
+    assert "tests/test_backup.py" in chunk
+    assert "tests/test_probooks_backup_contract.py" in chunk
+    assert "Module contracts" in chunk
 
 
 def test_static_shell_page_sub_mentions_help_epilog() -> None:
@@ -476,6 +479,11 @@ def test_static_shell_page_sub_mentions_help_epilog() -> None:
         assert 'href="README.md#python-cli"' in text, (
             f"{path.name} should deep-link README ## Python CLI for backup/restore hints"
         )
+        assert "tests/test_backup.py" in text, f"{path.name} should mention tests/test_backup.py"
+        assert "tests/test_probooks_backup_contract.py" in text, (
+            f"{path.name} should mention tests/test_probooks_backup_contract.py"
+        )
+        assert "Module contracts" in text, f"{path.name} should mention Module contracts (backup regression)"
 
 
 def test_review_html_links_contributing_doc_anchors() -> None:
