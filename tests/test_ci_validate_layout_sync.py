@@ -929,6 +929,10 @@ def test_issues_backlog_orients_readme_docs_bar_and_github_config() -> None:
     assert "**Hub docs — issues-backlog link text**" in text
     assert "**Hub docs — README default database paths segment**" in text
     assert "verbatim-aligned" in text
+    assert "**SQLite issue #21**" in text
+    assert "tests/test_issue_21_schema_inventory.py" in text
+    assert "probooks/migrations/" in text
+    assert "probooksai/bank_import.py" in text
 
 
 def test_issues_backlog_documents_excel_help_epilog() -> None:
