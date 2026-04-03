@@ -1511,6 +1511,14 @@ class MainWindow(QMainWindow):
             path += ".db"
         try:
             backup_database(src, Path(path))
+        except ValueError as exc:
+            message_box_critical_ok(
+                self,
+                "Backup failed",
+                escape_ampersand_for_qt(str(exc)),
+                ok_tip="Close; the active company file does not look like SQLite — open a valid company or repair the file.",
+            )
+            return
         except OSError as exc:
             message_box_critical_ok(
                 self,

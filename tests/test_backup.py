@@ -10,6 +10,15 @@ from probooks.database import connect, migration_files, run_migrations
 from tests.repo_paths import PROBOOKS_MIGRATIONS_DIR
 
 
+def test_backup_rejects_non_sqlite_source(tmp_path: Path) -> None:
+    bad = tmp_path / "fake.db"
+    bad.write_text("not sqlite", encoding="utf-8")
+    out = tmp_path / "out.db"
+    with pytest.raises(ValueError, match="Not a SQLite"):
+        backup_database(bad, out)
+    assert not out.exists()
+
+
 def test_restore_rejects_non_sqlite_backup(tmp_path: Path) -> None:
     bad = tmp_path / "not.db"
     bad.write_text("plain text", encoding="utf-8")

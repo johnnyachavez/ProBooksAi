@@ -71,7 +71,11 @@ def cmd_backup(db: Path, output: Path) -> int:
     if not db.is_file():
         print(f"No database at {db}", file=sys.stderr)
         return 1
-    backup_database(db, output)
+    try:
+        backup_database(db, output)
+    except ValueError as e:
+        print(e, file=sys.stderr)
+        return 1
     print(f"Backed up to {output}")
     return 0
 

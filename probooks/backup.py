@@ -16,6 +16,8 @@ def is_sqlite_file(path: Path) -> bool:
 
 
 def backup_database(source_db: Path, destination: Path) -> None:
+    if not is_sqlite_file(source_db):
+        raise ValueError(f"Not a SQLite database file: {source_db}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source_db, destination)
 
