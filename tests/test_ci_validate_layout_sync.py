@@ -522,8 +522,22 @@ def test_pr_template_lists_readme_default_database_paths_checklist() -> None:
         "test_hub_docs_related_docs_link_readme_default_database_paths",
         "test_contributing_ci_documents_hub_readme_default_database_paths_segment",
         "test_pr_template_lists_hub_docs_readme_default_database_paths_checklist",
+        "test_pr_template_lists_issue_21_schema_inventory_checklist",
     ):
         assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
+
+
+def test_pr_template_lists_issue_21_schema_inventory_checklist() -> None:
+    """PR template should remind editors to sync test_issue_21_schema_inventory when DDL changes."""
+    text = (_REPO / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    assert "**`probooks/migrations/*.sql`**" in text
+    assert "**`probooksai/bank_import.py`**" in text
+    assert "**`SCHEMA_VERSION`**" in text
+    assert "**`_MIGRATIONS`**" in text
+    assert "**`tests/test_issue_21_schema_inventory.py`**" in text
+    assert "**SQLite issue #21**" in text
+    assert "**`pytest tests/test_issue_21_schema_inventory.py`**" in text
+    assert "test_pr_template_lists_issue_21_schema_inventory_checklist" in text
 
 
 def test_contributing_ci_documents_readme_default_database_paths_bullet() -> None:
@@ -548,6 +562,26 @@ def test_contributing_ci_documents_readme_default_database_paths_bullet() -> Non
         "test_pr_template_lists_hub_docs_readme_default_database_paths_checklist",
     ):
         assert name in chunk, f"CONTRIBUTING CI should mention {name!r} on default DB paths bullet"
+
+
+def test_contributing_ci_documents_issue_21_schema_inventory_bullet() -> None:
+    """Continuous integration section documents SQLite issue #21 schema inventory tests."""
+    md = (_REPO / "docs" / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    ci_start = md.index("### Continuous integration")
+    table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
+    chunk = md[ci_start:table_start]
+    assert "**SQLite issue #21 (CLI vs desktop bank DDL)**" in chunk
+    assert "**`tests/test_issue_21_schema_inventory.py`**" in chunk
+    assert "**`_CLI_BANK_TABLES`**" in chunk
+    assert "**`_DESKTOP_BANK_CORE_TABLES`**" in chunk
+    for name in (
+        "test_cli_migrations_user_tables_match_expected",
+        "test_desktop_bank_database_user_tables_match_expected",
+        "test_cli_and_desktop_bank_share_only_expected_table_names",
+        "test_contributing_ci_documents_issue_21_schema_inventory_bullet",
+        "test_pr_template_lists_issue_21_schema_inventory_checklist",
+    ):
+        assert name in chunk, f"CONTRIBUTING CI should mention {name!r} on SQLite issue #21 bullet"
 
 
 def test_contributing_ci_documents_readme_excel_workbook_anchor_bullet() -> None:
@@ -973,6 +1007,7 @@ def test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests() -> Non
         "test_review_html_python_desktop_section_mentions_help_epilog",
         "test_hub_docs_link_roadmap_supporting_cross_cutting_issues",
         "test_github_issue_templates_reference_core_docs",
+        "test_pr_template_lists_issue_21_schema_inventory_checklist",
     ):
         assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
 
@@ -989,6 +1024,9 @@ def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
     assert "test_hub_docs_related_docs_link_readme_default_database_paths" in text
     assert "### Default database paths (Windows)" in text
     assert "Why not one `.db` yet" in text
+    assert "probooks/migrations/*.sql" in text
+    assert "probooksai/bank_import.py" in text
+    assert "tests/test_issue_21_schema_inventory.py" in text
     assert "test_readme_default_database_paths_notes_two_schemas_and_roadmap" in text
     assert "test_readme_docs_bar_links_default_database_paths_anchor" in text
     assert "README.md#default-database-paths-windows" in text
@@ -996,6 +1034,8 @@ def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
         "test_review_html_readme_default_database_paths_documentation_card",
         "test_review_html_links_readme_web_shell_and_desktop_anchors",
         "test_review_html_python_desktop_section_mentions_help_epilog",
+        "test_contributing_ci_documents_issue_21_schema_inventory_bullet",
+        "test_pr_template_lists_issue_21_schema_inventory_checklist",
     ):
         assert name in text, f"github-work-context.mdc should mention {name!r}"
     assert "review.html" in text
@@ -1036,6 +1076,8 @@ def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> Non
     )
     assert "test_hub_docs_link_roadmap_supporting_cross_cutting_issues" in chunk
     assert "README.md#default-database-paths-windows" in chunk
+    assert "test_contributing_ci_documents_issue_21_schema_inventory_bullet" in chunk
+    assert "test_pr_template_lists_issue_21_schema_inventory_checklist" in chunk
     assert "test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests" in chunk
     assert "**`.cursor/rules/github-work-context.mdc`**" in chunk
     assert "both **`require`** **`.cursor/rules/github-work-context.mdc`**" in chunk
