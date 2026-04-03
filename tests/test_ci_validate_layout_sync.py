@@ -131,6 +131,7 @@ def test_readme_default_database_paths_notes_two_schemas_and_roadmap() -> None:
         "#21",
         "Why not one",
         "docs/ROADMAP.md#implementation-snapshot-repository-2026-04",
+        "Bank DDL inventory",
         "tests/test_issue_21_schema_inventory.py",
         "docs/CONTRIBUTING.md#continuous-integration",
         "SQLite issue #21",

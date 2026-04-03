@@ -53,7 +53,7 @@ Writes `ProBooksAi_Accounting.xlsx` in the working directory (legacy default fil
 - **`probooks` CLI** (`probooks.paths`): `%LOCALAPPDATA%\ProBooks+ai\probooks.db`
 - **Document intake / desktop default file** when no path is passed (`probooksai.database.get_data_dir`): `%LOCALAPPDATA%\ProBooks+ai\probooksai.db` (same per-user folder as the CLI; if you already had data under `%APPDATA%\ProBooksAi\`, it is copied here once on first access)
 - **Two files, two schemas:** `probooks.db` and `probooksai.db` are not interchangeable — the CLI and desktop use different migration layouts until [issue #21](https://github.com/johnnyachavez/ProBooksAi/issues/21). See **Why not one `.db` yet** in [docs/ROADMAP.md — Implementation snapshot](docs/ROADMAP.md#implementation-snapshot-repository-2026-04).
-- **DDL inventory (tests):** `tests/test_issue_21_schema_inventory.py` lists user SQLite tables for the CLI migrations vs desktop `BankDatabase` today; update it when editing `probooks/migrations/` or `probooksai/bank_import.py` ([CONTRIBUTING — Continuous integration](docs/CONTRIBUTING.md#continuous-integration), **SQLite issue #21** bullet).
+- **Bank DDL inventory (tests):** `tests/test_issue_21_schema_inventory.py` lists user SQLite tables for the CLI migrations vs desktop `BankDatabase` today; update it when editing `probooks/migrations/` or `probooksai/bank_import.py` ([CONTRIBUTING — Continuous integration](docs/CONTRIBUTING.md#continuous-integration), **SQLite issue #21** bullet).
 
 ## Desktop app (PySide6)
 
