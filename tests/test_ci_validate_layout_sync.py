@@ -381,19 +381,28 @@ def test_contributing_ci_documents_issues_backlog_review_config_touchpoints() ->
     table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
     ci_chunk = md[ci_start:table_start]
     assert "**issues-backlog + GitHub chooser**" in ci_chunk
-    assert "the following paragraph ties **Doc index (issues-backlog)** **`about`**" in ci_chunk
-    assert "another paragraph notes **ROADMAP** / **BACKLOG** / **Other docs** hub blurb parity" in ci_chunk
-    assert "another orienting paragraph notes the shared **README — Default database paths** hub segment" in ci_chunk
-    assert "Issues backlog Documentation cards" in ci_chunk
-    assert "blob/.../issues-backlog.md" in ci_chunk
-    assert "test_issues_backlog_orients_readme_docs_bar_and_github_config" in ci_chunk
-    assert "test_review_html_issues_backlog_card_mentions_issue_chooser_config" in ci_chunk
-    assert "test_issues_backlog_documents_excel_help_epilog" in ci_chunk
-    assert "**`PULL_REQUEST_TEMPLATE.md`**" in ci_chunk
-    assert "test_pr_template_issues_backlog_checklist_cites_layout_sync_tests" in ci_chunk
-    assert "test_contributing_ci_documents_issues_backlog_review_config_touchpoints" in ci_chunk
-    assert "test_contributing_ci_documents_config_doc_index_about_review_hub" in ci_chunk
-    assert "**Doc index (issues-backlog)** **`about`** ↔ **ISSUE_TEMPLATE** bullet" in ci_chunk
+    ib_start = ci_chunk.index("**issues-backlog + GitHub chooser**")
+    ib_end = ci_chunk.index("\n- **Hub docs — issues-backlog link text**", ib_start)
+    ibullet = ci_chunk[ib_start:ib_end]
+    assert "the following paragraph ties **Doc index (issues-backlog)** **`about`**" in ibullet
+    assert "another paragraph notes **ROADMAP** / **BACKLOG** / **Other docs** hub blurb parity" in ibullet
+    assert "another orienting paragraph notes the shared **README — Default database paths** hub segment" in ibullet
+    assert "Issues backlog Documentation cards" in ibullet
+    assert "blob/.../issues-backlog.md" in ibullet
+    for name in (
+        "test_issues_backlog_orients_readme_docs_bar_and_github_config",
+        "test_review_html_issues_backlog_card_mentions_issue_chooser_config",
+        "test_issues_backlog_documents_excel_help_epilog",
+        "test_hub_docs_related_docs_link_readme_default_database_paths",
+        "test_contributing_ci_documents_hub_readme_default_database_paths_segment",
+        "test_pr_template_lists_hub_docs_readme_default_database_paths_checklist",
+    ):
+        assert name in ibullet, f"issues-backlog + GitHub chooser bullet should mention {name!r}"
+    assert "**`PULL_REQUEST_TEMPLATE.md`**" in ibullet
+    assert "test_pr_template_issues_backlog_checklist_cites_layout_sync_tests" in ibullet
+    assert "test_contributing_ci_documents_issues_backlog_review_config_touchpoints" in ibullet
+    assert "test_contributing_ci_documents_config_doc_index_about_review_hub" in ibullet
+    assert "**Doc index (issues-backlog)** **`about`** ↔ **ISSUE_TEMPLATE** bullet" in ibullet
 
 
 def test_contributing_ci_documents_hub_shared_issues_backlog_blurb() -> None:
