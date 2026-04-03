@@ -29,6 +29,16 @@ def test_desktop_main_cli_and_qt_app_strings_use_probooks_plus_ai() -> None:
     assert 'app.setOrganizationName("ProBooks+ai")' in text
 
 
+def test_register_table_stylesheet_defines_cell_grid() -> None:
+    """Bank register uses per-item borders; native QTable grid is often invisible under QSS."""
+    from desktop_app.theme import register_table_style_sheet
+
+    qss = register_table_style_sheet()
+    assert "bankRegisterTable" in qss
+    assert "QTableWidget#bankRegisterTable::item" in qss
+    assert "border-right" in qss and "border-bottom" in qss
+
+
 def test_theme_normalizes_default_font_before_stylesheet() -> None:
     """Avoid QFont::setPointSize -1 when QSS merges fonts (theme uses pixel size = FONT_SIZE_NORMAL)."""
     theme = (_MAIN.parent / "theme.py").read_text(encoding="utf-8")

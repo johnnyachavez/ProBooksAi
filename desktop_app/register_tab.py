@@ -56,7 +56,12 @@ from desktop_app.table_clipboard import (
     copy_table_row_as_tsv,
     plain_display_table_item,
 )
-from desktop_app.theme import AMOUNT_NEGATIVE, AMOUNT_POSITIVE, BG_PRIMARY
+from desktop_app.theme import (
+    AMOUNT_NEGATIVE,
+    AMOUNT_POSITIVE,
+    BG_PRIMARY,
+    register_table_style_sheet,
+)
 
 _COL_DATE = 0
 _COL_REF = 1
@@ -177,10 +182,14 @@ class RegisterTab(QWidget):
         layout.addLayout(tools)
 
         self._table = QTableWidget()
+        self._table.setObjectName("bankRegisterTable")
+        self._table.setStyleSheet(register_table_style_sheet())
         self._table.setColumnCount(len(_HEADERS))
         self._table.setHorizontalHeaderLabels(_HEADERS)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setAlternatingRowColors(True)
+        # Native grid is unreliable once app-level QTable styles apply; cell borders come from the stylesheet.
+        self._table.setShowGrid(False)
         self._table.verticalHeader().setVisible(False)
         self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self._table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.Stretch)

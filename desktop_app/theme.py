@@ -28,6 +28,9 @@ FG_SECONDARY   = "#A0A0B0"   # placeholder / secondary text
 ACCENT         = "#533483"   # accent / highlight colour
 ACCENT_HOVER   = "#6A45A0"
 BORDER         = "#2A2A4A"   # subtle gridlines and borders
+# Bank register: global QTableWidget styles often hide the native grid; draw per-cell borders instead.
+REGISTER_GRID_LINE = "#5A6E80"  # brighter than BORDER so columns read like a paper register
+REGISTER_ALT_STRIPE = "#15282A"   # subtle green-grey zebra (dark theme; evokes classic register tint)
 SELECTION_BG   = "#0F3460"
 SELECTION_FG   = "#FFFFFF"
 INPUT_BG       = "#1E1E3A"
@@ -50,6 +53,31 @@ STATUS_COLORS = {
 FONT_SIZE_NORMAL = "13px"
 FONT_SIZE_SMALL  = "11px"
 FONT_SIZE_LARGE  = "15px"
+
+
+def register_table_style_sheet() -> str:
+    """Styles for :class:`desktop_app.register_tab.RegisterTab` table (object name ``bankRegisterTable``).
+
+    Qt frequently does not paint native grid lines when the app stylesheet targets
+    ``QTableWidget``; explicit ``::item`` borders reproduce a checkbook-style grid.
+    """
+    return f"""
+QTableWidget#bankRegisterTable {{
+    background-color: {BG_PRIMARY};
+    alternate-background-color: {REGISTER_ALT_STRIPE};
+    gridline-color: {REGISTER_GRID_LINE};
+    outline: none;
+}}
+QTableWidget#bankRegisterTable::item {{
+    border-right: 1px solid {REGISTER_GRID_LINE};
+    border-bottom: 1px solid {REGISTER_GRID_LINE};
+    padding: 3px 6px;
+}}
+QTableWidget#bankRegisterTable::item:selected {{
+    background-color: {SELECTION_BG};
+    color: {SELECTION_FG};
+}}
+"""
 
 
 # ---------------------------------------------------------------------------
