@@ -11,7 +11,8 @@ CSV import batch is marked reconciled in Bank Import. Rows without a COA categor
 The filter choice, last selected bank account, and register table **column header widths**
 persist in ``QSettings``, scoped by company SQLite path (same app profile as the main window).
 **Ctrl+Shift+C** / **Ctrl+Shift+U** mark cleared / clear cleared; **Ctrl+Shift+E** runs **Export CSV…**;
-**F5** refreshes the grid when the Register tab (or its controls) has keyboard focus.
+**Ctrl+Shift+G** runs **Post selected to GL**; **F5** refreshes the grid when the Register tab (or its
+controls) has keyboard focus.
 """
 
 from __future__ import annotations
@@ -228,7 +229,8 @@ class RegisterTab(QWidget):
         row.addWidget(btn_refresh)
         self._btn_post = QPushButton("Post selected to GL")
         self._btn_post.setToolTip(
-            "Post selected unposted rows to the general ledger (requires COA and mapped cash accounts)."
+            "Post selected unposted rows to the general ledger (requires COA and mapped cash accounts). "
+            "Shortcut: Ctrl+Shift+G (when Register has focus)."
         )
         self._btn_post.clicked.connect(self._post_selected)
         row.addWidget(self._btn_post)
@@ -326,6 +328,9 @@ class RegisterTab(QWidget):
         sc_refresh = QShortcut(QKeySequence("F5"), self)
         sc_refresh.setContext(Qt.WidgetWithChildrenShortcut)
         sc_refresh.activated.connect(self._reload_current)
+        sc_post = QShortcut(QKeySequence("Ctrl+Shift+G"), self)
+        sc_post.setContext(Qt.WidgetWithChildrenShortcut)
+        sc_post.activated.connect(self._post_selected)
 
         foot = QHBoxLayout()
         self._lbl_debits = QLabel("Total debits: —")
@@ -351,8 +356,8 @@ class RegisterTab(QWidget):
             "and, when OPENAI_API_KEY is set, optional AI picks. "
             "Balance is the running total in date order (not recalculated for other sorts). "
             "Filter, last bank account, and column widths are remembered per company file for the next session. "
-            "With focus on this tab: F5 refreshes, Ctrl+Shift+C marks cleared, Ctrl+Shift+U clears cleared, "
-            "Ctrl+Shift+E exports CSV."
+            "With focus on this tab: F5 refreshes, Ctrl+Shift+G posts selected to GL, Ctrl+Shift+C marks cleared, "
+            "Ctrl+Shift+U clears cleared, Ctrl+Shift+E exports CSV."
         )
         tip.setWordWrap(True)
         tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
