@@ -327,6 +327,7 @@ def test_pr_template_lists_readme_excel_workbook_anchor_checklist() -> None:
     assert "excel-workbook-template-openpyxl" in text
     assert "### Excel workbook template (openpyxl)" in text
     assert "**README Excel workbook template anchor**" in text
+    assert "**Python + desktop** paragraph" in text
     assert "**`config.yml`**" in text
     assert "issues-backlog.md" in text
     for name in (
@@ -353,6 +354,7 @@ def test_contributing_ci_documents_readme_excel_workbook_anchor_bullet() -> None
     assert "**ROADMAP** / **BACKLOG** **Related docs**" in chunk
     assert "**README** top **Docs** line" in chunk
     assert "**`index.html`** / **`invoice.html`** (README hints)" in chunk
+    assert "**Python + desktop** paragraph" in chunk
     assert "test_static_html_links_readme_excel_workbook_section" in chunk
     assert "test_pr_template_lists_readme_excel_workbook_anchor_checklist" in chunk
     assert "test_contributing_ci_documents_readme_excel_workbook_anchor_bullet" in chunk
