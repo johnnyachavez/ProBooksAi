@@ -10,8 +10,8 @@ XFER / TXN) on the second. **Clr** shows **C** when the row is marked cleared on
 CSV import batch is marked reconciled in Bank Import. Rows without a COA category are highlighted.
 The filter choice, last selected bank account, and register table **column header widths**
 persist in ``QSettings``, scoped by company SQLite path (same app profile as the main window).
-**Ctrl+Shift+C** / **Ctrl+Shift+U** mark cleared / clear cleared; **Ctrl+Shift+E** runs **Export CSV…**
-when the Register tab (or its controls) has keyboard focus.
+**Ctrl+Shift+C** / **Ctrl+Shift+U** mark cleared / clear cleared; **Ctrl+Shift+E** runs **Export CSV…**;
+**F5** refreshes the grid when the Register tab (or its controls) has keyboard focus.
 """
 
 from __future__ import annotations
@@ -220,7 +220,10 @@ class RegisterTab(QWidget):
         self._acct_combo.currentIndexChanged.connect(self._on_account_changed)
         row.addWidget(self._acct_combo)
         btn_refresh = QPushButton("Refresh")
-        btn_refresh.setToolTip("Reload transactions for the selected bank account from the database.")
+        btn_refresh.setToolTip(
+            "Reload transactions for the selected bank account from the database. "
+            "Shortcut: F5 (when Register has focus)."
+        )
         btn_refresh.clicked.connect(self._reload_current)
         row.addWidget(btn_refresh)
         self._btn_post = QPushButton("Post selected to GL")
@@ -320,6 +323,9 @@ class RegisterTab(QWidget):
         sc_export = QShortcut(QKeySequence("Ctrl+Shift+E"), self)
         sc_export.setContext(Qt.WidgetWithChildrenShortcut)
         sc_export.activated.connect(self._export_csv)
+        sc_refresh = QShortcut(QKeySequence("F5"), self)
+        sc_refresh.setContext(Qt.WidgetWithChildrenShortcut)
+        sc_refresh.activated.connect(self._reload_current)
 
         foot = QHBoxLayout()
         self._lbl_debits = QLabel("Total debits: —")
@@ -345,7 +351,7 @@ class RegisterTab(QWidget):
             "and, when OPENAI_API_KEY is set, optional AI picks. "
             "Balance is the running total in date order (not recalculated for other sorts). "
             "Filter, last bank account, and column widths are remembered per company file for the next session. "
-            "With focus on this tab: Ctrl+Shift+C marks cleared, Ctrl+Shift+U clears cleared, "
+            "With focus on this tab: F5 refreshes, Ctrl+Shift+C marks cleared, Ctrl+Shift+U clears cleared, "
             "Ctrl+Shift+E exports CSV."
         )
         tip.setWordWrap(True)
