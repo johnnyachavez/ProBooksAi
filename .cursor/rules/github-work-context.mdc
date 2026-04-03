@@ -8,7 +8,7 @@ alwaysApply: true
 When discussing roadmap, bugs, features, refactors, or what to do next:
 
 1. Prefer reading `integrations/work-context.json` if it exists. It lists **all local repository files** under `localWorkFiles` together with **open GitHub pull requests and issues** (generated on the developer machine).
-2. If that file is missing or clearly stale, suggest running `.\scripts\sync-workspace.ps1` from the repo root (requires [GitHub CLI](https://cli.github.com/) and `gh auth login`).
+2. If that file is missing or clearly stale, suggest running `.\scripts\sync-workspace.ps1` from the repo root (requires [GitHub CLI](https://cli.github.com/) and `gh auth login`). If **`gh`** auth fails or **`gh repo view`** fails after login, suggest **`gh auth login -h github.com`** again or **`gh repo set-default owner/repo`** from **`git remote get-url origin`** (the script surfaces targeted warnings).
 3. In pull requests, use the GitHub **linked issues** syntax in descriptions and commits (`Fixes #123`, `Relates to #456`) so work stays traceable.
 
 The committed sample shape lives at `integrations/work-context.example.json` (minimal fields: four `localWorkFiles` paths — `index.html`, `invoice.html`, `review.html`, `docs/ROADMAP.md`; **pytest** enforces the exact set). A generated `integrations/work-context.json` lists all repo files under `localWorkFiles` and may include additional PR/issue properties returned by **GitHub CLI** (`gh`).

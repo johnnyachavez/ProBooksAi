@@ -114,7 +114,7 @@ On Linux without a display, set `QT_QPA_PLATFORM=offscreen` if Qt fails to start
 
 A flat **`requirements.txt`** is also checked in for environments that prefer it; the editable install above is preferred for development.
 
-**Optional (planning / IDE context):** On Windows, **`scripts/sync-workspace.ps1`** (requires **GitHub CLI**, **`gh auth login`**) writes **`integrations/work-context.json`** with **all** repo files under **`localWorkFiles`**, plus open GitHub PRs/issues. The committed **`integrations/work-context.example.json`** is the minimal shape: exactly four sample paths — **`index.html`**, **`invoice.html`**, **`review.html`**, **`docs/ROADMAP.md`** — enforced by **`test_integrations_example_contract.py`**; generated JSON may include extra PR/issue fields from **`gh`**.
+**Optional (planning / IDE context):** On Windows, **`scripts/sync-workspace.ps1`** (requires **GitHub CLI**, **`gh auth login`**) writes **`integrations/work-context.json`** with **all** repo files under **`localWorkFiles`**, plus open GitHub PRs/issues. The committed **`integrations/work-context.example.json`** is the minimal shape: exactly four sample paths — **`index.html`**, **`invoice.html`**, **`review.html`**, **`docs/ROADMAP.md`** — enforced by **`test_integrations_example_contract.py`**; generated JSON may include extra PR/issue fields from **`gh`**. If **`gh`** is not authenticated or the token is invalid, run **`gh auth login -h github.com`** again (**`sync-workspace.ps1`** reports a single warning instead of separate PR/issue errors). If you are logged in but **`gh repo view`** still fails, run **`gh repo set-default owner/repo`** using **`owner/repo`** parsed from **`git remote get-url origin`**.
 
 ### Continuous integration
 
