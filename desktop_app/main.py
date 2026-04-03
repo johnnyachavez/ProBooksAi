@@ -48,7 +48,10 @@ from probooksai.bank_import import BankDatabase
 from probooksai.coa_db import COADatabase
 from probooksai.extensions_schema import apply_extensions
 from probooksai.gl import GLDatabase
-from desktop_app.bank_import_tab import BankImportTab
+from desktop_app.bank_import_tab import (
+    BankImportTab,
+    show_bank_import_keyboard_shortcuts_dialog,
+)
 from desktop_app.coa_tab import COATab
 from desktop_app.register_tab import RegisterTab, show_register_keyboard_shortcuts_dialog
 from desktop_app.reports_tab import ReportsTab
@@ -834,6 +837,11 @@ class MainWindow(QMainWindow):
         act_roadmap = QAction("Product &roadmap (local file)\u2026", self)
         act_roadmap.triggered.connect(self._on_help_roadmap)
         help_menu.addAction(act_roadmap)
+        act_bank_import_keys = QAction("Bank &import shortcuts…", self)
+        act_bank_import_keys.triggered.connect(
+            lambda: show_bank_import_keyboard_shortcuts_dialog(self)
+        )
+        help_menu.addAction(act_bank_import_keys)
         act_register_keys = QAction("Bank &register keyboard shortcuts…", self)
         act_register_keys.triggered.connect(
             lambda: show_register_keyboard_shortcuts_dialog(self)

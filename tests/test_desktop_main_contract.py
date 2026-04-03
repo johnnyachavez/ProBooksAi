@@ -15,6 +15,18 @@ def test_main_help_menu_wires_register_keyboard_shortcuts_dialog() -> None:
     assert "Bank &register keyboard shortcuts" in text
 
 
+def test_main_help_menu_wires_bank_import_shortcuts_dialog() -> None:
+    text = _MAIN.read_text(encoding="utf-8")
+    assert "show_bank_import_keyboard_shortcuts_dialog" in text
+    assert "Bank &import shortcuts" in text
+
+
+def test_bank_import_tab_exposes_shortcuts_dialog_for_help_menu() -> None:
+    bit = (_MAIN.parent / "bank_import_tab.py").read_text(encoding="utf-8")
+    assert "def show_bank_import_keyboard_shortcuts_dialog" in bit
+    assert "def _bank_import_keyboard_shortcuts_help_text" in bit
+
+
 def test_register_tab_exposes_shared_shortcuts_dialog_for_help_menu() -> None:
     rtab = (_MAIN.parent / "register_tab.py").read_text(encoding="utf-8")
     assert "def show_register_keyboard_shortcuts_dialog" in rtab
@@ -47,6 +59,7 @@ def test_bank_import_tab_f5_reload_shortcut_wired() -> None:
     assert 'QKeySequence("F5")' in text
     assert "activated.connect(self._reload_bank_import_view)" in text
     assert "F5 refreshes accounts and import batches" in text
+    assert "Bank import shortcuts" in text
 
 
 def test_register_tab_persists_header_state_via_qsettings() -> None:

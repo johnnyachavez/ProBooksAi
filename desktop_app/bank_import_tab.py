@@ -5,6 +5,7 @@ PySide6 widget for bank account setup, CSV import, and statement reconciliation.
 
 **F5** (when this tab or its children have focus) reloads accounts and import batches and
 re-selects the same batch when it still exists, refreshing transactions and reconciliation.
+**Help** → **Bank import shortcuts…** shows the same **F5** summary and points at Register shortcuts.
 
 Tabs / widgets
 --------------
@@ -86,6 +87,24 @@ def _format_currency(value: Optional[float]) -> str:
 
 def _color_for_amount(amount: float) -> QColor:
     return QColor("#C62828") if amount < 0 else QColor("#1B5E20")
+
+
+def _bank_import_keyboard_shortcuts_help_text() -> str:
+    """Plain text for **Help → Bank import shortcuts…** (aligned with **F5** behavior)."""
+    return (
+        "F5 — Refresh accounts and import batches. If an import batch is selected, it is "
+        "re-opened when it still exists (transactions and reconciliation update).\n\n"
+        "Register tab has additional shortcuts:\n"
+        "Help → Bank register keyboard shortcuts…"
+    )
+
+
+def show_bank_import_keyboard_shortcuts_dialog(parent: QWidget) -> None:
+    QMessageBox.information(
+        parent,
+        "Bank import shortcuts",
+        _bank_import_keyboard_shortcuts_help_text(),
+    )
 
 
 # ===========================================================================
@@ -794,7 +813,7 @@ class BankImportTab(QWidget):
         tip = QLabel(
             "F5 refreshes accounts and import batches; if a batch is selected, it is re-opened when "
             "it still exists (updates transactions and reconciliation). "
-            "More shortcuts: Help → Bank register keyboard shortcuts (Register tab)."
+            "Help → Bank import shortcuts…; Register tab: Help → Bank register keyboard shortcuts…"
         )
         tip.setWordWrap(True)
         tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
