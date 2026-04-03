@@ -5,10 +5,10 @@ build-backend = "hatchling.build"
 [project]
 name = "probooks-ai"
 version = "0.1.0"
-description = "ProBooks+ai accounting (SQLite, probooks CLI, PySide6 desktop app)"
+description = "ProBooks+ai accounting (SQLite, probooks CLI, PySide6 desktop app, Excel COA workbook template via openpyxl)"
 readme = "README.md"
 requires-python = ">=3.10"
-keywords = ["accounting", "bookkeeping", "sqlite", "cli", "desktop", "pyside6", "general-ledger", "bank-import"]
+keywords = ["accounting", "bookkeeping", "sqlite", "cli", "desktop", "pyside6", "openpyxl", "general-ledger", "bank-import"]
 dependencies = ["openpyxl"]
 
 [project.urls]

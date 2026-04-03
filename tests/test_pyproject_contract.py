@@ -13,6 +13,8 @@ def test_pyproject_wheel_name_scripts_and_packages() -> None:
     assert 'name = "probooks-ai"' in text
     assert "ProBooks+ai" in text
     assert "PySide6 desktop" in text
+    assert "openpyxl" in text
+    assert "Excel COA workbook template" in text
     assert 'probooks = "probooks.cli:main"' in text
     assert 'packages = ["probooks", "probooksai"]' in text
     assert "README.md#web-shell-review" in text
