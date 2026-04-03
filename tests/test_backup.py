@@ -997,6 +997,24 @@ def test_restore_database_creates_parent_directories_for_target(tmp_path: Path) 
     conn.close()
 
 
+def test_backup_roundtrip_paths_with_spaces(tmp_path: Path) -> None:
+    """Spaces in paths use file: URI + read-only source open in backup module."""
+    mdir = PROBOOKS_MIGRATIONS_DIR
+    src = tmp_path / "my company file.db"
+    conn = connect(src)
+    run_migrations(conn, migration_files(mdir))
+    conn.close()
+    bak = tmp_path / "backup snapshot.db"
+    backup_database(src, bak)
+    assert is_sqlite_file(bak)
+    dest = tmp_path / "restored company.db"
+    restore_database(bak, dest, overwrite=True)
+    assert is_sqlite_file(dest)
+    conn = connect(dest)
+    assert conn.execute("SELECT COUNT(*) FROM companies").fetchone()[0] >= 1
+    conn.close()
+
+
 def test_backup_roundtrip(tmp_path: Path) -> None:
     mdir = PROBOOKS_MIGRATIONS_DIR
     src = tmp_path / "live.db"
