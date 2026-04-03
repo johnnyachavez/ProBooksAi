@@ -26,6 +26,8 @@ probooks backup --output ./backups/demo-backup.db
 probooks restore --input ./backups/demo-backup.db --yes
 ```
 
+**Backup / restore** use the SQLite online backup API (`probooks.backup`), so the CLI can copy the default `--db` even when another program (including the desktop app) still has that file open.
+
 ### CSV import (issues #31, #33, #34)
 
 Prepare a CSV with at least **date** and **amount** columns (0-based indices). A small demo file lives at **`examples/sample_bank.csv`** (CI asserts it is present; **pytest** imports it with the same column map as the example below). Example:
