@@ -90,8 +90,9 @@ def _coerce_amount(raw: Any) -> Optional[float]:
     """
     Parse a statement or register *amount* for comparison.
 
-    Accepts numeric types and strings with optional ``$``, commas, and surrounding whitespace
-    (common in CSV/PDF extract text). Returns ``None`` when missing or not parseable.
+    Accepts numeric types and strings with optional ``$``, commas, surrounding whitespace,
+    and Unicode minus ``U+2212`` (common in CSV/PDF extract text). Returns ``None`` when
+    missing or not parseable.
     """
     if raw is None:
         return None
@@ -103,7 +104,10 @@ def _coerce_amount(raw: Any) -> Optional[float]:
     if not s:
         return None
     if s.startswith("(") and s.endswith(")"):
-        s = f"-{s[1:-1].strip()}"
+        inner = s[1:-1].strip().replace("\u2212", "-")
+        s = inner if inner.startswith("-") else f"-{inner}"
+    else:
+        s = s.replace("\u2212", "-")
     s = s.replace("$", "").replace("\u00a0", "").replace(",", "").strip()
     try:
         return float(s)

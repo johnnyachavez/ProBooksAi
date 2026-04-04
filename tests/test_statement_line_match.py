@@ -98,7 +98,9 @@ def test_descriptions_match_substring_and_fuzzy() -> None:
 def test_amounts_equal_coerces_currency_strings() -> None:
     assert amounts_equal("$1,234.50", 1234.5)
     assert amounts_equal("  -25.00 ", -25.0)
+    assert amounts_equal("\u221212.50", -12.5)
     assert amounts_equal("(10.00)", -10.0)
+    assert amounts_equal("(\u221210.00)", -10.0)
     assert amounts_equal("$0", 0.0)
     assert not amounts_equal("n/a", 1.0)
     assert not amounts_equal(None, 1.0)
