@@ -94,6 +94,9 @@ _AGING_BUCKET_ROWS: list[tuple[str, str]] = [
     ("91_plus", "91+ days"),
 ]
 
+# Appended to Business hub CSV export button tooltips (matches Journal / Reports / Audit).
+_CSV_EXCEL_ENCODING_TIP = " UTF-8 with BOM for Excel."
+
 
 def _table_row_entity_id(tbl: QTableWidget, row: int) -> int | None:
     """Read integer id from column 0 (invoice/bill # column), independent of sort order."""
@@ -396,7 +399,7 @@ class RulesTab(QWidget):
         rb_del.clicked.connect(self._del)
         row.addWidget(rb_del)
         rb_export = QPushButton("Export CSV…")
-        rb_export.setToolTip("Export all rules to a CSV file.")
+        rb_export.setToolTip("Export all rules to a CSV file." + _CSV_EXCEL_ENCODING_TIP)
         rb_export.clicked.connect(self._export_csv)
         row.addWidget(rb_export)
         rb_import = QPushButton("Import CSV…")
@@ -749,23 +752,29 @@ class ARTab(QWidget):
         ar_record_pay.clicked.connect(self._record_ar_payment)
         row.addWidget(ar_record_pay)
         ar_export_aging = QPushButton("Export AR aging CSV")
-        ar_export_aging.setToolTip("Export accounts-receivable aging summary to CSV.")
+        ar_export_aging.setToolTip(
+            "Export accounts-receivable aging summary to CSV." + _CSV_EXCEL_ENCODING_TIP
+        )
         ar_export_aging.clicked.connect(self._export_aging)
         row.addWidget(ar_export_aging)
         ar_export_cust = QPushButton("Export customers CSV…")
-        ar_export_cust.setToolTip("Export all customers to CSV.")
+        ar_export_cust.setToolTip("Export all customers to CSV." + _CSV_EXCEL_ENCODING_TIP)
         ar_export_cust.clicked.connect(self._export_customers)
         row.addWidget(ar_export_cust)
         ar_export_inv = QPushButton("Export invoices CSV…")
-        ar_export_inv.setToolTip("Export invoice headers to CSV.")
+        ar_export_inv.setToolTip("Export invoice headers to CSV." + _CSV_EXCEL_ENCODING_TIP)
         ar_export_inv.clicked.connect(self._export_invoices)
         row.addWidget(ar_export_inv)
         ar_export_payments = QPushButton("Export AR payments CSV…")
-        ar_export_payments.setToolTip("Export customer payment records to CSV.")
+        ar_export_payments.setToolTip(
+            "Export customer payment records to CSV." + _CSV_EXCEL_ENCODING_TIP
+        )
         ar_export_payments.clicked.connect(self._export_ar_payments)
         row.addWidget(ar_export_payments)
         ar_export_alloc = QPushButton("Export AR payment allocations CSV…")
-        ar_export_alloc.setToolTip("Export how payments were applied to invoices.")
+        ar_export_alloc.setToolTip(
+            "Export how payments were applied to invoices." + _CSV_EXCEL_ENCODING_TIP
+        )
         ar_export_alloc.clicked.connect(self._export_ar_allocations)
         row.addWidget(ar_export_alloc)
         ar_save_pdf = QPushButton("Save invoice PDF…")
@@ -1841,23 +1850,29 @@ class APTab(QWidget):
         ap_record_pay.clicked.connect(self._record_ap_payment)
         row.addWidget(ap_record_pay)
         ap_export_aging = QPushButton("Export AP aging CSV")
-        ap_export_aging.setToolTip("Export accounts-payable aging summary to CSV.")
+        ap_export_aging.setToolTip(
+            "Export accounts-payable aging summary to CSV." + _CSV_EXCEL_ENCODING_TIP
+        )
         ap_export_aging.clicked.connect(self._export_aging)
         row.addWidget(ap_export_aging)
         ap_export_vendors = QPushButton("Export vendors CSV…")
-        ap_export_vendors.setToolTip("Export all vendors to CSV.")
+        ap_export_vendors.setToolTip("Export all vendors to CSV." + _CSV_EXCEL_ENCODING_TIP)
         ap_export_vendors.clicked.connect(self._export_vendors)
         row.addWidget(ap_export_vendors)
         ap_export_bills = QPushButton("Export bills CSV…")
-        ap_export_bills.setToolTip("Export bill headers to CSV.")
+        ap_export_bills.setToolTip("Export bill headers to CSV." + _CSV_EXCEL_ENCODING_TIP)
         ap_export_bills.clicked.connect(self._export_bills)
         row.addWidget(ap_export_bills)
         ap_export_payments = QPushButton("Export AP payments CSV…")
-        ap_export_payments.setToolTip("Export vendor payment records to CSV.")
+        ap_export_payments.setToolTip(
+            "Export vendor payment records to CSV." + _CSV_EXCEL_ENCODING_TIP
+        )
         ap_export_payments.clicked.connect(self._export_ap_payments)
         row.addWidget(ap_export_payments)
         ap_export_alloc = QPushButton("Export AP payment allocations CSV…")
-        ap_export_alloc.setToolTip("Export how payments were applied to bills.")
+        ap_export_alloc.setToolTip(
+            "Export how payments were applied to bills." + _CSV_EXCEL_ENCODING_TIP
+        )
         ap_export_alloc.clicked.connect(self._export_ap_allocations)
         row.addWidget(ap_export_alloc)
         row.addStretch()
@@ -2821,7 +2836,9 @@ class PayrollTaxTab(QWidget):
         pt_run_taxes.clicked.connect(self._edit_run_taxes)
         row2.addWidget(pt_run_taxes)
         pt_export_tax = QPushButton("Export tax report CSV…")
-        pt_export_tax.setToolTip("Export payroll tax lines for a date range to CSV.")
+        pt_export_tax.setToolTip(
+            "Export payroll tax lines for a date range to CSV." + _CSV_EXCEL_ENCODING_TIP
+        )
         pt_export_tax.clicked.connect(self._export_tax_report)
         row2.addWidget(pt_export_tax)
         row2.addStretch()
@@ -3506,6 +3523,7 @@ class TaxSettingsTab(QWidget):
         ts_export_csv = QPushButton("Export sales tax summary CSV\u2026")
         ts_export_csv.setToolTip(
             "Choose an invoice date range and export sales tax detail to CSV."
+            + _CSV_EXCEL_ENCODING_TIP
         )
         ts_export_csv.clicked.connect(self._export_sales_tax_csv)
         root.addWidget(ts_export_csv)

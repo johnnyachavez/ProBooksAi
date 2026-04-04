@@ -4673,6 +4673,13 @@ def test_main_window_on_reject_sets_needs_review_refreshes_and_status_message() 
     assert chunk.count("Document flagged \\u2013 Needs Review.") == 1
 
 
+def test_extra_tabs_business_csv_export_tooltips_append_excel_bom_hint() -> None:
+    """Every Business hub CSV export button documents UTF-8 with BOM (one shared suffix string)."""
+    et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
+    assert '_CSV_EXCEL_ENCODING_TIP = " UTF-8 with BOM for Excel."' in et
+    assert et.count("_CSV_EXCEL_ENCODING_TIP") == 14
+
+
 def test_rules_tab_toolbar_buttons_have_tooltips() -> None:
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
     start = et.index("class RulesTab")
