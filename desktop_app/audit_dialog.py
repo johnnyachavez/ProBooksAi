@@ -61,8 +61,8 @@ def _audit_history_table_context_menu(
         lambda: _audit_history_shortcuts_help(parent_widget),
     )
     act_keys.setToolTip(
-        "This dialog’s shortcuts (Copy row, with .db backup reminder in the summary); "
-        "use the main window Help menu for global chords."
+        "This dialog’s shortcuts summary (Copy row); use the main window Help menu for global chords. "
+        + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
     )
     if not idx.isValid():
         m.exec(table.viewport().mapToGlobal(pos))

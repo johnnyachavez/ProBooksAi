@@ -1101,8 +1101,11 @@ def test_grids_context_menus_use_qaction_hover_tooltips() -> None:
     assert at[aus:aue].count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
 
     ad = (_DESKTOP_APP_DIR / "audit_dialog.py").read_text(encoding="utf-8")
-    assert "act_keys.setToolTip" in ad
-    assert "def _audit_history_table_context_menu" in ad
+    ad_cm = ad.index("def _audit_history_table_context_menu")
+    ad_ce = ad.index("def show_entity_audit_history", ad_cm)
+    ad_ctx = ad[ad_cm:ad_ce]
+    assert "act_keys.setToolTip" in ad_ctx
+    assert ad_ctx.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
 
     coa = (_DESKTOP_APP_DIR / "coa_tab.py").read_text(encoding="utf-8")
     cs = coa.index("def _on_coa_context_menu")
