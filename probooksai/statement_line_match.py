@@ -1,7 +1,8 @@
 """
 Line-level statement vs register matching (AI reconciliation workflow).
 
-Compares *extracted* statement rows to *register* ``bank_transactions``-shaped dicts.
+Compares *extracted* statement rows to *register* ``bank_transactions``-shaped dicts
+(description / ref_number / memo).
 Used by the Bank Import tab; does not modify the database or the register grid.
 
 Amounts are compared after coercion so string values with ``$``/commas/whitespace (typical of
@@ -12,8 +13,9 @@ extracts) still match SQLite float/int register values; accounting-style parenth
 ``MM/DD/YYYY`` and ``MM-DD-YYYY``, ``YYYY/MM/DD``, then ``DD/MM/YYYY`` / ``DD-MM-YYYY`` when
 US month/day order does not parse (e.g. day > 12).
 
-Description similarity uses **description** and **memo** together (normalized spacing) on each
-side so register payee text split across columns still matches a single statement line.
+Description similarity joins **description**, **ref_number**, and **memo** (non-empty parts,
+normalized spacing) on each side so register fields split across columns still match a single
+statement line (including extracts that carry check or confirmation numbers).
 """
 
 from __future__ import annotations
@@ -131,9 +133,9 @@ def descriptions_match(desc_stmt: str, desc_reg: str) -> bool:
 
 
 def _combined_description_for_match(row: dict[str, Any]) -> str:
-    """Join non-empty *description* and *memo* (``bank_transactions`` shape) for fuzzy compare."""
+    """Join non-empty *description*, *ref_number*, and *memo* (``bank_transactions`` shape)."""
     parts: list[str] = []
-    for key in ("description", "memo"):
+    for key in ("description", "ref_number", "memo"):
         t = str(row.get(key) or "").strip()
         if t:
             parts.append(t)

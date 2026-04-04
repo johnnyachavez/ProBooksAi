@@ -61,6 +61,29 @@ def test_compare_register_memo_helps_match_statement_payee() -> None:
     assert out[0]["status"] == STATUS_MATCHED
 
 
+def test_compare_register_ref_number_helps_match_statement_text() -> None:
+    stmt = [
+        {
+            "txn_date": "2024-02-01",
+            "amount": -120.0,
+            "description": "UTILITY PAYMENT CONF 8844",
+        }
+    ]
+    reg = [
+        {
+            "id": 1,
+            "txn_date": "2024-02-01",
+            "amount": -120.0,
+            "description": "",
+            "memo": "",
+            "ref_number": "8844",
+        }
+    ]
+    out = compare_statement_to_register(stmt, reg)
+    assert len(out) == 1
+    assert out[0]["status"] == STATUS_MATCHED
+
+
 def test_descriptions_match_substring_and_fuzzy() -> None:
     assert descriptions_match("AMAZON MARKETPLACE", "amazon")
     assert descriptions_match("coffee", "COFFEE SHOP DOWNTOWN")
