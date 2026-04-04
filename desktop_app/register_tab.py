@@ -583,7 +583,7 @@ class RegisterTab(QWidget):
             "The grid keeps ~20 visible rows (practice lines when you have fewer saved transactions). "
             "Use Add transaction… in the toolbar for new persisted lines. "
             "Right-click for Keyboard shortcuts… (empty area OK). F5 refresh; Ctrl+Shift+G post; "
-            "Ctrl+Shift+C / Ctrl+Shift+U cleared; Ctrl+Shift+E export. "
+            "Ctrl+Shift+C / Ctrl+Shift+U cleared; Ctrl+Shift+E export (UTF-8 BOM for Excel). "
             "Same company .db as other tabs (File → Backup / Restore, probooks.backup)."
         )
         layout.addWidget(self._table)
@@ -641,7 +641,7 @@ class RegisterTab(QWidget):
             "Reconciliation mode adds Stmt match (Matched / Missing / Extra) without hiding the register. "
             "Filter, last bank account, and column widths are remembered per company file for the next session. "
             "With focus on this tab: F5 refreshes, Ctrl+Shift+G posts selected to GL, Ctrl+Shift+C marks cleared, "
-            "Ctrl+Shift+U clears cleared, Ctrl+Shift+E exports CSV. "
+            "Ctrl+Shift+U clears cleared, Ctrl+Shift+E exports CSV (UTF-8 BOM for Excel). "
             "Help → Bank register keyboard shortcuts… (includes Bank import shortcuts pointer), "
             "Help → Bank import shortcuts…, or right-click the grid (even on empty area)."
         )

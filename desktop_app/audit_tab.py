@@ -131,7 +131,8 @@ class AuditTab(QWidget):
         self._tbl.customContextMenuRequested.connect(self._on_audit_context_menu)
         self._tbl.setSortingEnabled(True)
         self._tbl.setToolTip(
-            "Change history for the current filter. Right-click for Keyboard shortcuts… "
+            "Change history for the current filter. Toolbar Export CSV uses UTF-8 BOM for Excel. "
+            "Right-click for Keyboard shortcuts… "
             "(including on empty area). Logged against the company SQLite file (probooks.backup / File → Backup)."
         )
         lay.addWidget(self._tbl)

@@ -5786,6 +5786,21 @@ def test_register_tab_export_csv_writes_utf8_sig_for_excel() -> None:
     assert 'encoding="utf-8-sig"' in chunk
 
 
+def test_register_journal_reports_audit_grid_hints_mention_csv_utf8_bom_for_excel() -> None:
+    """Main grids / footer hints echo toolbar Export CSV encoding (Excel-friendly BOM)."""
+    reg = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
+    assert "Ctrl+Shift+E export (UTF-8 BOM for Excel)" in reg
+    assert "Ctrl+Shift+E exports CSV (UTF-8 BOM for Excel)" in reg
+    rep = (_DESKTOP_APP_DIR / "reports_tab.py").read_text(encoding="utf-8")
+    assert rep.count("Toolbar Export CSV uses UTF-8 BOM for Excel") == 1
+    assert "Export CSV uses UTF-8 BOM for Excel" in rep
+    jt = (_DESKTOP_APP_DIR / "journal_tab.py").read_text(encoding="utf-8")
+    assert jt.count("Toolbar Export CSV uses UTF-8 BOM for Excel") == 2
+    assert "Export CSV uses UTF-8 BOM for Excel" in jt
+    at = (_DESKTOP_APP_DIR / "audit_tab.py").read_text(encoding="utf-8")
+    assert "Toolbar Export CSV uses UTF-8 BOM for Excel" in at
+
+
 def test_probooksai_tab_csv_writers_use_utf8_sig_for_excel() -> None:
     """Journal, Reports, Audit, Rules, and AR/AP list exports share Excel-friendly CSV encoding."""
     gl = (REPO_ROOT / "probooksai" / "gl.py").read_text(encoding="utf-8")

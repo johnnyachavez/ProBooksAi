@@ -108,6 +108,7 @@ class JournalTab(QWidget):
         self._list = QListWidget()
         self._list.setToolTip(
             "Journal entries matching the date filter; select one to show its lines on the right. "
+            "Toolbar Export CSV uses UTF-8 BOM for Excel. "
             "Right-click for Keyboard shortcuts… (including on empty area)."
         )
         self._list.currentRowChanged.connect(self._show_lines)
@@ -128,7 +129,8 @@ class JournalTab(QWidget):
         self._lines.customContextMenuRequested.connect(self._on_lines_context_menu)
         self._lines.setSortingEnabled(True)
         self._lines.setToolTip(
-            "GL lines for the selected journal entry. Right-click for Keyboard shortcuts… "
+            "GL lines for the selected journal entry. Toolbar Export CSV uses UTF-8 BOM for Excel. "
+            "Right-click for Keyboard shortcuts… "
             "(including on empty area)."
         )
         split.addWidget(self._lines)
@@ -140,6 +142,7 @@ class JournalTab(QWidget):
 
         tip = QLabel(
             "F5 reloads the entry list and lines for the current date filter. "
+            "Export CSV uses UTF-8 BOM for Excel. "
             "Help → More tab shortcuts (F5)…; right-click either pane for Keyboard shortcuts…."
         )
         tip.setWordWrap(True)

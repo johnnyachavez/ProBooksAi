@@ -123,6 +123,7 @@ class ReportsTab(QWidget):
         self._table.setSortingEnabled(True)
         self._table.setToolTip(
             "Report results after you run Trial Balance, Income Statement, or Balance Sheet. "
+            "Toolbar Export CSV uses UTF-8 BOM for Excel. "
             "Right-click for Keyboard shortcuts… (including on empty area)."
         )
         layout.addWidget(self._table)
@@ -135,7 +136,8 @@ class ReportsTab(QWidget):
         layout.addWidget(self._summary)
 
         tip = QLabel(
-            "F5 re-runs the last Trial Balance, Income Statement, or Balance Sheet you ran (if any)."
+            "F5 re-runs the last Trial Balance, Income Statement, or Balance Sheet you ran (if any). "
+            "Export CSV uses UTF-8 BOM for Excel."
         )
         tip.setWordWrap(True)
         tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
