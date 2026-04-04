@@ -1186,8 +1186,9 @@ class MainWindow(QMainWindow):
         act_intake_keys = QAction("Document &intake shortcuts…", self)
         _menu_action_tip(
             act_intake_keys,
-            "F5 refresh, Ctrl+O import, File → Backup/Restore (probooks.backup), "
-            "View chords, and links to other Help topics.",
+            "F5 refresh, Ctrl+O import, File → Backup/Restore (probooks.backup), View chords; "
+            "the dialog summarizes UTF-8 BOM CSV exports on Bank Import, Register, Reports, Journal, Business, and Audit "
+            "and links to other Help topics.",
         )
         act_intake_keys.triggered.connect(
             lambda: show_document_intake_keyboard_shortcuts_dialog(self)

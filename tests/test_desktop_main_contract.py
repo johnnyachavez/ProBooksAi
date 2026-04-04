@@ -3536,6 +3536,13 @@ def test_main_help_menu_status_tips_mention_utf8_bom_csv_exports() -> None:
     start = text.index("        # Help menu")
     end = text.index("\n\n    # -- drag & drop on window", start)
     chunk = text[start:end]
+    intake = chunk.split("act_intake_keys = QAction", 1)[1].split(
+        "act_bank_import_keys = QAction", 1
+    )[0]
+    assert (
+        "UTF-8 BOM CSV exports on Bank Import, Register, Reports, Journal, Business, and Audit"
+        in intake
+    )
     bi = chunk.split("act_bank_import_keys = QAction", 1)[1].split(
         "act_register_keys = QAction", 1
     )[0]
