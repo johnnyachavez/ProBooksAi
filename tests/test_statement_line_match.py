@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import sys
 from pathlib import Path
 
@@ -291,6 +292,30 @@ def test_write_line_match_comparison_csv_writes_header_and_rows(tmp_path) -> Non
     text = path.read_text(encoding="utf-8")
     assert "Reconciled" in text and "Stmt amount" in text
     assert "yes" in text and STATUS_MATCHED in text and "9" in text
+
+
+def test_write_line_match_comparison_csv_quotes_commas_in_descriptions(tmp_path) -> None:
+    rows = [
+        {
+            "status": STATUS_MATCHED,
+            "stmt_date": "2024-01-10",
+            "stmt_amount": -1.0,
+            "stmt_description": 'Vendor, LLC "memo"',
+            "register_id": 1,
+            "reg_date": "2024-01-10",
+            "reg_amount": -1.0,
+            "reg_description": "A, B Corp",
+        }
+    ]
+    path = tmp_path / "quoted.csv"
+    write_line_match_comparison_csv(str(path), rows, [False])
+    with path.open(encoding="utf-8", newline="") as f:
+        rdr = csv.reader(f)
+        header = next(rdr)
+        row = next(rdr)
+    assert len(header) == len(row) == 9
+    assert row[4] == 'Vendor, LLC "memo"'
+    assert row[7] == "A, B Corp"
 
 
 def test_statement_line_match_panel_reconciled_buttons_follow_content_and_selection() -> None:

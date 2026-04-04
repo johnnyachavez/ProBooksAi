@@ -386,12 +386,12 @@ class StatementLineMatchPanel(QGroupBox):
             )
         try:
             write_line_match_comparison_csv(path, self._rows, flags)
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             message_box_critical_ok(
                 self,
                 "Export failed",
                 escape_ampersand_for_qt(str(exc)),
-                ok_tip="Close; check path, permissions, and disk space.",
+                ok_tip="Close; check path, permissions, disk space, and row alignment.",
             )
             return
         message_box_information_ok(
