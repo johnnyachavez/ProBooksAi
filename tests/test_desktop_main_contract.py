@@ -529,8 +529,12 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
     assert ".setToolTip(" not in chunk, (
         "_build_menu_bar must not call setToolTip on QActions; use _menu_action_tip only"
     )
-    assert chunk.count("_menu_action_tip(") == 21, (
-        "expected 21 menu tips (9 File + 1 View loop + 3 Edit + 1 Tools + 7 Help)"
+    n_qa = chunk.count("QAction(")
+    n_tip = chunk.count("_menu_action_tip(")
+    assert n_qa == n_tip == 21, (
+        f"expected 21 menu QActions each with _menu_action_tip "
+        f"(QAction={n_qa}, _menu_action_tip={n_tip}; "
+        "9 File + 1 View loop + 3 Edit + 1 Tools + 7 Help)"
     )
     assert "\n            act_import_docs,\n" in chunk
     assert "\n            act_open_company,\n" in chunk
