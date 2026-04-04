@@ -275,6 +275,23 @@ def test_app_header_banner_frame_has_hover_tooltip() -> None:
     assert "App banner" in chunk
 
 
+def test_desktop_main_app_header_banner_branding_and_set_company_name() -> None:
+    """``AppHeaderWidget`` shows ProBooks+ai + company label; ``set_company_name`` escapes Qt text."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("class AppHeaderWidget(QFrame):")
+    end = text.index(
+        "\n\n# ---------------------------------------------------------------------------\n# Main window",
+        start,
+    )
+    chunk = text[start:end]
+    assert chunk.count('QLabel("ProBooks+ai")') == 1
+    assert "INBOX_HEADER_COLOR" in chunk
+    assert chunk.count(".setToolTip(") == 3
+    assert chunk.count("escape_ampersand_for_qt(company_name)") == 1
+    assert chunk.count("def set_company_name(self, name: str):") == 1
+    assert chunk.count("self._lbl_company.setText(escape_ampersand_for_qt(name))") == 1
+
+
 def test_main_window_tab_bar_has_tab_tooltips() -> None:
     text = _MAIN.read_text(encoding="utf-8")
     assert "main_tab_bar = self._tabs.tabBar()" in text
@@ -1489,6 +1506,22 @@ def test_desktop_main_detail_pane_wires_actions_load_ai_and_clear() -> None:
     assert chunk.count('mimetype == "application/pdf"') == 1
     assert chunk.count("self._doc_id = None") == 1
     assert "No document selected" in chunk
+
+
+def test_desktop_main_coa_select_placeholder_and_combo_refresh() -> None:
+    """``_COA_SELECT_LABEL`` seeds the detail COA combo; ``update_coa`` rebuilds and restores selection."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("_COA_SELECT_LABEL = ")
+    end = text.index("    def clear_view(self):", start)
+    chunk = text[start:end]
+    assert "select" in chunk.split("_COA_SELECT_LABEL = ", 1)[1].split("\n", 1)[0]
+    assert chunk.count("escape_ampersand_for_qt(_COA_SELECT_LABEL)") == 1
+    assert chunk.count("def update_coa(self, coa_list: list[str]):") == 1
+    assert chunk.count("def _fill_coa_combo(self, coa_list: list[str]) -> None:") == 1
+    assert chunk.count("self._f_coa.clear()") == 1
+    assert chunk.count("self._set_coa_combo_raw(current)") == 1
+    assert chunk.count("def _coa_combo_raw_value(self) -> str | None:") == 1
+    assert chunk.count("def _set_coa_combo_raw(self, raw: str | None) -> None:") == 1
 
 
 def test_rules_tab_toolbar_buttons_have_tooltips() -> None:
