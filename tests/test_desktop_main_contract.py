@@ -284,6 +284,7 @@ def test_desktop_main_app_header_banner_branding_and_set_company_name() -> None:
         start,
     )
     chunk = text[start:end]
+    assert chunk.count("super().__init__(parent)") == 1
     assert chunk.count('QLabel("ProBooks+ai")') == 1
     assert "INBOX_HEADER_COLOR" in chunk
     assert chunk.count("setFixedHeight(44)") == 1
@@ -755,6 +756,11 @@ def test_main_window_on_restore_company_restores_and_reload_paths() -> None:
     assert chunk.count("Select backup to restore (probooks restore)") == 1
     assert chunk.count("Path(path).resolve() == target") == 1
     assert "Choose a different file than the active company database." in chunk
+    assert chunk.count("QMessageBox.Icon.Warning") == 1
+    assert chunk.count("Restore company database (probooks restore)") == 1
+    assert "Continue?" in chunk
+    assert chunk.count("reply = box.exec()") == 1
+    assert chunk.count("if reply != QMessageBox.StandardButton.Yes:") == 1
     assert (
         "Wait for AI extraction to finish before restoring." in chunk
     )
