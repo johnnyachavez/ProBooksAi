@@ -102,6 +102,8 @@ def test_amounts_equal_coerces_currency_strings() -> None:
     assert amounts_equal("(10.00)", -10.0)
     assert amounts_equal("(\u221210.00)", -10.0)
     assert amounts_equal("$0", 0.0)
+    assert amounts_equal("10.00\r\n", 10.0)
+    assert amounts_equal("$1,\n234.50", 1234.5)
     assert not amounts_equal("n/a", 1.0)
     assert not amounts_equal(None, 1.0)
     assert not amounts_equal(True, 1.0)
