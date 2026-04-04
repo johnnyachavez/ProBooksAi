@@ -173,7 +173,8 @@ def _attach_table_copy_row_menu(tbl: QTableWidget, menu_parent: QWidget) -> None
         m.addSeparator()
         act_copy = m.addAction("Copy row", lambda r=row: copy_table_row_as_tsv(tbl, r))
         act_copy.setToolTip(
-            "Copy this row as tab-separated text for pasting into a spreadsheet or editor."
+            "Copy this row as tab-separated text for pasting into a spreadsheet or editor. "
+            "Company .db safety: File → Backup / Restore (probooks.backup)."
         )
         m.exec(tbl.viewport().mapToGlobal(pos))
 
@@ -500,7 +501,8 @@ class RulesTab(QWidget):
         act_del.setToolTip("Delete this rule after confirmation.")
         act_copy = m.addAction("Copy row", lambda r=row: copy_table_row_as_tsv(self._tbl, r))
         act_copy.setToolTip(
-            "Copy this rule row as tab-separated text for pasting into a spreadsheet or editor."
+            "Copy this rule row as tab-separated text for pasting into a spreadsheet or editor. "
+            "Company .db safety: File → Backup / Restore (probooks.backup)."
         )
         m.exec(self._tbl.viewport().mapToGlobal(pos))
 
@@ -920,7 +922,8 @@ class ARTab(QWidget):
         act_invno.setToolTip("Copy the invoice number cell to the clipboard.")
         act_copy = m.addAction("Copy row", lambda r=row: copy_table_row_as_tsv(self._tbl, r))
         act_copy.setToolTip(
-            "Copy this invoice row as tab-separated text for pasting into a spreadsheet or editor."
+            "Copy this invoice row as tab-separated text for pasting into a spreadsheet or editor. "
+            "Company .db safety: File → Backup / Restore (probooks.backup)."
         )
         m.exec(self._tbl.viewport().mapToGlobal(pos))
 
@@ -1982,7 +1985,8 @@ class APTab(QWidget):
         act_att.setToolTip("Open the linked attachment file if a path is set on this bill.")
         act_copy = m.addAction("Copy row", lambda r=row: copy_table_row_as_tsv(self._tbl, r))
         act_copy.setToolTip(
-            "Copy this bill row as tab-separated text for pasting into a spreadsheet or editor."
+            "Copy this bill row as tab-separated text for pasting into a spreadsheet or editor. "
+            "Company .db safety: File → Backup / Restore (probooks.backup)."
         )
         m.exec(self._tbl.viewport().mapToGlobal(pos))
 
@@ -3089,7 +3093,8 @@ class PayrollTaxTab(QWidget):
         act_gl.setToolTip("Post this pay run to the general ledger (choose wage, cash, and liability accounts).")
         act_copy = m.addAction("Copy row", lambda r=row: copy_table_row_as_tsv(self._tbl, r))
         act_copy.setToolTip(
-            "Copy this pay run row as tab-separated text for pasting into a spreadsheet or editor."
+            "Copy this pay run row as tab-separated text for pasting into a spreadsheet or editor. "
+            "Company .db safety: File → Backup / Restore (probooks.backup)."
         )
         m.exec(self._tbl.viewport().mapToGlobal(pos))
 

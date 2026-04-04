@@ -325,6 +325,7 @@ def test_inbox_widget_context_menu_includes_keyboard_shortcuts_help() -> None:
     assert "act_keys.setToolTip" in chunk
     assert "act_copy.setToolTip" in chunk
     assert "probooks.backup" in chunk
+    assert "Company .db safety: File → Backup / Restore (probooks.backup)." in chunk
 
 
 def test_inbox_widget_table_has_hover_tooltip() -> None:
@@ -405,6 +406,8 @@ def test_audit_dialog_change_history_context_menu_includes_shortcuts_help() -> N
     assert "tip_qdialog_button_box(box, close=" in text
     assert "tbl.setToolTip(" in text
     assert "empty_lbl.setToolTip" in text
+    assert "act_copy.setToolTip" in text
+    assert "Company .db safety: File → Backup / Restore (probooks.backup)." in text
 
 
 def test_register_link_payment_suggestion_list_opens_register_shortcuts_help() -> None:
@@ -1103,9 +1106,19 @@ def test_bank_import_transactions_table_widget_has_hover_tooltip() -> None:
     assert "self.setToolTip(" in chunk
 
 
+def test_bank_import_context_menu_copy_row_tooltips_mention_backup_safety() -> None:
+    bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
+    assert bit.count("Company .db safety: File → Backup / Restore (probooks.backup).") >= 3
+
+
 def test_extra_tabs_business_main_grids_have_hover_tooltips() -> None:
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
     assert et.count("F5 refreshes when Business has focus.") == 5
+
+
+def test_extra_tabs_business_copy_row_tooltips_mention_backup_safety() -> None:
+    et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
+    assert et.count("Company .db safety: File → Backup / Restore (probooks.backup).") >= 5
 
 
 def test_register_tab_persists_header_state_via_qsettings() -> None:
@@ -1154,6 +1167,7 @@ def test_register_tab_tools_row_and_link_dialog_buttons_have_tooltips() -> None:
     assert "Set or clear a transfer link" in text
     assert "Split one unposted bank transaction" in text
     assert "Link this bank row to AR" in text
+    assert text.count("Company .db safety: File → Backup / Restore (probooks.backup).") >= 2
 
 
 def test_register_keyboard_shortcuts_help_text_matches_wired_chords() -> None:

@@ -215,7 +215,8 @@ class ManageAccountsDialog(QDialog):
         m.addSeparator()
         act_copy = m.addAction("Copy row", partial(copy_table_row_as_tsv, self._table, row))
         act_copy.setToolTip(
-            "Copy this account row as tab-separated text for pasting into a spreadsheet or editor."
+            "Copy this account row as tab-separated text for pasting into a spreadsheet or editor. "
+            "Company .db safety: File → Backup / Restore (probooks.backup)."
         )
         m.exec(self._table.viewport().mapToGlobal(pos))
 
@@ -1141,7 +1142,8 @@ class BankImportTab(QWidget):
         act_att.setToolTip("Open the linked file for this imported transaction if a path is set.")
         act_copy = menu.addAction("Copy row", partial(copy_table_row_as_tsv, self._txn_table, row))
         act_copy.setToolTip(
-            "Copy this transaction row as tab-separated text for pasting into a spreadsheet or editor."
+            "Copy this transaction row as tab-separated text for pasting into a spreadsheet or editor. "
+            "Company .db safety: File → Backup / Restore (probooks.backup)."
         )
         act_history = menu.addAction("View change history…")
         act_history.setToolTip(
@@ -1191,7 +1193,8 @@ class BankImportTab(QWidget):
         menu.addSeparator()
         act_copy = menu.addAction("Copy row", partial(copy_table_row_as_tsv, self._batch_table, row))
         act_copy.setToolTip(
-            "Copy this import batch row as tab-separated text for pasting into a spreadsheet or editor."
+            "Copy this import batch row as tab-separated text for pasting into a spreadsheet or editor. "
+            "Company .db safety: File → Backup / Restore (probooks.backup)."
         )
         act_history = menu.addAction("View change history…")
         act_history.setToolTip(

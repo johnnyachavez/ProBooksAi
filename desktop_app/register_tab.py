@@ -694,7 +694,8 @@ class RegisterTab(QWidget):
         act_uclr.setToolTip("Clear the cleared flag on this row.")
         act_copy = menu.addAction("Copy row", partial(copy_table_row_as_tsv, self._table, row))
         act_copy.setToolTip(
-            "Copy this register row as tab-separated text for pasting into a spreadsheet or editor."
+            "Copy this register row as tab-separated text for pasting into a spreadsheet or editor. "
+            "Company .db safety: File → Backup / Restore (probooks.backup)."
         )
         act_history = menu.addAction("View change history…")
         act_history.setToolTip(
@@ -1526,7 +1527,8 @@ class RegisterTab(QWidget):
                 partial(copy_qlistwidget_row_text, sug_list, row),
             )
             act_copy.setToolTip(
-                "Copy this suggestion line as plain text for pasting elsewhere."
+                "Copy this suggestion line as plain text for pasting elsewhere. "
+                "Company .db safety: File → Backup / Restore (probooks.backup)."
             )
             m.exec(sug_list.viewport().mapToGlobal(pos))
 
