@@ -3598,6 +3598,7 @@ def test_bank_import_tab_exposes_shortcuts_dialog_for_help_menu() -> None:
     assert "If that account cannot be opened on the register" in bit
     assert "status bar" in bit.lower()
     assert "restores the company line" in bit
+    assert "line-reconciliation grid" in bit
 
 
 def test_register_tab_exposes_shared_shortcuts_dialog_for_help_menu() -> None:
