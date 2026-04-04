@@ -290,6 +290,7 @@ def test_desktop_main_app_header_banner_branding_and_set_company_name() -> None:
     assert chunk.count("escape_ampersand_for_qt(company_name)") == 1
     assert chunk.count("def set_company_name(self, name: str):") == 1
     assert chunk.count("self._lbl_company.setText(escape_ampersand_for_qt(name))") == 1
+    assert "company_name: str = COMPANY_NAME" in chunk
 
 
 def test_main_window_tab_bar_has_tab_tooltips() -> None:
@@ -612,6 +613,19 @@ def test_main_window_switch_company_database_closes_and_loads_at_path() -> None:
     assert chunk.count("self._load_company_at_path(resolved)") == 1
 
 
+def test_main_window_switch_company_create_new_mkdir_and_open_missing_paths() -> None:
+    """``_switch_company_database`` creates parent dirs for new DBs, prompts if file exists, warns when missing."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _switch_company_database(self, path: str, *, create_new: bool = False) -> None:")
+    end = text.index("    def _on_backup_company(self):", start)
+    chunk = text[start:end]
+    assert chunk.count("p.parent.mkdir(parents=True, exist_ok=True)") == 1
+    assert chunk.count("QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No") == 1
+    assert chunk.count('"File exists"') == 1
+    assert chunk.count("elif not p.exists():") == 1
+    assert chunk.count('"Not found"') == 1
+
+
 def test_main_window_destructive_yes_no_dialogs_use_tip_message_box_buttons() -> None:
     """New-company file-exists and restore-confirm prompts use ``tip_message_box_buttons`` for Ok/Cancel hints."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -812,6 +826,17 @@ def test_main_window_import_files_filters_extensions_adds_documents_refreshes_in
     assert chunk.count("self._db.add_document(path, mime, store=True)") == 1
     assert chunk.count("self._refresh_inbox()") == 1
     assert chunk.count('"Skipped Files"') == 1
+
+
+def test_main_window_import_files_mime_guess_fallback_and_import_error_status() -> None:
+    """``_import_files`` uses ``mimetypes.guess_type`` with PDF/image fallback; failures surface on the status bar."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _import_files(self, paths: list[str]):")
+    end = text.index("    def _on_selection_changed(self):", start)
+    chunk = text[start:end]
+    assert chunk.count("mimetypes.guess_type(path)") == 1
+    assert 'mime or ("application/pdf" if ext == ".pdf" else "image/jpeg")' in chunk
+    assert "Error importing" in chunk
 
 
 def test_main_window_refresh_inbox_and_coa_changed_sync_lists() -> None:
@@ -1616,6 +1641,19 @@ def test_desktop_main_detail_pane_load_document_escapes_status_for_rich_text() -
     assert chunk.count("escape_html_text(status)") == 1
     assert chunk.count("Qt.TextFormat.RichText") == 1
     assert "STATUS_COLORS.get(status" in chunk
+
+
+def test_desktop_main_detail_pane_populate_ai_result_applies_suggestions() -> None:
+    """``populate_ai_result`` fills from extraction then maps COA/confidence/rationale from suggestions."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def populate_ai_result(self, result, suggestions=None):")
+    end = text.index("    def collect_approved_values(self) -> dict:", start)
+    chunk = text[start:end]
+    assert chunk.count("_populate_fields_from_extraction(result)") == 1
+    assert "suggestions and not suggestions.error" in chunk
+    assert chunk.count("findData(s_coa, Qt.ItemDataRole.UserRole)") == 1
+    assert chunk.count('self._f_confidence.setText(f"{conf:.0%}")') == 1
+    assert chunk.count("self._lbl_rationale.setText(suggestions.rationale or \"\")") == 1
 
 
 def test_desktop_main_coa_select_placeholder_and_combo_refresh() -> None:
