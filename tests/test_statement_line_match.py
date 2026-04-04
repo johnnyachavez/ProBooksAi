@@ -124,12 +124,14 @@ def test_normalize_paste_whitespace_collapses_breaks_to_spaces() -> None:
     assert _normalize_paste_whitespace("x\r\ny") == "x y"
     assert _normalize_paste_whitespace("a\u00a0b") == "a b"
     assert _normalize_paste_whitespace("x\u202fy") == "x y"
+    assert _normalize_paste_whitespace("foo\u200bbar") == "foobar"
 
 
 def test_descriptions_match_treats_newlines_and_tabs_as_spaces() -> None:
     assert descriptions_match("LINE\nONE", "line one")
     assert descriptions_match("a\tb", "a b")
     assert descriptions_match("foo\u00a0bar", "foo bar")
+    assert descriptions_match("HELLO", "hel\u200blo")
 
 
 def test_descriptions_match_substring_and_fuzzy() -> None:
