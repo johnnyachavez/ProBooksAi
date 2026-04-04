@@ -408,6 +408,8 @@ class StatementLineMatchPanel(QGroupBox):
         )
         if not path:
             return
+        if not path.lower().endswith(".csv"):
+            path += ".csv"
         flags: list[bool] = []
         for r in range(len(self._rows)):
             it = self._table.item(r, _COL_REVIEWED)

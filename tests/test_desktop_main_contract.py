@@ -5421,6 +5421,10 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
     assert "selectionChanged.connect" in sm
     assert "act_export = menu.addAction" in sm
     assert "_suggested_line_compare_csv_filename" in sm
+    export_sm = sm.split("def _on_export_comparison_csv", 1)[1].split(
+        "def _on_run_clicked", 1
+    )[0]
+    assert 'path += ".csv"' in export_sm
     assert "STATUS_MATCHED" in sm
     assert "Bank register" in sm
     assert "status bar" in sm.lower()
