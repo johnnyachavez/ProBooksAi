@@ -540,6 +540,7 @@ def test_main_window_build_ui_tab_tooltips_intake_f5_and_window_drops() -> None:
         "one _main_tab_bar_db_hint assignment plus seven tab tooltips that append it (tab 0 uses inline text)"
     )
     assert chunk.count('QShortcut(QKeySequence("F5"), intake_widget)') == 1
+    assert chunk.count("sc_intake_f5.setContext(Qt.WidgetWithChildrenShortcut)") == 1
     assert chunk.count("sc_intake_f5.activated.connect(self._refresh_inbox)") == 1
     assert chunk.count("self.setAcceptDrops(True)") == 1
 
@@ -1730,6 +1731,15 @@ def test_desktop_main_detail_pane_populate_ai_result_applies_suggestions() -> No
     assert chunk.count("self._lbl_rationale.setText(suggestions.rationale or \"\")") == 1
 
 
+def test_desktop_main_detail_pane_button_slots_require_selected_doc() -> None:
+    """Detail pane toolbar actions emit only when ``_doc_id`` is set."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    # -- button slots --------------------------------------------------------")
+    end = text.index("    def update_coa(self, coa_list: list[str]):", start)
+    chunk = text[start:end]
+    assert chunk.count("if self._doc_id is not None:") == 4
+
+
 def test_desktop_main_coa_select_placeholder_and_combo_refresh() -> None:
     """``_COA_SELECT_LABEL`` seeds the detail COA combo; ``update_coa`` rebuilds and restores selection."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -1972,6 +1982,15 @@ def test_main_window_uses_warning_and_critical_ok_helpers() -> None:
     assert "message_box_critical_ok(" in main_t
     assert "message_box_about_ok(" in main_t
     assert "QMessageBox.about(" not in main_t
+
+
+def test_main_window_message_box_information_ok_six_user_feedback_paths() -> None:
+    """``MainWindow`` uses ``message_box_information_ok`` for copy path, roadmap, AI busy, backup/restore outcomes."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("class MainWindow(QMainWindow):")
+    end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
+    chunk = text[start:end]
+    assert chunk.count("message_box_information_ok(") == 6
 
 
 def test_about_dialog_ok_tip_mentions_file_backup_cli_parity() -> None:
