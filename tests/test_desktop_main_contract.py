@@ -589,6 +589,7 @@ def test_main_window_init_wires_databases_build_ui_and_refresh() -> None:
     assert chunk.count("self._build_ui()") == 1
     assert chunk.count("self._refresh_inbox()") == 1
     assert chunk.count("self._update_company_status()") == 1
+    assert chunk.count("self._worker: AIWorker | None = None") == 1
 
 
 def test_main_window_load_company_at_path_reopens_dbs_rebuilds_tabs_and_refreshes() -> None:
@@ -1190,6 +1191,17 @@ def test_inbox_widget_context_menu_includes_keyboard_shortcuts_help() -> None:
     assert "act_keys.setToolTip" in chunk
     assert "act_copy.setToolTip" in chunk
     assert chunk.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
+
+
+def test_inbox_widget_context_menu_skips_copy_row_when_no_cell() -> None:
+    """Empty-area context menu runs shortcuts-only; **Copy row** appears only after a valid row index."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_context_menu(self, pos):")
+    end = text.index("    # -- drag & drop", start)
+    chunk = text[start:end]
+    assert chunk.count("if not idx.isValid():") == 1
+    assert chunk.count("m.addSeparator()") == 1
+    assert chunk.count('m.addAction("Copy row"') == 1
 
 
 def test_inbox_widget_context_menu_copy_row_binds_partial_tsv_helper() -> None:
@@ -1841,6 +1853,25 @@ def test_desktop_main_detail_pane_populate_fields_maps_sqlite_row_columns() -> N
     assert chunk.count('row["total"]') == 1
     assert chunk.count('row["currency"]') == 1
     assert chunk.count('row["notes"]') == 1
+
+
+def test_desktop_main_detail_pane_populate_fields_from_extraction_maps_result() -> None:
+    """``_populate_fields_from_extraction`` copies ``ExtractionResult`` fields into the detail form + confidence."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _populate_fields_from_extraction(self, result):")
+    end = text.index("    def _set_buttons_enabled(self, enabled: bool):", start)
+    chunk = text[start:end]
+    assert chunk.count("result.vendor or") == 1
+    assert chunk.count("result.doc_type or") == 1
+    assert chunk.count("result.invoice_number or") == 1
+    assert chunk.count("result.doc_date or") == 1
+    assert chunk.count("result.due_date or") == 1
+    assert chunk.count("result.subtotal or 0") == 1
+    assert chunk.count("result.tax or 0") == 1
+    assert chunk.count("result.total or 0") == 1
+    assert chunk.count("result.currency or") == 1
+    assert chunk.count("result.notes or") == 1
+    assert chunk.count('self._f_confidence.setText(f"{result.confidence:.0%}")') == 1
 
 
 def test_desktop_main_detail_pane_button_slots_require_selected_doc() -> None:
