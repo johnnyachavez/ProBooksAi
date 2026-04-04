@@ -5,6 +5,7 @@ verbatim string on ``QTABLE_PLAIN_TEXT_ROLE`` for **Copy row** / TSV). Amounts a
 sortable numeric columns use :class:`NumericAmountTableItem`, :class:`IntSortTableItem`,
 or :class:`FloatSortTableItem`. Lists with escaped labels set ``QLIST_PLAIN_TEXT_ROLE``.
 Inline-editable cells stay plain ``QTableWidgetItem`` unless editing is delegated.
+:const:`CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX` is the shared **File → Backup** line for copy QActions.
 """
 
 from __future__ import annotations
@@ -31,6 +32,11 @@ QLIST_PLAIN_TEXT_ROLE = Qt.ItemDataRole.UserRole + 32
 
 # Same for ``QTableWidgetItem`` cells (optional per-cell; see ``_table_cell_text``).
 QTABLE_PLAIN_TEXT_ROLE = Qt.ItemDataRole.UserRole + 33
+
+# Suffix for QActions (and similar tips) that copy company SQLite–backed data; keep in sync with File → Backup.
+CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX = (
+    "Company .db safety: File → Backup / Restore (probooks.backup)."
+)
 
 
 def plain_display_table_item(raw: str) -> QTableWidgetItem:

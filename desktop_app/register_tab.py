@@ -71,6 +71,7 @@ from desktop_app.qt_mnemonic import (
     tip_qdialog_button_box,
 )
 from desktop_app.table_clipboard import (
+    CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
     QLIST_PLAIN_TEXT_ROLE,
     QTABLE_PLAIN_TEXT_ROLE,
     NumericAmountTableItem,
@@ -695,7 +696,7 @@ class RegisterTab(QWidget):
         act_copy = menu.addAction("Copy row", partial(copy_table_row_as_tsv, self._table, row))
         act_copy.setToolTip(
             "Copy this register row as tab-separated text for pasting into a spreadsheet or editor. "
-            "Company .db safety: File → Backup / Restore (probooks.backup)."
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         act_history = menu.addAction("View change history…")
         act_history.setToolTip(
@@ -1528,7 +1529,7 @@ class RegisterTab(QWidget):
             )
             act_copy.setToolTip(
                 "Copy this suggestion line as plain text for pasting elsewhere. "
-                "Company .db safety: File → Backup / Restore (probooks.backup)."
+                + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
             )
             m.exec(sug_list.viewport().mapToGlobal(pos))
 

@@ -67,6 +67,7 @@ from desktop_app.qt_mnemonic import (
     tip_qdialog_button_box,
 )
 from desktop_app.table_clipboard import (
+    CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
     QTABLE_PLAIN_TEXT_ROLE,
     FloatSortTableItem,
     IntSortTableItem,
@@ -174,7 +175,7 @@ def _attach_table_copy_row_menu(tbl: QTableWidget, menu_parent: QWidget) -> None
         act_copy = m.addAction("Copy row", lambda r=row: copy_table_row_as_tsv(tbl, r))
         act_copy.setToolTip(
             "Copy this row as tab-separated text for pasting into a spreadsheet or editor. "
-            "Company .db safety: File → Backup / Restore (probooks.backup)."
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         m.exec(tbl.viewport().mapToGlobal(pos))
 
@@ -502,7 +503,7 @@ class RulesTab(QWidget):
         act_copy = m.addAction("Copy row", lambda r=row: copy_table_row_as_tsv(self._tbl, r))
         act_copy.setToolTip(
             "Copy this rule row as tab-separated text for pasting into a spreadsheet or editor. "
-            "Company .db safety: File → Backup / Restore (probooks.backup)."
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         m.exec(self._tbl.viewport().mapToGlobal(pos))
 
@@ -921,12 +922,12 @@ class ARTab(QWidget):
         )
         act_invno.setToolTip(
             "Copy the invoice number cell to the clipboard. "
-            "Company .db safety: File → Backup / Restore (probooks.backup)."
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         act_copy = m.addAction("Copy row", lambda r=row: copy_table_row_as_tsv(self._tbl, r))
         act_copy.setToolTip(
             "Copy this invoice row as tab-separated text for pasting into a spreadsheet or editor. "
-            "Company .db safety: File → Backup / Restore (probooks.backup)."
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         m.exec(self._tbl.viewport().mapToGlobal(pos))
 
@@ -1989,7 +1990,7 @@ class APTab(QWidget):
         act_copy = m.addAction("Copy row", lambda r=row: copy_table_row_as_tsv(self._tbl, r))
         act_copy.setToolTip(
             "Copy this bill row as tab-separated text for pasting into a spreadsheet or editor. "
-            "Company .db safety: File → Backup / Restore (probooks.backup)."
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         m.exec(self._tbl.viewport().mapToGlobal(pos))
 
@@ -3097,7 +3098,7 @@ class PayrollTaxTab(QWidget):
         act_copy = m.addAction("Copy row", lambda r=row: copy_table_row_as_tsv(self._tbl, r))
         act_copy.setToolTip(
             "Copy this pay run row as tab-separated text for pasting into a spreadsheet or editor. "
-            "Company .db safety: File → Backup / Restore (probooks.backup)."
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         m.exec(self._tbl.viewport().mapToGlobal(pos))
 

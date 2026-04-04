@@ -31,7 +31,11 @@ from desktop_app.qt_mnemonic import (
     message_box_information_ok,
     tip_qdialog_button_box,
 )
-from desktop_app.table_clipboard import copy_table_row_as_tsv, plain_display_table_item
+from desktop_app.table_clipboard import (
+    CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
+    copy_table_row_as_tsv,
+    plain_display_table_item,
+)
 from probooksai.audit_log import list_for_entity
 
 
@@ -40,7 +44,8 @@ def _audit_history_shortcuts_help(parent: QWidget) -> None:
         parent,
         "Change history",
         "Copy row — copies the selected row as tab-separated text. "
-        "Company .db safety: File → Backup / Restore (probooks.backup).\n\n"
+        + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+        + "\n\n"
         "For main-window shortcuts (F5, Help menus), use Help on the main window.",
         ok_tip="Close this shortcuts summary.",
     )
@@ -67,7 +72,7 @@ def _audit_history_table_context_menu(
     act_copy = m.addAction("Copy row", partial(copy_table_row_as_tsv, table, row))
     act_copy.setToolTip(
         "Copy this audit row as tab-separated text for pasting into a spreadsheet or editor. "
-        "Company .db safety: File → Backup / Restore (probooks.backup)."
+        + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
     )
     m.exec(table.viewport().mapToGlobal(pos))
 

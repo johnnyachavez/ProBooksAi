@@ -39,6 +39,7 @@ from desktop_app.qt_mnemonic import (
     message_box_information_ok,
 )
 from desktop_app.table_clipboard import (
+    CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
     FloatSortTableItem,
     copy_table_row_as_tsv,
     plain_display_table_item,
@@ -161,7 +162,7 @@ class ReportsTab(QWidget):
         )
         act_keys.setToolTip(
             "Same summary as Help → More tab shortcuts (F5)… (Reports, F5 re-run last report). "
-            "Company .db safety: File → Backup / Restore (probooks.backup)."
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
             m.exec(self._table.viewport().mapToGlobal(pos))
@@ -173,7 +174,7 @@ class ReportsTab(QWidget):
         )
         act_copy.setToolTip(
             "Copy this report row as tab-separated text for pasting into a spreadsheet or editor. "
-            "Company .db safety: File → Backup / Restore (probooks.backup)."
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         m.exec(self._table.viewport().mapToGlobal(pos))
 

@@ -38,6 +38,7 @@ from desktop_app.qt_mnemonic import (
     message_box_information_ok,
 )
 from desktop_app.table_clipboard import (
+    CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
     QLIST_PLAIN_TEXT_ROLE,
     NumericAmountTableItem,
     copy_qlistwidget_row_text,
@@ -159,7 +160,7 @@ class JournalTab(QWidget):
         )
         act_keys.setToolTip(
             "Same summary as Help → More tab shortcuts (F5)… (Journal, COA, Reports, Audit chords). "
-            "Company .db safety: File → Backup / Restore (probooks.backup)."
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
             m.exec(self._list.viewport().mapToGlobal(pos))
@@ -172,7 +173,7 @@ class JournalTab(QWidget):
         )
         act_copy.setToolTip(
             "Copy the selected journal entry summary line as plain text. "
-            "Company .db safety: File → Backup / Restore (probooks.backup)."
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         m.exec(self._list.viewport().mapToGlobal(pos))
 
@@ -185,7 +186,7 @@ class JournalTab(QWidget):
         )
         act_keys.setToolTip(
             "Same summary as Help → More tab shortcuts (F5)… (Journal lines pane, F5 refresh). "
-            "Company .db safety: File → Backup / Restore (probooks.backup)."
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
             m.exec(self._lines.viewport().mapToGlobal(pos))
@@ -197,7 +198,7 @@ class JournalTab(QWidget):
         )
         act_copy.setToolTip(
             "Copy this GL line row as tab-separated text for pasting into a spreadsheet or editor. "
-            "Company .db safety: File → Backup / Restore (probooks.backup)."
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         m.exec(self._lines.viewport().mapToGlobal(pos))
 

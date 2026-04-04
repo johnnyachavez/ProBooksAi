@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from desktop_app.table_clipboard import CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+
 from tests.repo_paths import (
     DESKTOP_APP_DIR as _DESKTOP_APP_DIR,
     PROBOOKS_HELP_EPILOG,
@@ -15,6 +17,23 @@ from tests.repo_paths import (
 )
 
 _MAIN = _DESKTOP_APP_DIR / "main.py"
+
+
+def test_clipboard_db_backup_tooltip_suffix_wording() -> None:
+    assert CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX == (
+        "Company .db safety: File → Backup / Restore (probooks.backup)."
+    )
+
+
+def test_desktop_backup_tip_literal_only_defined_in_table_clipboard() -> None:
+    """Copy-to-clipboard QActions should reference ``CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX`` (single source)."""
+    literal = CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+    for path in _iter_desktop_app_py_files():
+        text = path.read_text(encoding="utf-8")
+        if path.name == "table_clipboard.py":
+            assert text.count(literal) == 1
+        else:
+            assert literal not in text, f"{path.name} should not embed the backup tip literal; import the constant"
 
 
 def _iter_desktop_app_py_files() -> list[Path]:
@@ -246,7 +265,7 @@ def test_file_menu_company_file_actions_tips_mention_backup_pointer() -> None:
     c = text.index("act_copy_db_path = QAction")
     copy_chunk = text[c : text.index("act_save = QAction", c)]
     assert "probooks backup" in copy_chunk
-    assert "Company .db safety: File → Backup / Restore (probooks.backup)." in copy_chunk
+    assert "+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX" in copy_chunk
 
 
 def test_copy_db_path_empty_dialog_tip_mentions_backup() -> None:
@@ -326,7 +345,7 @@ def test_inbox_widget_context_menu_includes_keyboard_shortcuts_help() -> None:
     assert "act_keys.setToolTip" in chunk
     assert "act_copy.setToolTip" in chunk
     assert "probooks.backup" in chunk
-    assert "Company .db safety: File → Backup / Restore (probooks.backup)." in chunk
+    assert "+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX" in chunk
 
 
 def test_inbox_widget_table_has_hover_tooltip() -> None:
@@ -408,7 +427,7 @@ def test_audit_dialog_change_history_context_menu_includes_shortcuts_help() -> N
     assert "tbl.setToolTip(" in text
     assert "empty_lbl.setToolTip" in text
     assert "act_copy.setToolTip" in text
-    assert "Company .db safety: File → Backup / Restore (probooks.backup)." in text
+    assert "+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX" in text
 
 
 def test_register_link_payment_suggestion_list_opens_register_shortcuts_help() -> None:
@@ -522,7 +541,7 @@ def test_coa_tab_toolbar_buttons_have_tooltips() -> None:
     assert "hidden from COA pickers" in text
     assert "act_keys.setToolTip" in text
     assert "act_copy.setToolTip" in text
-    assert text.count("Company .db safety: File → Backup / Restore (probooks.backup).") >= 1
+    assert text.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 1
 
 
 def test_reports_tab_run_and_export_buttons_have_tooltips() -> None:
@@ -538,7 +557,7 @@ def test_reports_tab_run_and_export_buttons_have_tooltips() -> None:
     assert "self._table.setToolTip(" in text
     assert "act_keys.setToolTip" in text
     assert "act_copy.setToolTip" in text
-    assert text.count("Company .db safety: File → Backup / Restore (probooks.backup).") >= 2
+    assert text.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
 
 
 def test_bank_import_header_buttons_manage_and_csv_have_tooltips() -> None:
@@ -582,7 +601,7 @@ def test_journal_tab_export_csv_button_has_tooltip() -> None:
     assert "self._lines.setToolTip(" in jt
     assert "act_keys.setToolTip" in jt
     assert "act_copy.setToolTip" in jt
-    assert jt.count("Company .db safety: File → Backup / Restore (probooks.backup).") >= 4
+    assert jt.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 4
 
 
 def test_audit_tab_export_and_apply_filter_buttons_have_tooltips() -> None:
@@ -597,7 +616,7 @@ def test_audit_tab_export_and_apply_filter_buttons_have_tooltips() -> None:
     assert "self._tbl.setToolTip(" in at
     assert "act_keys.setToolTip" in at
     assert "act_copy.setToolTip" in at
-    assert at.count("Company .db safety: File → Backup / Restore (probooks.backup).") >= 1
+    assert at.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 1
 
 
 def test_bank_import_manage_accounts_and_reconciliation_buttons_have_tooltips() -> None:
@@ -850,7 +869,7 @@ def test_audit_dialog_shortcuts_help_uses_ok_button_tooltip() -> None:
     assert "tip_qdialog_button_box(box, close=" in ad
     h0 = ad.index("def _audit_history_shortcuts_help")
     h1 = ad.index("\n\ndef _audit_history_table_context_menu", h0)
-    assert "Company .db safety: File → Backup / Restore (probooks.backup)." in ad[h0:h1]
+    assert "+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX" in ad[h0:h1]
 
 
 def test_desktop_app_avoids_static_qmessagebox_information_warning_critical() -> None:
@@ -1064,17 +1083,17 @@ def test_grids_context_menus_use_qaction_hover_tooltips() -> None:
     js = jt.index("def _on_journal_list_context_menu")
     je = jt.index("def _on_lines_context_menu", js)
     assert "act_keys.setToolTip" in jt[js:je]
-    assert "probooks.backup" in jt[js:je]
+    assert "+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX" in jt[js:je]
     ls = jt.index("def _on_lines_context_menu")
     le = jt.index("def _refresh_list", ls)
     assert "act_copy.setToolTip" in jt[ls:le]
-    assert "probooks.backup" in jt[ls:le]
+    assert "+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX" in jt[ls:le]
 
     rep = (_DESKTOP_APP_DIR / "reports_tab.py").read_text(encoding="utf-8")
     rps = rep.index("def _on_report_context_menu")
     rpe = rep.index("def _fill_table", rps)
     assert "act_keys.setToolTip" in rep[rps:rpe]
-    assert "probooks.backup" in rep[rps:rpe]
+    assert "+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX" in rep[rps:rpe]
 
     at = (_DESKTOP_APP_DIR / "audit_tab.py").read_text(encoding="utf-8")
     aus = at.index("def _on_audit_context_menu")
@@ -1103,7 +1122,7 @@ def test_grids_context_menus_use_qaction_hover_tooltips() -> None:
     inv_chunk = et[inv_s:inv_e]
     assert "act_pdf.setToolTip" in inv_chunk
     assert "act_invno.setToolTip" in inv_chunk
-    assert "Company .db safety: File → Backup / Restore (probooks.backup)." in inv_chunk
+    assert inv_chunk.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
 
 
 def test_bank_import_transactions_table_widget_has_hover_tooltip() -> None:
@@ -1116,7 +1135,7 @@ def test_bank_import_transactions_table_widget_has_hover_tooltip() -> None:
 
 def test_bank_import_context_menu_copy_row_tooltips_mention_backup_safety() -> None:
     bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
-    assert bit.count("Company .db safety: File → Backup / Restore (probooks.backup).") >= 3
+    assert bit.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 3
 
 
 def test_extra_tabs_business_main_grids_have_hover_tooltips() -> None:
@@ -1126,7 +1145,7 @@ def test_extra_tabs_business_main_grids_have_hover_tooltips() -> None:
 
 def test_extra_tabs_business_copy_row_tooltips_mention_backup_safety() -> None:
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
-    assert et.count("Company .db safety: File → Backup / Restore (probooks.backup).") >= 6
+    assert et.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 6
 
 
 def test_register_tab_persists_header_state_via_qsettings() -> None:
@@ -1175,7 +1194,7 @@ def test_register_tab_tools_row_and_link_dialog_buttons_have_tooltips() -> None:
     assert "Set or clear a transfer link" in text
     assert "Split one unposted bank transaction" in text
     assert "Link this bank row to AR" in text
-    assert text.count("Company .db safety: File → Backup / Restore (probooks.backup).") >= 2
+    assert text.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
 
 
 def test_register_keyboard_shortcuts_help_text_matches_wired_chords() -> None:

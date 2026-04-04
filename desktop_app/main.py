@@ -84,6 +84,7 @@ from desktop_app.more_main_tabs_shortcuts import (
     show_more_main_tabs_keyboard_shortcuts_dialog,
 )
 from desktop_app.table_clipboard import (
+    CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
     IntSortTableItem,
     copy_table_row_as_tsv,
     plain_display_table_item,
@@ -238,7 +239,7 @@ class InboxWidget(QTableWidget):
         act_copy = m.addAction("Copy row", partial(copy_table_row_as_tsv, self, row))
         act_copy.setToolTip(
             "Copy this inbox row as tab-separated text for pasting into a spreadsheet or editor. "
-            "Company .db safety: File → Backup / Restore (probooks.backup)."
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         m.exec(self.viewport().mapToGlobal(pos))
 
@@ -1047,7 +1048,7 @@ class MainWindow(QMainWindow):
             act_copy_db_path,
             "Copy the resolved company .db path to the clipboard (Ctrl+Alt+P); "
             "matches the file File → Backup and probooks backup read from. "
-            "Company .db safety: File → Backup / Restore (probooks.backup).",
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
         )
         act_copy_db_path.triggered.connect(self._on_copy_company_database_path)
         file_menu.addAction(act_copy_db_path)
