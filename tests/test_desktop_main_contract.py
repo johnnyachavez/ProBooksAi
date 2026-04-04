@@ -541,7 +541,7 @@ def test_coa_tab_toolbar_buttons_have_tooltips() -> None:
     assert "hidden from COA pickers" in text
     assert "act_keys.setToolTip" in text
     assert "act_copy.setToolTip" in text
-    assert text.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 1
+    assert text.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
 
 
 def test_reports_tab_run_and_export_buttons_have_tooltips() -> None:
@@ -616,7 +616,7 @@ def test_audit_tab_export_and_apply_filter_buttons_have_tooltips() -> None:
     assert "self._tbl.setToolTip(" in at
     assert "act_keys.setToolTip" in at
     assert "act_copy.setToolTip" in at
-    assert at.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 1
+    assert at.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
 
 
 def test_bank_import_manage_accounts_and_reconciliation_buttons_have_tooltips() -> None:
@@ -1099,7 +1099,7 @@ def test_grids_context_menus_use_qaction_hover_tooltips() -> None:
     aus = at.index("def _on_audit_context_menu")
     aue = at.index("def _export_csv", aus)
     assert "act_copy.setToolTip" in at[aus:aue]
-    assert "probooks.backup" in at[aus:aue]
+    assert at[aus:aue].count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
 
     ad = (_DESKTOP_APP_DIR / "audit_dialog.py").read_text(encoding="utf-8")
     assert "act_keys.setToolTip" in ad
@@ -1109,7 +1109,7 @@ def test_grids_context_menus_use_qaction_hover_tooltips() -> None:
     cs = coa.index("def _on_coa_context_menu")
     ce = coa.index("def _on_selection", cs)
     assert "act_history.setToolTip" in coa[cs:ce]
-    assert "probooks.backup" in coa[cs:ce]
+    assert coa[cs:ce].count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
 
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
     acs = et.index("def _attach_table_copy_row_menu")

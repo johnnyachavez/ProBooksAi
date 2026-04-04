@@ -144,8 +144,8 @@ class AuditTab(QWidget):
             lambda: show_more_main_tabs_keyboard_shortcuts_dialog(self),
         )
         act_keys.setToolTip(
-            "Same summary as Help → More tab shortcuts (F5)… "
-            "(Audit log, filters, export, File → Backup / probooks.backup)."
+            "Same summary as Help → More tab shortcuts (F5)… (Audit log, filters, export). "
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
             m.exec(self._tbl.viewport().mapToGlobal(pos))

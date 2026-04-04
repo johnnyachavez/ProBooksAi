@@ -426,7 +426,8 @@ class COATab(QWidget):
         )
         act_keys.setToolTip(
             "Same summary as Help → More tab shortcuts (F5)… "
-            "(COA, Journal, Reports, Audit chords; File → Backup / probooks.backup)."
+            "(COA, Journal, Reports, Audit chords). "
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
             menu.exec(self._table.viewport().mapToGlobal(pos))
