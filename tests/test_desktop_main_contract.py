@@ -1098,7 +1098,11 @@ def test_grids_context_menus_use_qaction_hover_tooltips() -> None:
     rs2 = et.index("def _on_rules_context_menu")
     assert "act_edit.setToolTip" in et[rs2 : rs2 + 900]
     inv_s = et.index("def _on_invoice_context_menu")
-    assert "act_pdf.setToolTip" in et[inv_s : inv_s + 1200]
+    inv_e = et.index("\n    def _save_pdf", inv_s)
+    inv_chunk = et[inv_s:inv_e]
+    assert "act_pdf.setToolTip" in inv_chunk
+    assert "act_invno.setToolTip" in inv_chunk
+    assert "Company .db safety: File → Backup / Restore (probooks.backup)." in inv_chunk
 
 
 def test_bank_import_transactions_table_widget_has_hover_tooltip() -> None:
@@ -1121,7 +1125,7 @@ def test_extra_tabs_business_main_grids_have_hover_tooltips() -> None:
 
 def test_extra_tabs_business_copy_row_tooltips_mention_backup_safety() -> None:
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
-    assert et.count("Company .db safety: File → Backup / Restore (probooks.backup).") >= 5
+    assert et.count("Company .db safety: File → Backup / Restore (probooks.backup).") >= 6
 
 
 def test_register_tab_persists_header_state_via_qsettings() -> None:

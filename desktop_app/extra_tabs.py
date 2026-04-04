@@ -919,7 +919,10 @@ class ARTab(QWidget):
                 table_cell_clipboard_text(self._tbl, r, 2).strip()
             ),
         )
-        act_invno.setToolTip("Copy the invoice number cell to the clipboard.")
+        act_invno.setToolTip(
+            "Copy the invoice number cell to the clipboard. "
+            "Company .db safety: File → Backup / Restore (probooks.backup)."
+        )
         act_copy = m.addAction("Copy row", lambda r=row: copy_table_row_as_tsv(self._tbl, r))
         act_copy.setToolTip(
             "Copy this invoice row as tab-separated text for pasting into a spreadsheet or editor. "
