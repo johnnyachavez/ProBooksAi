@@ -5430,6 +5430,15 @@ def test_bank_import_tab_csv_import_file_dialog_caption() -> None:
     assert "CSV spreadsheets (*.csv);;All files (*.*)" in bit
 
 
+def test_bank_import_tab_imports_bank_database_not_parse_csv() -> None:
+    """Tab uses ``BankDatabase.import_csv``; low-level ``parse_csv`` stays in ``probooksai.bank_import`` only."""
+    bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
+    lines = [ln for ln in bit.splitlines() if ln.startswith("from probooksai.bank_import import")]
+    assert len(lines) == 1
+    assert "BankDatabase" in lines[0]
+    assert "parse_csv" not in lines[0]
+
+
 def test_bank_import_csv_export_paths_wires_bidirectional_folder_fallbacks() -> None:
     """Open dialog: import dir then export dir. Save path: export dir then import dir."""
     p = (_DESKTOP_APP_DIR / "bank_import_csv_export_paths.py").read_text(encoding="utf-8")
