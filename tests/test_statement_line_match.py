@@ -5,6 +5,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 from probooksai.statement_line_match import (
     STATUS_EXTRA,
     STATUS_MATCHED,
@@ -15,6 +17,7 @@ from probooksai.statement_line_match import (
     descriptions_match,
     mock_statement_lines_for_comparison,
     transaction_pair_matches,
+    write_line_match_comparison_csv,
 )
 
 
@@ -263,6 +266,31 @@ def test_mock_empty_register_returns_placeholder_line() -> None:
 
 def test_amounts_equal() -> None:
     assert amounts_equal(10.001, 10.0)
+
+
+def test_write_line_match_comparison_csv_requires_flag_alignment() -> None:
+    with pytest.raises(ValueError):
+        write_line_match_comparison_csv("nope.csv", [{"status": STATUS_MATCHED}], [])
+
+
+def test_write_line_match_comparison_csv_writes_header_and_rows(tmp_path) -> None:
+    rows = [
+        {
+            "status": STATUS_MATCHED,
+            "stmt_date": "2024-01-10",
+            "stmt_amount": -1.5,
+            "stmt_description": "A",
+            "register_id": 9,
+            "reg_date": "2024-01-10",
+            "reg_amount": -1.5,
+            "reg_description": "A",
+        }
+    ]
+    path = tmp_path / "out.csv"
+    write_line_match_comparison_csv(str(path), rows, [True])
+    text = path.read_text(encoding="utf-8")
+    assert "Reconciled" in text and "Stmt amount" in text
+    assert "yes" in text and STATUS_MATCHED in text and "9" in text
 
 
 def test_statement_line_match_panel_reconciled_buttons_follow_content_and_selection() -> None:

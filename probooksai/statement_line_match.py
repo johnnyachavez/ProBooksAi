@@ -4,6 +4,7 @@ Line-level statement vs register matching (AI reconciliation workflow).
 Compares *extracted* statement rows to *register* ``bank_transactions``-shaped dicts
 (description / ref_number / memo).
 Used by the Bank Import tab; does not modify the database or the register grid.
+``write_line_match_comparison_csv`` exports compare results plus UI reconciled flags.
 
 Amounts are compared after coercion so string values with ``$``/commas/whitespace (typical of
 extracts) still match SQLite float/int register values; accounting-style parentheses
@@ -20,6 +21,7 @@ statement line (including extracts that carry check or confirmation numbers).
 
 from __future__ import annotations
 
+import csv
 from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 from typing import Any, Optional
@@ -279,6 +281,49 @@ def compare_statement_to_register(
         )
 
     return out
+
+
+def write_line_match_comparison_csv(
+    path: str,
+    result_rows: list[dict[str, Any]],
+    reconciled_flags: list[bool],
+) -> None:
+    """
+    Write ``compare_statement_to_register`` output plus UI **Reconciled** checkboxes to UTF-8 CSV.
+
+    *reconciled_flags* must have the same length as *result_rows* (one bool per grid row).
+    """
+    if len(reconciled_flags) != len(result_rows):
+        raise ValueError("reconciled_flags must have the same length as result_rows")
+    headers = [
+        "Reconciled",
+        "Status",
+        "Stmt date",
+        "Stmt amount",
+        "Stmt description",
+        "Register date",
+        "Register amount",
+        "Register description",
+        "Register id",
+    ]
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(headers)
+        for rec, row in zip(reconciled_flags, result_rows, strict=True):
+            rid = row.get("register_id")
+            w.writerow(
+                [
+                    "yes" if rec else "no",
+                    row.get("status") or "",
+                    row.get("stmt_date") or "",
+                    row.get("stmt_amount"),
+                    row.get("stmt_description") or "",
+                    row.get("reg_date") or "",
+                    row.get("reg_amount"),
+                    row.get("reg_description") or "",
+                    "" if rid is None else rid,
+                ]
+            )
 
 
 def mock_statement_lines_for_comparison(register_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -5412,6 +5412,8 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
     assert "line_match_results_ready = Signal(int, list)" in sm
     assert "Run mock extract & compare" in sm
     assert "compare_statement_to_register" in sm
+    assert "write_line_match_comparison_csv" in sm
+    assert "Export comparison CSV" in sm
     assert "_refresh_match_summary_footer" in sm
     assert "_refresh_reconciled_action_states" in sm
     assert "selectionChanged.connect" in sm

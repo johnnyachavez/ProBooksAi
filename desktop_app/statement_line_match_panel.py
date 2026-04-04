@@ -2,6 +2,8 @@
 AI-assisted statement line reconciliation panel (Bank Import tab).
 
 Shows Matched / Missing / Extra with review checkboxes (UI state only; no DB writes).
+**Export comparison CSV** writes the current grid (including reconciled yes/no) via
+``probooksai.statement_line_match.write_line_match_comparison_csv``.
 **Right-click** the grid for **Keyboard shortcuts…** (when wired from Bank Import) and **Copy row** (TSV).
 """
 
@@ -17,6 +19,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
+    QFileDialog,
     QLabel,
     QMenu,
     QPushButton,
@@ -26,6 +29,11 @@ from PySide6.QtWidgets import (
 )
 
 from desktop_app.qt_combo_ids import coerce_combo_int_id
+from desktop_app.qt_mnemonic import (
+    escape_ampersand_for_qt,
+    message_box_critical_ok,
+    message_box_information_ok,
+)
 from desktop_app.table_clipboard import (
     CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
     copy_table_row_as_tsv,
@@ -34,6 +42,7 @@ from probooksai.statement_line_match import (
     STATUS_EXTRA,
     STATUS_MATCHED,
     STATUS_MISSING,
+    write_line_match_comparison_csv,
 )
 
 if TYPE_CHECKING:
@@ -137,6 +146,15 @@ class StatementLineMatchPanel(QGroupBox):
         self._btn_clear.setToolTip("Clear reconciled checkboxes in this table (UI only).")
         self._btn_clear.clicked.connect(self._clear_reviewed)
         btn_row.addWidget(self._btn_clear)
+
+        self._btn_export_csv = QPushButton("Export comparison CSV\u2026")
+        self._btn_export_csv.setToolTip(
+            "Save the current Matched / Missing / Extra rows to a UTF-8 CSV "
+            "(amounts as numbers; Reconciled column reflects checkboxes in this panel)."
+        )
+        self._btn_export_csv.clicked.connect(self._on_export_comparison_csv)
+        btn_row.addWidget(self._btn_export_csv)
+
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
@@ -201,8 +219,10 @@ class StatementLineMatchPanel(QGroupBox):
             self._btn_mark_sel.setEnabled(False)
             self._btn_mark_matched.setEnabled(False)
             self._btn_clear.setEnabled(False)
+            self._btn_export_csv.setEnabled(False)
             return
         self._btn_clear.setEnabled(True)
+        self._btn_export_csv.setEnabled(True)
         has_matched = any(
             (r.get("status") or "") == STATUS_MATCHED for r in self._rows
         )
@@ -336,6 +356,40 @@ class StatementLineMatchPanel(QGroupBox):
             )
         if menu.actions():
             menu.exec(self._table.viewport().mapToGlobal(pos))
+
+    def _on_export_comparison_csv(self) -> None:
+        if not self._rows:
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save line reconciliation comparison (CSV)",
+            "",
+            "CSV spreadsheets (*.csv);;All files (*.*)",
+        )
+        if not path:
+            return
+        flags: list[bool] = []
+        for r in range(len(self._rows)):
+            it = self._table.item(r, _COL_REVIEWED)
+            flags.append(
+                it is not None and it.checkState() == Qt.CheckState.Checked
+            )
+        try:
+            write_line_match_comparison_csv(path, self._rows, flags)
+        except OSError as exc:
+            message_box_critical_ok(
+                self,
+                "Export failed",
+                escape_ampersand_for_qt(str(exc)),
+                ok_tip="Close; check path, permissions, and disk space.",
+            )
+            return
+        message_box_information_ok(
+            self,
+            "Export complete",
+            f"Line comparison saved to:\n{escape_ampersand_for_qt(path)}",
+            ok_tip="Close; open the CSV from the path shown.",
+        )
 
     def _on_run_clicked(self) -> None:
         from probooksai.statement_line_match import (
