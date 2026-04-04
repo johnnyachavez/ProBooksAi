@@ -26,6 +26,7 @@ def test_strip_pasted_breaks_removes_cr_lf_tab() -> None:
     from probooksai.statement_line_match import _strip_pasted_breaks
 
     assert _strip_pasted_breaks("a\rb\nc\t") == "abc"
+    assert _strip_pasted_breaks("1\u200b234") == "1234"
     assert _strip_pasted_breaks("x") == "x"
 
 
@@ -47,6 +48,7 @@ def test_dates_within_days_strips_embedded_newlines_and_tabs() -> None:
     assert dates_within_days("01/15/\n2024", "2024-01-15", 2)
     assert dates_within_days("\t2024-06-01\t", "2024-06-01", 2)
     assert dates_within_days("2024-\n01-10", "2024-01-10", 2)
+    assert dates_within_days("2024-\u200b01-10", "2024-01-10", 2)
 
 
 def test_dates_within_days_day_first_when_month_gt_12_impossible() -> None:
@@ -151,6 +153,7 @@ def test_amounts_equal_coerces_currency_strings() -> None:
     assert amounts_equal("10.00\r\n", 10.0)
     assert amounts_equal("$1,\n234.50", 1234.5)
     assert amounts_equal("\t12.50\t", 12.5)
+    assert amounts_equal("1\u200b,234.50", 1234.5)
     assert not amounts_equal("n/a", 1.0)
     assert not amounts_equal(None, 1.0)
     assert not amounts_equal(True, 1.0)

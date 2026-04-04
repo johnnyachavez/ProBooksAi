@@ -7,7 +7,8 @@ Used by the Bank Import tab; does not modify the database or the register grid.
 ``write_line_match_comparison_csv`` exports compare results plus UI reconciled flags.
 
 Amounts are compared after coercion so string values with ``$``/commas/whitespace (typical of
-extracts) still match SQLite float/int register values; accounting-style parentheses
+extracts) still match SQLite float/int register values; zero-width space (``U+200B``) is stripped
+from amount and date strings along with pasted line breaks; accounting-style parentheses
 ``(12.34)`` denote negatives.
 
 ``txn_date`` strings accept ISO ``YYYY-MM-DD`` (including an ISO prefix before ``T``), US
@@ -34,8 +35,13 @@ STATUS_EXTRA = "Extra"
 
 
 def _strip_pasted_breaks(s: str) -> str:
-    """Remove CR/LF/tab characters common in copied spreadsheet or TSV cells."""
-    return s.replace("\r", "").replace("\n", "").replace("\t", "")
+    """Remove CR/LF/tab and zero-width space (``U+200B``) from pasted numeric/date cells."""
+    return (
+        s.replace("\r", "")
+        .replace("\n", "")
+        .replace("\t", "")
+        .replace("\u200b", "")
+    )
 
 
 def _normalize_paste_whitespace(s: str) -> str:
@@ -68,7 +74,7 @@ def _coerce_date_to_iso(raw: str) -> Optional[str]:
     Normalize a transaction date string to ``YYYY-MM-DD`` for comparison.
 
     Uses the first whitespace-separated token (so ``2024-01-15T12:00`` and ``1/15/2024 posted``
-    both work). Strips embedded ``\\r`` / ``\\n`` / tab so pasted cells still parse.
+    both work). Strips embedded ``\\r`` / ``\\n`` / tab / ``U+200B`` so pasted cells still parse.
     Returns ``None`` when no format matches.
     """
     s = _strip_pasted_breaks(str(raw or "").strip())
@@ -115,7 +121,8 @@ def _coerce_amount(raw: Any) -> Optional[float]:
 
     Accepts numeric types and strings with optional ``$``, commas, surrounding whitespace,
     Unicode minus ``U+2212`` (common in CSV/PDF extract text), and ignores embedded ``\\r`` /
-    ``\\n`` / tab (pasted spreadsheet or TSV cells). Returns ``None`` when missing or not parseable.
+    ``\\n`` / tab / zero-width space (pasted spreadsheet or TSV cells). Returns ``None`` when
+    missing or not parseable.
     """
     if raw is None:
         return None
