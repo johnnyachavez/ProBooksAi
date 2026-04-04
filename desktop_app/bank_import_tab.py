@@ -775,7 +775,8 @@ class BlankBankRegisterTable(QTableWidget):
             "Register-style preview: select an import batch to load its rows (debit/credit split); "
             "running balance fills when the batch has a beginning balance. "
             "Padding rows stay editable scratch space. Right-click for Keyboard shortcuts… "
-            "(including on empty area)."
+            "(including on empty area). "
+            "CSV exports in reconciliation below use UTF-8 BOM for Excel."
         )
 
     def reset_blank(self) -> None:
@@ -1321,6 +1322,7 @@ class BankImportTab(QWidget):
         tip = QLabel(
             "F5 refreshes accounts and import batches; if a batch is selected, it is re-opened when "
             "it still exists (preview + reconciliation refresh). "
+            "CSV exports (reconciliation report and line-compare) use UTF-8 BOM for Excel. "
             "Right-click the batch or register preview, or the Manage Bank Accounts table "
             "(even on empty area), for Keyboard shortcuts…. "
             "Help → Bank import shortcuts…; Register tab: Help → Bank register keyboard shortcuts…. "

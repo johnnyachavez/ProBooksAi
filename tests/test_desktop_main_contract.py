@@ -4690,6 +4690,23 @@ def test_extra_tabs_business_csv_export_tooltips_append_excel_bom_hint() -> None
     assert et.count("_CSV_EXCEL_ENCODING_TIP") == 17
 
 
+def test_extra_tabs_business_main_grids_mention_csv_utf8_bom_for_excel() -> None:
+    """Rules / AR / AP / Payroll primary grids echo toolbar CSV encoding (Excel BOM)."""
+    et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
+    needle = "CSV exports (toolbar) use UTF-8 BOM for Excel"
+    rules = et.split("class RulesTab", 1)[1].split("class ARTab", 1)[0]
+    ar = et.split("class ARTab", 1)[1].split("class APTab", 1)[0]
+    ap = et.split("class APTab", 1)[1].split("class PayrollTaxTab", 1)[0]
+    pay = et.split("class PayrollTaxTab", 1)[1].split("class TaxSettingsTab", 1)[0]
+    for label, chunk in (
+        ("RulesTab", rules),
+        ("ARTab", ar),
+        ("APTab", ap),
+        ("PayrollTaxTab", pay),
+    ):
+        assert needle in chunk, f"{label} grid tooltip should mention {needle!r}"
+
+
 def test_rules_tab_toolbar_buttons_have_tooltips() -> None:
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
     start = et.index("class RulesTab")
@@ -5341,7 +5358,9 @@ def test_bank_import_tab_f5_reload_shortcut_wired() -> None:
     assert 'QKeySequence("F5")' in text
     assert "activated.connect(self._reload_bank_import_view)" in text
     assert "F5 refreshes accounts and import batches" in text
-    assert "probooks.backup" in text.split("F5 refreshes accounts and import batches", 1)[1][:450]
+    _f5_tail = text.split("F5 refreshes accounts and import batches", 1)[1][:900]
+    assert "UTF-8 BOM for Excel" in _f5_tail
+    assert "probooks.backup" in _f5_tail
     assert "Manage Bank Accounts table" in text
     assert "Bank import shortcuts" in text
     assert "Keyboard shortcuts…" in text
@@ -5439,6 +5458,7 @@ def test_bank_import_blank_register_table_columns_empty_rows_and_pdf_dialog() ->
     assert "_HEADER_TIPS" in chunk
     assert "horizontalHeaderItem(col)" in chunk
     assert "Running total after each row when the batch has a beginning balance " in chunk
+    assert "CSV exports in reconciliation below use UTF-8 BOM for Excel" in chunk
     assert "AMOUNT_NEGATIVE" in chunk
     assert "bal_it.setForeground" in chunk
     assert chunk.count("setData(QTABLE_PLAIN_TEXT_ROLE,") >= 3

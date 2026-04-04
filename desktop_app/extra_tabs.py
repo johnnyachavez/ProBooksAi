@@ -384,7 +384,8 @@ class RulesTab(QWidget):
         self._tbl.customContextMenuRequested.connect(self._on_rules_context_menu)
         self._tbl.setToolTip(
             "Categorization rules. Right-click for Keyboard shortcuts… (empty area OK). "
-            "F5 refreshes when Business has focus."
+            "F5 refreshes when Business has focus. "
+            "CSV exports (toolbar) use UTF-8 BOM for Excel."
         )
         lay.addWidget(self._tbl)
         row = QHBoxLayout()
@@ -824,7 +825,8 @@ class ARTab(QWidget):
         self._tbl.customContextMenuRequested.connect(self._on_invoice_context_menu)
         self._tbl.setToolTip(
             "Open invoices (AR). Right-click for Keyboard shortcuts… (empty area OK). "
-            "F5 refreshes when Business has focus."
+            "F5 refreshes when Business has focus. "
+            "CSV exports (toolbar) use UTF-8 BOM for Excel."
         )
         lay.addWidget(self._tbl)
         self._ar_footer = QLabel()
@@ -1918,7 +1920,8 @@ class APTab(QWidget):
         self._tbl.customContextMenuRequested.connect(self._on_bill_context_menu)
         self._tbl.setToolTip(
             "Bills (AP). Right-click for Keyboard shortcuts… (empty area OK). "
-            "F5 refreshes when Business has focus."
+            "F5 refreshes when Business has focus. "
+            "CSV exports (toolbar) use UTF-8 BOM for Excel."
         )
         lay.addWidget(self._tbl)
         self._ap_footer = QLabel()
@@ -2862,7 +2865,8 @@ class PayrollTaxTab(QWidget):
         self._tbl.customContextMenuRequested.connect(self._on_payroll_run_context_menu)
         self._tbl.setToolTip(
             "Pay runs by employee. Right-click for Keyboard shortcuts… (empty area OK). "
-            "F5 refreshes when Business has focus."
+            "F5 refreshes when Business has focus. "
+            "CSV exports (toolbar) use UTF-8 BOM for Excel."
         )
         lay.addWidget(self._tbl)
         pt_grid_tip = QLabel(
