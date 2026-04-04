@@ -11,6 +11,9 @@ extracts) still match SQLite float/int register values; accounting-style parenth
 ``txn_date`` strings accept ISO ``YYYY-MM-DD`` (including an ISO prefix before ``T``), US
 ``MM/DD/YYYY`` and ``MM-DD-YYYY``, ``YYYY/MM/DD``, then ``DD/MM/YYYY`` / ``DD-MM-YYYY`` when
 US month/day order does not parse (e.g. day > 12).
+
+Description similarity uses **description** and **memo** together (normalized spacing) on each
+side so register payee text split across columns still matches a single statement line.
 """
 
 from __future__ import annotations
@@ -127,6 +130,17 @@ def descriptions_match(desc_stmt: str, desc_reg: str) -> bool:
     return SequenceMatcher(None, na, nb).ratio() >= 0.35
 
 
+def _combined_description_for_match(row: dict[str, Any]) -> str:
+    """Join non-empty *description* and *memo* (``bank_transactions`` shape) for fuzzy compare."""
+    parts: list[str] = []
+    for key in ("description", "memo"):
+        t = str(row.get(key) or "").strip()
+        if t:
+            parts.append(t)
+    joined = " ".join(parts).strip()
+    return " ".join(joined.split())
+
+
 def transaction_pair_matches(stmt: dict[str, Any], reg: dict[str, Any]) -> bool:
     """A row is a candidate MATCH when amount, date (±2d), and description rules pass."""
     d_stmt = str(stmt.get("txn_date") or "")
@@ -135,15 +149,15 @@ def transaction_pair_matches(stmt: dict[str, Any], reg: dict[str, Any]) -> bool:
         amounts_equal(stmt.get("amount"), reg.get("amount"))
         and dates_within_days(d_stmt, d_reg, 2)
         and descriptions_match(
-            str(stmt.get("description") or ""),
-            str(reg.get("description") or ""),
+            _combined_description_for_match(stmt),
+            _combined_description_for_match(reg),
         )
     )
 
 
 def _description_match_score(stmt: dict[str, Any], reg: dict[str, Any]) -> float:
-    na = (str(stmt.get("description") or "")).strip().lower()
-    nb = (str(reg.get("description") or "")).strip().lower()
+    na = _combined_description_for_match(stmt).lower()
+    nb = _combined_description_for_match(reg).lower()
     if not na and not nb:
         return 1.0
     if not na or not nb:
@@ -285,7 +299,7 @@ def mock_statement_lines_for_comparison(register_rows: list[dict[str, Any]]) -> 
         raw_amt = _coerce_amount(r.get("amount"))
         amt = round(raw_amt, 2) if raw_amt is not None else 0.0
         d = str(r.get("txn_date") or "").strip()[:10]
-        desc = str(r.get("description") or "").strip()
+        desc = _combined_description_for_match(r)
         if i % 7 == 0 and d:
             dt = _parse_iso_date(d)
             if dt is not None:

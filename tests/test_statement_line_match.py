@@ -45,6 +45,22 @@ def test_compare_stmt_mdy_date_matches_register_iso() -> None:
     assert out[0]["status"] == STATUS_MATCHED
 
 
+def test_compare_register_memo_helps_match_statement_payee() -> None:
+    stmt = [{"txn_date": "2024-01-10", "amount": -5.0, "description": "COFFEE"}]
+    reg = [
+        {
+            "id": 1,
+            "txn_date": "2024-01-10",
+            "amount": -5.0,
+            "description": "POS",
+            "memo": "COFFEE SHOP DOWNTOWN",
+        }
+    ]
+    out = compare_statement_to_register(stmt, reg)
+    assert len(out) == 1
+    assert out[0]["status"] == STATUS_MATCHED
+
+
 def test_descriptions_match_substring_and_fuzzy() -> None:
     assert descriptions_match("AMAZON MARKETPLACE", "amazon")
     assert descriptions_match("coffee", "COFFEE SHOP DOWNTOWN")
