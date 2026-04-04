@@ -544,6 +544,68 @@ def test_main_window_init_wires_databases_build_ui_and_refresh() -> None:
     assert chunk.count("self._update_company_status()") == 1
 
 
+def test_main_window_load_company_at_path_reopens_dbs_rebuilds_tabs_and_refreshes() -> None:
+    """``_load_company_at_path`` mirrors startup DB wiring, rebuilds bank tabs, clears/refreshes UI."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _load_company_at_path(self, resolved: str) -> None:")
+    end = text.index("    def _switch_company_database(", start)
+    chunk = text[start:end]
+    assert chunk.count("DocumentDatabase(") == 1
+    assert chunk.count("BankDatabase(") == 1
+    assert chunk.count("apply_extensions(") == 1
+    assert chunk.count("GLDatabase(") == 1
+    assert chunk.count("COADatabase(") == 1
+    assert chunk.count("seed_from_workbook()") == 1
+    assert chunk.count("load_coa()") == 1
+    assert chunk.count('QSettings().setValue("company_database_path", resolved)') == 1
+    assert chunk.count("self._rebuild_bank_related_tabs()") == 1
+    assert chunk.count("self._detail.clear_view()") == 1
+    assert chunk.count("self._detail.update_coa(self._coa_db.display_list())") == 1
+    assert chunk.count("self._refresh_inbox()") == 1
+    assert chunk.count("self._update_company_status()") == 1
+
+
+def test_main_window_rebuild_bank_related_tabs_replaces_seven_tabs_and_rewires_coa() -> None:
+    """``_rebuild_bank_related_tabs`` removes indices 7..1, inserts seven widgets, reconnects COA."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _rebuild_bank_related_tabs(self):")
+    end = text.index("    def _load_company_at_path(", start)
+    chunk = text[start:end]
+    assert chunk.count("for i in range(7, 0, -1):") == 1
+    assert chunk.count("self._tabs.removeTab(i)") == 1
+    assert chunk.count("self._tabs.insertTab(i, widget, title)") == 1
+    assert chunk.count("BankImportTab(") == 1
+    assert chunk.count("RegisterTab(") == 1
+    assert chunk.count("COATab(") == 1
+    assert chunk.count("ReportsTab(") == 1
+    assert chunk.count("JournalTab(") == 1
+    assert chunk.count("BusinessHub(") == 1
+    assert chunk.count("AuditTab(") == 1
+    assert chunk.count("self._coa_tab.coaChanged.connect(self._on_coa_changed)") == 1
+
+
+def test_main_window_switch_company_database_closes_and_loads_at_path() -> None:
+    """``_switch_company_database`` closes document/bank DBs then loads the resolved path once."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _switch_company_database(self, path: str, *, create_new: bool = False) -> None:")
+    end = text.index("    def _on_backup_company(self):", start)
+    chunk = text[start:end]
+    assert chunk.count("self._db.close()") == 1
+    assert chunk.count("self._bank_db.close()") == 1
+    assert chunk.count("self._load_company_at_path(resolved)") == 1
+
+
+def test_main_window_close_event_closes_database_connections() -> None:
+    """``closeEvent`` closes document and bank DBs before the base handler."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def closeEvent(self, event):")
+    end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
+    chunk = text[start:end]
+    assert chunk.count("self._db.close()") == 1
+    assert chunk.count("self._bank_db.close()") == 1
+    assert chunk.count("super().closeEvent(event)") == 1
+
+
 def test_main_window_drag_drop_handlers_follow_menu_bar() -> None:
     """``MainWindow`` implements window-level drag/drop after ``_build_menu_bar`` (``setAcceptDrops``)."""
     text = _MAIN.read_text(encoding="utf-8")
