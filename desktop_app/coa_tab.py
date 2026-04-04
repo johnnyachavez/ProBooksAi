@@ -439,7 +439,8 @@ class COATab(QWidget):
         menu.addSeparator()
         act_copy = menu.addAction("Copy row", partial(copy_table_row_as_tsv, self._table, row))
         act_copy.setToolTip(
-            "Copy this COA row as tab-separated text for pasting into a spreadsheet or editor."
+            "Copy this COA row as tab-separated text for pasting into a spreadsheet or editor. "
+            "Company .db safety: File → Backup / Restore (probooks.backup)."
         )
         act_history = menu.addAction("View change history…")
         act_history.setToolTip(

@@ -516,6 +516,9 @@ def test_coa_tab_toolbar_buttons_have_tooltips() -> None:
     assert "chart-of-accounts row" in text
     assert "box.setToolTip(" in text
     assert "hidden from COA pickers" in text
+    assert "act_keys.setToolTip" in text
+    assert "act_copy.setToolTip" in text
+    assert text.count("Company .db safety: File → Backup / Restore (probooks.backup).") >= 1
 
 
 def test_reports_tab_run_and_export_buttons_have_tooltips() -> None:
@@ -588,6 +591,9 @@ def test_audit_tab_export_and_apply_filter_buttons_have_tooltips() -> None:
     assert "lbl_audit_ent_id.setToolTip" in at
     assert "hint.setToolTip" in at
     assert "self._tbl.setToolTip(" in at
+    assert "act_keys.setToolTip" in at
+    assert "act_copy.setToolTip" in at
+    assert at.count("Company .db safety: File → Backup / Restore (probooks.backup).") >= 1
 
 
 def test_bank_import_manage_accounts_and_reconciliation_buttons_have_tooltips() -> None:

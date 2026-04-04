@@ -153,7 +153,8 @@ class AuditTab(QWidget):
         m.addSeparator()
         act_copy = m.addAction("Copy row", partial(copy_table_row_as_tsv, self._tbl, row))
         act_copy.setToolTip(
-            "Copy this audit log row as tab-separated text for pasting into a spreadsheet or editor."
+            "Copy this audit log row as tab-separated text for pasting into a spreadsheet or editor. "
+            "Company .db safety: File → Backup / Restore (probooks.backup)."
         )
         m.exec(self._tbl.viewport().mapToGlobal(pos))
 
