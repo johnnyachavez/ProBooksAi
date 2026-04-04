@@ -1782,6 +1782,17 @@ def test_desktop_main_detail_pane_categorisation_four_form_rows() -> None:
     assert chunk.count("cat_layout.addRow(") == 4
 
 
+def test_desktop_main_detail_pane_three_section_group_boxes() -> None:
+    """Detail layout uses **Preview**, **Extracted Fields**, and **Categorisation** group boxes before actions."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index('        preview_group = QGroupBox("Preview")')
+    end = text.index("        # -- Action buttons", start)
+    chunk = text[start:end]
+    assert chunk.count('QGroupBox("Preview")') == 1
+    assert chunk.count('QGroupBox("Extracted Fields")') == 1
+    assert chunk.count('QGroupBox("Categorisation Suggestions")') == 1
+
+
 def test_desktop_main_coa_select_placeholder_and_combo_refresh() -> None:
     """``_COA_SELECT_LABEL`` seeds the detail COA combo; ``update_coa`` rebuilds and restores selection."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -2064,6 +2075,24 @@ def test_main_window_inbox_widget_referenced_four_times() -> None:
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
     assert chunk.count("self._inbox.") == 4
+
+
+def test_main_window_detail_pane_thirteen_call_sites() -> None:
+    """``MainWindow`` wires the detail pane for signals, load, AI, approve flow, and COA refresh."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("class MainWindow(QMainWindow):")
+    end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
+    chunk = text[start:end]
+    assert chunk.count("self._detail.") == 13
+
+
+def test_main_window_coa_database_four_call_sites() -> None:
+    """``MainWindow`` seeds COA at startup/reload and reads ``display_list`` for the detail pane and COA tab."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("class MainWindow(QMainWindow):")
+    end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
+    chunk = text[start:end]
+    assert chunk.count("self._coa_db.") == 4
 
 
 def test_main_window_document_database_call_counts_for_intake_and_workflow() -> None:
