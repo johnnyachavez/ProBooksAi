@@ -1763,6 +1763,15 @@ def test_desktop_main_detail_pane_scroll_wraps_resizable_inner_widget() -> None:
     assert chunk.count("self.setWidgetResizable(True)") == 1
 
 
+def test_desktop_main_detail_pane_extracted_fields_ten_form_rows() -> None:
+    """**Extracted Fields** uses ten ``QFormLayout`` rows (vendor through notes)."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("        form = QFormLayout(fields_group)")
+    end = text.index("        layout.addWidget(fields_group)", start)
+    chunk = text[start:end]
+    assert chunk.count("form.addRow(") == 10
+
+
 def test_desktop_main_coa_select_placeholder_and_combo_refresh() -> None:
     """``_COA_SELECT_LABEL`` seeds the detail COA combo; ``update_coa`` rebuilds and restores selection."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -2036,6 +2045,21 @@ def test_main_window_refresh_inbox_eight_call_sites() -> None:
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
     assert chunk.count("self._refresh_inbox()") == 8
+
+
+def test_main_window_document_database_call_counts_for_intake_and_workflow() -> None:
+    """``MainWindow`` uses ``DocumentDatabase`` for listing, fetch, import, AI save, approve, and six status updates."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("class MainWindow(QMainWindow):")
+    end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
+    chunk = text[start:end]
+    assert chunk.count("self._db.list_documents()") == 1
+    assert chunk.count("self._db.get_document(doc_id)") == 3
+    assert chunk.count("self._db.add_document(path, mime, store=True)") == 1
+    assert chunk.count("self._db.save_extraction(doc_id, result)") == 1
+    assert chunk.count("self._db.save_approved(doc_id, values)") == 1
+    assert chunk.count("self._db.set_status(doc_id,") == 6
+    assert chunk.count("application_version()") == 2
 
 
 def test_main_window_custom_qmessagebox_yes_no_defaults_to_no() -> None:
