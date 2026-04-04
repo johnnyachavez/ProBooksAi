@@ -665,7 +665,8 @@ class RegisterTab(QWidget):
         )
         act_keys.setToolTip(
             "Same summary as Help → Bank register keyboard shortcuts… "
-            "(F5, export, post, cleared chords, File → Backup / probooks.backup)."
+            "(F5, export, post, cleared chords). "
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
             menu.exec(self._table.viewport().mapToGlobal(pos))
@@ -1516,7 +1517,8 @@ class RegisterTab(QWidget):
                 lambda: show_register_keyboard_shortcuts_dialog(self),
             )
             act_keys.setToolTip(
-                "Same summary as Help → Bank register keyboard shortcuts… (grid and link dialog)."
+                "Same summary as Help → Bank register keyboard shortcuts… (grid and link dialog). "
+                + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
             )
             if not idx.isValid():
                 m.exec(sug_list.viewport().mapToGlobal(pos))

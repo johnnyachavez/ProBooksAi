@@ -229,7 +229,8 @@ class InboxWidget(QTableWidget):
         )
         act_keys.setToolTip(
             "Same summary as Help → Document intake shortcuts… "
-            "(F5, Ctrl+O, File → Backup/Restore via probooks.backup, View chords, links to other Help topics)."
+            "(F5, Ctrl+O, View chords, links to other Help topics). "
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
             m.exec(self.viewport().mapToGlobal(pos))

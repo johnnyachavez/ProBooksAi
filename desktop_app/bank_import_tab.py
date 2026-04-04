@@ -203,7 +203,8 @@ class ManageAccountsDialog(QDialog):
         )
         act_keys.setToolTip(
             "Same summary as Help → Bank import shortcuts… "
-            "(F5, batches, transactions, Manage Accounts, File → Backup / probooks.backup)."
+            "(F5, batches, transactions, Manage Accounts). "
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
             m.exec(self._table.viewport().mapToGlobal(pos))
@@ -1124,7 +1125,8 @@ class BankImportTab(QWidget):
         )
         act_keys.setToolTip(
             "Same summary as Help → Bank import shortcuts… "
-            "(F5, batches, transactions, reconciliation, File → Backup / probooks.backup)."
+            "(F5, batches, transactions, reconciliation). "
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
             menu.exec(self._txn_table.viewport().mapToGlobal(pos))
@@ -1180,7 +1182,8 @@ class BankImportTab(QWidget):
         )
         act_keys.setToolTip(
             "Same summary as Help → Bank import shortcuts… "
-            "(F5, batches, transactions, reconciliation, File → Backup / probooks.backup)."
+            "(F5, batches, transactions, reconciliation). "
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
             menu.exec(self._batch_table.viewport().mapToGlobal(pos))

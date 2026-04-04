@@ -165,7 +165,8 @@ def _attach_table_copy_row_menu(tbl: QTableWidget, menu_parent: QWidget) -> None
             lambda: show_business_keyboard_shortcuts_dialog(menu_parent),
         )
         act_keys.setToolTip(
-            "Same summary as Help → Business shortcuts… (F5, Tax % Ctrl+S, sub-tab grids)."
+            "Same summary as Help → Business shortcuts… (F5, Tax % Ctrl+S, sub-tab grids). "
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
             m.exec(tbl.viewport().mapToGlobal(pos))
@@ -486,7 +487,8 @@ class RulesTab(QWidget):
             lambda: show_business_keyboard_shortcuts_dialog(self),
         )
         act_keys.setToolTip(
-            "Same summary as Help → Business shortcuts… (F5, Rules grid, AR/AP/Payroll)."
+            "Same summary as Help → Business shortcuts… (F5, Rules grid, AR/AP/Payroll). "
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
             m.exec(self._tbl.viewport().mapToGlobal(pos))
@@ -898,7 +900,8 @@ class ARTab(QWidget):
             lambda: show_business_keyboard_shortcuts_dialog(self),
         )
         act_keys.setToolTip(
-            "Same summary as Help → Business shortcuts… (F5, Invoices AR, payments, PDF)."
+            "Same summary as Help → Business shortcuts… (F5, Invoices AR, payments, PDF). "
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
             m.exec(self._tbl.viewport().mapToGlobal(pos))
@@ -1970,7 +1973,8 @@ class APTab(QWidget):
             lambda: show_business_keyboard_shortcuts_dialog(self),
         )
         act_keys.setToolTip(
-            "Same summary as Help → Business shortcuts… (F5, Bills AP, attachments, payments)."
+            "Same summary as Help → Business shortcuts… (F5, Bills AP, attachments, payments). "
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
             m.exec(self._tbl.viewport().mapToGlobal(pos))
@@ -3075,7 +3079,8 @@ class PayrollTaxTab(QWidget):
             lambda: show_business_keyboard_shortcuts_dialog(self),
         )
         act_keys.setToolTip(
-            "Same summary as Help → Business shortcuts… (F5, Payroll grid, tax lines, GL post)."
+            "Same summary as Help → Business shortcuts… (F5, Payroll grid, tax lines, GL post). "
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
             m.exec(self._tbl.viewport().mapToGlobal(pos))

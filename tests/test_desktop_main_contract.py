@@ -344,8 +344,7 @@ def test_inbox_widget_context_menu_includes_keyboard_shortcuts_help() -> None:
     chunk = text[start:end]
     assert "act_keys.setToolTip" in chunk
     assert "act_copy.setToolTip" in chunk
-    assert "probooks.backup" in chunk
-    assert "+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX" in chunk
+    assert chunk.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
 
 
 def test_inbox_widget_table_has_hover_tooltip() -> None:
@@ -1055,7 +1054,7 @@ def test_manage_accounts_dialog_accounts_table_opens_bank_import_shortcuts_help(
     assert "Permanently removes this bank account" in bit
     ak = bit.index("def _on_accounts_table_context_menu")
     ak2 = bit.index("act_keys.setToolTip(", ak)
-    assert "probooks.backup" in bit[ak2 : ak2 + 220]
+    assert "+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX" in bit[ak2 : ak2 + 220]
 
 
 def test_grids_context_menus_use_qaction_hover_tooltips() -> None:
@@ -1065,7 +1064,7 @@ def test_grids_context_menus_use_qaction_hover_tooltips() -> None:
     txn_e = bit.index("def _open_import_txn_attachment", txn_s)
     txn_chunk = bit[txn_s:txn_e]
     assert "act_keys.setToolTip" in txn_chunk
-    assert "probooks.backup" in txn_chunk
+    assert txn_chunk.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
     assert "act_att.setToolTip" in txn_chunk
     assert "act_history.setToolTip" in txn_chunk
     acc_s = bit.index("def _on_accounts_table_context_menu")
@@ -1075,7 +1074,7 @@ def test_grids_context_menus_use_qaction_hover_tooltips() -> None:
     reg = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
     rs = reg.index("def _on_register_context_menu")
     re = reg.index("def _open_register_attachment", rs)
-    assert "probooks.backup" in reg[rs:re]
+    assert reg[rs:re].count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
     assert "act_clr.setToolTip" in reg[rs:re]
     assert "act_history.setToolTip" in reg[rs:re]
 
@@ -1135,7 +1134,7 @@ def test_bank_import_transactions_table_widget_has_hover_tooltip() -> None:
 
 def test_bank_import_context_menu_copy_row_tooltips_mention_backup_safety() -> None:
     bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
-    assert bit.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 3
+    assert bit.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 6
 
 
 def test_extra_tabs_business_main_grids_have_hover_tooltips() -> None:
@@ -1145,7 +1144,7 @@ def test_extra_tabs_business_main_grids_have_hover_tooltips() -> None:
 
 def test_extra_tabs_business_copy_row_tooltips_mention_backup_safety() -> None:
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
-    assert et.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 6
+    assert et.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 11
 
 
 def test_register_tab_persists_header_state_via_qsettings() -> None:
@@ -1194,7 +1193,7 @@ def test_register_tab_tools_row_and_link_dialog_buttons_have_tooltips() -> None:
     assert "Set or clear a transfer link" in text
     assert "Split one unposted bank transaction" in text
     assert "Link this bank row to AR" in text
-    assert text.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
+    assert text.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 4
 
 
 def test_register_keyboard_shortcuts_help_text_matches_wired_chords() -> None:
