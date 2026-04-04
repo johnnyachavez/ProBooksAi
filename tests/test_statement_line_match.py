@@ -144,6 +144,24 @@ def test_compare_missing_statement_only() -> None:
     assert out[0]["status"] == STATUS_MISSING
 
 
+def test_compare_missing_includes_combined_stmt_description() -> None:
+    stmt = [
+        {
+            "txn_date": "2024-02-01",
+            "amount": -10.0,
+            "description": "X",
+            "ref_number": "R1",
+            "memo": "Y",
+        }
+    ]
+    reg: list = []
+    out = compare_statement_to_register(stmt, reg)
+    assert len(out) == 1
+    assert out[0]["status"] == STATUS_MISSING
+    assert out[0]["stmt_description"] == "X R1 Y"
+    assert out[0]["reg_description"] == ""
+
+
 def test_compare_extra_register_only() -> None:
     stmt: list = []
     reg = [{"id": 9, "txn_date": "2024-03-01", "amount": -5.0, "description": "Only in books"}]
@@ -151,6 +169,51 @@ def test_compare_extra_register_only() -> None:
     assert len(out) == 1
     assert out[0]["status"] == STATUS_EXTRA
     assert out[0]["register_id"] == 9
+
+
+def test_compare_output_stmt_and_reg_description_use_combined_match_text() -> None:
+    stmt = [
+        {
+            "txn_date": "2024-01-10",
+            "amount": -5.0,
+            "description": "CHK",
+            "ref_number": "1001",
+            "memo": "WATER CO",
+        }
+    ]
+    reg = [
+        {
+            "id": 1,
+            "txn_date": "2024-01-10",
+            "amount": -5.0,
+            "description": "CHK",
+            "ref_number": "1001",
+            "memo": "WATER CO",
+        }
+    ]
+    out = compare_statement_to_register(stmt, reg)
+    assert len(out) == 1
+    assert out[0]["status"] == STATUS_MATCHED
+    assert out[0]["stmt_description"] == "CHK 1001 WATER CO"
+    assert out[0]["reg_description"] == "CHK 1001 WATER CO"
+
+
+def test_compare_output_extra_reg_description_includes_ref_and_memo() -> None:
+    stmt: list = []
+    reg = [
+        {
+            "id": 7,
+            "txn_date": "2024-04-01",
+            "amount": -3.0,
+            "description": "D",
+            "ref_number": "R9",
+            "memo": "M",
+        }
+    ]
+    out = compare_statement_to_register(stmt, reg)
+    assert len(out) == 1
+    assert out[0]["status"] == STATUS_EXTRA
+    assert out[0]["reg_description"] == "D R9 M"
 
 
 def test_compare_mixed_missing_matched_extra() -> None:

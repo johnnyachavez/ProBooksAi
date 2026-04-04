@@ -188,6 +188,10 @@ def compare_statement_to_register(
     Returns dicts with keys:
       status, stmt_date, stmt_amount, stmt_description,
       register_id, reg_date, reg_amount, reg_description
+
+    ``stmt_description`` / ``reg_description`` use the same join as matching
+    (non-empty *description*, *ref_number*, *memo*, normalized spacing) so the Bank Import
+    reconciliation grid shows the full text that was compared.
     """
     stmt_list = [dict(r) for r in statement_rows]
     reg_list = [dict(r) for r in register_rows]
@@ -232,11 +236,11 @@ def compare_statement_to_register(
                     "status": STATUS_MATCHED,
                     "stmt_date": str(stmt.get("txn_date") or ""),
                     "stmt_amount": _row_amount_rounded(stmt),
-                    "stmt_description": str(stmt.get("description") or ""),
+                    "stmt_description": _combined_description_for_match(stmt),
                     "register_id": reg_id,
                     "reg_date": str(reg.get("txn_date") or ""),
                     "reg_amount": _row_amount_rounded(reg),
-                    "reg_description": str(reg.get("description") or ""),
+                    "reg_description": _combined_description_for_match(reg),
                 }
             )
         else:
@@ -245,7 +249,7 @@ def compare_statement_to_register(
                     "status": STATUS_MISSING,
                     "stmt_date": str(stmt.get("txn_date") or ""),
                     "stmt_amount": _row_amount_rounded(stmt),
-                    "stmt_description": str(stmt.get("description") or ""),
+                    "stmt_description": _combined_description_for_match(stmt),
                     "register_id": None,
                     "reg_date": "",
                     "reg_amount": 0.0,
@@ -270,7 +274,7 @@ def compare_statement_to_register(
                 "register_id": reg_id,
                 "reg_date": str(reg.get("txn_date") or ""),
                 "reg_amount": _row_amount_rounded(reg),
-                "reg_description": str(reg.get("description") or ""),
+                "reg_description": _combined_description_for_match(reg),
             }
         )
 
