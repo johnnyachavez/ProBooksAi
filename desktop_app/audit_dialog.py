@@ -39,7 +39,8 @@ def _audit_history_shortcuts_help(parent: QWidget) -> None:
     message_box_information_ok(
         parent,
         "Change history",
-        "Copy row — copies the selected row as tab-separated text.\n\n"
+        "Copy row — copies the selected row as tab-separated text. "
+        "Company .db safety: File → Backup / Restore (probooks.backup).\n\n"
         "For main-window shortcuts (F5, Help menus), use Help on the main window.",
         ok_tip="Close this shortcuts summary.",
     )
@@ -55,7 +56,8 @@ def _audit_history_table_context_menu(
         lambda: _audit_history_shortcuts_help(parent_widget),
     )
     act_keys.setToolTip(
-        "This dialog’s shortcuts (Copy row); use the main window Help menu for global chords."
+        "This dialog’s shortcuts (Copy row, with .db backup reminder in the summary); "
+        "use the main window Help menu for global chords."
     )
     if not idx.isValid():
         m.exec(table.viewport().mapToGlobal(pos))

@@ -847,6 +847,9 @@ def test_audit_dialog_shortcuts_help_uses_ok_button_tooltip() -> None:
     assert "dlg.setToolTip(" in ad
     assert "Field-level audit trail" in ad
     assert "tip_qdialog_button_box(box, close=" in ad
+    h0 = ad.index("def _audit_history_shortcuts_help")
+    h1 = ad.index("\n\ndef _audit_history_table_context_menu", h0)
+    assert "Company .db safety: File → Backup / Restore (probooks.backup)." in ad[h0:h1]
 
 
 def test_desktop_app_avoids_static_qmessagebox_information_warning_critical() -> None:
