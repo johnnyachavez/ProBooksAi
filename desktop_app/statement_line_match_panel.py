@@ -268,14 +268,28 @@ class StatementLineMatchPanel(QGroupBox):
 
         self._table.blockSignals(False)
         self._populating = False
-        self._summary.setText(
-            f"Summary: {matched} Matched, {missing} Missing, {extra} Extra "
-            f"({len(rows)} rows). Reconciled column is UI-only (no register changes)."
+        self._refresh_match_summary_footer(matched, missing, extra)
+
+    def _refresh_match_summary_footer(
+        self,
+        matched: int,
+        missing: int,
+        extra: int,
+    ) -> None:
+        n = len(self._rows)
+        base = (
+            f"Summary: {matched} Matched, {missing} Missing, {extra} Extra ({n} rows)."
         )
+        nrev = self.reviewed_count()
+        if nrev:
+            base += f" {nrev} row(s) marked reconciled here (UI only)."
+        base += " Reconciled column does not change register or import data."
+        self._summary.setText(base)
 
     def _on_item_changed(self, item: QTableWidgetItem) -> None:
         if self._populating or item.column() != _COL_REVIEWED:
             return
+        self._sync_summary_after_review_edit()
 
     def _on_table_context_menu(self, pos) -> None:
         menu = QMenu(self)
@@ -335,6 +349,7 @@ class StatementLineMatchPanel(QGroupBox):
                 it.setCheckState(Qt.CheckState.Checked)
         self._table.blockSignals(False)
         self._populating = False
+        self._sync_summary_after_review_edit()
 
     def _mark_reviewed_all_matched(self) -> None:
         self._populating = True
@@ -348,6 +363,7 @@ class StatementLineMatchPanel(QGroupBox):
                 it.setCheckState(Qt.CheckState.Checked)
         self._table.blockSignals(False)
         self._populating = False
+        self._sync_summary_after_review_edit()
 
     def _clear_reviewed(self) -> None:
         self._populating = True
@@ -358,6 +374,21 @@ class StatementLineMatchPanel(QGroupBox):
                 it.setCheckState(Qt.CheckState.Unchecked)
         self._table.blockSignals(False)
         self._populating = False
+        self._sync_summary_after_review_edit()
+
+    def _sync_summary_after_review_edit(self) -> None:
+        if not self._rows:
+            return
+        matched = sum(
+            1 for r in self._rows if (r.get("status") or "") == STATUS_MATCHED
+        )
+        missing = sum(
+            1 for r in self._rows if (r.get("status") or "") == STATUS_MISSING
+        )
+        extra = sum(
+            1 for r in self._rows if (r.get("status") or "") == STATUS_EXTRA
+        )
+        self._refresh_match_summary_footer(matched, missing, extra)
 
     def reviewed_count(self) -> int:
         n = 0

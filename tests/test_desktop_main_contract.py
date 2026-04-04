@@ -5412,6 +5412,7 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
     assert "line_match_results_ready = Signal(int, list)" in sm
     assert "Run mock extract & compare" in sm
     assert "compare_statement_to_register" in sm
+    assert "_refresh_match_summary_footer" in sm
     assert "STATUS_MATCHED" in sm
     assert "Bank register" in sm
     assert "status bar" in sm.lower()

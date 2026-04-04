@@ -297,10 +297,13 @@ def test_statement_line_match_panel_reviewed_flags_need_qt() -> None:
         )
         assert panel.row_status(0) == STATUS_MATCHED
         assert panel.reviewed_count() == 0
+        assert "marked reconciled here" not in panel._summary.text()
         panel._mark_reviewed_all_matched()
         assert panel.reviewed_count() == 1
+        assert "1 row(s) marked reconciled here" in panel._summary.text()
         panel._clear_reviewed()
         assert panel.reviewed_count() == 0
+        assert "marked reconciled here" not in panel._summary.text()
     finally:
         db.close()
         if db_path.exists():
