@@ -605,29 +605,36 @@ def test_main_tab_widgets_have_root_hover_tooltips() -> None:
     assert "def _build_ui(self):" in bchunk
     assert "self.setToolTip(" in bchunk
     assert "Bank CSV/PDF import and reconciliation" in bchunk
+    assert "exported CSV uses UTF-8 BOM for Excel" in bchunk
     assert "left.setToolTip(" in bchunk
     assert "Import batches column" in bchunk
 
     rep = (_DESKTOP_APP_DIR / "reports_tab.py").read_text(encoding="utf-8")
     assert "Financial reports: trial balance" in rep
+    assert "with optional date range and CSV export " in rep
+    assert '(UTF-8 BOM for Excel) "' in rep
 
     jt = (_DESKTOP_APP_DIR / "journal_tab.py").read_text(encoding="utf-8")
     assert "General journal: browse entries" in jt
+    assert "export CSV (UTF-8 BOM for Excel;" in jt
 
     at = (_DESKTOP_APP_DIR / "audit_tab.py").read_text(encoding="utf-8")
     assert "Audit trail: field-level changes" in at
+    assert "export CSV (UTF-8 BOM for Excel;" in at
 
     coa = (_DESKTOP_APP_DIR / "coa_tab.py").read_text(encoding="utf-8")
     assert "Chart of accounts: add, edit" in coa
 
     reg = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
     assert "Bank register for one account:" in reg
+    assert "and export CSV (UTF-8 BOM for Excel)" in reg
 
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
     assert "class BusinessHub" in et
     hub = et.split("class BusinessHub", 1)[1].split("def _refresh_current_subtab", 1)[0]
     assert "self.setToolTip(" in hub
     assert "Business hub: Rules, AR invoices" in hub
+    assert "CSV exports use UTF-8 BOM for Excel" in hub
     assert "self._business_subtabs.setToolTip(" in hub
     assert "Switch between Rules, Invoices (AR)" in hub
     rules = et.split("class RulesTab", 1)[1].split("class ARTab", 1)[0]

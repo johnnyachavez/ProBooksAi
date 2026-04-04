@@ -1100,7 +1100,8 @@ class BankImportTab(QWidget):
     def _build_ui(self):
         self.setToolTip(
             "Bank CSV/PDF import and reconciliation: choose an account, import batches, transactions, "
-            "and match statement balances (F5 refreshes when this tab has focus). "
+            "and match statement balances; exported CSV uses UTF-8 BOM for Excel "
+            "(F5 refreshes when this tab has focus). "
             "Same company SQLite database as other main tabs; File → Backup / Restore (probooks.backup)."
         )
         outer = QVBoxLayout(self)

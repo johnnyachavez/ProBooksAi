@@ -3690,6 +3690,7 @@ class BusinessHub(QWidget):
         super().__init__(parent)
         self.setToolTip(
             "Business hub: Rules, AR invoices, AP bills, Payroll, and default Tax % (F5 refreshes the active list sub-tab). "
+            "CSV exports use UTF-8 BOM for Excel. "
             "Same company SQLite database as other main tabs; File → Backup / Restore (probooks.backup)."
         )
         self._business_subtabs = QTabWidget()

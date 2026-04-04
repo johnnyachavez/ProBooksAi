@@ -385,7 +385,8 @@ class RegisterTab(QWidget):
 
     def _build_ui(self):
         self.setToolTip(
-            "Bank register for one account: categorize, splits, transfer links, cleared flags, attachments, and post to GL "
+            "Bank register for one account: categorize, splits, transfer links, cleared flags, attachments, post to GL, "
+            "and export CSV (UTF-8 BOM for Excel) "
             "(F5 refreshes when Register has focus). "
             "Use Add transaction… to type new lines into the database (manual-entry batch). "
             "Same company SQLite database as other main tabs; File → Backup / Restore (probooks.backup)."

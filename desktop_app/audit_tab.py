@@ -51,7 +51,8 @@ class AuditTab(QWidget):
         super().__init__(parent)
         self._conn = conn
         self.setToolTip(
-            "Audit trail: field-level changes with optional entity type and id filter; export CSV (F5 refreshes when Audit has focus). "
+            "Audit trail: field-level changes with optional entity type and id filter; export CSV (UTF-8 BOM for Excel; "
+            "F5 refreshes when Audit has focus). "
             "Same company SQLite database as other main tabs; File → Backup / Restore (probooks.backup)."
         )
         lay = QVBoxLayout(self)
