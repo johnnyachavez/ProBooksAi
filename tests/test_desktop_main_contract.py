@@ -766,6 +766,16 @@ def test_main_window_on_import_and_files_dropped_delegate_to_import_files() -> N
     assert drop_chunk.count("self._import_files(paths)") == 1
 
 
+def test_main_window_on_selection_changed_loads_detail_when_row_selected() -> None:
+    """Inbox selection changes load the active document into the detail pane."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_selection_changed(self):")
+    end = text.index("    def _on_run_ai(self, doc_id: int):", start)
+    chunk = text[start:end]
+    assert chunk.count("self._inbox.selected_doc_id()") == 1
+    assert chunk.count("self._detail.load_document(doc_id, self._db)") == 1
+
+
 def test_main_window_import_files_filters_extensions_adds_documents_refreshes_inbox() -> None:
     """``_import_files`` skips unknown extensions, stores accepted types, then refreshes the inbox."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -1049,6 +1059,50 @@ def test_inbox_widget_context_menu_includes_keyboard_shortcuts_help() -> None:
     assert "act_keys.setToolTip" in chunk
     assert "act_copy.setToolTip" in chunk
     assert chunk.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
+
+
+def test_desktop_main_show_intake_shortcuts_dialog_delegates_to_message_box() -> None:
+    """``show_document_intake_keyboard_shortcuts_dialog`` is a thin ``message_box_information_ok`` wrapper."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index(
+        "def show_document_intake_keyboard_shortcuts_dialog(parent: QWidget) -> None:"
+    )
+    end = text.index("\n\n# Accepted MIME types / file extensions", start)
+    chunk = text[start:end]
+    assert chunk.count("message_box_information_ok(") == 1
+    assert chunk.count('"Document intake shortcuts"') == 1
+    assert chunk.count("_document_intake_keyboard_shortcuts_help_text()") == 1
+    assert "Company .db: File → Backup / Restore (probooks.backup)." in chunk
+
+
+def test_desktop_main_ai_worker_runs_extractor_and_categorizer_in_run() -> None:
+    """``AIWorker`` loads ai modules in ``run``, emits ``finished`` or ``error``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("class AIWorker(QThread):")
+    end = text.index("class InboxWidget(QTableWidget):", start)
+    chunk = text[start:end]
+    assert "finished = Signal(object, object)" in chunk
+    assert "error    = Signal(str)" in chunk
+    assert chunk.count("from ai.extractor import extract_document") == 1
+    assert chunk.count("from ai.categorizer import suggest_categories") == 1
+    assert chunk.count("extract_document(self._path, self._mimetype)") == 1
+    assert chunk.count("suggest_categories(result, self._coa)") == 1
+    assert chunk.count("self.finished.emit(result, suggestions)") == 1
+    assert chunk.count("self.error.emit") == 2
+
+
+def test_desktop_main_inbox_widget_drop_emits_paths_and_populate_sets_doc_ids() -> None:
+    """``InboxWidget`` emits local paths on drop and stores document ids on items for selection."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("class InboxWidget(QTableWidget):")
+    end = text.index("class DetailPane(QScrollArea):", start)
+    chunk = text[start:end]
+    assert chunk.count("filesDropped = Signal(list)") == 1
+    assert chunk.count("self.filesDropped.emit(paths)") == 1
+    assert chunk.count("hasUrls()") >= 2
+    assert chunk.count("IntSortTableItem(str(did), did)") == 1
+    assert chunk.count("Qt.ItemDataRole.UserRole") >= 2
+    assert chunk.count("def selected_doc_id(self) -> int | None:") == 1
 
 
 def test_inbox_widget_table_has_hover_tooltip() -> None:
