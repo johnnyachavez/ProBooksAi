@@ -3,6 +3,10 @@ Line-level statement vs register matching (AI reconciliation workflow).
 
 Compares *extracted* statement rows to *register* ``bank_transactions``-shaped dicts.
 Used by the Bank Import tab; does not modify the database or the register grid.
+
+Amounts are compared after coercion so string values with ``$``/commas/whitespace (typical of
+extracts) still match SQLite float/int register values; accounting-style parentheses
+``(12.34)`` denote negatives.
 """
 
 from __future__ import annotations
@@ -34,8 +38,37 @@ def dates_within_days(d1: str, d2: str, days: int = 2) -> bool:
     return abs((a - b).days) <= days
 
 
-def amounts_equal(a: float, b: float) -> bool:
-    return round(float(a), 2) == round(float(b), 2)
+def _coerce_amount(raw: Any) -> Optional[float]:
+    """
+    Parse a statement or register *amount* for comparison.
+
+    Accepts numeric types and strings with optional ``$``, commas, and surrounding whitespace
+    (common in CSV/PDF extract text). Returns ``None`` when missing or not parseable.
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    s = str(raw).strip()
+    if not s:
+        return None
+    if s.startswith("(") and s.endswith(")"):
+        s = f"-{s[1:-1].strip()}"
+    s = s.replace("$", "").replace("\u00a0", "").replace(",", "").strip()
+    try:
+        return float(s)
+    except (TypeError, ValueError):
+        return None
+
+
+def amounts_equal(a: Any, b: Any) -> bool:
+    """True when both sides coerce to the same cent-rounded float."""
+    fa, fb = _coerce_amount(a), _coerce_amount(b)
+    if fa is None or fb is None:
+        return False
+    return round(fa, 2) == round(fb, 2)
 
 
 def descriptions_match(desc_stmt: str, desc_reg: str) -> bool:
@@ -56,7 +89,7 @@ def descriptions_match(desc_stmt: str, desc_reg: str) -> bool:
 def transaction_pair_matches(stmt: dict[str, Any], reg: dict[str, Any]) -> bool:
     """A row is a candidate MATCH when amount, date (±2d), and description rules pass."""
     return (
-        amounts_equal(stmt["amount"], reg["amount"])
+        amounts_equal(stmt.get("amount"), reg.get("amount"))
         and dates_within_days(str(stmt.get("txn_date") or ""), str(reg.get("txn_date") or ""), 2)
         and descriptions_match(
             str(stmt.get("description") or ""),
@@ -117,6 +150,12 @@ def compare_statement_to_register(
                 best_j = j
         return best_j
 
+    def _row_amount_rounded(row: dict[str, Any]) -> float:
+        v = _coerce_amount(row.get("amount"))
+        if v is not None:
+            return round(v, 2)
+        return 0.0
+
     for stmt in stmt_list:
         j = pick_best_reg(stmt)
         if j is not None:
@@ -131,11 +170,11 @@ def compare_statement_to_register(
                 {
                     "status": STATUS_MATCHED,
                     "stmt_date": str(stmt.get("txn_date") or ""),
-                    "stmt_amount": round(float(stmt["amount"]), 2),
+                    "stmt_amount": _row_amount_rounded(stmt),
                     "stmt_description": str(stmt.get("description") or ""),
                     "register_id": reg_id,
                     "reg_date": str(reg.get("txn_date") or ""),
-                    "reg_amount": round(float(reg.get("amount") or 0.0), 2),
+                    "reg_amount": _row_amount_rounded(reg),
                     "reg_description": str(reg.get("description") or ""),
                 }
             )
@@ -144,7 +183,7 @@ def compare_statement_to_register(
                 {
                     "status": STATUS_MISSING,
                     "stmt_date": str(stmt.get("txn_date") or ""),
-                    "stmt_amount": round(float(stmt["amount"]), 2),
+                    "stmt_amount": _row_amount_rounded(stmt),
                     "stmt_description": str(stmt.get("description") or ""),
                     "register_id": None,
                     "reg_date": "",
@@ -169,7 +208,7 @@ def compare_statement_to_register(
                 "stmt_description": "",
                 "register_id": reg_id,
                 "reg_date": str(reg.get("txn_date") or ""),
-                "reg_amount": round(float(reg.get("amount") or 0.0), 2),
+                "reg_amount": _row_amount_rounded(reg),
                 "reg_description": str(reg.get("description") or ""),
             }
         )
@@ -198,7 +237,8 @@ def mock_statement_lines_for_comparison(register_rows: list[dict[str, Any]]) -> 
     for i, r in enumerate(register_rows):
         if i % 5 == 4:
             continue
-        amt = round(float(r.get("amount") or 0.0), 2)
+        raw_amt = _coerce_amount(r.get("amount"))
+        amt = round(raw_amt, 2) if raw_amt is not None else 0.0
         d = str(r.get("txn_date") or "").strip()[:10]
         desc = str(r.get("description") or "").strip()
         if i % 7 == 0 and d:

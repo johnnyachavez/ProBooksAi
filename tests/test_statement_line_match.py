@@ -32,6 +32,30 @@ def test_descriptions_match_substring_and_fuzzy() -> None:
     assert not descriptions_match("x", "yz")
 
 
+def test_amounts_equal_coerces_currency_strings() -> None:
+    assert amounts_equal("$1,234.50", 1234.5)
+    assert amounts_equal("  -25.00 ", -25.0)
+    assert amounts_equal("(10.00)", -10.0)
+    assert amounts_equal("$0", 0.0)
+    assert not amounts_equal("n/a", 1.0)
+    assert not amounts_equal(None, 1.0)
+    assert not amounts_equal(True, 1.0)
+
+
+def test_compare_stmt_string_amount_matches_register_numeric() -> None:
+    stmt = [
+        {"txn_date": "2024-01-10", "amount": "-$25.00", "description": "Coffee Shop"},
+    ]
+    reg = [
+        {"id": 1, "txn_date": "2024-01-10", "amount": -25.0, "description": "Coffee Shop"},
+    ]
+    out = compare_statement_to_register(stmt, reg)
+    assert len(out) == 1
+    assert out[0]["status"] == STATUS_MATCHED
+    assert out[0]["stmt_amount"] == -25.0
+    assert out[0]["reg_amount"] == -25.0
+
+
 def test_compare_perfect_one_to_one() -> None:
     stmt = [
         {"txn_date": "2024-01-10", "amount": -25.0, "description": "Coffee Shop"},
