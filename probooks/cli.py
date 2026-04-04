@@ -302,7 +302,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--errors-out",
         type=Path,
         default=None,
-        help="Write skipped rows to CSV (issue #33)",
+        help="Write skipped rows to CSV with UTF-8 BOM for Excel (issue #33)",
     )
 
     tx = sub.add_parser("transactions", help="Bank transactions")

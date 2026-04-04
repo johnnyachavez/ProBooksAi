@@ -953,6 +953,7 @@ class MainWindow(QMainWindow):
 
         main_tab_bar = self._tabs.tabBar()
         _main_tab_bar_db_hint = " Same company .db (File → Backup / Restore, probooks.backup)."
+        _tab_bar_csv_excel_hint = " CSV: UTF-8 with BOM for Excel."
         main_tab_bar.setTabToolTip(
             0,
             "Import PDFs and images, run AI extraction, approve fields, and categorize to COA. "
@@ -961,11 +962,13 @@ class MainWindow(QMainWindow):
         main_tab_bar.setTabToolTip(
             1,
             "Bank CSV/PDF import, batches, transactions, and statement reconciliation."
+            + _tab_bar_csv_excel_hint
             + _main_tab_bar_db_hint,
         )
         main_tab_bar.setTabToolTip(
             2,
             "Check-register view: categorize, splits, transfer links, cleared flags, post to GL."
+            + _tab_bar_csv_excel_hint
             + _main_tab_bar_db_hint,
         )
         main_tab_bar.setTabToolTip(
@@ -976,20 +979,26 @@ class MainWindow(QMainWindow):
         main_tab_bar.setTabToolTip(
             4,
             "Financial reports: trial balance, income statement, balance sheet, CSV export."
+            + _tab_bar_csv_excel_hint
             + _main_tab_bar_db_hint,
         )
         main_tab_bar.setTabToolTip(
             5,
-            "General journal: browse entries and lines by date (export CSV)." + _main_tab_bar_db_hint,
+            "General journal: browse entries and lines by date (export CSV)."
+            + _tab_bar_csv_excel_hint
+            + _main_tab_bar_db_hint,
         )
         main_tab_bar.setTabToolTip(
             6,
             "Business hub: rules, AR, AP, payroll runs, and default sales tax settings."
+            + _tab_bar_csv_excel_hint
             + _main_tab_bar_db_hint,
         )
         main_tab_bar.setTabToolTip(
             7,
-            "Audit trail: recent field-level changes (filter by entity type and id)." + _main_tab_bar_db_hint,
+            "Audit trail: recent field-level changes (filter by entity type and id)."
+            + _tab_bar_csv_excel_hint
+            + _main_tab_bar_db_hint,
         )
 
         container_layout.addWidget(self._tabs)

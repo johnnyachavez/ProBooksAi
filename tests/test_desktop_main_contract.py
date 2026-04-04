@@ -579,6 +579,8 @@ def test_main_window_tab_bar_has_tab_tooltips() -> None:
     text = _MAIN.read_text(encoding="utf-8")
     assert "main_tab_bar = self._tabs.tabBar()" in text
     assert "main_tab_bar.setTabToolTip" in text
+    assert '_tab_bar_csv_excel_hint = " CSV: UTF-8 with BOM for Excel."' in text
+    assert text.count("_tab_bar_csv_excel_hint") == 7
     z = text.index("main_tab_bar.setTabToolTip(\n            0,")
     assert "File → Backup" in text[z : z + 320]
     assert text.count("_main_tab_bar_db_hint") == 8
