@@ -3530,6 +3530,30 @@ def test_main_help_menu_wires_more_tab_shortcuts_dialog() -> None:
     assert "&More tab shortcuts (F5)" in text
 
 
+def test_main_help_menu_status_tips_mention_utf8_bom_csv_exports() -> None:
+    """Help menu hover tips echo CSV encoding where the linked dialog covers exports."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("        # Help menu")
+    end = text.index("\n\n    # -- drag & drop on window", start)
+    chunk = text[start:end]
+    bi = chunk.split("act_bank_import_keys = QAction", 1)[1].split(
+        "act_register_keys = QAction", 1
+    )[0]
+    assert "line-compare CSV uses UTF-8 BOM for Excel" in bi
+    reg = chunk.split("act_register_keys = QAction", 1)[1].split(
+        "act_business_keys = QAction", 1
+    )[0]
+    assert "Ctrl+Shift+E export CSV uses UTF-8 BOM for Excel" in reg
+    bus = chunk.split("act_business_keys = QAction", 1)[1].split(
+        "act_more_tab_keys = QAction", 1
+    )[0]
+    assert "CSV exports use UTF-8 BOM for Excel" in bus
+    more = chunk.split("act_more_tab_keys = QAction", 1)[1].split(
+        "help_menu.addSeparator()", 1
+    )[0]
+    assert "UTF-8 BOM CSV exports and cross-links Register, Business, and Bank Import" in more
+
+
 def test_more_main_tabs_shortcuts_module_exposes_help_dialog() -> None:
     path = _DESKTOP_APP_DIR / "more_main_tabs_shortcuts.py"
     text = path.read_text(encoding="utf-8")

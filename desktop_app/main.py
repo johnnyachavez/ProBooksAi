@@ -1196,7 +1196,8 @@ class MainWindow(QMainWindow):
         act_bank_import_keys = QAction("Bank &import shortcuts…", self)
         _menu_action_tip(
             act_bank_import_keys,
-            "F5 refresh and context-menu shortcuts for Bank Import; Document intake help lists File backup/restore.",
+            "F5 refresh and context-menu shortcuts for Bank Import; reconciliation / line-compare CSV uses UTF-8 BOM for Excel. "
+            "Document intake help lists File backup/restore.",
         )
         act_bank_import_keys.triggered.connect(
             lambda: show_bank_import_keyboard_shortcuts_dialog(self)
@@ -1205,7 +1206,8 @@ class MainWindow(QMainWindow):
         act_register_keys = QAction("Bank &register keyboard shortcuts…", self)
         _menu_action_tip(
             act_register_keys,
-            "F5, Ctrl+Shift+G/E/C/U, and register grid shortcuts; Document intake help lists File backup/restore.",
+            "F5, Ctrl+Shift+G/E/C/U, and register grid shortcuts; Ctrl+Shift+E export CSV uses UTF-8 BOM for Excel. "
+            "Document intake help lists File backup/restore.",
         )
         act_register_keys.triggered.connect(
             lambda: show_register_keyboard_shortcuts_dialog(self)
@@ -1214,7 +1216,8 @@ class MainWindow(QMainWindow):
         act_business_keys = QAction("&Business shortcuts…", self)
         _menu_action_tip(
             act_business_keys,
-            "F5, Tax % Ctrl+S, and Business tab context menus; Document intake help lists File backup/restore.",
+            "F5, Tax % Ctrl+S, and Business tab context menus; CSV exports use UTF-8 BOM for Excel. "
+            "Document intake help lists File backup/restore.",
         )
         act_business_keys.triggered.connect(
             lambda: show_business_keyboard_shortcuts_dialog(self)
@@ -1224,6 +1227,7 @@ class MainWindow(QMainWindow):
         _menu_action_tip(
             act_more_tab_keys,
             "F5 refresh and View chords for COA, Journal, Reports, and Audit; "
+            "the dialog summarizes UTF-8 BOM CSV exports and cross-links Register, Business, and Bank Import. "
             "Document intake shortcuts summarizes File → Backup/Restore.",
         )
         act_more_tab_keys.triggered.connect(
