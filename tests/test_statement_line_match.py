@@ -22,6 +22,13 @@ from probooksai.statement_line_match import (
 )
 
 
+def test_strip_pasted_breaks_removes_cr_lf_tab() -> None:
+    from probooksai.statement_line_match import _strip_pasted_breaks
+
+    assert _strip_pasted_breaks("a\rb\nc\t") == "abc"
+    assert _strip_pasted_breaks("x") == "x"
+
+
 def test_dates_within_days() -> None:
     assert dates_within_days("2024-06-01", "2024-06-01", 2)
     assert dates_within_days("2024-06-01", "2024-06-03", 2)

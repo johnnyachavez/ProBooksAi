@@ -31,6 +31,11 @@ STATUS_MISSING = "Missing"
 STATUS_EXTRA = "Extra"
 
 
+def _strip_pasted_breaks(s: str) -> str:
+    """Remove CR/LF/tab characters common in copied spreadsheet or TSV cells."""
+    return s.replace("\r", "").replace("\n", "").replace("\t", "")
+
+
 def _parse_iso_date(s: str) -> Optional[datetime]:
     if not s or not str(s).strip():
         return None
@@ -49,7 +54,7 @@ def _coerce_date_to_iso(raw: str) -> Optional[str]:
     both work). Strips embedded ``\\r`` / ``\\n`` / tab so pasted cells still parse.
     Returns ``None`` when no format matches.
     """
-    s = str(raw or "").strip().replace("\r", "").replace("\n", "").replace("\t", "")
+    s = _strip_pasted_breaks(str(raw or "").strip())
     if not s:
         return None
     head = s.split()[0]
@@ -101,7 +106,7 @@ def _coerce_amount(raw: Any) -> Optional[float]:
         return None
     if isinstance(raw, (int, float)):
         return float(raw)
-    s = str(raw).strip().replace("\r", "").replace("\n", "").replace("\t", "")
+    s = _strip_pasted_breaks(str(raw).strip())
     if not s:
         return None
     if s.startswith("(") and s.endswith(")"):
