@@ -1740,6 +1740,18 @@ def test_desktop_main_detail_pane_button_slots_require_selected_doc() -> None:
     assert chunk.count("if self._doc_id is not None:") == 4
 
 
+def test_desktop_main_detail_pane_document_type_combo_fixed_values() -> None:
+    """Detail pane **Doc Type** lists the five supported workflow kinds."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("        self._f_doctype  = QComboBox()")
+    end = text.index("        self._f_inv_num  = QLineEdit()", start)
+    chunk = text[start:end]
+    assert (
+        'self._f_doctype.addItems(["invoice", "bill", "receipt", "credit_note", "other"])'
+        in chunk
+    )
+
+
 def test_desktop_main_coa_select_placeholder_and_combo_refresh() -> None:
     """``_COA_SELECT_LABEL`` seeds the detail COA combo; ``update_coa`` rebuilds and restores selection."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -1991,6 +2003,19 @@ def test_main_window_message_box_information_ok_six_user_feedback_paths() -> Non
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
     assert chunk.count("message_box_information_ok(") == 6
+
+
+def test_main_window_message_box_warning_critical_and_file_dialog_counts() -> None:
+    """``MainWindow`` keeps a stable mix of warning/critical dialogs and five file-picker call sites."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("class MainWindow(QMainWindow):")
+    end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
+    chunk = text[start:end]
+    assert chunk.count("message_box_warning_ok(") == 8
+    assert chunk.count("message_box_critical_ok(") == 5
+    assert chunk.count("QFileDialog.getOpenFileNames(") == 1
+    assert chunk.count("QFileDialog.getOpenFileName(") == 2
+    assert chunk.count("QFileDialog.getSaveFileName(") == 2
 
 
 def test_about_dialog_ok_tip_mentions_file_backup_cli_parity() -> None:
