@@ -20,6 +20,12 @@ from tests.repo_paths import (
 _MAIN = _DESKTOP_APP_DIR / "main.py"
 
 
+def test_desktop_main_imports_partial_for_inbox_context_menu() -> None:
+    """``main`` binds **Copy row** with ``functools.partial`` (see ``InboxWidget._on_context_menu``)."""
+    text = _MAIN.read_text(encoding="utf-8")
+    assert "from functools import partial" in text
+
+
 def _iter_desktop_app_py_files() -> list[Path]:
     return sorted(_DESKTOP_APP_DIR.rglob("*.py"))
 
@@ -947,6 +953,8 @@ def test_main_window_import_files_mime_guess_fallback_and_import_error_status() 
     chunk = text[start:end]
     assert chunk.count("mimetypes.guess_type(path)") == 1
     assert 'mime or ("application/pdf" if ext == ".pdf" else "image/jpeg")' in chunk
+    assert chunk.count("try:") == 1
+    assert chunk.count("except Exception as exc:") == 1
     assert "Error importing" in chunk
 
 
@@ -1461,11 +1469,13 @@ def test_inbox_widget_populate_plain_cells_and_status_color() -> None:
 
 
 def test_inbox_widget_populate_sortable_id_cells_type_column_and_import_date() -> None:
-    """``populate`` stores doc id on column 0, PDF vs Image in type column, date as first 10 chars."""
+    """``populate`` toggles sorting, stores id/type/date cells, and re-enables sort after rebuild."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def populate(self, rows: list):")
     end = text.index("    def selected_doc_id(self) -> int | None:", start)
     chunk = text[start:end]
+    assert chunk.count("self.setSortingEnabled(False)") == 1
+    assert chunk.count("self.setSortingEnabled(True)") == 1
     assert chunk.count("self.setRowCount(len(rows))") == 1
     assert chunk.count('int(row["id"])') == 1
     assert chunk.count("id_cell.setData(Qt.ItemDataRole.UserRole, did)") == 1
