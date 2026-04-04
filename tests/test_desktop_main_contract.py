@@ -902,6 +902,18 @@ def test_main_window_drag_drop_handlers_follow_menu_bar() -> None:
     assert "self._import_files(paths)" in chunk
 
 
+def test_main_window_drop_event_maps_local_urls_before_import() -> None:
+    """Main-window ``dropEvent`` keeps only local file URLs, then calls ``_import_files``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    # -- drag & drop on window")
+    de = text.index("    def dropEvent(self, event: QDropEvent):", start)
+    end = text.index("    # -- slots", start)
+    chunk = text[de:end]
+    assert "u.toLocalFile()" in chunk
+    assert "u.isLocalFile()" in chunk
+    assert chunk.count("self._import_files(paths)") == 1
+
+
 def test_main_window_build_ui_instantiates_core_tab_widgets_once_each() -> None:
     """``_build_ui`` wires one header, intake split, detail pane, and each main-tab class."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -1076,6 +1088,15 @@ def test_inbox_widget_context_menu_includes_keyboard_shortcuts_help() -> None:
     assert "act_keys.setToolTip" in chunk
     assert "act_copy.setToolTip" in chunk
     assert chunk.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
+
+
+def test_inbox_widget_context_menu_copy_row_binds_partial_tsv_helper() -> None:
+    """Inbox **Copy row** uses ``functools.partial`` with ``copy_table_row_as_tsv``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("class InboxWidget(QTableWidget):")
+    end = text.index("class DetailPane(QScrollArea):", start)
+    chunk = text[start:end]
+    assert chunk.count("partial(copy_table_row_as_tsv, self, row)") == 1
 
 
 def test_desktop_main_show_intake_shortcuts_dialog_delegates_to_message_box() -> None:
@@ -1332,6 +1353,14 @@ def test_desktop_main_entrypoint_boot_sequence() -> None:
     assert chunk.count("Path(last).is_file()") == 1
 
 
+def test_desktop_main_module_main_guard_invokes_main() -> None:
+    """Running ``desktop_app/main.py`` as a script should call ``main()``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    guard = text.index('if __name__ == "__main__":')
+    tail = text[guard : guard + 80]
+    assert "main()" in tail
+
+
 def test_audit_tab_f5_refresh_shortcut_wired() -> None:
     path = _DESKTOP_APP_DIR / "audit_tab.py"
     text = path.read_text(encoding="utf-8")
@@ -1535,6 +1564,17 @@ def test_desktop_main_detail_pane_wires_actions_load_ai_and_clear() -> None:
     assert chunk.count('mimetype == "application/pdf"') == 1
     assert chunk.count("self._doc_id = None") == 1
     assert "No document selected" in chunk
+
+
+def test_desktop_main_detail_pane_load_document_escapes_status_for_rich_text() -> None:
+    """``load_document`` renders status as rich HTML with ``escape_html_text`` for safety."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def load_document(self, doc_id: int, db: DocumentDatabase):")
+    end = text.index("    def populate_ai_result(self, result, suggestions=None):", start)
+    chunk = text[start:end]
+    assert chunk.count("escape_html_text(status)") == 1
+    assert chunk.count("Qt.TextFormat.RichText") == 1
+    assert "STATUS_COLORS.get(status" in chunk
 
 
 def test_desktop_main_coa_select_placeholder_and_combo_refresh() -> None:
