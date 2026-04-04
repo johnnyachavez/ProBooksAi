@@ -1148,6 +1148,11 @@ def test_grids_context_menus_use_qaction_hover_tooltips() -> None:
     assert reg[rs:re].count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
     assert "act_clr.setToolTip" in reg[rs:re]
     assert "act_history.setToolTip" in reg[rs:re]
+    lk = reg.index("def _link_payment_dialog")
+    link_dlg = reg[lk:]
+    assert "Copy suggestion line" in link_dlg
+    assert "act_copy.setToolTip" in link_dlg
+    assert link_dlg.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
 
     jt = (_DESKTOP_APP_DIR / "journal_tab.py").read_text(encoding="utf-8")
     js = jt.index("def _on_journal_list_context_menu")
