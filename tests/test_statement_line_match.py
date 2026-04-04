@@ -36,6 +36,12 @@ def test_dates_within_days_mdy_and_iso_datetime_prefix() -> None:
     assert dates_within_days("2024/03/10", "2024-03-11", 2)
 
 
+def test_dates_within_days_strips_embedded_newlines_and_tabs() -> None:
+    assert dates_within_days("01/15/\n2024", "2024-01-15", 2)
+    assert dates_within_days("\t2024-06-01\t", "2024-06-01", 2)
+    assert dates_within_days("2024-\n01-10", "2024-01-10", 2)
+
+
 def test_dates_within_days_day_first_when_month_gt_12_impossible() -> None:
     """``13/02/2024`` is parsed as DD/MM (Feb 13), not US month 13."""
     assert dates_within_days("13/02/2024", "2024-02-13", 2)

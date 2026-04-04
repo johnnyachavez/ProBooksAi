@@ -46,9 +46,10 @@ def _coerce_date_to_iso(raw: str) -> Optional[str]:
     Normalize a transaction date string to ``YYYY-MM-DD`` for comparison.
 
     Uses the first whitespace-separated token (so ``2024-01-15T12:00`` and ``1/15/2024 posted``
-    both work). Returns ``None`` when no format matches.
+    both work). Strips embedded ``\\r`` / ``\\n`` / tab so pasted cells still parse.
+    Returns ``None`` when no format matches.
     """
-    s = str(raw or "").strip()
+    s = str(raw or "").strip().replace("\r", "").replace("\n", "").replace("\t", "")
     if not s:
         return None
     head = s.split()[0]
