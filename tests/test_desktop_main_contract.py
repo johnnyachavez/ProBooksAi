@@ -1317,6 +1317,18 @@ def test_inbox_widget_drag_enter_move_accept_urls_ignore_other_mimes() -> None:
     assert chunk.count("event.ignore()") == 1
 
 
+def test_inbox_widget_selected_doc_id_user_role_then_clipboard_fallback() -> None:
+    """``selected_doc_id`` reads id from column 0 ``UserRole``, else parses display text via ``table_cell_clipboard_text``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def selected_doc_id(self) -> int | None:")
+    end = text.index("class DetailPane(QScrollArea):", start)
+    chunk = text[start:end]
+    assert chunk.count("self.selectedItems()") == 1
+    assert chunk.count("self.currentRow()") == 1
+    assert chunk.count("Qt.ItemDataRole.UserRole") == 1
+    assert chunk.count("table_cell_clipboard_text(self, r, 0)") == 1
+
+
 def test_inbox_widget_populate_plain_cells_and_status_color() -> None:
     """``populate`` fills text columns with ``plain_display_table_item`` and colours status from ``STATUS_COLORS``."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -1731,6 +1743,25 @@ def test_desktop_main_detail_pane_load_document_escapes_status_for_rich_text() -
     assert chunk.count("escape_html_text(status)") == 1
     assert chunk.count("Qt.TextFormat.RichText") == 1
     assert "STATUS_COLORS.get(status" in chunk
+
+
+def test_desktop_main_detail_pane_load_document_approved_or_extraction_and_enables_buttons() -> None:
+    """``load_document`` stores ``_doc_id``, fills fields from approved row else latest extraction, enables actions."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def load_document(self, doc_id: int, db: DocumentDatabase):")
+    end = text.index("    def populate_ai_result(self, result, suggestions=None):", start)
+    chunk = text[start:end]
+    assert chunk.count("self._doc_id = doc_id") == 1
+    assert chunk.count("if not row:") == 1
+    assert chunk.count("db.get_document(doc_id)") == 1
+    assert chunk.count("approved = db.get_approved(doc_id)") == 1
+    assert chunk.count("extraction = db.get_latest_extraction(doc_id)") == 1
+    assert chunk.count("src = approved or extraction") == 1
+    assert chunk.count("self._populate_fields(src)") == 1
+    assert chunk.count("if approved:") == 1
+    assert chunk.count('approved["coa_account"]') == 1
+    assert chunk.count('approved["tax_category"]') == 1
+    assert chunk.count("self._set_buttons_enabled(True)") == 1
 
 
 def test_desktop_main_detail_pane_populate_ai_result_applies_suggestions() -> None:
