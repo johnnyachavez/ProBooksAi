@@ -809,6 +809,61 @@ def test_main_window_build_menu_bar_wires_all_action_triggers() -> None:
     assert chunk.count("act_exit.triggered.connect(self.close)") == 1
 
 
+def test_main_window_on_copy_company_database_path_clipboard_or_missing_dialog() -> None:
+    """``_on_copy_company_database_path`` copies a resolved path or explains when none is set."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_copy_company_database_path(self) -> None:")
+    end = text.index("    def _on_help_roadmap(self):", start)
+    chunk = text[start:end]
+    assert chunk.count("getattr(self._bank_db, \"_db_path\", None) or self._db_path or \"\"") == 1
+    assert chunk.count('"Copy path"') == 1
+    assert chunk.count("QApplication.clipboard().setText(resolved)") == 1
+    assert "Copied path:" in chunk
+
+
+def test_main_window_on_help_roadmap_opens_local_md_or_warns() -> None:
+    """``_on_help_roadmap`` resolves ROADMAP.md, opens it, or shows information/warning dialogs."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_help_roadmap(self):")
+    end = text.index("    def _on_about(self):", start)
+    chunk = text[start:end]
+    assert chunk.count("resolve_local_roadmap_path()") == 1
+    assert "docs/ROADMAP.md" in chunk
+    assert chunk.count("QUrl.fromLocalFile(str(path))") == 1
+    assert chunk.count("QDesktopServices.openUrl(url)") == 1
+    assert chunk.count('"Product roadmap"') == 2
+
+
+def test_main_window_on_about_shows_branded_version_dialog() -> None:
+    """``_on_about`` uses ``message_box_about_ok`` with ProBooks+ai branding."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_about(self):")
+    end = text.index("    def _on_import(self):", start)
+    chunk = text[start:end]
+    assert chunk.count("message_box_about_ok(") == 1
+    assert chunk.count("application_version()") == 1
+    assert chunk.count('"About ProBooks+ai"') == 1
+    assert chunk.count("<b>ProBooks+ai</b>") == 1
+
+
+def test_main_window_set_tab_sync_title_and_company_status_helpers() -> None:
+    """``_set_main_tab_index`` guards on ``_tabs``; title/status helpers use bank path and version."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _set_main_tab_index(self, index: int) -> None:")
+    end = text.index("    def _rebuild_bank_related_tabs(self):", start)
+    chunk = text[start:end]
+    assert chunk.count('if not hasattr(self, "_tabs"):') == 1
+    assert chunk.count("self._tabs.setCurrentIndex(index)") == 1
+    assert chunk.count("self._tabs.count()") == 1
+    assert chunk.count("application_version()") == 1
+    assert chunk.count("self.setWindowTitle(") == 2
+    assert chunk.count("ProBooks+ai –") == 2
+    assert chunk.count("self._sync_window_title()") == 1
+    assert chunk.count("self._status_bar.showMessage(") == 1
+    assert "File → Backup copies this .db." in chunk
+    assert chunk.count("self._header.set_company_name(") == 2
+
+
 def test_main_window_drag_drop_handlers_follow_menu_bar() -> None:
     """``MainWindow`` implements window-level drag/drop after ``_build_menu_bar`` (``setAcceptDrops``)."""
     text = _MAIN.read_text(encoding="utf-8")
