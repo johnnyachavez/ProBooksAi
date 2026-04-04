@@ -956,7 +956,9 @@ def test_main_window_on_copy_company_database_path_clipboard_or_missing_dialog()
     assert chunk.count("getattr(self._bank_db, \"_db_path\", None) or self._db_path or \"\"") == 1
     assert chunk.count('"Copy path"') == 1
     assert chunk.count("QApplication.clipboard().setText(resolved)") == 1
+    assert chunk.count("str(Path(raw).resolve())") == 1
     assert "Copied path:" in chunk
+    assert ", 6000" in chunk
 
 
 def test_main_window_on_help_roadmap_opens_local_md_or_warns() -> None:
@@ -1975,23 +1977,30 @@ def test_desktop_main_detail_pane_document_type_combo_fixed_values() -> None:
 
 
 def test_desktop_main_detail_pane_scroll_wraps_resizable_inner_widget() -> None:
-    """``DetailPane`` (``QScrollArea``) hosts the form on a resizable inner ``QWidget``."""
+    """``DetailPane`` ctor stores doc/COA state and hosts the form on a resizable inner ``QWidget``."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("class DetailPane(QScrollArea):")
     init_s = text.index("    def __init__(self, coa_list: list[str], parent=None):", start)
     end = text.index("        # -- Document info ---------------------------------------------------", init_s)
     chunk = text[init_s:end]
+    assert chunk.count("self._doc_id: int | None = None") == 1
+    assert chunk.count("self._coa_list = coa_list") == 1
     assert chunk.count("self.setWidget(inner)") == 1
     assert chunk.count("self.setWidgetResizable(True)") == 1
 
 
 def test_desktop_main_detail_pane_extracted_fields_ten_form_rows() -> None:
-    """**Extracted Fields** uses ten ``QFormLayout`` rows (vendor through notes)."""
+    """**Extracted Fields**: ten ``QFormLayout`` rows plus money spin limits, currency width, notes height."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("        form = QFormLayout(fields_group)")
     end = text.index("        layout.addWidget(fields_group)", start)
     chunk = text[start:end]
     assert chunk.count("form.addRow(") == 10
+    assert chunk.count("setMaximum(9_999_999)") == 3
+    assert chunk.count("setDecimals(2)") == 3
+    assert chunk.count("setMaxLength(3)") == 1
+    assert chunk.count("setFixedWidth(55)") == 1
+    assert chunk.count("setFixedHeight(60)") == 1
 
 
 def test_desktop_main_detail_pane_categorisation_four_form_rows() -> None:
