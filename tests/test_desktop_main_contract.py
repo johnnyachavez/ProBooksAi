@@ -3599,6 +3599,8 @@ def test_bank_import_tab_exposes_shortcuts_dialog_for_help_menu() -> None:
     assert "status bar" in bit.lower()
     assert "restores the company line" in bit
     assert "line-reconciliation grid" in bit
+    assert "Export comparison CSV" in bit
+    assert "UTF-8 CSV" in bit
 
 
 def test_register_tab_exposes_shared_shortcuts_dialog_for_help_menu() -> None:
