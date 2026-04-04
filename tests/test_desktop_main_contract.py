@@ -629,6 +629,9 @@ def test_main_window_rebuild_bank_related_tabs_replaces_seven_tabs_and_rewires_c
     assert chunk.count("BusinessHub(") == 1
     assert chunk.count("AuditTab(") == 1
     assert chunk.count("self._coa_tab.coaChanged.connect(self._on_coa_changed)") == 1
+    assert chunk.count("w = self._tabs.widget(i)") == 1
+    assert chunk.count("if w is not None:") == 1
+    assert chunk.count("w.deleteLater()") == 1
 
 
 def test_main_window_switch_company_database_closes_and_loads_at_path() -> None:
@@ -1804,6 +1807,40 @@ def test_desktop_main_detail_pane_collect_approved_values_keys_match_approved_va
     chunk = text[start:end]
     for key in _DETAIL_APPROVED_VALUE_KEYS:
         assert chunk.count(f'"{key}":') == 1, key
+
+
+def test_desktop_main_detail_pane_show_preview_image_scaled_pdf_stub_or_fallback() -> None:
+    """``_show_preview`` scales images, shows a PDF stub with escaped file name, or a no-preview placeholder."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _show_preview(self, stored_path: str, mimetype: str, page_count):")
+    end = text.index("    def _populate_fields(self, row):", start)
+    chunk = text[start:end]
+    assert chunk.count("mimetype.startswith(\"image/\")") == 1
+    assert chunk.count("QPixmap(stored_path)") == 1
+    assert chunk.count("400, 300") == 1
+    assert chunk.count("Qt.AspectRatioMode.KeepAspectRatio") == 1
+    assert chunk.count('mimetype == "application/pdf"') == 1
+    assert chunk.count("escape_ampersand_for_qt(Path(stored_path).name)") == 1
+    assert chunk.count('"(No preview available)"') == 1
+
+
+def test_desktop_main_detail_pane_populate_fields_maps_sqlite_row_columns() -> None:
+    """``_populate_fields`` no-ops on falsy rows; otherwise maps approved/extraction columns into widgets."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _populate_fields(self, row):")
+    end = text.index("    def _populate_fields_from_extraction(self, result):", start)
+    chunk = text[start:end]
+    assert chunk.count("if not row:") == 1
+    assert chunk.count('row["vendor"]') == 1
+    assert chunk.count('row["doc_type"]') == 1
+    assert chunk.count('row["invoice_number"]') == 1
+    assert chunk.count('row["doc_date"]') == 1
+    assert chunk.count('row["due_date"]') == 1
+    assert chunk.count('row["subtotal"]') == 1
+    assert chunk.count('row["tax"]') == 1
+    assert chunk.count('row["total"]') == 1
+    assert chunk.count('row["currency"]') == 1
+    assert chunk.count('row["notes"]') == 1
 
 
 def test_desktop_main_detail_pane_button_slots_require_selected_doc() -> None:
