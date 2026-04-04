@@ -6,7 +6,7 @@ from probooks.accounts import add_account
 from probooks.database import connect, migration_files, run_migrations
 from probooks.import_csv import ColumnMap, count_transactions, import_bank_csv
 
-from tests.repo_paths import EXAMPLES_DIR, PROBOOKS_MIGRATIONS_DIR
+from tests.repo_paths import EXAMPLES_DIR, PROBOOKS_MIGRATIONS_DIR, PROBOOKS_PACKAGE_DIR
 
 
 def _db_with_account(tmp_path: Path) -> tuple[Path, int]:
@@ -86,3 +86,11 @@ def test_import_csv_skips_bad_row_and_errors_out(tmp_path: Path) -> None:
     assert err.read_bytes().startswith(b"\xef\xbb\xbf")
     assert "bad_date" in err.read_text(encoding="utf-8-sig")
     conn.close()
+
+
+def test_import_csv_module_docstring_documents_utf8_encodings() -> None:
+    text = (PROBOOKS_PACKAGE_DIR / "import_csv.py").read_text(encoding="utf-8")
+    doc_end = text.index('"""', 3)
+    doc = text[: doc_end + 3]
+    assert "utf-8-sig" in doc
+    assert "BOM" in doc

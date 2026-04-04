@@ -10,7 +10,7 @@ Or directly:
 Requires PySide6:
     pip install PySide6
 
-``--help`` prints the shared epilog from ``probooks/help_epilog.py`` (Excel COA workbook, backup parity, UTF-8 BOM CSV; see README Desktop + Excel template).
+``--help`` prints the shared epilog from ``probooks/help_epilog.py`` (Excel COA workbook, backup parity, UTF-8 BOM CSV exports, bank CSV UTF-8 optional BOM read, ``probooks import csv``; see README Desktop + Excel template).
 
 The **central** **QWidget** (banner + tab widget) has a margin hover hint. The main **QToolBar** has a hover hint for Document Intake import/refresh. Document Intake: **F5** refreshes the inbox; **Help → Document intake shortcuts…** (``message_box_information_ok`` **Ok** tooltip) and inbox **right-click**
 **Keyboard shortcuts…** (including empty area) match that dialog. The **InboxWidget** grid has a hover **tooltip**

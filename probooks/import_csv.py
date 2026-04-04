@@ -1,4 +1,8 @@
-"""CSV bank import with row validation (#31, #33, #34)."""
+"""CSV bank import with row validation (#31, #33, #34).
+
+Reads input CSV as UTF-8 with optional BOM by default (``encoding="utf-8-sig"`` in :func:`import_bank_csv`).
+When *errors_file* is set, skipped rows are written as UTF-8 CSV with BOM for Excel.
+"""
 
 from __future__ import annotations
 
