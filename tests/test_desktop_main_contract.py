@@ -578,6 +578,7 @@ def test_main_window_init_wires_databases_build_ui_and_refresh() -> None:
     start = text.index("    def __init__(self, db_path: str | None = None):")
     end = text.index("    # -- UI construction", start)
     chunk = text[start:end]
+    assert chunk.count("self.resize(1100, 700)") == 1
     assert chunk.count("DocumentDatabase(") == 1
     assert chunk.count("BankDatabase(") == 1
     assert chunk.count("apply_extensions(") == 1
@@ -1772,6 +1773,15 @@ def test_desktop_main_detail_pane_extracted_fields_ten_form_rows() -> None:
     assert chunk.count("form.addRow(") == 10
 
 
+def test_desktop_main_detail_pane_categorisation_four_form_rows() -> None:
+    """**Categorisation Suggestions** uses four ``QFormLayout`` rows (COA through rationale)."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("        cat_layout = QFormLayout(cat_group)")
+    end = text.index("        layout.addWidget(cat_group)", start)
+    chunk = text[start:end]
+    assert chunk.count("cat_layout.addRow(") == 4
+
+
 def test_desktop_main_coa_select_placeholder_and_combo_refresh() -> None:
     """``_COA_SELECT_LABEL`` seeds the detail COA combo; ``update_coa`` rebuilds and restores selection."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -2045,6 +2055,15 @@ def test_main_window_refresh_inbox_eight_call_sites() -> None:
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
     assert chunk.count("self._refresh_inbox()") == 8
+
+
+def test_main_window_inbox_widget_referenced_four_times() -> None:
+    """``MainWindow`` connects the inbox, reads selection, and repopulates from one list call site."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("class MainWindow(QMainWindow):")
+    end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
+    chunk = text[start:end]
+    assert chunk.count("self._inbox.") == 4
 
 
 def test_main_window_document_database_call_counts_for_intake_and_workflow() -> None:
