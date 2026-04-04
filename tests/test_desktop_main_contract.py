@@ -1252,6 +1252,8 @@ def test_inbox_widget_context_menu_skips_copy_row_when_no_cell() -> None:
     start = text.index("    def _on_context_menu(self, pos):")
     end = text.index("    # -- drag & drop", start)
     chunk = text[start:end]
+    assert chunk.count("m = QMenu(self)") == 1
+    assert chunk.count("Keyboard shortcuts") == 1
     assert chunk.count("self.indexAt(pos)") == 1
     assert chunk.count("if not idx.isValid():") == 1
     assert chunk.count("m.addSeparator()") == 1
@@ -1931,7 +1933,7 @@ _DETAIL_APPROVED_VALUE_KEYS = (
 
 
 def test_desktop_main_detail_pane_collect_approved_values_keys_match_approved_values_columns() -> None:
-    """``collect_approved_values`` dict keys align with ``DocumentDatabase.save_approved`` / ``approved_values``."""
+    """``collect_approved_values`` keys match DB columns; COA value comes from ``_coa_combo_raw_value()``."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def collect_approved_values(self) -> dict:")
     end = text.index(
@@ -1941,6 +1943,7 @@ def test_desktop_main_detail_pane_collect_approved_values_keys_match_approved_va
     chunk = text[start:end]
     for key in _DETAIL_APPROVED_VALUE_KEYS:
         assert chunk.count(f'"{key}":') == 1, key
+    assert chunk.count("self._coa_combo_raw_value()") == 1
 
 
 def test_desktop_main_detail_pane_show_preview_image_scaled_pdf_stub_or_fallback() -> None:
