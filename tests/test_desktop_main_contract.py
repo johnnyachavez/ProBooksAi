@@ -1752,6 +1752,17 @@ def test_desktop_main_detail_pane_document_type_combo_fixed_values() -> None:
     )
 
 
+def test_desktop_main_detail_pane_scroll_wraps_resizable_inner_widget() -> None:
+    """``DetailPane`` (``QScrollArea``) hosts the form on a resizable inner ``QWidget``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("class DetailPane(QScrollArea):")
+    init_s = text.index("    def __init__(self, coa_list: list[str], parent=None):", start)
+    end = text.index("        # -- Document info ---------------------------------------------------", init_s)
+    chunk = text[init_s:end]
+    assert chunk.count("self.setWidget(inner)") == 1
+    assert chunk.count("self.setWidgetResizable(True)") == 1
+
+
 def test_desktop_main_coa_select_placeholder_and_combo_refresh() -> None:
     """``_COA_SELECT_LABEL`` seeds the detail COA combo; ``update_coa`` rebuilds and restores selection."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -2016,6 +2027,25 @@ def test_main_window_message_box_warning_critical_and_file_dialog_counts() -> No
     assert chunk.count("QFileDialog.getOpenFileNames(") == 1
     assert chunk.count("QFileDialog.getOpenFileName(") == 2
     assert chunk.count("QFileDialog.getSaveFileName(") == 2
+
+
+def test_main_window_refresh_inbox_eight_call_sites() -> None:
+    """``MainWindow`` refreshes the document inbox from import, AI, approval, and company switch paths."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("class MainWindow(QMainWindow):")
+    end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
+    chunk = text[start:end]
+    assert chunk.count("self._refresh_inbox()") == 8
+
+
+def test_main_window_custom_qmessagebox_yes_no_defaults_to_no() -> None:
+    """Destructive Yes/No prompts build ``QMessageBox(self)`` and default to **No**."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("class MainWindow(QMainWindow):")
+    end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
+    chunk = text[start:end]
+    assert chunk.count("QMessageBox(self)") == 2
+    assert chunk.count("box.setDefaultButton(QMessageBox.StandardButton.No)") == 2
 
 
 def test_about_dialog_ok_tip_mentions_file_backup_cli_parity() -> None:
