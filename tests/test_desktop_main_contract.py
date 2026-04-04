@@ -500,11 +500,16 @@ def test_file_exit_menu_tip_suggests_backup() -> None:
 
 
 def test_main_window_toolbar_and_menu_bar_qaction_counts() -> None:
-    """Toolbar: fixed ``QAction`` count, each wired and on the bar; menu bar: 21 ``QAction``s."""
+    """Toolbar: Main bar, non-movable, separator, two ``QAction``s wired; menu bar: 21 ``QAction``s."""
     text = _MAIN.read_text(encoding="utf-8")
     tb_s = text.index("# Toolbar")
     tb_e = text.index("# Container: header banner + tab widget", tb_s)
     tb_chunk = text[tb_s:tb_e]
+    assert tb_chunk.count('toolbar = QToolBar("Main")') == 1
+    assert tb_chunk.count("toolbar.setMovable(False)") == 1
+    assert tb_chunk.count("toolbar.setToolTip(") == 1
+    assert tb_chunk.count("toolbar.addSeparator()") == 1
+    assert tb_chunk.count("self.addToolBar(toolbar)") == 1
     assert tb_chunk.count("QAction(") == 2
     assert tb_chunk.count(".triggered.connect(") == 2
     assert tb_chunk.count("toolbar.addAction(") == 2
@@ -2029,6 +2034,19 @@ def test_desktop_main_detail_pane_three_section_group_boxes() -> None:
     assert chunk.count('QGroupBox("Preview")') == 1
     assert chunk.count('QGroupBox("Extracted Fields")') == 1
     assert chunk.count('QGroupBox("Categorisation Suggestions")') == 1
+
+
+def test_desktop_main_detail_pane_document_filename_and_status_labels() -> None:
+    """Detail header row: bold plain-text filename placeholder and empty status line with tooltips."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index('        self._lbl_filename = QLabel("No document selected")')
+    end = text.index("        # -- Preview", start)
+    chunk = text[start:end]
+    assert chunk.count("Qt.TextFormat.PlainText") == 1
+    assert chunk.count('font-weight: bold; font-size: 14px;') == 1
+    assert chunk.count('self._lbl_status = QLabel("")') == 1
+    assert chunk.count("layout.addWidget(self._lbl_filename)") == 1
+    assert chunk.count("layout.addWidget(self._lbl_status)") == 1
 
 
 def test_desktop_main_detail_pane_preview_placeholder_label_styling() -> None:
