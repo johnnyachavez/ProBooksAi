@@ -730,7 +730,7 @@ def test_main_window_on_backup_company_calls_backup_database_and_dialog_flow() -
 
 
 def test_main_window_on_restore_company_restores_and_reload_paths() -> None:
-    """``_on_restore_company`` closes DBs, calls ``restore_database``, reloads on success and on errors."""
+    """Restore flow: backup picker, reject live .db path, ``restore_database``, reload + dialogs."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _on_restore_company(self):")
     end = text.index("    def _on_open_company_database(self):", start)
@@ -741,6 +741,10 @@ def test_main_window_on_restore_company_restores_and_reload_paths() -> None:
     assert chunk.count("self._load_company_at_path(str(target))") == 3
     assert chunk.count('"Restore failed"') == 2
     assert chunk.count('"Restore complete"') == 1
+    assert chunk.count("QFileDialog.getOpenFileName(") == 1
+    assert chunk.count("Select backup to restore (probooks restore)") == 1
+    assert chunk.count("Path(path).resolve() == target") == 1
+    assert "Choose a different file than the active company database." in chunk
     assert (
         "Wait for AI extraction to finish before restoring." in chunk
     )
@@ -1070,6 +1074,9 @@ def test_main_window_build_ui_wires_tabs_container_inbox_and_detail_signals() ->
     end = text.index("def _build_menu_bar", start)
     chunk = text[start:end]
     assert chunk.count("self._tabs = QTabWidget()") == 1
+    assert chunk.count("container = QWidget()") == 1
+    assert chunk.count("container_layout.setContentsMargins(0, 0, 0, 0)") == 1
+    assert chunk.count("container_layout.setSpacing(0)") == 1
     assert chunk.count("container_layout.addWidget(self._header)") == 1
     assert chunk.count("container_layout.addWidget(self._tabs)") == 1
     assert chunk.count("self._coa_tab.coaChanged.connect(self._on_coa_changed)") == 1
