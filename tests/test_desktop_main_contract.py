@@ -557,6 +557,26 @@ def test_main_window_build_ui_instantiates_core_tab_widgets_once_each() -> None:
     assert chunk.count("AuditTab(") == 1
 
 
+def test_main_window_build_ui_wires_tabs_container_inbox_and_detail_signals() -> None:
+    """``_build_ui`` attaches ``QTabWidget`` to the container and wires Intake/COA/Detail slots."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("def _build_ui(self):")
+    end = text.index("def _build_menu_bar", start)
+    chunk = text[start:end]
+    assert chunk.count("self._tabs = QTabWidget()") == 1
+    assert chunk.count("container_layout.addWidget(self._header)") == 1
+    assert chunk.count("container_layout.addWidget(self._tabs)") == 1
+    assert chunk.count("self._coa_tab.coaChanged.connect(self._on_coa_changed)") == 1
+    assert chunk.count("self._inbox.filesDropped.connect(self._on_files_dropped)") == 1
+    assert chunk.count(
+        "self._inbox.itemSelectionChanged.connect(self._on_selection_changed)"
+    ) == 1
+    assert chunk.count("self._detail.runAI.connect(self._on_run_ai)") == 1
+    assert chunk.count("self._detail.approve.connect(self._on_approve)") == 1
+    assert chunk.count("self._detail.markPosted.connect(self._on_mark_posted)") == 1
+    assert chunk.count("self._detail.reject.connect(self._on_reject)") == 1
+
+
 def test_main_toolbar_import_and_refresh_tooltips_echo_file_menu_and_backup() -> None:
     """Main toolbar **Import** / **Refresh** mirror File backup hints; no ad-hoc ``setStatusTip``."""
     text = _MAIN.read_text(encoding="utf-8")
