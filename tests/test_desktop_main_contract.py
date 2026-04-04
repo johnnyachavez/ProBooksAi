@@ -4099,6 +4099,7 @@ def test_bank_import_manage_accounts_and_reconciliation_buttons_have_tooltips() 
     assert "_lbl_status.setToolTip" in rec_chunk
     assert "UTF-8" in rec_chunk
     assert "Export comparison CSV" in rec_chunk
+    assert "last import folder" in rec_chunk
     assert "appends .csv" in rec_chunk
 
 
@@ -5440,6 +5441,7 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
     assert "write_line_match_comparison_csv" in sm
     assert "Export comparison CSV" in sm
     assert "Export report CSV" in sm
+    assert "last import folder" in sm
     assert "appends .csv" in sm
     assert "_refresh_match_summary_footer" in sm
     assert "_refresh_reconciled_action_states" in sm

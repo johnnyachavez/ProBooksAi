@@ -945,6 +945,7 @@ class ReconciliationPanel(QGroupBox):
             "Export a reconciliation summary CSV for the selected import batch (UTF-8). "
             "The save dialog suggests a filename from the import file or batch id, re-opens in the last "
             "folder used for other Bank Import CSV exports (same as line reconciliation Export comparison CSV), "
+            "or in the last import folder if you have not exported CSV yet, "
             "and appends .csv if the path has no extension."
         )
         self._btn_export_csv.setEnabled(False)

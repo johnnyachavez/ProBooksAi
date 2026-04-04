@@ -175,6 +175,7 @@ class StatementLineMatchPanel(QGroupBox):
             "(amounts as numbers; Reconciled column reflects checkboxes). "
             "The save dialog suggests a name from the import batch file or batch id, re-opens in the last "
             "folder used for Bank Import CSV exports (shared with reconciliation Export report CSV), "
+            "or in the last import folder if you have not exported CSV yet, "
             "and appends .csv if the path has no extension."
         )
         self._btn_export_csv.clicked.connect(self._on_export_comparison_csv)

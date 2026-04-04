@@ -371,6 +371,52 @@ def test_line_compare_export_default_path_uses_saved_directory(tmp_path) -> None
     )
 
 
+def test_bank_import_csv_default_save_path_falls_back_to_import_dir(tmp_path) -> None:
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from desktop_app.bank_import_csv_export_paths import (
+        BANK_IMPORT_LAST_IMPORT_DIR_KEY,
+        bank_import_csv_default_save_path,
+    )
+
+    imp = tmp_path / "from_import"
+    imp.mkdir()
+    ini = tmp_path / "both.ini"
+    qs = QSettings(str(ini), QSettings.Format.IniFormat)
+    qs.setValue(BANK_IMPORT_LAST_IMPORT_DIR_KEY, str(imp.resolve()))
+    qs.sync()
+    assert bank_import_csv_default_save_path("e.csv", settings=qs) == str(imp / "e.csv")
+
+
+def test_bank_import_csv_default_save_path_prefers_export_over_import_dir(tmp_path) -> None:
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from desktop_app.bank_import_csv_export_paths import (
+        BANK_IMPORT_LAST_CSV_EXPORT_DIR_KEY,
+        BANK_IMPORT_LAST_IMPORT_DIR_KEY,
+        bank_import_csv_default_save_path,
+    )
+
+    exp = tmp_path / "exports"
+    imp = tmp_path / "imports"
+    exp.mkdir()
+    imp.mkdir()
+    ini = tmp_path / "prio.ini"
+    qs = QSettings(str(ini), QSettings.Format.IniFormat)
+    qs.setValue(BANK_IMPORT_LAST_CSV_EXPORT_DIR_KEY, str(exp.resolve()))
+    qs.setValue(BANK_IMPORT_LAST_IMPORT_DIR_KEY, str(imp.resolve()))
+    qs.sync()
+    assert bank_import_csv_default_save_path("x.csv", settings=qs) == str(exp / "x.csv")
+
+
 def test_bank_import_csv_default_save_path_reads_legacy_line_compare_key(tmp_path) -> None:
     from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QApplication

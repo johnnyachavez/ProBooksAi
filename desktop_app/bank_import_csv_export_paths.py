@@ -5,7 +5,8 @@
 ``bank_import/line_compare_csv_export_dir``).
 
 **Open (CSV/PDF):** ``bank_import/last_import_dir`` — folder of the last file chosen
-for **Import CSV…** or **Import PDF…**.
+for **Import CSV…** or **Import PDF…**. When no export directory is remembered yet, CSV **save**
+dialogs use this folder next (then the user profile folder).
 
 Also provides **suggested export basenames** from the import batch (sanitized file stem or
 ``{prefix}-{id}.csv``), used by reconciliation report and line-comparison exports.
@@ -68,14 +69,26 @@ def _resolved_export_parent(settings: QSettings) -> Optional[Path]:
     return None
 
 
+def _resolved_import_parent(settings: QSettings) -> Optional[Path]:
+    raw = (settings.value(BANK_IMPORT_LAST_IMPORT_DIR_KEY, "", type=str) or "").strip()
+    if not raw:
+        return None
+    parent = Path(raw)
+    if parent.is_dir():
+        return parent
+    return None
+
+
 def bank_import_csv_default_save_path(
     suggested_filename: str,
     *,
     settings: Optional[QSettings] = None,
 ) -> str:
-    """Directory from settings + ``suggested_filename``, or home + basename."""
+    """Export folder (if any), else last import folder, else home + ``suggested_filename``."""
     s = settings if settings is not None else QSettings()
     parent = _resolved_export_parent(s)
+    if parent is None:
+        parent = _resolved_import_parent(s)
     if parent is not None:
         return str(parent / suggested_filename)
     return str(Path.home() / suggested_filename)
@@ -100,13 +113,8 @@ def bank_import_open_dialog_start_dir(
 ) -> str:
     """Initial directory for **Import CSV…** / **Import PDF…** (empty string if unset)."""
     s = settings if settings is not None else QSettings()
-    raw = (s.value(BANK_IMPORT_LAST_IMPORT_DIR_KEY, "", type=str) or "").strip()
-    if not raw:
-        return ""
-    parent = Path(raw)
-    if parent.is_dir():
-        return str(parent)
-    return ""
+    parent = _resolved_import_parent(s)
+    return str(parent) if parent is not None else ""
 
 
 def remember_bank_import_import_dir(
