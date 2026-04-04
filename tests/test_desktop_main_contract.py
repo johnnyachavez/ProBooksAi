@@ -246,6 +246,7 @@ def test_file_menu_company_file_actions_tips_mention_backup_pointer() -> None:
     c = text.index("act_copy_db_path = QAction")
     copy_chunk = text[c : text.index("act_save = QAction", c)]
     assert "probooks backup" in copy_chunk
+    assert "Company .db safety: File → Backup / Restore (probooks.backup)." in copy_chunk
 
 
 def test_copy_db_path_empty_dialog_tip_mentions_backup() -> None:

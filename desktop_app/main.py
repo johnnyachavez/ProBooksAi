@@ -1046,7 +1046,8 @@ class MainWindow(QMainWindow):
         _menu_action_tip(
             act_copy_db_path,
             "Copy the resolved company .db path to the clipboard (Ctrl+Alt+P); "
-            "matches the file File → Backup and probooks backup read from.",
+            "matches the file File → Backup and probooks backup read from. "
+            "Company .db safety: File → Backup / Restore (probooks.backup).",
         )
         act_copy_db_path.triggered.connect(self._on_copy_company_database_path)
         file_menu.addAction(act_copy_db_path)
