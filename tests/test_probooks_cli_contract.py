@@ -24,6 +24,8 @@ def test_probooks_cli_description_epilog_and_default_db_help() -> None:
     assert "generate_workbook.py" in hel
     assert "Excel COA workbook" in hel
     assert "UTF-8 BOM for Excel" in hel
+    assert "Bank CSV import" in hel
+    assert "reads UTF-8 with optional BOM" in hel
 
 
 def test_probooks_cli_wires_backup_restore_subcommands() -> None:

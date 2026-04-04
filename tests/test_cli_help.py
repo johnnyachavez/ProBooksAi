@@ -55,6 +55,8 @@ def test_probooks_help_epilog_and_exit_zero() -> None:
     assert "File → Backup" in text
     assert "UTF-8 BOM for Excel" in text
     assert "import csv --errors-out" in text
+    assert "Bank CSV import" in text
+    assert "reads UTF-8 with optional BOM" in text
 
 
 def test_probooks_import_csv_help_mentions_utf8_optional_bom_input() -> None:
