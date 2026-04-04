@@ -4762,6 +4762,7 @@ def test_rules_tab_toolbar_buttons_have_tooltips() -> None:
         "rb_del.setToolTip",
         "rb_export.setToolTip",
         "rb_import.setToolTip",
+        "Read as UTF-8 with optional BOM (matches Export CSV… / Excel).",
         "pat.setToolTip",
         "Higher priority rules are considered first",
         "rules_tip.setToolTip",
@@ -5258,9 +5259,11 @@ def test_extra_tabs_exposes_business_shortcuts_dialog_for_help_menu() -> None:
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
     assert "def show_business_keyboard_shortcuts_dialog" in et
     assert "def _business_keyboard_shortcuts_help_text" in et
-    assert "UTF-8 with BOM for Excel" in et.split("def _business_keyboard_shortcuts_help_text", 1)[1].split(
+    bus_help = et.split("def _business_keyboard_shortcuts_help_text", 1)[1].split(
         "def show_business_keyboard_shortcuts_dialog", 1
     )[0]
+    assert "UTF-8 with BOM for Excel" in bus_help
+    assert "Rules Import CSV" in bus_help and "optional BOM" in bus_help
     assert (
         et.count("lambda: show_business_keyboard_shortcuts_dialog(self)") == 4
     ), "Rules, AR, AP, Payroll grids should open Business shortcuts from context menu"

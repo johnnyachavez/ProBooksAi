@@ -411,7 +411,8 @@ class RulesTab(QWidget):
         row.addWidget(rb_export)
         rb_import = QPushButton("Import CSV…")
         rb_import.setToolTip(
-            "Replace all rules from a CSV file after confirmation; the grid refreshes when done."
+            "Replace all rules from a CSV file after confirmation; the grid refreshes when done. "
+            "Read as UTF-8 with optional BOM (matches Export CSV… / Excel)."
         )
         rb_import.clicked.connect(self._import_csv)
         row.addWidget(rb_import)
@@ -3663,7 +3664,8 @@ def _business_keyboard_shortcuts_help_text() -> str:
         "F5 — Refresh the current sub-tab list (Rules, Invoices, Bills, Payroll). "
         "Tax % has no list to reload.\n\n"
         "CSV exports from Business (Rules, aging, customer/vendor lists, invoices/bills, payments, "
-        "allocations, payroll tax report, sales tax summary) use UTF-8 with BOM for Excel.\n\n"
+        "allocations, payroll tax report, sales tax summary) use UTF-8 with BOM for Excel.\n"
+        "Rules Import CSV… reads UTF-8 with optional BOM (same as files from Export CSV…).\n\n"
         "On Tax % (settings):\n"
         "Ctrl+S — Save default tax name and rate (standard Save shortcut)\n\n"
         "Right-click the Rules, Invoices, Bills, or Payroll grid (including empty area) "
