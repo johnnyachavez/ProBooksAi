@@ -57,6 +57,23 @@ def test_act_keys_settooltip_includes_clipboard_backup_suffix() -> None:
             )
 
 
+def test_act_copy_settooltip_includes_clipboard_backup_suffix() -> None:
+    """Each ``act_copy.setToolTip(...)`` should append ``CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX``."""
+    marker = "act_copy.setToolTip("
+    suffix_op = "+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX"
+    for path in _iter_desktop_app_py_files():
+        text = path.read_text(encoding="utf-8")
+        tails = text.split(marker)[1:]
+        if not tails:
+            continue
+        for i, tail in enumerate(tails, start=1):
+            window = tail[:1200]
+            assert suffix_op in window, (
+                f"{path.name}: act_copy.setToolTip block #{i} should use {suffix_op!r} "
+                f"near the start of the call (within {len(window)} chars)"
+            )
+
+
 # Static ``QMessageBox.*`` entry points skip ``tip_message_box_buttons`` / ``setToolTip`` on the dialog.
 _DESKTOP_FORBIDDEN_STATIC_QMESSAGEBOX_CALLS: tuple[str, ...] = (
     "QMessageBox.information(",
