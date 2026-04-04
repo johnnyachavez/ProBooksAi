@@ -2107,6 +2107,25 @@ def test_main_window_banner_tabs_status_bar_and_worker_counts() -> None:
     assert chunk.count("self._worker") == 13
 
 
+def test_main_window_bank_database_closes_and_applies_extensions_twice() -> None:
+    """``BankDatabase`` is closed on switch/restore/quit; ``apply_extensions`` runs on open and reload."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("class MainWindow(QMainWindow):")
+    end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
+    chunk = text[start:end]
+    assert chunk.count("self._bank_db.close()") == 3
+    assert chunk.count("apply_extensions(self._bank_db._conn)") == 2
+
+
+def test_main_window_coa_tab_changed_signal_wired_after_initial_and_rebuild() -> None:
+    """``COATab.coaChanged`` is connected in ``_build_ui`` and again after ``_rebuild_bank_related_tabs``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("class MainWindow(QMainWindow):")
+    end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
+    chunk = text[start:end]
+    assert chunk.count("self._coa_tab.coaChanged.connect(self._on_coa_changed)") == 2
+
+
 def test_main_window_document_database_call_counts_for_intake_and_workflow() -> None:
     """``MainWindow`` uses ``DocumentDatabase`` for listing, fetch, import, AI save, approve, and six status updates."""
     text = _MAIN.read_text(encoding="utf-8")
