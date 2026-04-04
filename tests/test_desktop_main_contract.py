@@ -4853,6 +4853,8 @@ def test_extra_tabs_filtered_csv_export_scope_message_box_has_button_tooltips() 
 
 def test_qt_mnemonic_tip_message_box_buttons_helper() -> None:
     mn = (_DESKTOP_APP_DIR / "qt_mnemonic.py").read_text(encoding="utf-8")
+    assert "CSV_EXPORT_OK_TIP_SUFFIX" in mn
+    assert "UTF-8 with BOM for Excel" in mn
     assert "def tip_message_box_buttons" in mn
     assert "def message_box_information_ok" in mn
     assert "def message_box_warning_ok" in mn

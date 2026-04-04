@@ -34,6 +34,7 @@ from desktop_app.more_main_tabs_shortcuts import (
     show_more_main_tabs_keyboard_shortcuts_dialog,
 )
 from desktop_app.qt_mnemonic import (
+    CSV_EXPORT_OK_TIP_SUFFIX,
     escape_ampersand_for_qt,
     message_box_critical_ok,
     message_box_information_ok,
@@ -321,5 +322,5 @@ class ReportsTab(QWidget):
             self,
             "Export complete",
             f"Exported {n} row(s) to:\n{escape_ampersand_for_qt(path)}",
-            ok_tip="Close; open the CSV from the path shown.",
+            ok_tip="Close; open the CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
         )

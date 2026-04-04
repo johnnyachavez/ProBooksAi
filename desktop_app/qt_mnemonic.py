@@ -16,6 +16,9 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialogButtonBox, QMessageBox, QWidget
 
+# Appended to **Ok** hover tips after a successful CSV save (``encoding="utf-8-sig"``).
+CSV_EXPORT_OK_TIP_SUFFIX = " UTF-8 with BOM for Excel."
+
 
 def escape_ampersand_for_qt(s: str) -> str:
     """Return *s* with each ``&`` doubled so Qt shows a literal ampersand."""

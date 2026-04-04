@@ -84,6 +84,7 @@ from desktop_app.qt_combo_ids import (
 from desktop_app.csv_import_worker import CsvImportWorker
 from desktop_app.open_attachment import open_local_attachment
 from desktop_app.qt_mnemonic import (
+    CSV_EXPORT_OK_TIP_SUFFIX,
     escape_ampersand_for_qt,
     message_box_critical_ok,
     message_box_information_ok,
@@ -2001,7 +2002,7 @@ class BankImportTab(QWidget):
             self,
             "Export complete",
             f"Reconciliation report saved to:\n{escape_ampersand_for_qt(path)}",
-            ok_tip="Close; open the CSV from the path shown.",
+            ok_tip="Close; open the CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
         )
 
     def _on_reconcile(self):

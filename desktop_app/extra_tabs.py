@@ -64,6 +64,7 @@ from desktop_app.qt_combo_ids import (
     combo_int_ids_equal,
 )
 from desktop_app.qt_mnemonic import (
+    CSV_EXPORT_OK_TIP_SUFFIX,
     escape_ampersand_for_qt,
     message_box_critical_ok,
     message_box_information_ok,
@@ -655,7 +656,7 @@ class RulesTab(QWidget):
             self,
             "Export complete",
             f"Exported {n} rule(s) to:\n{escape_ampersand_for_qt(path)}",
-            ok_tip="Close; open the CSV from the path shown.",
+            ok_tip="Close; open the CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
         )
 
     def _import_csv(self):
@@ -1689,7 +1690,7 @@ class ARTab(QWidget):
             self,
             "Export",
             f"Wrote {escape_ampersand_for_qt(path)}\n(As of {as_of})",
-            ok_tip="Close; open the aging CSV from the path shown.",
+            ok_tip="Close; open the aging CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
         )
 
     def _export_customers(self):
@@ -1714,7 +1715,7 @@ class ARTab(QWidget):
             self,
             "Export",
             f"Exported {n} customer(s) to {escape_ampersand_for_qt(path)}",
-            ok_tip="Close; open the CSV from the path shown.",
+            ok_tip="Close; open the CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
         )
 
     def _export_invoices(self):
@@ -1755,7 +1756,7 @@ class ARTab(QWidget):
             self,
             "Export",
             f"Exported {n} invoice(s) to {escape_ampersand_for_qt(path)}",
-            ok_tip="Close; open the CSV from the path shown.",
+            ok_tip="Close; open the CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
         )
 
     def _export_ar_payments(self):
@@ -1791,7 +1792,7 @@ class ARTab(QWidget):
             self,
             "Export",
             f"Exported {n} payment(s) to {escape_ampersand_for_qt(path)}",
-            ok_tip="Close; open the CSV from the path shown.",
+            ok_tip="Close; open the CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
         )
 
     def _export_ar_allocations(self):
@@ -1819,7 +1820,7 @@ class ARTab(QWidget):
             self,
             "Export",
             f"Exported {n} allocation row(s) to {escape_ampersand_for_qt(path)}",
-            ok_tip="Close; open the CSV from the path shown.",
+            ok_tip="Close; open the CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
         )
 
 
@@ -2685,7 +2686,7 @@ class APTab(QWidget):
             self,
             "Export",
             f"Wrote {escape_ampersand_for_qt(path)}\n(As of {as_of})",
-            ok_tip="Close; open the AP aging CSV from the path shown.",
+            ok_tip="Close; open the AP aging CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
         )
 
     def _export_vendors(self):
@@ -2710,7 +2711,7 @@ class APTab(QWidget):
             self,
             "Export",
             f"Exported {n} vendor(s) to {escape_ampersand_for_qt(path)}",
-            ok_tip="Close; open the CSV from the path shown.",
+            ok_tip="Close; open the CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
         )
 
     def _export_bills(self):
@@ -2749,7 +2750,7 @@ class APTab(QWidget):
             self,
             "Export",
             f"Exported {n} bill(s) to {escape_ampersand_for_qt(path)}",
-            ok_tip="Close; open the CSV from the path shown.",
+            ok_tip="Close; open the CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
         )
 
     def _export_ap_payments(self):
@@ -2774,7 +2775,7 @@ class APTab(QWidget):
             self,
             "Export",
             f"Exported {n} payment(s) to {escape_ampersand_for_qt(path)}",
-            ok_tip="Close; open the CSV from the path shown.",
+            ok_tip="Close; open the CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
         )
 
     def _export_ap_allocations(self):
@@ -2802,7 +2803,7 @@ class APTab(QWidget):
             self,
             "Export",
             f"Exported {n} allocation row(s) to {escape_ampersand_for_qt(path)}",
-            ok_tip="Close; open the CSV from the path shown.",
+            ok_tip="Close; open the CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
         )
 
 
@@ -3227,7 +3228,7 @@ class PayrollTaxTab(QWidget):
             self,
             "Payroll taxes",
             f"Wrote {escape_ampersand_for_qt(path)}",
-            ok_tip="Close; open the payroll tax CSV from the path shown.",
+            ok_tip="Close; open the payroll tax CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
         )
 
     def _refresh(self):
@@ -3645,7 +3646,7 @@ class TaxSettingsTab(QWidget):
             self,
             "Sales tax",
             f"Wrote {escape_ampersand_for_qt(path)}",
-            ok_tip="Close; open the sales tax summary CSV from the path shown.",
+            ok_tip="Close; open the sales tax summary CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
         )
 
 

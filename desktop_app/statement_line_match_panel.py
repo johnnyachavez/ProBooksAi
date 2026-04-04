@@ -40,6 +40,7 @@ from desktop_app.bank_import_csv_export_paths import (
 )
 from desktop_app.qt_combo_ids import coerce_combo_int_id
 from desktop_app.qt_mnemonic import (
+    CSV_EXPORT_OK_TIP_SUFFIX,
     escape_ampersand_for_qt,
     message_box_critical_ok,
     message_box_information_ok,
@@ -432,7 +433,7 @@ class StatementLineMatchPanel(QGroupBox):
             self,
             "Export complete",
             f"Line comparison saved to:\n{escape_ampersand_for_qt(path)}",
-            ok_tip="Close; open the CSV from the path shown.",
+            ok_tip="Close; open the CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
         )
 
     def _on_run_clicked(self) -> None:

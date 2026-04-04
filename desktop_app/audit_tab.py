@@ -32,6 +32,7 @@ from desktop_app.more_main_tabs_shortcuts import (
 )
 from desktop_app.qt_combo_ids import coerce_combo_int_id
 from desktop_app.qt_mnemonic import (
+    CSV_EXPORT_OK_TIP_SUFFIX,
     escape_ampersand_for_qt,
     message_box_critical_ok,
     message_box_information_ok,
@@ -209,7 +210,7 @@ class AuditTab(QWidget):
             self,
             "Export complete",
             f"Exported {n} row(s) to:\n{escape_ampersand_for_qt(path)}",
-            ok_tip="Close; open the CSV from the path shown.",
+            ok_tip="Close; open the CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
         )
 
     def _refresh(self):

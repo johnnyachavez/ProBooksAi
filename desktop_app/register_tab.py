@@ -92,6 +92,7 @@ from desktop_app.qt_combo_ids import (
     combo_int_ids_equal,
 )
 from desktop_app.qt_mnemonic import (
+    CSV_EXPORT_OK_TIP_SUFFIX,
     escape_ampersand_for_qt,
     message_box_information_ok,
     message_box_warning_ok,
@@ -1543,7 +1544,7 @@ class RegisterTab(QWidget):
             self,
             "Export",
             f"Saved {escape_ampersand_for_qt(Path(path).name)}",
-            ok_tip="Close; open the CSV from the path you chose.",
+            ok_tip="Close; open the CSV from the path you chose." + CSV_EXPORT_OK_TIP_SUFFIX,
         )
 
     def _on_coa_changed(self, txn_id: int, combo: QComboBox, _index: int):
