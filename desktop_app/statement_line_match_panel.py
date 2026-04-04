@@ -204,6 +204,7 @@ class StatementLineMatchPanel(QGroupBox):
         self._table.setToolTip(
             "Status colors: Matched (green tint), Missing statement-side (amber), "
             "Extra register-side (blue). Reconciled checkboxes are local UI state only. "
+            "Export comparison CSV uses UTF-8 with BOM for Excel. "
             "Right-click: Export comparison CSV when the table has rows; Copy row (TSV) on a data row; "
             "Keyboard shortcuts when this panel is embedded in Bank Import."
         )

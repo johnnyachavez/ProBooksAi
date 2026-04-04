@@ -3086,6 +3086,7 @@ def test_desktop_main_document_intake_shortcuts_help_text_sections() -> None:
     assert chunk.count("probooks.backup") >= 2
     assert "Keyboard shortcuts…" in chunk
     assert "UTF-8 with BOM for Excel" in chunk
+    assert "reconciliation report and line-compare" in chunk
 
 
 def test_desktop_main_document_intake_help_text_file_view_bank_section_order() -> None:
@@ -5525,6 +5526,7 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
     )[0]
     assert 'encoding="utf-8-sig"' in wcsv
     assert "UTF-8 CSV with BOM" in sm
+    assert "Export comparison CSV uses UTF-8 with BOM for Excel" in sm
     assert "Export comparison CSV" in sm
     assert "Export report CSV" in sm
     assert "last import folder" in sm
