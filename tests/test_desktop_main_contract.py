@@ -659,6 +659,97 @@ def test_main_window_on_restore_company_restores_and_reload_paths() -> None:
     )
 
 
+def test_main_window_on_open_company_database_reads_settings_and_switches() -> None:
+    """``_on_open_company_database`` uses QSettings start dir and delegates to switch (not create)."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_open_company_database(self):")
+    end = text.index("    def _on_new_company_database(self):", start)
+    chunk = text[start:end]
+    assert chunk.count('QSettings().value("company_database_path", "", type=str)') == 1
+    assert chunk.count("QFileDialog.getOpenFileName(") == 1
+    assert (
+        "Open company database (File → Backup copies the current .db first)" in chunk
+    )
+    assert chunk.count("self._switch_company_database(path, create_new=False)") == 1
+
+
+def test_main_window_on_new_company_database_suffixes_db_and_switches() -> None:
+    """``_on_new_company_database`` saves a .db path and opens via switch with ``create_new=True``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_new_company_database(self):")
+    end = text.index("    def closeEvent(self, event):", start)
+    chunk = text[start:end]
+    assert chunk.count('QSettings().value("company_database_path", "", type=str)') == 1
+    assert chunk.count("QFileDialog.getSaveFileName(") == 1
+    assert (
+        "New company database (back up any existing .db from File → Backup first)" in chunk
+    )
+    assert chunk.count('if not path.lower().endswith(".db"):') == 1
+    assert chunk.count('path += ".db"') == 1
+    assert chunk.count("self._switch_company_database(path, create_new=True)") == 1
+
+
+def test_main_window_on_run_ai_guards_worker_api_key_and_starts_ai_worker() -> None:
+    """``_on_run_ai`` blocks on running worker / missing key, then runs ``AIWorker`` with signal hooks."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_run_ai(self, doc_id: int):")
+    end = text.index("    def _on_ai_done(self, doc_id: int, result, suggestions):", start)
+    chunk = text[start:end]
+    assert chunk.count("if self._worker and self._worker.isRunning():") == 1
+    assert '"AI Running"' in chunk
+    assert chunk.count("self._db.get_document(doc_id)") == 1
+    assert chunk.count('os.environ.get("OPENAI_API_KEY")') == 1
+    assert '"API Key Missing"' in chunk
+    assert chunk.count('self._db.set_status(doc_id, "Extracted")') == 1
+    assert (
+        chunk.count(
+            "AIWorker(doc_id, row[\"stored_path\"], row[\"mimetype\"], self._coa)"
+        )
+        == 1
+    )
+    assert (
+        chunk.count(
+            ".finished.connect(lambda res, sug: self._on_ai_done(doc_id, res, sug))"
+        )
+        == 1
+    )
+    assert (
+        chunk.count(
+            ".error.connect(lambda err: self._on_ai_error(doc_id, err))"
+        )
+        == 1
+    )
+    assert chunk.count("self._worker.start()") == 1
+
+
+def test_main_window_on_ai_done_and_error_finalize_extraction() -> None:
+    """``_on_ai_done`` persists extraction; ``_on_ai_error`` marks error and shows a critical box."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_ai_done(self, doc_id: int, result, suggestions):")
+    end = text.index("    def _on_approve(self, doc_id: int):", start)
+    chunk = text[start:end]
+    assert chunk.count("self._db.save_extraction(doc_id, result)") == 1
+    assert chunk.count('self._db.set_status(doc_id, "Needs Review")') == 1
+    assert chunk.count("self._detail.populate_ai_result(result, suggestions)") == 1
+    assert chunk.count("self._refresh_inbox()") == 2
+    assert chunk.count('self._db.set_status(doc_id, "Error")') == 1
+    assert chunk.count('"AI Extraction Failed"') == 1
+
+
+def test_main_window_on_approve_mark_posted_reject_detail_flow() -> None:
+    """Approve / posted / reject slots persist status, refresh inbox, and reload the detail pane."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_approve(self, doc_id: int):")
+    end = text.index("    # -- helpers", start)
+    chunk = text[start:end]
+    assert chunk.count("self._db.save_approved(doc_id, values)") == 1
+    assert chunk.count('self._db.set_status(doc_id, "Approved")') == 1
+    assert chunk.count('self._db.set_status(doc_id, "Posted")') == 1
+    assert chunk.count('self._db.set_status(doc_id, "Needs Review")') == 1
+    assert chunk.count('"Not Yet Approved"') == 1
+    assert chunk.count("self._detail.load_document(doc_id, self._db)") == 3
+
+
 def test_main_window_drag_drop_handlers_follow_menu_bar() -> None:
     """``MainWindow`` implements window-level drag/drop after ``_build_menu_bar`` (``setAcceptDrops``)."""
     text = _MAIN.read_text(encoding="utf-8")
