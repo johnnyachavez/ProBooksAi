@@ -534,17 +534,21 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
     )
     n_qa = chunk.count("QAction(")
     n_tip = chunk.count("_menu_action_tip(")
-    n_add = (
-        chunk.count("file_menu.addAction(")
-        + chunk.count("view_menu.addAction(")
-        + chunk.count("edit_menu.addAction(")
-        + chunk.count("tools_menu.addAction(")
-        + chunk.count("help_menu.addAction(")
+    per_menu_add = (
+        chunk.count("file_menu.addAction("),
+        chunk.count("view_menu.addAction("),
+        chunk.count("edit_menu.addAction("),
+        chunk.count("tools_menu.addAction("),
+        chunk.count("help_menu.addAction("),
     )
+    assert per_menu_add == (9, 1, 3, 1, 7), (
+        f"expected per-menu addAction (File,View,Edit,Tools,Help)=(9,1,3,1,7); "
+        f"got {per_menu_add}"
+    )
+    n_add = sum(per_menu_add)
     assert n_qa == n_tip == n_add == 21, (
         f"expected 21 menu QActions, _menu_action_tip calls, and *.addAction( calls "
-        f"(QAction={n_qa}, _menu_action_tip={n_tip}, addAction={n_add}; "
-        "9 File + 1 View loop + 3 Edit + 1 Tools + 7 Help)"
+        f"(QAction={n_qa}, _menu_action_tip={n_tip}, addAction={n_add})"
     )
     n_dis = chunk.count("setEnabled(False)")
     assert n_dis == 6, (
