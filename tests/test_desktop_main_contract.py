@@ -699,6 +699,26 @@ def test_main_window_on_restore_company_restores_and_reload_paths() -> None:
     )
 
 
+def test_main_window_backup_restore_database_calls_are_singletons() -> None:
+    """``MainWindow`` invokes ``backup_database`` / ``restore_database`` only from File → Backup / Restore."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("class MainWindow(QMainWindow):")
+    end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
+    chunk = text[start:end]
+    assert chunk.count("backup_database(src, Path(path))") == 1
+    assert chunk.count("restore_database(Path(path), target, overwrite=True)") == 1
+
+
+def test_main_window_question_and_warning_icons_for_company_dialogs() -> None:
+    """Existing-company switch uses **Question**; restore confirmation uses **Warning**."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("class MainWindow(QMainWindow):")
+    end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
+    chunk = text[start:end]
+    assert chunk.count("QMessageBox.Icon.Question") == 1
+    assert chunk.count("QMessageBox.Icon.Warning") == 1
+
+
 def test_main_window_on_open_company_database_reads_settings_and_switches() -> None:
     """``_on_open_company_database`` uses QSettings start dir and delegates to switch (not create)."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -1236,6 +1256,20 @@ def test_desktop_main_inbox_widget_columns_selection_dnd_and_sorting() -> None:
     assert chunk.count("setAcceptDrops(True)") == 1
     assert chunk.count("CustomContextMenu") == 1
     assert chunk.count("setSortingEnabled(") == 3
+
+
+def test_inbox_widget_drag_enter_move_accept_urls_ignore_other_mimes() -> None:
+    """``InboxWidget`` accepts URL drags on enter/move; non-URL drags are ignored on enter."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("class InboxWidget(QTableWidget):")
+    de = text.index("    def dragEnterEvent(self, event: QDragEnterEvent):", start)
+    pe = text.index("    def populate(self, rows: list):", start)
+    chunk = text[de:pe]
+    assert chunk.count("def dragEnterEvent(self, event: QDragEnterEvent):") == 1
+    assert chunk.count("def dragMoveEvent(self, event):") == 1
+    assert chunk.count("def dropEvent(self, event: QDropEvent):") == 1
+    assert chunk.count("acceptProposedAction()") == 2
+    assert chunk.count("event.ignore()") == 1
 
 
 def test_inbox_widget_table_has_hover_tooltip() -> None:
