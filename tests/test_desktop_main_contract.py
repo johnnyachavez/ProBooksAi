@@ -6,6 +6,7 @@ helpers, and guardrails against static ``QMessageBox`` dialogs and ad-hoc ``.but
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from desktop_app.table_clipboard import CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
@@ -72,6 +73,41 @@ def test_act_copy_settooltip_includes_clipboard_backup_suffix() -> None:
                 f"{path.name}: act_copy.setToolTip block #{i} should use {suffix_op!r} "
                 f"near the start of the call (within {len(window)} chars)"
             )
+
+
+_RE_ACT_COPY_ASSIGN = re.compile(
+    r"^\s*act_copy\s*=\s*(?:m|menu)\.addAction\(", re.MULTILINE
+)
+_RE_ACT_KEYS_ASSIGN = re.compile(
+    r"^\s*act_keys\s*=\s*(?:m|menu)\.addAction\(", re.MULTILINE
+)
+_RE_ACT_INVNO_ASSIGN = re.compile(
+    r"^\s*act_invno\s*=\s*m\.addAction\(", re.MULTILINE
+)
+
+
+def test_act_keys_act_copy_act_invno_assignments_match_settooltip_counts() -> None:
+    """Each **Keyboard shortcuts…** / copy QAction gets a ``setToolTip`` (and vice versa)."""
+    n_keys_a = n_keys_t = 0
+    n_copy_a = n_copy_t = 0
+    n_inv_a = n_inv_t = 0
+    for path in _iter_desktop_app_py_files():
+        text = path.read_text(encoding="utf-8")
+        n_keys_a += len(_RE_ACT_KEYS_ASSIGN.findall(text))
+        n_keys_t += text.count("act_keys.setToolTip(")
+        n_copy_a += len(_RE_ACT_COPY_ASSIGN.findall(text))
+        n_copy_t += text.count("act_copy.setToolTip(")
+        n_inv_a += len(_RE_ACT_INVNO_ASSIGN.findall(text))
+        n_inv_t += text.count("act_invno.setToolTip(")
+    assert n_keys_a == n_keys_t, (
+        f"act_keys addAction lines ({n_keys_a}) must match act_keys.setToolTip calls ({n_keys_t})"
+    )
+    assert n_copy_a == n_copy_t, (
+        f"act_copy addAction lines ({n_copy_a}) must match act_copy.setToolTip calls ({n_copy_t})"
+    )
+    assert n_inv_a == n_inv_t, (
+        f"act_invno addAction lines ({n_inv_a}) must match act_invno.setToolTip calls ({n_inv_t})"
+    )
 
 
 def test_act_invno_settooltip_includes_clipboard_backup_suffix() -> None:
