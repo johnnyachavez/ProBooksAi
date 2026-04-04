@@ -19,6 +19,10 @@ from tests.repo_paths import (
 _MAIN = _DESKTOP_APP_DIR / "main.py"
 
 
+def _iter_desktop_app_py_files() -> list[Path]:
+    return sorted(_DESKTOP_APP_DIR.rglob("*.py"))
+
+
 def test_clipboard_db_backup_tooltip_suffix_wording() -> None:
     assert CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX == (
         "Company .db safety: File → Backup / Restore (probooks.backup)."
@@ -34,10 +38,6 @@ def test_desktop_backup_tip_literal_only_defined_in_table_clipboard() -> None:
             assert text.count(literal) == 1
         else:
             assert literal not in text, f"{path.name} should not embed the backup tip literal; import the constant"
-
-
-def _iter_desktop_app_py_files() -> list[Path]:
-    return sorted(_DESKTOP_APP_DIR.rglob("*.py"))
 
 
 # Static ``QMessageBox.*`` entry points skip ``tip_message_box_buttons`` / ``setToolTip`` on the dialog.
