@@ -718,6 +718,7 @@ def test_main_window_switch_backup_restore_guard_busy_ai_worker() -> None:
         end = text.index(end_m, start)
         chunk = text[start:end]
         assert chunk.count("if self._worker and self._worker.isRunning():") == 1, start_m
+        assert chunk.count('"Busy"') == 1, start_m
 
 
 def test_main_window_on_backup_company_calls_backup_database_and_dialog_flow() -> None:
@@ -2122,7 +2123,7 @@ def test_desktop_main_detail_pane_four_action_buttons_toolbar_loop_and_styles() 
 
 
 def test_desktop_main_coa_select_placeholder_and_combo_refresh() -> None:
-    """``_COA_SELECT_LABEL`` seeds the detail COA combo; ``update_coa`` rebuilds and restores selection."""
+    """``_fill_coa_combo`` adds placeholder + non-empty COA rows; ``update_coa`` rebuilds and restores selection."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("_COA_SELECT_LABEL = ")
     end = text.index("    def clear_view(self):", start)
@@ -2131,6 +2132,10 @@ def test_desktop_main_coa_select_placeholder_and_combo_refresh() -> None:
     assert chunk.count("escape_ampersand_for_qt(_COA_SELECT_LABEL)") == 1
     assert chunk.count("def update_coa(self, coa_list: list[str]):") == 1
     assert chunk.count("def _fill_coa_combo(self, coa_list: list[str]) -> None:") == 1
+    assert chunk.count('escape_ampersand_for_qt(_COA_SELECT_LABEL), ""') == 1
+    assert chunk.count("for coa in coa_list:") == 1
+    assert chunk.count("if not c:") == 1
+    assert chunk.count("self._f_coa.addItem(escape_ampersand_for_qt(c), c)") == 1
     assert chunk.count("self._f_coa.clear()") == 1
     assert chunk.count("self._set_coa_combo_raw(current)") == 1
     assert chunk.count("def _coa_combo_raw_value(self) -> str | None:") == 1
