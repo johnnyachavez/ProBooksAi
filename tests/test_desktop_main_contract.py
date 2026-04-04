@@ -4676,10 +4676,10 @@ def test_main_window_on_reject_sets_needs_review_refreshes_and_status_message() 
 
 
 def test_extra_tabs_business_csv_export_tooltips_append_excel_bom_hint() -> None:
-    """Every Business hub CSV export button documents UTF-8 with BOM (one shared suffix string)."""
+    """Business CSV exports and the filtered export scope dialog share one UTF-8 BOM suffix string."""
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
     assert '_CSV_EXCEL_ENCODING_TIP = " UTF-8 with BOM for Excel."' in et
-    assert et.count("_CSV_EXCEL_ENCODING_TIP") == 14
+    assert et.count("_CSV_EXCEL_ENCODING_TIP") == 17
 
 
 def test_rules_tab_toolbar_buttons_have_tooltips() -> None:
@@ -4835,6 +4835,9 @@ def test_extra_tabs_filtered_csv_export_scope_message_box_has_button_tooltips() 
     chunk = et[start:end]
     assert "btn_vis.setToolTip" in chunk
     assert "btn_all.setToolTip" in chunk
+    assert "box.setInformativeText" in chunk
+    assert "UTF-8 with BOM for Excel" in chunk
+    assert "_CSV_EXCEL_ENCODING_TIP" in chunk
     assert 'tip_message_box_buttons(box, cancel="Close without exporting.")' in chunk
     assert "box.setToolTip(" in chunk
     assert "list filter is active" in chunk

@@ -321,15 +321,20 @@ def _prompt_list_csv_export_scope(
     box.setText(
         "The list filter is active. Export only visible rows, or all records?"
     )
+    box.setInformativeText("The saved CSV uses UTF-8 with BOM for Excel.")
     box.setIcon(QMessageBox.Icon.Question)
     box.setToolTip(
         "A list filter is active: export only visible rows, all database rows, or cancel."
+        + _CSV_EXCEL_ENCODING_TIP
     )
     btn_vis = box.addButton("Visible only", QMessageBox.ButtonRole.AcceptRole)
-    btn_vis.setToolTip("Export only rows that match the current list filter.")
+    btn_vis.setToolTip(
+        "Export only rows that match the current list filter." + _CSV_EXCEL_ENCODING_TIP
+    )
     btn_all = box.addButton("All rows", QMessageBox.ButtonRole.ActionRole)
     btn_all.setToolTip(
         "Export all records of this type in the database, ignoring the filter."
+        + _CSV_EXCEL_ENCODING_TIP
     )
     cancel_btn = box.addButton(QMessageBox.StandardButton.Cancel)
     tip_message_box_buttons(box, cancel="Close without exporting.")
