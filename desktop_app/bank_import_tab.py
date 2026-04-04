@@ -97,6 +97,7 @@ from desktop_app.table_clipboard import (
 from desktop_app.bank_import_csv_export_paths import (
     bank_import_csv_default_save_path,
     remember_bank_import_csv_export_parent,
+    suggested_bank_import_batch_csv_filename,
 )
 from desktop_app.statement_line_match_panel import StatementLineMatchPanel
 from desktop_app.theme import (
@@ -128,8 +129,8 @@ def _bank_import_keyboard_shortcuts_help_text() -> str:
     return (
         "F5 — Refresh accounts and import batches. If an import batch is selected, it is "
         "re-opened when it still exists (register preview and reconciliation update). "
-        "**Export reconciliation report (CSV)** suggests a batch-based filename and uses the same "
-        "remembered save folder as **Export comparison CSV\u2026** (line reconciliation).\n\n"
+        "**Export reconciliation report (CSV)** suggests a filename from the import file (or batch id) "
+        "and uses the same remembered save folder as **Export comparison CSV\u2026** (line reconciliation).\n\n"
         "AI-assisted line reconciliation (right-hand panel): **Run mock extract & compare** "
         "fills the **Bank register** **Stmt match** column for the same bank account and "
         "switches the main window to that tab (reconciliation mode turns on there). "
@@ -1924,9 +1925,24 @@ class BankImportTab(QWidget):
     # -----------------------------------------------------------------------
 
     def _suggested_reconciliation_csv_filename(self) -> str:
-        if self._current_batch_id is None:
-            return "bank-reconciliation-report.csv"
-        return f"bank-reconciliation-batch-{self._current_batch_id}.csv"
+        batch: Optional[dict] = None
+        if self._current_batch_id is not None and hasattr(self, "_batches"):
+            found = next(
+                (
+                    b
+                    for b in self._batches
+                    if combo_int_ids_equal(b["id"], self._current_batch_id)
+                ),
+                None,
+            )
+            if found is not None:
+                batch = dict(found)
+        return suggested_bank_import_batch_csv_filename(
+            batch,
+            filename_suffix="reconciliation",
+            batch_id_prefix="bank-reconciliation-batch",
+            when_no_batch="bank-reconciliation-report.csv",
+        )
 
     def _on_export_reconciliation_csv(self):
         if self._current_batch_id is None:

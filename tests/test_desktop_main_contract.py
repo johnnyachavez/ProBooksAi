@@ -3602,6 +3602,7 @@ def test_bank_import_tab_exposes_shortcuts_dialog_for_help_menu() -> None:
     assert "Export comparison CSV" in bit
     assert "last folder you used" in bit
     assert "Export reconciliation report (CSV)" in bit
+    assert "import file" in bit
     assert "empty viewport" in bit
 
 
@@ -5332,6 +5333,7 @@ def test_bank_import_tab_reconciliation_export_file_dialog_caption() -> None:
     bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
     assert "Save bank reconciliation report (CSV)" in bit
     assert "def _suggested_reconciliation_csv_filename(self)" in bit
+    assert "suggested_bank_import_batch_csv_filename" in bit
     assert "bank_import_csv_default_save_path" in bit
     assert "remember_bank_import_csv_export_parent" in bit
     start = bit.index("def _on_export_reconciliation_csv(self):")
@@ -5411,6 +5413,7 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
     assert "_after_stmt_match_sync" in bit
     sm = (_DESKTOP_APP_DIR / "statement_line_match_panel.py").read_text(encoding="utf-8")
     assert "from desktop_app.bank_import_csv_export_paths import" in sm
+    assert "suggested_bank_import_batch_csv_filename" in sm
     assert "from desktop_app.qt_combo_ids import coerce_combo_int_id" in sm
     assert "customContextMenuRequested" in sm
     assert "copy_table_row_as_tsv" in sm

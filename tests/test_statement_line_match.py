@@ -353,6 +353,47 @@ def test_bank_import_csv_default_save_path_reads_legacy_line_compare_key(tmp_pat
     )
 
 
+def test_suggested_bank_import_batch_csv_filename_reconciliation_variant() -> None:
+    from desktop_app.bank_import_csv_export_paths import suggested_bank_import_batch_csv_filename
+
+    assert (
+        suggested_bank_import_batch_csv_filename(
+            None,
+            filename_suffix="reconciliation",
+            batch_id_prefix="bank-reconciliation-batch",
+            when_no_batch="bank-reconciliation-report.csv",
+        )
+        == "bank-reconciliation-report.csv"
+    )
+    assert (
+        suggested_bank_import_batch_csv_filename(
+            {"filename": r"C:\Data\January Stmt.csv", "id": 1},
+            filename_suffix="reconciliation",
+            batch_id_prefix="bank-reconciliation-batch",
+            when_no_batch="bank-reconciliation-report.csv",
+        )
+        == "January-Stmt-reconciliation.csv"
+    )
+    assert (
+        suggested_bank_import_batch_csv_filename(
+            {"id": 99, "filename": ""},
+            filename_suffix="reconciliation",
+            batch_id_prefix="bank-reconciliation-batch",
+            when_no_batch="bank-reconciliation-report.csv",
+        )
+        == "bank-reconciliation-batch-99.csv"
+    )
+    assert (
+        suggested_bank_import_batch_csv_filename(
+            {"id": "12", "filename": None},
+            filename_suffix="reconciliation",
+            batch_id_prefix="bank-reconciliation-batch",
+            when_no_batch="bank-reconciliation-report.csv",
+        )
+        == "bank-reconciliation-batch-12.csv"
+    )
+
+
 def test_suggested_line_compare_csv_filename_uses_batch_stem_or_id() -> None:
     from desktop_app.statement_line_match_panel import _suggested_line_compare_csv_filename
 

@@ -4,6 +4,9 @@ Shared **QSettings** directory memory for Bank Import **CSV** save dialogs.
 Uses ``bank_import/last_csv_export_dir``. Falls back to the older
 ``bank_import/line_compare_csv_export_dir`` when the new key is unset so existing installs
 keep their remembered folder.
+
+Also provides **suggested export basenames** from the import batch (sanitized file stem or
+``{prefix}-{id}.csv``), used by reconciliation report and line-comparison exports.
 """
 
 from __future__ import annotations
@@ -13,8 +16,42 @@ from typing import Optional
 
 from PySide6.QtCore import QSettings
 
+from desktop_app.qt_combo_ids import coerce_combo_int_id
+
 BANK_IMPORT_LAST_CSV_EXPORT_DIR_KEY = "bank_import/last_csv_export_dir"
 _LEGACY_LINE_COMPARE_CSV_EXPORT_DIR_KEY = "bank_import/line_compare_csv_export_dir"
+
+
+def suggested_bank_import_batch_csv_filename(
+    batch: Optional[dict],
+    *,
+    filename_suffix: str,
+    batch_id_prefix: str,
+    when_no_batch: str,
+) -> str:
+    """
+    Default ``*.csv`` basename from a **bank_import_batches** row dict.
+
+    ``filename_suffix`` is the trailing tag (e.g. ``line-compare``, ``reconciliation``).
+    ``batch_id_prefix`` is used before the numeric id when ``filename`` is empty
+    (e.g. ``line-compare-batch``, ``bank-reconciliation-batch``).
+    """
+    if not batch:
+        return when_no_batch
+    raw = str(batch.get("filename") or "").strip()
+    if raw:
+        base = Path(raw.replace("\\", "/")).name
+        stem = Path(base).stem.strip() or "import"
+        safe = "".join(
+            ch if ch.isalnum() or ch in (" ", "-", "_", ".") else "_" for ch in stem
+        )
+        safe = safe.strip("._- ")[:100] or "import"
+        safe = "-".join(part for part in safe.split() if part)
+        return f"{safe}-{filename_suffix}.csv"
+    bid = coerce_combo_int_id(batch.get("id"))
+    if bid is not None:
+        return f"{batch_id_prefix}-{bid}.csv"
+    return when_no_batch
 
 
 def _resolved_export_parent(settings: QSettings) -> Optional[Path]:

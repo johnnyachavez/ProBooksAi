@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
 from desktop_app.bank_import_csv_export_paths import (
     bank_import_csv_default_save_path,
     remember_bank_import_csv_export_parent,
+    suggested_bank_import_batch_csv_filename,
 )
 from desktop_app.qt_combo_ids import coerce_combo_int_id
 from desktop_app.qt_mnemonic import (
@@ -89,22 +90,12 @@ def _suggested_line_compare_csv_filename(batch: Optional[dict]) -> str:
 
     Uses the batch ``filename`` stem when set (sanitized); otherwise ``line-compare-batch-{id}``.
     """
-    if not batch:
-        return "line-reconciliation-comparison.csv"
-    raw = str(batch.get("filename") or "").strip()
-    if raw:
-        base = Path(raw.replace("\\", "/")).name
-        stem = Path(base).stem.strip() or "import"
-        safe = "".join(
-            ch if ch.isalnum() or ch in (" ", "-", "_", ".") else "_" for ch in stem
-        )
-        safe = safe.strip("._- ")[:100] or "import"
-        safe = "-".join(part for part in safe.split() if part)
-        return f"{safe}-line-compare.csv"
-    bid = coerce_combo_int_id(batch.get("id"))
-    if bid is not None:
-        return f"line-compare-batch-{bid}.csv"
-    return "line-reconciliation-comparison.csv"
+    return suggested_bank_import_batch_csv_filename(
+        batch,
+        filename_suffix="line-compare",
+        batch_id_prefix="line-compare-batch",
+        when_no_batch="line-reconciliation-comparison.csv",
+    )
 
 
 class StatementLineMatchPanel(QGroupBox):
