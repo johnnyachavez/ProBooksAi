@@ -3085,6 +3085,7 @@ def test_desktop_main_document_intake_shortcuts_help_text_sections() -> None:
     assert "Help → Business shortcuts" in chunk
     assert chunk.count("probooks.backup") >= 2
     assert "Keyboard shortcuts…" in chunk
+    assert "UTF-8 with BOM for Excel" in chunk
 
 
 def test_desktop_main_document_intake_help_text_file_view_bank_section_order() -> None:
