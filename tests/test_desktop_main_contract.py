@@ -1092,6 +1092,21 @@ def test_desktop_main_show_intake_shortcuts_dialog_delegates_to_message_box() ->
     assert "Company .db: File → Backup / Restore (probooks.backup)." in chunk
 
 
+def test_desktop_main_intake_accepted_mimes_extensions_and_status_colors_alias() -> None:
+    """Intake import filters use shared MIME/extension sets; status colours follow the theme."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("# Accepted MIME types / file extensions")
+    end = text.index("INBOX_HEADER_COLOR = ", start)
+    chunk = text[start:end]
+    assert "ACCEPTED_MIMES = " in chunk
+    assert "ACCEPTED_EXTENSIONS = " in chunk
+    assert "application/pdf" in chunk
+    assert "image/jpeg" in chunk
+    assert "image/png" in chunk
+    assert ".jpg" in chunk and ".jpeg" in chunk and ".png" in chunk
+    assert "STATUS_COLORS = THEME_STATUS_COLORS" in chunk
+
+
 def test_desktop_main_ai_worker_runs_extractor_and_categorizer_in_run() -> None:
     """``AIWorker`` loads ai modules in ``run``, emits ``finished`` or ``error``."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -1120,6 +1135,20 @@ def test_desktop_main_inbox_widget_drop_emits_paths_and_populate_sets_doc_ids() 
     assert chunk.count("IntSortTableItem(str(did), did)") == 1
     assert chunk.count("Qt.ItemDataRole.UserRole") >= 2
     assert chunk.count("def selected_doc_id(self) -> int | None:") == 1
+
+
+def test_desktop_main_inbox_widget_columns_selection_dnd_and_sorting() -> None:
+    """``InboxWidget`` uses fixed columns, row selection, no in-grid edit, drops, and sort toggles in populate."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index('    COLUMNS = ["#", "Filename", "Type", "Status", "Date"]')
+    end = text.index("    def selected_doc_id(self) -> int | None:", start)
+    chunk = text[start:end]
+    assert chunk.count("setHorizontalHeaderLabels(self.COLUMNS)") == 1
+    assert chunk.count("SelectionBehavior.SelectRows") == 1
+    assert chunk.count("EditTrigger.NoEditTriggers") == 1
+    assert chunk.count("setAcceptDrops(True)") == 1
+    assert chunk.count("CustomContextMenu") == 1
+    assert chunk.count("setSortingEnabled(") == 3
 
 
 def test_inbox_widget_table_has_hover_tooltip() -> None:
