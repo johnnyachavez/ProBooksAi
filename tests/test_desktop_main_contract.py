@@ -2018,7 +2018,7 @@ def test_desktop_main_detail_pane_document_type_combo_fixed_values() -> None:
 
 
 def test_desktop_main_detail_pane_scroll_wraps_resizable_inner_widget() -> None:
-    """``DetailPane`` ctor stores doc/COA state and hosts the form on a resizable inner ``QWidget``."""
+    """``DetailPane`` ctor: super, state, inner widget, ``QVBoxLayout`` margins/spacing, resizable scroll."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("class DetailPane(QScrollArea):")
     init_s = text.index("    def __init__(self, coa_list: list[str], parent=None):", start)
@@ -2031,6 +2031,9 @@ def test_desktop_main_detail_pane_scroll_wraps_resizable_inner_widget() -> None:
     assert chunk.count("self._coa_list = coa_list") == 1
     assert chunk.count("self.setWidget(inner)") == 1
     assert chunk.count("self.setWidgetResizable(True)") == 1
+    assert chunk.count("layout = QVBoxLayout(inner)") == 1
+    assert chunk.count("layout.setContentsMargins(12, 12, 12, 12)") == 1
+    assert chunk.count("layout.setSpacing(10)") == 1
 
 
 def test_desktop_main_detail_pane_extracted_fields_ten_form_rows() -> None:
@@ -2048,12 +2051,16 @@ def test_desktop_main_detail_pane_extracted_fields_ten_form_rows() -> None:
 
 
 def test_desktop_main_detail_pane_categorisation_four_form_rows() -> None:
-    """**Categorisation Suggestions** uses four ``QFormLayout`` rows (COA through rationale)."""
+    """**Categorisation**: editable COA combo filled from ctor list, four form rows, rationale styling."""
     text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("        cat_layout = QFormLayout(cat_group)")
+    start = text.index('        cat_group = QGroupBox("Categorisation Suggestions")')
     end = text.index("        layout.addWidget(cat_group)", start)
     chunk = text[start:end]
+    assert chunk.count("self._fill_coa_combo(coa_list)") == 1
+    assert chunk.count("self._f_coa.setEditable(True)") == 1
     assert chunk.count("cat_layout.addRow(") == 4
+    assert chunk.count("self._lbl_rationale.setWordWrap(True)") == 1
+    assert chunk.count("self._lbl_rationale.setTextFormat(Qt.TextFormat.PlainText)") == 1
 
 
 def test_desktop_main_detail_pane_three_section_group_boxes() -> None:
