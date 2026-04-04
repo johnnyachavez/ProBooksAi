@@ -3497,7 +3497,8 @@ class TaxSettingsTab(QWidget):
         super().__init__(parent)
         self._conn = conn
         self.setToolTip(
-            "Default sales tax name and rate for new invoices; save or Ctrl+S, export sales tax summary CSV (settings-only, no F5 list)."
+            "Default sales tax name and rate for new invoices; save or Ctrl+S; "
+            "export sales tax summary CSV uses UTF-8 BOM for Excel (settings-only, no F5 list)."
         )
         root = QVBoxLayout(self)
         lay = QFormLayout()
@@ -3539,6 +3540,7 @@ class TaxSettingsTab(QWidget):
         root.addWidget(ts_export_csv)
         ts_tip = QLabel(
             "Ctrl+S saves default tax name and rate (same as Save settings). "
+            "Export sales tax summary CSV uses UTF-8 BOM for Excel. "
             "Other Business sub-tabs use F5 to refresh lists; Tax % is settings-only. "
             "Help → Business shortcuts… for details."
         )
@@ -3728,7 +3730,7 @@ class BusinessHub(QWidget):
         )
         bar.setTabToolTip(
             4,
-            "Default sales tax name and rate for new invoices; export sales tax summary CSV.",
+            "Default sales tax name and rate for new invoices; export sales tax summary CSV (UTF-8 BOM for Excel).",
         )
         raw_idx = QSettings().value(_BUSINESS_HUB_SUBTAB_KEY, 0)
         want_idx = coerce_combo_int_id(raw_idx)
@@ -3743,7 +3745,8 @@ class BusinessHub(QWidget):
         lay.addWidget(self._business_subtabs)
         tip = QLabel(
             "F5 refreshes the current sub-tab when it has a list (Rules, Invoices, Bills, Payroll). "
-            "Tax % is settings-only. Help → Business shortcuts… for details; other main tabs also use F5."
+            "Tax % is settings-only; sales tax CSV export uses UTF-8 BOM for Excel. "
+            "Help → Business shortcuts… for details; other main tabs also use F5."
         )
         tip.setWordWrap(True)
         tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")

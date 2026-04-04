@@ -3517,7 +3517,10 @@ def test_business_hub_subtab_bar_has_tab_tooltips() -> None:
     assert "bar.setTabToolTip" in text
     assert "accounts receivable" in text
     assert "accounts payable" in text
-    assert "tip.setToolTip" in text.split("class BusinessHub", 1)[1].split("def _refresh_current_subtab", 1)[0]
+    hub = text.split("class BusinessHub", 1)[1].split("def _refresh_current_subtab", 1)[0]
+    assert "tip.setToolTip" in hub
+    assert "export sales tax summary CSV (UTF-8 BOM for Excel)" in hub
+    assert "sales tax CSV export uses UTF-8 BOM for Excel" in hub
 
 
 def test_main_help_menu_wires_more_tab_shortcuts_dialog() -> None:
@@ -4810,6 +4813,8 @@ def test_tax_settings_tab_buttons_have_tooltips() -> None:
     assert "Include invoices dated on or after" in chunk
     assert "Include invoices dated on or before" in chunk
     assert "ts_tip.setToolTip" in chunk
+    assert "export sales tax summary CSV uses UTF-8 BOM for Excel" in chunk
+    assert "Export sales tax summary CSV uses UTF-8 BOM for Excel" in chunk
 
 
 def test_extra_tabs_as_of_date_prompt_has_field_tooltip() -> None:
