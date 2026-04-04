@@ -518,9 +518,23 @@ def test_main_window_build_ui_tab_tooltips_intake_f5_and_window_drops() -> None:
     end = text.index("def _build_menu_bar", start)
     chunk = text[start:end]
     assert chunk.count("main_tab_bar.setTabToolTip(") == 8
+    assert chunk.count("_main_tab_bar_db_hint") == 8, (
+        "one _main_tab_bar_db_hint assignment plus seven tab tooltips that append it (tab 0 uses inline text)"
+    )
     assert chunk.count('QShortcut(QKeySequence("F5"), intake_widget)') == 1
     assert chunk.count("sc_intake_f5.activated.connect(self._refresh_inbox)") == 1
     assert chunk.count("self.setAcceptDrops(True)") == 1
+
+
+def test_main_window_drag_drop_handlers_follow_menu_bar() -> None:
+    """``MainWindow`` implements window-level drag/drop after ``_build_menu_bar`` (``setAcceptDrops``)."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    # -- drag & drop on window")
+    end = text.index("    # -- slots", start)
+    chunk = text[start:end]
+    assert chunk.count("def dragEnterEvent(") == 1
+    assert chunk.count("def dropEvent(") == 1
+    assert "self._import_files(paths)" in chunk
 
 
 def test_main_toolbar_import_and_refresh_tooltips_echo_file_menu_and_backup() -> None:
