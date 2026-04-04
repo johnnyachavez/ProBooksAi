@@ -996,6 +996,8 @@ def test_main_window_drag_drop_handlers_follow_menu_bar() -> None:
     chunk = text[start:end]
     assert chunk.count("def dragEnterEvent(") == 1
     assert chunk.count("def dropEvent(") == 1
+    assert "event.mimeData().hasUrls()" in chunk
+    assert "event.acceptProposedAction()" in chunk
     assert "self._import_files(paths)" in chunk
 
 
@@ -1861,6 +1863,37 @@ def test_desktop_main_coa_select_placeholder_and_combo_refresh() -> None:
     assert chunk.count("self._set_coa_combo_raw(current)") == 1
     assert chunk.count("def _coa_combo_raw_value(self) -> str | None:") == 1
     assert chunk.count("def _set_coa_combo_raw(self, raw: str | None) -> None:") == 1
+
+
+def test_desktop_main_detail_pane_clear_view_resets_doc_fields_and_disables_actions() -> None:
+    """``clear_view`` clears selection, preview, extracted fields, COA row, and disables action buttons."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def clear_view(self):")
+    end = text.index("class AppHeaderWidget(QFrame):", start)
+    chunk = text[start:end]
+    assert chunk.count("self._doc_id = None") == 1
+    assert chunk.count('self._lbl_filename.setText("No document selected")') == 1
+    assert chunk.count('self._preview_label.setText("(Select a document to preview)")') == 1
+    assert chunk.count("self._f_vendor.clear()") == 1
+    assert chunk.count("self._f_subtotal.setValue(0.0)") == 1
+    assert chunk.count("self._f_tax.setValue(0.0)") == 1
+    assert chunk.count("self._f_total.setValue(0.0)") == 1
+    assert chunk.count('self._f_currency.setText("USD")') == 1
+    assert chunk.count('self._f_confidence.setText("\\u2013")') == 1
+    assert chunk.count("self._lbl_rationale.clear()") == 1
+    assert chunk.count("self._set_buttons_enabled(False)") == 1
+
+
+def test_main_window_on_reject_sets_needs_review_refreshes_and_status_message() -> None:
+    """Reject flags the document for review again, syncs inbox + detail, and updates the status bar."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_reject(self, doc_id: int):")
+    end = text.index("    # -- helpers", start)
+    chunk = text[start:end]
+    assert chunk.count('self._db.set_status(doc_id, "Needs Review")') == 1
+    assert chunk.count("self._refresh_inbox()") == 1
+    assert chunk.count("self._detail.load_document(doc_id, self._db)") == 1
+    assert chunk.count("Document flagged \\u2013 Needs Review.") == 1
 
 
 def test_rules_tab_toolbar_buttons_have_tooltips() -> None:
