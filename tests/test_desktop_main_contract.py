@@ -476,12 +476,27 @@ def test_file_exit_menu_tip_suggests_backup() -> None:
     assert "File → Backup" in chunk
 
 
-def test_main_toolbar_import_tooltip_echoes_file_menu_ctrl_o() -> None:
+def test_main_toolbar_import_and_refresh_tooltips_echo_file_menu_and_backup() -> None:
+    """Main toolbar **Import** / **Refresh** mirror File backup hints; no ad-hoc ``setStatusTip``."""
     text = _MAIN.read_text(encoding="utf-8")
-    assert "act_import.setToolTip" in text
-    i = text.index("act_import.setToolTip")
-    assert "Ctrl+O" in text[i : i + 420]
-    assert "File → Backup" in text[i : i + 420]
+    start = text.index("# Toolbar")
+    end = text.index("# Container: header banner + tab widget", start)
+    chunk = text[start:end]
+    assert chunk.count("act_import = QAction(") == 1
+    assert chunk.count("act_refresh = QAction(") == 1
+    assert chunk.count("act_import.setToolTip(") == 1
+    assert chunk.count("act_refresh.setToolTip(") == 1
+    assert "act_import.setStatusTip(" not in chunk
+    assert "act_refresh.setStatusTip(" not in chunk
+    ii = chunk.index("act_import.setToolTip(")
+    ir = chunk.index("act_refresh.setToolTip(")
+    imp = chunk[ii : ii + 520]
+    ref = chunk[ir : ir + 520]
+    assert "Ctrl+O" in imp
+    assert "Import documents" in imp
+    assert "File → Backup" in imp or "probooks backup" in imp.lower()
+    assert "F5" in ref
+    assert "File → Backup" in ref or "probooks backup" in ref.lower()
 
 
 def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
