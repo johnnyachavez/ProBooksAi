@@ -3,7 +3,8 @@ AI-assisted statement line reconciliation panel (Bank Import tab).
 
 Shows Matched / Missing / Extra with review checkboxes (UI state only; no DB writes).
 **Export comparison CSV** writes the current grid (including reconciled yes/no) via
-``probooksai.statement_line_match.write_line_match_comparison_csv``; the save dialog suggests a
+``probooksai.statement_line_match.write_line_match_comparison_csv`` (UTF-8 with BOM for Excel);
+the save dialog suggests a
 basename from the import batch filename (or batch id) and re-opens in the last folder used
 for Bank Import CSV exports (``bank_import/last_csv_export_dir``; legacy
 ``bank_import/line_compare_csv_export_dir`` is still read if unset).
@@ -171,7 +172,7 @@ class StatementLineMatchPanel(QGroupBox):
 
         self._btn_export_csv = QPushButton("Export comparison CSV\u2026")
         self._btn_export_csv.setToolTip(
-            "Save the current Matched / Missing / Extra rows to a UTF-8 CSV "
+            "Save the current Matched / Missing / Extra rows to a UTF-8 CSV with BOM (Excel-friendly) "
             "(amounts as numbers; Reconciled column reflects checkboxes). "
             "The save dialog suggests a name from the import batch file or batch id, re-opens in the last "
             "folder used for Bank Import CSV exports (shared with reconciliation Export report CSV), "
@@ -375,7 +376,7 @@ class StatementLineMatchPanel(QGroupBox):
                 "Export comparison CSV\u2026", self._on_export_comparison_csv
             )
             act_export.setToolTip(
-                "Save all rows in this table to a UTF-8 CSV (same as the toolbar button; "
+                "Save all rows to a UTF-8 CSV with BOM (same as the toolbar button; "
                 "suggested name from the import batch; shared export folder with reconciliation report CSV; "
                 "last import folder if you have not exported CSV yet). "
                 + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX

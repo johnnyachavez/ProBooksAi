@@ -148,7 +148,7 @@ def _bank_import_keyboard_shortcuts_help_text() -> str:
         "Right-click the **Matched / Missing / Extra** line-reconciliation grid for **Copy row** "
         "(tab-separated text) on a row, **Export comparison CSV\u2026** or **Keyboard shortcuts…** "
         "when the table has results (empty viewport still offers export + shortcuts). "
-        "Export saves UTF-8 CSV (numeric amounts; **Reconciled** yes/no matches the checkboxes). "
+        "Export saves UTF-8 CSV with a BOM for Excel (numeric amounts; **Reconciled** yes/no matches the checkboxes). "
         "The save dialog suggests a filename from the batch and re-opens in the last folder you used "
         "when possible: last CSV export folder, else last import folder, else your profile folder "
         "(same as reconciliation export).\n\n"

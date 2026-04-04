@@ -351,7 +351,8 @@ def test_write_line_match_comparison_csv_writes_header_and_rows(tmp_path) -> Non
     ]
     path = tmp_path / "out.csv"
     write_line_match_comparison_csv(str(path), rows, [True])
-    text = path.read_text(encoding="utf-8")
+    assert path.read_bytes().startswith(b"\xef\xbb\xbf")
+    text = path.read_text(encoding="utf-8-sig")
     assert "Reconciled" in text and "Stmt amount" in text
     assert "yes" in text and STATUS_MATCHED in text and "9" in text
 
@@ -621,7 +622,7 @@ def test_write_line_match_comparison_csv_quotes_commas_in_descriptions(tmp_path)
     ]
     path = tmp_path / "quoted.csv"
     write_line_match_comparison_csv(str(path), rows, [False])
-    with path.open(encoding="utf-8", newline="") as f:
+    with path.open(encoding="utf-8-sig", newline="") as f:
         rdr = csv.reader(f)
         header = next(rdr)
         row = next(rdr)

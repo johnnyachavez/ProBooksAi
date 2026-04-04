@@ -4,7 +4,8 @@ Line-level statement vs register matching (AI reconciliation workflow).
 Compares *extracted* statement rows to *register* ``bank_transactions``-shaped dicts
 (description / ref_number / memo).
 Used by the Bank Import tab; does not modify the database or the register grid.
-``write_line_match_comparison_csv`` exports compare results plus UI reconciled flags.
+``write_line_match_comparison_csv`` exports compare results plus UI reconciled flags (UTF-8 with
+BOM for Excel-friendly open).
 
 Amounts are compared after coercion so string values with ``$``/commas/whitespace (typical of
 extracts) still match SQLite float/int register values; zero-width space (``U+200B``) is stripped
@@ -335,9 +336,10 @@ def write_line_match_comparison_csv(
     reconciled_flags: list[bool],
 ) -> None:
     """
-    Write ``compare_statement_to_register`` output plus UI **Reconciled** checkboxes to UTF-8 CSV.
+    Write ``compare_statement_to_register`` output plus UI **Reconciled** checkboxes to CSV.
 
-    *reconciled_flags* must have the same length as *result_rows* (one bool per grid row).
+    Uses UTF-8 with a BOM so Excel on Windows recognizes Unicode when the file is opened
+    directly. *reconciled_flags* must have the same length as *result_rows* (one bool per row).
     """
     if len(reconciled_flags) != len(result_rows):
         raise ValueError("reconciled_flags must have the same length as result_rows")
@@ -352,7 +354,7 @@ def write_line_match_comparison_csv(
         "Register description",
         "Register id",
     ]
-    with open(path, "w", newline="", encoding="utf-8") as f:
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(headers)
         for rec, row in zip(reconciled_flags, result_rows, strict=True):

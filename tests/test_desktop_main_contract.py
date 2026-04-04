@@ -3606,6 +3606,7 @@ def test_bank_import_tab_exposes_shortcuts_dialog_for_help_menu() -> None:
     assert "last import folder" in bit
     assert "last CSV export folder" in bit
     assert "last folder you picked a bank file" in bit
+    assert "UTF-8 CSV with a BOM for Excel" in bit
     assert "last CSV export folder if you have not imported yet" in bit
     assert "empty viewport" in bit
 
@@ -5458,6 +5459,12 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
     assert "Run mock extract & compare" in sm
     assert "compare_statement_to_register" in sm
     assert "write_line_match_comparison_csv" in sm
+    slm_py = (REPO_ROOT / "probooksai" / "statement_line_match.py").read_text(encoding="utf-8")
+    wcsv = slm_py.split("def write_line_match_comparison_csv", 1)[1].split(
+        "def mock_statement_lines_for_comparison", 1
+    )[0]
+    assert 'encoding="utf-8-sig"' in wcsv
+    assert "UTF-8 CSV with BOM" in sm
     assert "Export comparison CSV" in sm
     assert "Export report CSV" in sm
     assert "last import folder" in sm
