@@ -5324,6 +5324,21 @@ def test_bank_import_tab_csv_import_file_dialog_caption() -> None:
     assert "CSV spreadsheets (*.csv);;All files (*.*)" in bit
 
 
+def test_bank_import_csv_export_paths_wires_bidirectional_folder_fallbacks() -> None:
+    """Open dialog: import dir then export dir. Save path: export dir then import dir."""
+    p = (_DESKTOP_APP_DIR / "bank_import_csv_export_paths.py").read_text(encoding="utf-8")
+    open_fn = p.split("def bank_import_open_dialog_start_dir", 1)[1].split(
+        "def remember_bank_import_import_dir", 1
+    )[0]
+    assert "_resolved_import_parent(s)" in open_fn
+    assert "_resolved_export_parent(s)" in open_fn
+    save_fn = p.split("def bank_import_csv_default_save_path", 1)[1].split(
+        "def remember_bank_import_csv_export_parent", 1
+    )[0]
+    assert "_resolved_export_parent(s)" in save_fn
+    assert "_resolved_import_parent(s)" in save_fn
+
+
 def test_bank_import_csv_flow_column_map_then_statement_then_worker() -> None:
     """CSV path: map columns → statement period → save profile → threaded import with progress UI."""
     bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
