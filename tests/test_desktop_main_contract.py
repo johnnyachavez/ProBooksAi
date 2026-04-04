@@ -1460,6 +1460,37 @@ def test_detail_pane_scroll_and_main_toolbar_have_hover_tooltips() -> None:
     assert "probooks backup" in text.split("toolbar.setToolTip", 1)[1][:400]
 
 
+def test_desktop_main_detail_pane_wires_actions_load_ai_and_clear() -> None:
+    """``DetailPane`` buttons emit signals; load/AI/collect/clear paths touch DB and fields."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("class DetailPane(QScrollArea):")
+    end = text.index("class AppHeaderWidget(QFrame):", start)
+    chunk = text[start:end]
+    assert chunk.count("runAI      = Signal(int)") == 1
+    assert chunk.count("approve    = Signal(int)") == 1
+    assert chunk.count("markPosted = Signal(int)") == 1
+    assert chunk.count("reject     = Signal(int)") == 1
+    assert chunk.count("self._btn_run.clicked.connect(self._on_run_ai)") == 1
+    assert chunk.count("self._btn_approve.clicked.connect(self._on_approve)") == 1
+    assert chunk.count("self._btn_post.clicked.connect(self._on_post)") == 1
+    assert chunk.count("self._btn_reject.clicked.connect(self._on_reject)") == 1
+    assert chunk.count("self.runAI.emit(self._doc_id)") == 1
+    assert chunk.count("self.approve.emit(self._doc_id)") == 1
+    assert chunk.count("self.markPosted.emit(self._doc_id)") == 1
+    assert chunk.count("self.reject.emit(self._doc_id)") == 1
+    assert chunk.count("db.get_document(doc_id)") == 1
+    assert chunk.count("db.get_approved(doc_id)") == 1
+    assert chunk.count("db.get_latest_extraction(doc_id)") == 1
+    assert chunk.count("self._show_preview(row[\"stored_path\"]") == 1
+    assert chunk.count("def populate_ai_result(self, result, suggestions=None):") == 1
+    assert chunk.count("def collect_approved_values(self) -> dict:") == 1
+    assert chunk.count('"coa_account":') == 1
+    assert chunk.count("mimetype.startswith(\"image/\")") == 1
+    assert chunk.count('mimetype == "application/pdf"') == 1
+    assert chunk.count("self._doc_id = None") == 1
+    assert "No document selected" in chunk
+
+
 def test_rules_tab_toolbar_buttons_have_tooltips() -> None:
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
     start = et.index("class RulesTab")
