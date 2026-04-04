@@ -476,6 +476,17 @@ def test_file_exit_menu_tip_suggests_backup() -> None:
     assert "File → Backup" in chunk
 
 
+def test_main_window_toolbar_and_menu_bar_qaction_counts() -> None:
+    """Toolbar and menu bar each construct a fixed number of ``QAction``s (catch silent omissions)."""
+    text = _MAIN.read_text(encoding="utf-8")
+    tb_s = text.index("# Toolbar")
+    tb_e = text.index("# Container: header banner + tab widget", tb_s)
+    assert text[tb_s:tb_e].count("QAction(") == 2
+    mb_s = text.index("def _build_menu_bar")
+    mb_e = text.index("def dragEnterEvent", mb_s)
+    assert text[mb_s:mb_e].count("QAction(") == 21
+
+
 def test_main_toolbar_import_and_refresh_tooltips_echo_file_menu_and_backup() -> None:
     """Main toolbar **Import** / **Refresh** mirror File backup hints; no ad-hoc ``setStatusTip``."""
     text = _MAIN.read_text(encoding="utf-8")
