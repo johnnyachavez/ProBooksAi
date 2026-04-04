@@ -567,6 +567,15 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
     assert chunk.count("mb.addMenu(") == 5, (
         "expected five top-level menus (File, View, Edit, Tools, Help)"
     )
+    n_scut = chunk.count(".setShortcut(")
+    assert n_scut == 8, (
+        f"expected 8 menu bar .setShortcut( (5 File + View loop + Undo/Redo); got {n_scut}"
+    )
+    n_sctx = chunk.count(".setShortcutContext(")
+    assert n_sctx == 2, (
+        f"expected 2 .setShortcutContext(Qt.ApplicationShortcut) (copy path, View tabs); "
+        f"got {n_sctx}"
+    )
     assert "\n            act_import_docs,\n" in chunk
     assert "\n            act_open_company,\n" in chunk
     assert "\n            act_copy_db_path,\n" in chunk
