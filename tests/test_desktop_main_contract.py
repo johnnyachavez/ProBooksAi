@@ -477,11 +477,14 @@ def test_file_exit_menu_tip_suggests_backup() -> None:
 
 
 def test_main_window_toolbar_and_menu_bar_qaction_counts() -> None:
-    """Toolbar and menu bar each construct a fixed number of ``QAction``s (catch silent omissions)."""
+    """Toolbar: fixed ``QAction`` count, each wired and on the bar; menu bar: 21 ``QAction``s."""
     text = _MAIN.read_text(encoding="utf-8")
     tb_s = text.index("# Toolbar")
     tb_e = text.index("# Container: header banner + tab widget", tb_s)
-    assert text[tb_s:tb_e].count("QAction(") == 2
+    tb_chunk = text[tb_s:tb_e]
+    assert tb_chunk.count("QAction(") == 2
+    assert tb_chunk.count(".triggered.connect(") == 2
+    assert tb_chunk.count("toolbar.addAction(") == 2
     mb_s = text.index("def _build_menu_bar")
     mb_e = text.index("def dragEnterEvent", mb_s)
     assert text[mb_s:mb_e].count("QAction(") == 21
