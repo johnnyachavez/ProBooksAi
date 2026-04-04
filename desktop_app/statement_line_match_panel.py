@@ -173,7 +173,9 @@ class StatementLineMatchPanel(QGroupBox):
         self._btn_export_csv.setToolTip(
             "Save the current Matched / Missing / Extra rows to a UTF-8 CSV "
             "(amounts as numbers; Reconciled column reflects checkboxes). "
-            "The save dialog suggests a name from the import batch filename when available."
+            "The save dialog suggests a name from the import batch file or batch id, re-opens in the last "
+            "folder used for Bank Import CSV exports (shared with reconciliation Export report CSV), "
+            "and appends .csv if the path has no extension."
         )
         self._btn_export_csv.clicked.connect(self._on_export_comparison_csv)
         btn_row.addWidget(self._btn_export_csv)
@@ -373,7 +375,7 @@ class StatementLineMatchPanel(QGroupBox):
             )
             act_export.setToolTip(
                 "Save all rows in this table to a UTF-8 CSV (same as the toolbar button; "
-                "suggested filename from the import batch when available). "
+                "suggested name from the import batch; shared export folder with reconciliation report CSV). "
                 + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
             )
         idx = self._table.indexAt(pos)

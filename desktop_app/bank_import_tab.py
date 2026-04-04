@@ -936,7 +936,10 @@ class ReconciliationPanel(QGroupBox):
         btn_row.addWidget(self._btn_reconcile)
         self._btn_export_csv = QPushButton("Export report CSV\u2026")
         self._btn_export_csv.setToolTip(
-            "Export a reconciliation summary CSV for the selected import batch."
+            "Export a reconciliation summary CSV for the selected import batch (UTF-8). "
+            "The save dialog suggests a filename from the import file or batch id, re-opens in the last "
+            "folder used for other Bank Import CSV exports (same as line reconciliation Export comparison CSV), "
+            "and appends .csv if the path has no extension."
         )
         self._btn_export_csv.setEnabled(False)
         self._btn_export_csv.clicked.connect(self.exportCsvRequested.emit)
