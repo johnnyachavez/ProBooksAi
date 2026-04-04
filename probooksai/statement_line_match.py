@@ -92,7 +92,7 @@ def _coerce_amount(raw: Any) -> Optional[float]:
 
     Accepts numeric types and strings with optional ``$``, commas, surrounding whitespace,
     Unicode minus ``U+2212`` (common in CSV/PDF extract text), and ignores embedded ``\\r`` /
-    ``\\n`` (pasted spreadsheet cells). Returns ``None`` when missing or not parseable.
+    ``\\n`` / tab (pasted spreadsheet or TSV cells). Returns ``None`` when missing or not parseable.
     """
     if raw is None:
         return None
@@ -100,7 +100,7 @@ def _coerce_amount(raw: Any) -> Optional[float]:
         return None
     if isinstance(raw, (int, float)):
         return float(raw)
-    s = str(raw).strip().replace("\r", "").replace("\n", "")
+    s = str(raw).strip().replace("\r", "").replace("\n", "").replace("\t", "")
     if not s:
         return None
     if s.startswith("(") and s.endswith(")"):
