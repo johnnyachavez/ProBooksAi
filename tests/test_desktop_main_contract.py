@@ -5435,7 +5435,9 @@ def test_bank_import_tab_imports_bank_database_not_parse_csv() -> None:
     bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
     lines = [ln for ln in bit.splitlines() if ln.startswith("from probooksai.bank_import import")]
     assert len(lines) == 1
+    assert "ACCOUNT_TYPES" in lines[0]
     assert "BankDatabase" in lines[0]
+    assert "BANK_CSV_READ_ENCODING" in lines[0]
     assert "parse_csv" not in lines[0]
 
 
@@ -5473,7 +5475,7 @@ def test_bank_import_csv_flow_column_map_then_statement_then_worker() -> None:
     i_save = chunk.index("self._db.save_import_column_profile")
     i_work = chunk.index("worker = CsvImportWorker")
     assert i_col < i_per < i_save < i_work
-    assert 'read_text(encoding="utf-8-sig")' in chunk
+    assert "read_text(encoding=BANK_CSV_READ_ENCODING)" in chunk
     assert 'prog_dlg.setWindowTitle("Importing bank CSV")' in chunk
     assert "CSV import progress. Cancel stops further rows" in chunk
 

@@ -68,7 +68,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from probooksai.bank_import import ACCOUNT_TYPES, BankDatabase
+from probooksai.bank_import import ACCOUNT_TYPES, BANK_CSV_READ_ENCODING, BankDatabase
 from probooksai.coa_db import COADatabase
 
 from desktop_app.audit_dialog import show_entity_audit_history
@@ -1809,7 +1809,7 @@ class BankImportTab(QWidget):
 
         # 2. Read & detect headers
         try:
-            content = Path(path).read_text(encoding="utf-8-sig")
+            content = Path(path).read_text(encoding=BANK_CSV_READ_ENCODING)
         except Exception as exc:
             message_box_critical_ok(
                 self,

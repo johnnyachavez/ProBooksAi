@@ -49,6 +49,9 @@ from probooksai.database import default_intake_sqlite_path
 RECONCILE_TOLERANCE = 0.00   # cents-exact reconciliation
 ACCOUNT_TYPES = ("checking", "savings", "credit_card", "other")
 
+# Bank-export CSV (web download or Excel) is UTF-8 with an optional BOM.
+BANK_CSV_READ_ENCODING = "utf-8-sig"
+
 # One sentinel import batch per bank account for register-typed manual lines (not from CSV).
 MANUAL_ENTRY_BATCH_FILENAME = "(Manual entry)"
 
@@ -269,7 +272,7 @@ def parse_csv(
     ref_col: str = "",
 ) -> list[dict]:
     """
-    Parse *content* (Unicode CSV text; callers decode bytes—use ``utf-8-sig`` for typical bank/Excel files).
+    Parse *content* (Unicode CSV text; callers decode bytes with :data:`BANK_CSV_READ_ENCODING`).
 
     Returns a list of dicts with keys:
         txn_date, description, amount, ref_number
@@ -1099,7 +1102,7 @@ class BankDatabase:
         High-level helper: parse CSV → create batch → import transactions.
 
         *csv_content* must be decoded text. The desktop Bank Import tab reads the file with
-        ``encoding='utf-8-sig'`` so an Excel BOM is stripped before this runs.
+        :data:`BANK_CSV_READ_ENCODING` so an Excel BOM is stripped before this runs.
 
         Returns dict with keys:
             batch_id, inserted, skipped, parse_errors

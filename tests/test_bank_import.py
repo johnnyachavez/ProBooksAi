@@ -677,17 +677,23 @@ class TestReconciliationExport:
         assert "50" in text
 
 
-def test_parse_csv_docstring_mentions_utf8_sig() -> None:
+def test_parse_csv_docstring_mentions_bank_csv_read_encoding() -> None:
     text = (REPO_ROOT / "probooksai" / "bank_import.py").read_text(encoding="utf-8")
     chunk = text.split("def parse_csv(\n", 1)[1][:900]
-    assert "utf-8-sig" in chunk
+    assert "BANK_CSV_READ_ENCODING" in chunk
 
 
-def test_import_csv_method_docstring_mentions_utf8_sig_csv_content() -> None:
+def test_import_csv_method_docstring_mentions_bank_csv_read_encoding() -> None:
     text = (REPO_ROOT / "probooksai" / "bank_import.py").read_text(encoding="utf-8")
     chunk = text.split("    def import_csv(\n", 1)[1][:1400]
-    assert "utf-8-sig" in chunk
+    assert "BANK_CSV_READ_ENCODING" in chunk
     assert "csv_content" in chunk
+
+
+def test_bank_csv_read_encoding_is_utf8_sig() -> None:
+    from probooksai.bank_import import BANK_CSV_READ_ENCODING
+
+    assert BANK_CSV_READ_ENCODING == "utf-8-sig"
 
 
 def test_register_payee_two_line_plain_prioritizes_coa_then_memo() -> None:
