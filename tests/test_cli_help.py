@@ -55,3 +55,16 @@ def test_probooks_help_epilog_and_exit_zero() -> None:
     assert "File → Backup" in text
     assert "UTF-8 BOM for Excel" in text
     assert "import csv --errors-out" in text
+
+
+def test_probooks_import_csv_help_mentions_utf8_optional_bom_input() -> None:
+    from probooks.cli import main
+
+    buf = io.StringIO()
+    with patch.object(sys, "stdout", buf):
+        with pytest.raises(SystemExit) as exc:
+            main(["import", "csv", "--help"])
+    assert exc.value.code == 0
+    text = buf.getvalue()
+    assert "UTF-8" in text and "optional BOM" in text
+    assert "import_batch" in text and "bank_transactions" in text

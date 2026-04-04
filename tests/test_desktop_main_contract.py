@@ -3088,6 +3088,7 @@ def test_desktop_main_document_intake_shortcuts_help_text_sections() -> None:
     assert "Keyboard shortcuts…" in chunk
     assert "UTF-8 with BOM for Excel" in chunk
     assert "reconciliation report and line-compare" in chunk
+    assert "Bank Import Import CSV" in chunk and "optional BOM" in chunk
 
 
 def test_desktop_main_document_intake_help_text_file_view_bank_section_order() -> None:
@@ -3544,9 +3545,11 @@ def test_main_help_menu_status_tips_mention_utf8_bom_csv_exports() -> None:
         "UTF-8 BOM CSV exports on Bank Import, Register, Reports, Journal, Business, and Audit"
         in intake
     )
+    assert "Bank Import Import CSV" in intake and "reads UTF-8 optional BOM" in intake
     bi = chunk.split("act_bank_import_keys = QAction", 1)[1].split(
         "act_register_keys = QAction", 1
     )[0]
+    assert "Import CSV reads UTF-8 with optional BOM" in bi
     assert "line-compare CSV uses UTF-8 BOM for Excel" in bi
     reg = chunk.split("act_register_keys = QAction", 1)[1].split(
         "act_business_keys = QAction", 1

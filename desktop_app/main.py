@@ -125,7 +125,8 @@ def _document_intake_keyboard_shortcuts_help_text() -> str:
         "Ctrl+5 Reports, Ctrl+6 Journal, Ctrl+7 Business, Ctrl+8 Audit log — all tabs share the open "
         "company SQLite file (File → Backup / Restore, probooks.backup).\n\n"
         "CSV exports on Bank Import (reconciliation report and line-compare), Register, Reports, Journal, Business, "
-        "and Audit use UTF-8 with BOM for Excel.\n\n"
+        "and Audit use UTF-8 with BOM for Excel.\n"
+        "Bank Import Import CSV… reads bank statement CSV as UTF-8 with optional BOM.\n\n"
         "Right-click the inbox grid (including empty area) for Keyboard shortcuts… "
         "(same as this dialog).\n\n"
         "COA, Journal, Reports, Audit:\n"
@@ -1187,8 +1188,8 @@ class MainWindow(QMainWindow):
         _menu_action_tip(
             act_intake_keys,
             "F5 refresh, Ctrl+O import, File → Backup/Restore (probooks.backup), View chords; "
-            "the dialog summarizes UTF-8 BOM CSV exports on Bank Import, Register, Reports, Journal, Business, and Audit "
-            "and links to other Help topics.",
+            "the dialog summarizes UTF-8 BOM CSV exports on Bank Import, Register, Reports, Journal, Business, and Audit; "
+            "Bank Import Import CSV… reads UTF-8 optional BOM; links to other Help topics.",
         )
         act_intake_keys.triggered.connect(
             lambda: show_document_intake_keyboard_shortcuts_dialog(self)
@@ -1197,7 +1198,8 @@ class MainWindow(QMainWindow):
         act_bank_import_keys = QAction("Bank &import shortcuts…", self)
         _menu_action_tip(
             act_bank_import_keys,
-            "F5 refresh and context-menu shortcuts for Bank Import; reconciliation / line-compare CSV uses UTF-8 BOM for Excel. "
+            "F5 refresh and context-menu shortcuts for Bank Import; Import CSV reads UTF-8 with optional BOM; "
+            "reconciliation / line-compare CSV uses UTF-8 BOM for Excel. "
             "Document intake help lists File backup/restore.",
         )
         act_bank_import_keys.triggered.connect(

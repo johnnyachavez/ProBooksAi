@@ -284,7 +284,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     imp = sub.add_parser("import", help="Import data")
     imp_sub = imp.add_subparsers(dest="import_cmd", required=True)
-    ic = imp_sub.add_parser("csv", help="Import bank transactions from CSV")
+    ic = imp_sub.add_parser(
+        "csv",
+        help="Import bank transactions from CSV",
+        description=(
+            "Reads the file as UTF-8 with an optional BOM (typical bank/Excel exports). "
+            "Creates an import_batch and inserts bank_transactions rows."
+        ),
+    )
     ic.add_argument("--account", "-a", type=int, required=True, help="bank_accounts.id")
     ic.add_argument("--file", "-f", type=Path, required=True)
     ic.add_argument("--skip-rows", type=int, default=0, help="leading rows to skip (e.g. header = 1)")
