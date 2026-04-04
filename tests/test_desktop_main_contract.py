@@ -147,17 +147,35 @@ def test_main_menu_action_tip_mentioning_clipboard_includes_backup_suffix() -> N
         )
 
 
-def test_copy_company_database_path_action_uses_menu_action_tip() -> None:
-    """**Copy company database path** must use ``_menu_action_tip`` so status bar matches hover text."""
+_FILE_MENU_QACTION_NAMES: tuple[str, ...] = (
+    "act_import_docs",
+    "act_open_company",
+    "act_new_company",
+    "act_backup",
+    "act_restore",
+    "act_copy_db_path",
+    "act_save",
+    "act_save_as",
+    "act_exit",
+)
+
+
+def test_file_menu_qactions_use_menu_action_tip_only() -> None:
+    """**File** menu actions set hover + status text only via ``_menu_action_tip``."""
     text = _MAIN.read_text(encoding="utf-8")
-    assert text.count("act_copy_db_path.setToolTip(") == 0
-    assert text.count("act_copy_db_path.setStatusTip(") == 0
-    start = text.index("act_copy_db_path = QAction")
-    end = text.index("act_copy_db_path.triggered.connect", start)
-    block = text[start:end]
-    assert "_menu_action_tip(" in block
-    tip_start = block.index("_menu_action_tip(")
-    assert "act_copy_db_path" in block[tip_start : tip_start + 160]
+    start = text.index("# File menu")
+    end = text.index("# View menu", start)
+    chunk = text[start:end]
+    for name in _FILE_MENU_QACTION_NAMES:
+        assert chunk.count(f"{name} = QAction(") == 1, name
+        tip_hdr = f"_menu_action_tip(\n            {name},"
+        assert chunk.count(tip_hdr) == 1, f"{name} should use _menu_action_tip once"
+        assert f"{name}.setToolTip(" not in chunk, (
+            f"{name} should not call setToolTip directly; use _menu_action_tip"
+        )
+        assert f"{name}.setStatusTip(" not in chunk, (
+            f"{name} should not call setStatusTip directly; use _menu_action_tip"
+        )
 
 
 # Static ``QMessageBox.*`` entry points skip ``tip_message_box_buttons`` / ``setToolTip`` on the dialog.
