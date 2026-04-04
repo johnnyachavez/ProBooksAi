@@ -981,6 +981,7 @@ def test_main_window_set_tab_sync_title_and_company_status_helpers() -> None:
     end = text.index("    def _rebuild_bank_related_tabs(self):", start)
     chunk = text[start:end]
     assert chunk.count('if not hasattr(self, "_tabs"):') == 1
+    assert chunk.count("if index < 0 or index >= self._tabs.count():") == 1
     assert chunk.count("self._tabs.setCurrentIndex(index)") == 1
     assert chunk.count("self._tabs.count()") == 1
     assert chunk.count("application_version()") == 1
@@ -1353,6 +1354,19 @@ def test_inbox_widget_populate_plain_cells_and_status_color() -> None:
     assert chunk.count("plain_display_table_item(") == 4
     assert chunk.count("STATUS_COLORS.get(status") == 1
     assert chunk.count("status_item.setForeground(QColor(color))") == 1
+
+
+def test_inbox_widget_populate_sortable_id_cells_type_column_and_import_date() -> None:
+    """``populate`` stores doc id on column 0, PDF vs Image in type column, date as first 10 chars."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def populate(self, rows: list):")
+    end = text.index("    def selected_doc_id(self) -> int | None:", start)
+    chunk = text[start:end]
+    assert chunk.count("self.setRowCount(len(rows))") == 1
+    assert chunk.count('int(row["id"])') == 1
+    assert chunk.count("id_cell.setData(Qt.ItemDataRole.UserRole, did)") == 1
+    assert chunk.count('doc_type = "PDF" if "pdf" in mime else "Image"') == 1
+    assert chunk.count('(row["import_date"] or "")[:10]') == 1
 
 
 def test_inbox_widget_table_has_hover_tooltip() -> None:
