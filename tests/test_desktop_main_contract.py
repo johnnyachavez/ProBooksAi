@@ -750,6 +750,65 @@ def test_main_window_on_approve_mark_posted_reject_detail_flow() -> None:
     assert chunk.count("self._detail.load_document(doc_id, self._db)") == 3
 
 
+def test_main_window_on_import_and_files_dropped_delegate_to_import_files() -> None:
+    """Menu/toolbar import and inbox drops both funnel into ``_import_files``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    imp_s = text.index("    def _on_import(self):")
+    imp_e = text.index("    def _on_files_dropped(self, paths: list[str]):", imp_s)
+    imp_chunk = text[imp_s:imp_e]
+    assert imp_chunk.count("QFileDialog.getOpenFileNames(") == 1
+    assert imp_chunk.count("Import Documents") == 1
+    assert imp_chunk.count("self._import_files(paths)") == 1
+
+    drop_s = imp_e
+    drop_e = text.index("    def _import_files(self, paths: list[str]):", drop_s)
+    drop_chunk = text[drop_s:drop_e]
+    assert drop_chunk.count("self._import_files(paths)") == 1
+
+
+def test_main_window_import_files_filters_extensions_adds_documents_refreshes_inbox() -> None:
+    """``_import_files`` skips unknown extensions, stores accepted types, then refreshes the inbox."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _import_files(self, paths: list[str]):")
+    end = text.index("    def _on_selection_changed(self):", start)
+    chunk = text[start:end]
+    assert chunk.count("ACCEPTED_EXTENSIONS") == 1
+    assert chunk.count("self._db.add_document(path, mime, store=True)") == 1
+    assert chunk.count("self._refresh_inbox()") == 1
+    assert chunk.count('"Skipped Files"') == 1
+
+
+def test_main_window_refresh_inbox_and_coa_changed_sync_lists() -> None:
+    """``_refresh_inbox`` repopulates the inbox; ``_on_coa_changed`` refreshes COA-derived UI."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _refresh_inbox(self):")
+    end = text.index("    def _set_main_tab_index(self, index: int) -> None:", start)
+    chunk = text[start:end]
+    assert chunk.count("self._db.list_documents()") == 1
+    assert chunk.count("self._inbox.populate(docs)") == 1
+    assert chunk.count("load_coa()") == 1
+    assert chunk.count("self._coa_db.display_list()") == 1
+    assert chunk.count("self._detail.update_coa(coa_display)") == 1
+    assert chunk.count("self._register_tab.refresh_coa_choices()") == 1
+
+
+def test_main_window_build_menu_bar_wires_all_action_triggers() -> None:
+    """Every menu ``QAction`` that should fire a slot has a ``triggered.connect`` (15 wired, 6 disabled stubs)."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _build_menu_bar(self):")
+    end = text.index("    # -- drag & drop on window", start)
+    chunk = text[start:end]
+    assert chunk.count("QAction(") == 21
+    assert chunk.count(".triggered.connect(") == 15
+    assert (
+        chunk.count(
+            "lambda checked=False, i=idx: self._set_main_tab_index(i)"
+        )
+        == 1
+    )
+    assert chunk.count("act_exit.triggered.connect(self.close)") == 1
+
+
 def test_main_window_drag_drop_handlers_follow_menu_bar() -> None:
     """``MainWindow`` implements window-level drag/drop after ``_build_menu_bar`` (``setAcceptDrops``)."""
     text = _MAIN.read_text(encoding="utf-8")
