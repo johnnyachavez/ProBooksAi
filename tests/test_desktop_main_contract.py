@@ -715,12 +715,17 @@ def test_main_window_switch_backup_restore_guard_busy_ai_worker() -> None:
 
 
 def test_main_window_on_backup_company_calls_backup_database_and_dialog_flow() -> None:
-    """``_on_backup_company`` saves via ``backup_database`` and surfaces busy/failure/success boxes."""
+    """Backup: resolved src path, default *-backup.db name, ``.db`` suffix, ``backup_database``, dialogs."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _on_backup_company(self):")
     end = text.index("    def _on_restore_company(self):", start)
     chunk = text[start:end]
     assert chunk.count("QFileDialog.getSaveFileName(") == 1
+    assert chunk.count("Backup company database (probooks backup)") == 1
+    assert chunk.count("src = Path(self._bank_db._db_path).resolve()") == 1
+    assert chunk.count('f"{src.stem}-backup.db"') == 1
+    assert chunk.count('if not path.lower().endswith(".db"):') == 1
+    assert chunk.count('path += ".db"') == 1
     assert chunk.count("backup_database(src, Path(path))") == 1
     assert chunk.count('"Backup failed"') == 2
     assert chunk.count('"Backup complete"') == 1
@@ -2001,6 +2006,9 @@ def test_desktop_main_detail_pane_scroll_wraps_resizable_inner_widget() -> None:
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("class DetailPane(QScrollArea):")
     init_s = text.index("    def __init__(self, coa_list: list[str], parent=None):", start)
+    inner = text.index("        inner = QWidget()", init_s)
+    chunk = text[init_s:inner]
+    assert chunk.count("super().__init__(parent)") == 1
     end = text.index("        # -- Document info ---------------------------------------------------", init_s)
     chunk = text[init_s:end]
     assert chunk.count("self._doc_id: int | None = None") == 1
