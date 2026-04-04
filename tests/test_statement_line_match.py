@@ -138,6 +138,11 @@ def test_descriptions_match_treats_newlines_and_tabs_as_spaces() -> None:
     assert descriptions_match("OVERDRAFT", "over\u00addraft")
 
 
+def test_descriptions_match_casefolds_unicode_letters() -> None:
+    assert descriptions_match("STRASSE", "straße")
+    assert descriptions_match("straße", "STRASSE MAIN")
+
+
 def test_descriptions_match_substring_and_fuzzy() -> None:
     assert descriptions_match("AMAZON MARKETPLACE", "amazon")
     assert descriptions_match("coffee", "COFFEE SHOP DOWNTOWN")

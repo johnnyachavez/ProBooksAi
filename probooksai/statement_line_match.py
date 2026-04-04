@@ -18,7 +18,8 @@ US month/day order does not parse (e.g. day > 12).
 
 Description similarity joins **description**, **ref_number**, and **memo** (non-empty parts,
 normalized spacing) on each side so register fields split across columns still match a single
-statement line (including extracts that carry check or confirmation numbers). Embedded line breaks
+statement line (including extracts that carry check or confirmation numbers). Matching is
+case-insensitive via ``str.casefold``. Embedded line breaks
 in those text fields are treated as spaces before comparison; non-breaking spaces (NBSP) are
 normalized to ordinary spaces. Zero-width space (``U+200B``) and soft hyphen (``U+00AD``,
 PDF optional hyphenation) are removed.
@@ -166,9 +167,10 @@ def amounts_equal(a: Any, b: Any) -> bool:
 def descriptions_match(desc_stmt: str, desc_reg: str) -> bool:
     """
     Basic similarity: substring either way, or SequenceMatcher ratio >= 0.35.
+    Uses ``str.casefold`` for Unicode-stable case-insensitive comparison.
     """
-    na = _normalize_paste_whitespace(desc_stmt or "").lower()
-    nb = _normalize_paste_whitespace(desc_reg or "").lower()
+    na = _normalize_paste_whitespace(desc_stmt or "").casefold()
+    nb = _normalize_paste_whitespace(desc_reg or "").casefold()
     if not na and not nb:
         return True
     if not na or not nb:
@@ -204,8 +206,8 @@ def transaction_pair_matches(stmt: dict[str, Any], reg: dict[str, Any]) -> bool:
 
 
 def _description_match_score(stmt: dict[str, Any], reg: dict[str, Any]) -> float:
-    na = _combined_description_for_match(stmt).lower()
-    nb = _combined_description_for_match(reg).lower()
+    na = _combined_description_for_match(stmt).casefold()
+    nb = _combined_description_for_match(reg).casefold()
     if not na and not nb:
         return 1.0
     if not na or not nb:
