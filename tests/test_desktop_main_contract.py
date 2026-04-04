@@ -5750,6 +5750,13 @@ def test_register_tab_manual_entry_dialog_and_insert_wiring() -> None:
     assert "SelectionBehavior.SelectItems" in text
 
 
+def test_register_tab_export_csv_writes_utf8_sig_for_excel() -> None:
+    """Register Export CSV uses UTF-8 with BOM so Excel opens amounts/dates reliably."""
+    text = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
+    chunk = text.split("def _export_csv(self):", 1)[1].split("def _on_coa_changed", 1)[0]
+    assert 'encoding="utf-8-sig"' in chunk
+
+
 def test_register_tab_cleared_actions_document_shortcuts_in_tooltips() -> None:
     """Register shortcuts (F5, Ctrl+Shift+*) match tooltips and QShortcut wiring."""
     text = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
@@ -5807,6 +5814,7 @@ def test_register_keyboard_shortcuts_help_text_matches_wired_chords() -> None:
         "F5 — Refresh",
         "Ctrl+Shift+G",
         "Ctrl+Shift+E",
+        "BOM",
         "Ctrl+Shift+C",
         "Ctrl+Shift+U",
         "Document intake shortcuts",

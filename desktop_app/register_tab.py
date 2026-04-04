@@ -329,7 +329,7 @@ def _register_keyboard_shortcuts_help_text() -> str:
         "Keyboard shortcuts… (same as this dialog).\n\n"
         "F5 — Refresh\n"
         "Ctrl+Shift+G — Post selected to GL\n"
-        "Ctrl+Shift+E — Export CSV…\n"
+        "Ctrl+Shift+E — Export CSV… (UTF-8 with BOM for Excel)\n"
         "Ctrl+Shift+C — Mark cleared (selected rows)\n"
         "Ctrl+Shift+U — Clear cleared (selected rows)\n"
         "\n"
@@ -432,6 +432,7 @@ class RegisterTab(QWidget):
         self._btn_export = QPushButton("Export CSV…")
         self._btn_export.setToolTip(
             "Export the current grid to CSV (respects the active filter and column order). "
+            "UTF-8 with BOM for Excel. "
             "Shortcut: Ctrl+Shift+E (when Register has focus)."
         )
         self._btn_export.clicked.connect(self._export_csv)
@@ -1505,7 +1506,7 @@ class RegisterTab(QWidget):
             "Batch_reconciled",
             "Match",
         ]
-        with open(path, "w", newline="", encoding="utf-8") as fp:
+        with open(path, "w", newline="", encoding="utf-8-sig") as fp:
             w = csv.writer(fp)
             w.writerow(hdr)
             for txn in rows:
