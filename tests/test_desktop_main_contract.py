@@ -3607,6 +3607,7 @@ def test_bank_import_tab_exposes_shortcuts_dialog_for_help_menu() -> None:
     assert "last CSV export folder" in bit
     assert "last folder you picked a bank file" in bit
     assert "UTF-8 CSV with a BOM for Excel" in bit
+    assert "writes UTF-8 with a BOM for Excel" in bit
     assert "last CSV export folder if you have not imported yet" in bit
     assert "empty viewport" in bit
 
@@ -4102,7 +4103,7 @@ def test_bank_import_manage_accounts_and_reconciliation_buttons_have_tooltips() 
     rec_chunk = bit.split("class ReconciliationPanel", 1)[1].split("class BankImportTab", 1)[0]
     assert "Compares statement dates and balances" in rec_chunk
     assert "_lbl_status.setToolTip" in rec_chunk
-    assert "UTF-8" in rec_chunk
+    assert "UTF-8 with BOM for Excel" in rec_chunk
     assert "Export comparison CSV" in rec_chunk
     assert "last import folder" in rec_chunk
     assert "appends .csv" in rec_chunk
@@ -5360,6 +5361,11 @@ def test_bank_import_csv_flow_column_map_then_statement_then_worker() -> None:
 def test_bank_import_tab_reconciliation_export_file_dialog_caption() -> None:
     """Reconciliation export save dialog states format and matches CSV filter wording."""
     bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
+    bio = (REPO_ROOT / "probooksai" / "bank_import.py").read_text(encoding="utf-8")
+    ex = bio.split("def export_batch_reconciliation_csv", 1)[1].split(
+        "    def import_transactions", 1
+    )[0]
+    assert 'encoding="utf-8-sig"' in ex
     assert "Save bank reconciliation report (CSV)" in bit
     assert "def _suggested_reconciliation_csv_filename(self)" in bit
     assert "suggested_bank_import_batch_csv_filename" in bit

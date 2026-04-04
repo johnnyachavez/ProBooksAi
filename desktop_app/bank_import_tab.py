@@ -134,8 +134,9 @@ def _bank_import_keyboard_shortcuts_help_text() -> str:
     return (
         "F5 — Refresh accounts and import batches. If an import batch is selected, it is "
         "re-opened when it still exists (register preview and reconciliation update). "
-        "**Export reconciliation report (CSV)** suggests a filename from the import file (or batch id) and "
-        "shares a remembered save folder with **Export comparison CSV\u2026** (line reconciliation). "
+        "**Export reconciliation report (CSV)** suggests a filename from the import file (or batch id), "
+        "writes UTF-8 with a BOM for Excel, and shares a remembered save folder with "
+        "**Export comparison CSV\u2026** (line reconciliation). "
         "If you have not saved a CSV export yet, that dialog starts in the last folder used for "
         "**Import CSV\u2026** or **Import PDF\u2026** (then your profile folder). "
         "**Import CSV\u2026** and **Import PDF\u2026** reopen the last folder you picked a bank file from, "
@@ -947,7 +948,7 @@ class ReconciliationPanel(QGroupBox):
         btn_row.addWidget(self._btn_reconcile)
         self._btn_export_csv = QPushButton("Export report CSV\u2026")
         self._btn_export_csv.setToolTip(
-            "Export a reconciliation summary CSV for the selected import batch (UTF-8). "
+            "Export a reconciliation summary CSV for the selected import batch (UTF-8 with BOM for Excel). "
             "The save dialog suggests a filename from the import file or batch id, re-opens in the last "
             "folder used for other Bank Import CSV exports (same as line reconciliation Export comparison CSV), "
             "or in the last import folder if you have not exported CSV yet, "

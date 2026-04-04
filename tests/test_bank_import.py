@@ -666,7 +666,8 @@ class TestReconciliationExport:
         )
         out = tmp_path / "recon.csv"
         db.export_batch_reconciliation_csv(bid, str(out))
-        text = out.read_text(encoding="utf-8")
+        assert out.read_bytes().startswith(b"\xef\xbb\xbf")
+        text = out.read_text(encoding="utf-8-sig")
         assert "ProBooks+ai reconciliation" in text
         assert "Reconciliation tolerance" in text
         assert "2024-01-05" in text

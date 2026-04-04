@@ -675,7 +675,9 @@ class BankDatabase:
         tolerance: Optional[float] = None,
     ) -> None:
         """
-        Write batch metadata, reconciliation summary, and period transactions to *file_path* (UTF-8 CSV).
+        Write batch metadata, reconciliation summary, and period transactions to *file_path* (CSV).
+
+        UTF-8 with BOM so Excel on Windows recognizes Unicode when opened directly.
         """
         batch = self.get_batch(batch_id)
         if batch is None:
@@ -700,7 +702,7 @@ class BankDatabase:
                 tolerance=tolerance,
             )
 
-        with open(file_path, "w", newline="", encoding="utf-8") as f:
+        with open(file_path, "w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f)
             w.writerow(["ProBooks+ai reconciliation report"])
             w.writerow(["Bank account", acct_name])
