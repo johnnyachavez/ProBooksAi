@@ -1307,6 +1307,18 @@ def test_desktop_main_ai_worker_init_assigns_doc_path_mimetype_and_coa() -> None
     assert chunk.count("self._coa     = coa") == 1
 
 
+def test_desktop_main_ai_worker_run_error_paths_extractor_and_exception() -> None:
+    """``AIWorker.run`` emits ``error`` when extraction fails or an unexpected exception escapes."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def run(self):", text.index("class AIWorker(QThread):"))
+    end = text.index("class InboxWidget(QTableWidget):", start)
+    chunk = text[start:end]
+    assert chunk.count("if result.error:") == 1
+    assert chunk.count("self.error.emit(result.error)") == 1
+    assert chunk.count("except Exception as exc:") == 1
+    assert chunk.count("self.error.emit(str(exc))") == 1
+
+
 def test_desktop_main_inbox_widget_drop_emits_paths_and_populate_sets_doc_ids() -> None:
     """``InboxWidget`` emits local paths on drop and stores document ids on items for selection."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -1333,6 +1345,22 @@ def test_desktop_main_inbox_widget_columns_selection_dnd_and_sorting() -> None:
     assert chunk.count("setAcceptDrops(True)") == 1
     assert chunk.count("CustomContextMenu") == 1
     assert chunk.count("setSortingEnabled(") == 3
+
+
+def test_inbox_widget_header_column_widths_and_stretch_policy() -> None:
+    """Inbox grid keeps fixed column widths and does not stretch the last header section."""
+    text = _MAIN.read_text(encoding="utf-8")
+    iw = text.index("class InboxWidget(QTableWidget):")
+    start = text.index("    def __init__(self, parent=None):", iw)
+    end = text.index("    def _on_context_menu(self, pos):", start)
+    chunk = text[start:end]
+    assert chunk.count("setStretchLastSection(False)") == 1
+    assert chunk.count("setDefaultSectionSize(110)") == 1
+    assert chunk.count("setColumnWidth(0, 40)") == 1
+    assert chunk.count("setColumnWidth(1, 220)") == 1
+    assert chunk.count("setColumnWidth(2, 80)") == 1
+    assert chunk.count("setColumnWidth(3, 110)") == 1
+    assert chunk.count("setColumnWidth(4, 120)") == 1
 
 
 def test_inbox_widget_drag_enter_move_accept_urls_ignore_other_mimes() -> None:
@@ -1368,7 +1396,7 @@ def test_inbox_widget_populate_plain_cells_and_status_color() -> None:
     end = text.index("    def selected_doc_id(self) -> int | None:", start)
     chunk = text[start:end]
     assert chunk.count("plain_display_table_item(") == 4
-    assert chunk.count("STATUS_COLORS.get(status") == 1
+    assert chunk.count('STATUS_COLORS.get(status, "#000000")') == 1
     assert chunk.count("status_item.setForeground(QColor(color))") == 1
 
 
@@ -1790,7 +1818,7 @@ def test_desktop_main_detail_pane_load_document_escapes_status_for_rich_text() -
     chunk = text[start:end]
     assert chunk.count("escape_html_text(status)") == 1
     assert chunk.count("Qt.TextFormat.RichText") == 1
-    assert "STATUS_COLORS.get(status" in chunk
+    assert chunk.count('STATUS_COLORS.get(status, "#000")') == 1
 
 
 def test_desktop_main_detail_pane_load_document_approved_or_extraction_and_enables_buttons() -> None:
