@@ -526,6 +526,24 @@ def test_main_window_build_ui_tab_tooltips_intake_f5_and_window_drops() -> None:
     assert chunk.count("self.setAcceptDrops(True)") == 1
 
 
+def test_main_window_init_wires_databases_build_ui_and_refresh() -> None:
+    """``MainWindow.__init__`` opens DB layers, seeds COA, builds UI, refreshes inbox, updates banner."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def __init__(self, db_path: str | None = None):")
+    end = text.index("    # -- UI construction", start)
+    chunk = text[start:end]
+    assert chunk.count("DocumentDatabase(") == 1
+    assert chunk.count("BankDatabase(") == 1
+    assert chunk.count("apply_extensions(") == 1
+    assert chunk.count("GLDatabase(") == 1
+    assert chunk.count("COADatabase(") == 1
+    assert chunk.count("seed_from_workbook()") == 1
+    assert chunk.count("load_coa()") == 1
+    assert chunk.count("self._build_ui()") == 1
+    assert chunk.count("self._refresh_inbox()") == 1
+    assert chunk.count("self._update_company_status()") == 1
+
+
 def test_main_window_drag_drop_handlers_follow_menu_bar() -> None:
     """``MainWindow`` implements window-level drag/drop after ``_build_menu_bar`` (``setAcceptDrops``)."""
     text = _MAIN.read_text(encoding="utf-8")
