@@ -141,7 +141,8 @@ def _bank_import_keyboard_shortcuts_help_text() -> str:
         "If you have not saved a CSV export yet, that dialog starts in the last folder used for "
         "**Import CSV\u2026** or **Import PDF\u2026** (then your profile folder). "
         "**Import CSV\u2026** and **Import PDF\u2026** reopen the last folder you picked a bank file from, "
-        "or the last CSV export folder if you have not imported yet.\n\n"
+        "or the last CSV export folder if you have not imported yet. "
+        "**Import CSV\u2026** reads UTF-8 with optional BOM (typical Excel bank exports).\n\n"
         "AI-assisted line reconciliation (right-hand panel): **Run mock extract & compare** "
         "fills the **Bank register** **Stmt match** column for the same bank account and "
         "switches the main window to that tab (reconciliation mode turns on there). "
@@ -1137,6 +1138,7 @@ class BankImportTab(QWidget):
         btn_import = QPushButton("📥  Import CSV…")
         btn_import.setToolTip(
             "Import bank transactions from a CSV file for the selected account (writes to the company .db). "
+            "The file is read as UTF-8 with optional BOM (Excel-friendly). "
             "The open dialog reuses the last folder you picked from Import CSV or Import PDF, "
             "or the last Bank Import CSV export folder if you have not imported yet. "
             "File → Backup / probooks backup before re-import experiments or large replaces."
@@ -1158,7 +1160,7 @@ class BankImportTab(QWidget):
         outer.addLayout(hdr_row)
 
         import_hint = QLabel(
-            "Import formats: <b>CSV</b> — typical bank export. "
+            "Import formats: <b>CSV</b> — typical bank export (UTF-8, optional BOM for Excel). "
             "<b>PDF</b> — digital statements with <i>selectable</i> text only; "
             "image-only (scanned) PDFs are not supported yet — use CSV or a download from your bank."
         )
@@ -1166,6 +1168,7 @@ class BankImportTab(QWidget):
         import_hint.setWordWrap(True)
         import_hint.setStyleSheet("color: #A0A0B0; font-size: 11px;")
         import_hint.setToolTip(
+            "CSV is read as UTF-8 with an optional byte-order mark (same family as ProBooks+ai CSV exports). "
             "ProBooks+ai reads text embedded in PDFs; it does not OCR scans. "
             "For photo or scanned statements, use CSV until automatic OCR ships (Phase 7)."
         )

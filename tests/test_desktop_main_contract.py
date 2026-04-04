@@ -3659,6 +3659,7 @@ def test_bank_import_tab_exposes_shortcuts_dialog_for_help_menu() -> None:
     assert "last import folder" in bit
     assert "last CSV export folder" in bit
     assert "last folder you picked a bank file" in bit
+    assert "reads UTF-8 with optional BOM" in bit
     assert "UTF-8 CSV with a BOM for Excel" in bit
     assert "writes UTF-8 with a BOM for Excel" in bit
     assert "last CSV export folder if you have not imported yet" in bit
@@ -4094,6 +4095,7 @@ def test_bank_import_header_buttons_manage_and_csv_have_tooltips() -> None:
     assert "btn_manage.setToolTip" in text
     assert "btn_import.setToolTip" in text
     assert "btn_pdf.setToolTip" in text
+    assert "read as UTF-8 with optional BOM (Excel-friendly)" in text
     assert "last folder you picked from Import CSV or Import PDF" in text
     assert "CSV export folder if you have not imported yet" in text
     assert "Keyboard shortcuts" in text
@@ -5451,6 +5453,7 @@ def test_bank_import_csv_flow_column_map_then_statement_then_worker() -> None:
     i_save = chunk.index("self._db.save_import_column_profile")
     i_work = chunk.index("worker = CsvImportWorker")
     assert i_col < i_per < i_save < i_work
+    assert 'read_text(encoding="utf-8-sig")' in chunk
     assert 'prog_dlg.setWindowTitle("Importing bank CSV")' in chunk
     assert "CSV import progress. Cancel stops further rows" in chunk
 
@@ -5619,6 +5622,7 @@ def test_bank_import_tab_shows_import_format_hint_under_header() -> None:
     bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
     assert "Import formats:" in bit
     assert "import_hint" in bit
+    assert "optional BOM for Excel" in bit
     assert "selectable" in bit
 
 
