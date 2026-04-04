@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QFileDialog,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -26,7 +27,6 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QVBoxLayout,
     QWidget,
-    QHeaderView,
 )
 
 from desktop_app.more_main_tabs_shortcuts import (
@@ -91,9 +91,7 @@ class JournalTab(QWidget):
         b.clicked.connect(self._refresh_list)
         row.addWidget(b)
         btn_export = QPushButton("Export CSV…")
-        btn_export.setToolTip(
-            "Export journal entries in the current date filter range to CSV."
-        )
+        btn_export.setToolTip("Export journal entries in the current date filter range to CSV.")
         btn_export.clicked.connect(self._export_csv)
         row.addWidget(btn_export)
         row.addStretch()
@@ -128,9 +126,7 @@ class JournalTab(QWidget):
         )
         split.addWidget(self._lines)
         split.setSizes([260, 600])
-        split.setToolTip(
-            "Entries list on the left; general-ledger lines for the selected entry on the right."
-        )
+        split.setToolTip("Entries list on the left; general-ledger lines for the selected entry on the right.")
         layout.addWidget(split)
 
         tip = QLabel(
@@ -171,7 +167,8 @@ class JournalTab(QWidget):
             partial(copy_qlistwidget_row_text, self._list, row),
         )
         act_copy.setToolTip(
-            "Copy the selected journal entry summary line as plain text."
+            "Copy the selected journal entry summary line as plain text. "
+            "Company .db safety: File → Backup / Restore (probooks.backup)."
         )
         m.exec(self._list.viewport().mapToGlobal(pos))
 
@@ -285,3 +282,4 @@ class JournalTab(QWidget):
             mem = memo or ""
             self._lines.setItem(r, 4, plain_display_table_item(mem))
         self._lines.setSortingEnabled(True)
+
