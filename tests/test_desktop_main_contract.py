@@ -661,6 +661,9 @@ def test_main_window_switch_company_database_closes_and_loads_at_path() -> None:
     assert chunk.count("self._db.close()") == 1
     assert chunk.count("self._bank_db.close()") == 1
     assert chunk.count("self._load_company_at_path(resolved)") == 1
+    assert (
+        "Wait for AI extraction to finish before switching company files." in chunk
+    )
 
 
 def test_main_window_switch_company_create_new_mkdir_and_open_missing_paths() -> None:
@@ -2140,6 +2143,21 @@ def test_desktop_main_coa_select_placeholder_and_combo_refresh() -> None:
     assert chunk.count("self._set_coa_combo_raw(current)") == 1
     assert chunk.count("def _coa_combo_raw_value(self) -> str | None:") == 1
     assert chunk.count("def _set_coa_combo_raw(self, raw: str | None) -> None:") == 1
+
+
+def test_desktop_main_detail_pane_coa_combo_raw_read_and_set_by_data_or_free_text() -> None:
+    """``_coa_combo_raw_value`` / ``_set_coa_combo_raw`` map list data, placeholder, and typed COA text."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _coa_combo_raw_value(self) -> str | None:")
+    end = text.index("    def clear_view(self):", start)
+    chunk = text[start:end]
+    assert chunk.count("if i == 0:") == 1
+    assert chunk.count("self._f_coa.itemData(i, Qt.ItemDataRole.UserRole)") == 1
+    assert chunk.count("t == _COA_SELECT_LABEL") == 1
+    assert chunk.count("if self._f_coa.count() == 0:") == 1
+    assert chunk.count("self._f_coa.findData(r, Qt.ItemDataRole.UserRole)") == 1
+    assert chunk.count("self._f_coa.setCurrentIndex(-1)") == 1
+    assert chunk.count("self._f_coa.setEditText(r)") == 1
 
 
 def test_desktop_main_detail_pane_clear_view_resets_doc_fields_and_disables_actions() -> None:
