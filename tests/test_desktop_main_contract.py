@@ -880,6 +880,7 @@ def test_main_window_on_selection_changed_loads_detail_when_row_selected() -> No
     end = text.index("    def _on_run_ai(self, doc_id: int):", start)
     chunk = text[start:end]
     assert chunk.count("self._inbox.selected_doc_id()") == 1
+    assert chunk.count("if doc_id is not None:") == 1
     assert chunk.count("self._detail.load_document(doc_id, self._db)") == 1
 
 
@@ -1291,6 +1292,21 @@ def test_desktop_main_ai_worker_runs_extractor_and_categorizer_in_run() -> None:
     assert chunk.count("self.error.emit") == 2
 
 
+def test_desktop_main_ai_worker_init_assigns_doc_path_mimetype_and_coa() -> None:
+    """``AIWorker`` stores job inputs on the instance before ``run`` loads extractor/categorizer."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index(
+        "    def __init__(self, doc_id: int, path: str, mimetype: str, coa: list):"
+    )
+    end = text.index("    def run(self):", start)
+    chunk = text[start:end]
+    assert chunk.count("super().__init__()") == 1
+    assert chunk.count("self._doc_id  = doc_id") == 1
+    assert chunk.count("self._path    = path") == 1
+    assert chunk.count("self._mimetype = mimetype") == 1
+    assert chunk.count("self._coa     = coa") == 1
+
+
 def test_desktop_main_inbox_widget_drop_emits_paths_and_populate_sets_doc_ids() -> None:
     """``InboxWidget`` emits local paths on drop and stores document ids on items for selection."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -1546,6 +1562,9 @@ def test_desktop_main_entrypoint_boot_sequence() -> None:
     assert chunk.count("MainWindow(db_path=db_path)") == 1
     assert chunk.count("window.show()") == 1
     assert chunk.count("sys.exit(app.exec())") == 1
+    assert chunk.count("db_path = args.database") == 1
+    assert chunk.count("if db_path is None:") == 1
+    assert chunk.count("db_path = last") == 1
     assert chunk.count('QSettings().value("company_database_path", "", type=str)') == 1
     assert chunk.count("Path(last).is_file()") == 1
 
