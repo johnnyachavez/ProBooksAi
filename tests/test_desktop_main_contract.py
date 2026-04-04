@@ -612,6 +612,15 @@ def test_main_window_switch_company_database_closes_and_loads_at_path() -> None:
     assert chunk.count("self._load_company_at_path(resolved)") == 1
 
 
+def test_main_window_destructive_yes_no_dialogs_use_tip_message_box_buttons() -> None:
+    """New-company file-exists and restore-confirm prompts use ``tip_message_box_buttons`` for Ok/Cancel hints."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("class MainWindow(QMainWindow):")
+    end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
+    chunk = text[start:end]
+    assert chunk.count("tip_message_box_buttons(") == 2
+
+
 def test_main_window_close_event_closes_database_connections() -> None:
     """``closeEvent`` closes document and bank DBs before the base handler."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -1113,6 +1122,24 @@ def test_desktop_main_show_intake_shortcuts_dialog_delegates_to_message_box() ->
     assert "Company .db: File → Backup / Restore (probooks.backup)." in chunk
 
 
+def test_desktop_main_document_intake_shortcuts_help_text_sections() -> None:
+    """Intake shortcuts help lists File/View/Bank sections and backup cross-links."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("def _document_intake_keyboard_shortcuts_help_text() -> str:")
+    end = text.index(
+        "def show_document_intake_keyboard_shortcuts_dialog(parent: QWidget) -> None:", start
+    )
+    chunk = text[start:end]
+    assert chunk.count("return (") == 1
+    assert "File menu:" in chunk
+    assert "View menu:" in chunk
+    assert "Bank workflows:" in chunk
+    assert "Help → More tab shortcuts" in chunk
+    assert "Help → Business shortcuts" in chunk
+    assert chunk.count("probooks.backup") >= 2
+    assert "Keyboard shortcuts…" in chunk
+
+
 def test_desktop_main_intake_accepted_mimes_extensions_and_status_colors_alias() -> None:
     """Intake import filters use shared MIME/extension sets; status colours follow the theme."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -1126,6 +1153,20 @@ def test_desktop_main_intake_accepted_mimes_extensions_and_status_colors_alias()
     assert "image/png" in chunk
     assert ".jpg" in chunk and ".jpeg" in chunk and ".png" in chunk
     assert "STATUS_COLORS = THEME_STATUS_COLORS" in chunk
+
+
+def test_desktop_main_inbox_header_color_and_placeholder_company_name() -> None:
+    """Banner navy colour and default company label string live before the AI worker section."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("INBOX_HEADER_COLOR = ")
+    end = text.index(
+        "# ---------------------------------------------------------------------------\n# Background worker",
+        start,
+    )
+    chunk = text[start:end]
+    assert 'INBOX_HEADER_COLOR = "#1F3864"' in chunk
+    assert 'COMPANY_NAME = "CHAVAN TRUCKING CORPORATION"' in chunk
+    assert "placeholder" in chunk
 
 
 def test_desktop_main_ai_worker_runs_extractor_and_categorizer_in_run() -> None:
