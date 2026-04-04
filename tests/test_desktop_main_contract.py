@@ -537,6 +537,26 @@ def test_main_window_drag_drop_handlers_follow_menu_bar() -> None:
     assert "self._import_files(paths)" in chunk
 
 
+def test_main_window_build_ui_instantiates_core_tab_widgets_once_each() -> None:
+    """``_build_ui`` wires one header, intake split, detail pane, and each main-tab class."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("def _build_ui(self):")
+    end = text.index("def _build_menu_bar", start)
+    chunk = text[start:end]
+    assert chunk.count("AppHeaderWidget()") == 1
+    assert chunk.count("QSplitter(") == 1
+    assert chunk.count("InboxWidget()") == 1
+    assert chunk.count("coa_display_list(") == 1
+    assert chunk.count("DetailPane(") == 1
+    assert chunk.count("BankImportTab(") == 1
+    assert chunk.count("RegisterTab(") == 1
+    assert chunk.count("COATab(") == 1
+    assert chunk.count("ReportsTab(") == 1
+    assert chunk.count("JournalTab(") == 1
+    assert chunk.count("BusinessHub(") == 1
+    assert chunk.count("AuditTab(") == 1
+
+
 def test_main_toolbar_import_and_refresh_tooltips_echo_file_menu_and_backup() -> None:
     """Main toolbar **Import** / **Refresh** mirror File backup hints; no ad-hoc ``setStatusTip``."""
     text = _MAIN.read_text(encoding="utf-8")
