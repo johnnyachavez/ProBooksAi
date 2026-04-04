@@ -309,6 +309,52 @@ def test_bank_import_open_dialog_start_dir_empty_without_saved_dir(tmp_path) -> 
     assert bank_import_open_dialog_start_dir(settings=qs) == ""
 
 
+def test_bank_import_open_dialog_start_dir_falls_back_to_export_dir(tmp_path) -> None:
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from desktop_app.bank_import_csv_export_paths import (
+        BANK_IMPORT_LAST_CSV_EXPORT_DIR_KEY,
+        bank_import_open_dialog_start_dir,
+    )
+
+    exp = tmp_path / "exported_here"
+    exp.mkdir()
+    ini = tmp_path / "open.ini"
+    qs = QSettings(str(ini), QSettings.Format.IniFormat)
+    qs.setValue(BANK_IMPORT_LAST_CSV_EXPORT_DIR_KEY, str(exp.resolve()))
+    qs.sync()
+    assert bank_import_open_dialog_start_dir(settings=qs) == str(exp.resolve())
+
+
+def test_bank_import_open_dialog_prefers_import_over_export_dir(tmp_path) -> None:
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from desktop_app.bank_import_csv_export_paths import (
+        BANK_IMPORT_LAST_CSV_EXPORT_DIR_KEY,
+        BANK_IMPORT_LAST_IMPORT_DIR_KEY,
+        bank_import_open_dialog_start_dir,
+    )
+
+    exp = tmp_path / "exports"
+    imp = tmp_path / "imports"
+    exp.mkdir()
+    imp.mkdir()
+    ini = tmp_path / "prio_open.ini"
+    qs = QSettings(str(ini), QSettings.Format.IniFormat)
+    qs.setValue(BANK_IMPORT_LAST_CSV_EXPORT_DIR_KEY, str(exp.resolve()))
+    qs.setValue(BANK_IMPORT_LAST_IMPORT_DIR_KEY, str(imp.resolve()))
+    qs.sync()
+    assert bank_import_open_dialog_start_dir(settings=qs) == str(imp.resolve())
+
+
 def test_bank_import_remember_import_dir_sets_open_dialog_start(tmp_path) -> None:
     from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QApplication

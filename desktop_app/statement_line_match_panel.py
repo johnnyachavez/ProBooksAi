@@ -376,7 +376,8 @@ class StatementLineMatchPanel(QGroupBox):
             )
             act_export.setToolTip(
                 "Save all rows in this table to a UTF-8 CSV (same as the toolbar button; "
-                "suggested name from the import batch; shared export folder with reconciliation report CSV). "
+                "suggested name from the import batch; shared export folder with reconciliation report CSV; "
+                "last import folder if you have not exported CSV yet). "
                 + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
             )
         idx = self._table.indexAt(pos)

@@ -15,7 +15,7 @@ re-selects the same batch when it still exists, refreshing transactions and reco
 **CSV** exports (**reconciliation report**, **line comparison**) share a remembered save folder
 (``bank_import/last_csv_export_dir`` in ``QSettings``; see ``bank_import_csv_export_paths``).
 **Import CSV…** and **Import PDF…** share a remembered open-dialog folder
-(``bank_import/last_import_dir``).
+(``bank_import/last_import_dir``), with fallback to the last CSV export folder when unset.
 
 **Help** → **Bank import shortcuts…** shows the same **F5** summary and points at Register shortcuts.
 **Right-click** the **Import Batches** table, **register preview** grid, **AI-assisted line reconciliation** table,
@@ -134,9 +134,12 @@ def _bank_import_keyboard_shortcuts_help_text() -> str:
     return (
         "F5 — Refresh accounts and import batches. If an import batch is selected, it is "
         "re-opened when it still exists (register preview and reconciliation update). "
-        "**Export reconciliation report (CSV)** suggests a filename from the import file (or batch id) "
-        "and uses the same remembered save folder as **Export comparison CSV\u2026** (line reconciliation). "
-        "**Import CSV\u2026** and **Import PDF\u2026** reopen the last folder you picked a bank file from.\n\n"
+        "**Export reconciliation report (CSV)** suggests a filename from the import file (or batch id) and "
+        "shares a remembered save folder with **Export comparison CSV\u2026** (line reconciliation). "
+        "If you have not saved a CSV export yet, that dialog starts in the last folder used for "
+        "**Import CSV\u2026** or **Import PDF\u2026** (then your profile folder). "
+        "**Import CSV\u2026** and **Import PDF\u2026** reopen the last folder you picked a bank file from, "
+        "or the last CSV export folder if you have not imported yet.\n\n"
         "AI-assisted line reconciliation (right-hand panel): **Run mock extract & compare** "
         "fills the **Bank register** **Stmt match** column for the same bank account and "
         "switches the main window to that tab (reconciliation mode turns on there). "
@@ -146,7 +149,9 @@ def _bank_import_keyboard_shortcuts_help_text() -> str:
         "(tab-separated text) on a row, **Export comparison CSV\u2026** or **Keyboard shortcuts…** "
         "when the table has results (empty viewport still offers export + shortcuts). "
         "Export saves UTF-8 CSV (numeric amounts; **Reconciled** yes/no matches the checkboxes). "
-        "The save dialog suggests a filename from the batch and re-opens in the last folder you used.\n\n"
+        "The save dialog suggests a filename from the batch and re-opens in the last folder you used "
+        "when possible: last CSV export folder, else last import folder, else your profile folder "
+        "(same as reconciliation export).\n\n"
         "Manage Bank Accounts (dialog): right-click the accounts table (including empty area) "
         "for Keyboard shortcuts… (same as this dialog).\n\n"
         "Document Intake:\n"
@@ -1128,7 +1133,8 @@ class BankImportTab(QWidget):
         btn_import = QPushButton("📥  Import CSV…")
         btn_import.setToolTip(
             "Import bank transactions from a CSV file for the selected account (writes to the company .db). "
-            "The open dialog reuses the last folder you picked from Import CSV or Import PDF. "
+            "The open dialog reuses the last folder you picked from Import CSV or Import PDF, "
+            "or the last Bank Import CSV export folder if you have not imported yet. "
             "File → Backup / probooks backup before re-import experiments or large replaces."
         )
         btn_import.clicked.connect(self._on_import_csv)
@@ -1137,7 +1143,8 @@ class BankImportTab(QWidget):
         btn_pdf = QPushButton("📄  Import PDF\u2026")
         btn_pdf.setToolTip(
             "Digital PDFs with a text layer only. Scanned statements need OCR (not included). "
-            "The open dialog reuses the last folder you picked from Import CSV or Import PDF. "
+            "The open dialog reuses the last folder you picked from Import CSV or Import PDF, "
+            "or the last Bank Import CSV export folder if you have not imported yet. "
             "Parsed rows write to the company SQLite file (File → Backup / probooks backup first if unsure)."
         )
         btn_pdf.clicked.connect(self._on_import_pdf)

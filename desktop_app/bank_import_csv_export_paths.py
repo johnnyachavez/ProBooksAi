@@ -5,8 +5,9 @@
 ``bank_import/line_compare_csv_export_dir``).
 
 **Open (CSV/PDF):** ``bank_import/last_import_dir`` — folder of the last file chosen
-for **Import CSV…** or **Import PDF…**. When no export directory is remembered yet, CSV **save**
-dialogs use this folder next (then the user profile folder).
+for **Import CSV…** or **Import PDF…**. If unset, those open dialogs start in the last CSV **export**
+folder (when present). Symmetrically, CSV **save** dialogs use the import folder when no export
+folder is remembered yet (then the user profile folder).
 
 Also provides **suggested export basenames** from the import batch (sanitized file stem or
 ``{prefix}-{id}.csv``), used by reconciliation report and line-comparison exports.
@@ -111,9 +112,11 @@ def bank_import_open_dialog_start_dir(
     *,
     settings: Optional[QSettings] = None,
 ) -> str:
-    """Initial directory for **Import CSV…** / **Import PDF…** (empty string if unset)."""
+    """Last import folder, else last CSV export folder, else empty (Qt default directory)."""
     s = settings if settings is not None else QSettings()
     parent = _resolved_import_parent(s)
+    if parent is None:
+        parent = _resolved_export_parent(s)
     return str(parent) if parent is not None else ""
 
 

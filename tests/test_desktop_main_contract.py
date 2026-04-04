@@ -3603,7 +3603,10 @@ def test_bank_import_tab_exposes_shortcuts_dialog_for_help_menu() -> None:
     assert "last folder you used" in bit
     assert "Export reconciliation report (CSV)" in bit
     assert "import file" in bit
+    assert "last import folder" in bit
+    assert "last CSV export folder" in bit
     assert "last folder you picked a bank file" in bit
+    assert "last CSV export folder if you have not imported yet" in bit
     assert "empty viewport" in bit
 
 
@@ -4034,6 +4037,7 @@ def test_bank_import_header_buttons_manage_and_csv_have_tooltips() -> None:
     assert "btn_import.setToolTip" in text
     assert "btn_pdf.setToolTip" in text
     assert "last folder you picked from Import CSV or Import PDF" in text
+    assert "CSV export folder if you have not imported yet" in text
     assert "Keyboard shortcuts" in text
     assert "hdr_lbl.setToolTip" in text
     assert "lbl_import_batches.setToolTip" in text
@@ -5442,6 +5446,7 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
     assert "Export comparison CSV" in sm
     assert "Export report CSV" in sm
     assert "last import folder" in sm
+    assert "last import folder if you have not exported CSV yet" in sm
     assert "appends .csv" in sm
     assert "_refresh_match_summary_footer" in sm
     assert "_refresh_reconciled_action_states" in sm
