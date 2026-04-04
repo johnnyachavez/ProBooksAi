@@ -156,8 +156,9 @@ class JournalTab(QWidget):
             lambda: show_more_main_tabs_keyboard_shortcuts_dialog(self),
         )
         act_keys.setToolTip(
-            "Same summary as Help → More tab shortcuts (F5)… (Journal, COA, Reports, Audit chords)."
-        )
+    "Same summary as Help → More tab shortcuts (F5)… (Journal, COA, Reports, Audit chords). "
+    "Company .db safety: File → Backup / Restore (probooks.backup)."
+)
         if not idx.isValid():
             m.exec(self._list.viewport().mapToGlobal(pos))
             return
@@ -180,8 +181,9 @@ class JournalTab(QWidget):
             lambda: show_more_main_tabs_keyboard_shortcuts_dialog(self),
         )
         act_keys.setToolTip(
-            "Same summary as Help → More tab shortcuts (F5)… (Journal lines pane, F5 refresh)."
-        )
+    "Same summary as Help → More tab shortcuts (F5)… (Journal lines pane, F5 refresh). "
+    "Company .db safety: File → Backup / Restore (probooks.backup)."
+)
         if not idx.isValid():
             m.exec(self._lines.viewport().mapToGlobal(pos))
             return
