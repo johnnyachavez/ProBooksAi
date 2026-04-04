@@ -938,6 +938,16 @@ def test_main_toolbar_import_and_refresh_tooltips_echo_file_menu_and_backup() ->
     assert "File → Backup" in ref or "probooks backup" in ref.lower()
 
 
+def test_main_toolbar_import_refresh_trigger_same_handlers_as_shortcuts_help() -> None:
+    """Toolbar **Import** / **Refresh** call the same slots as File → Import and F5 refresh."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("# Toolbar")
+    end = text.index("# Container: header banner + tab widget", start)
+    chunk = text[start:end]
+    assert chunk.count("act_import.triggered.connect(self._on_import)") == 1
+    assert chunk.count("act_refresh.triggered.connect(self._refresh_inbox)") == 1
+
+
 def test_menu_action_tip_helper_sets_matching_status_and_hover_text() -> None:
     """``_menu_action_tip`` must keep status bar and QAction hover text in lockstep."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -1190,6 +1200,36 @@ def test_desktop_main_cli_and_qt_app_strings_use_probooks_plus_ai() -> None:
     assert 'app.setApplicationName("ProBooks+ai")' in text
     assert 'app.setOrganizationName("ProBooks+ai")' in text
     assert "Keyboard shortcuts are summarized under" in text
+
+
+def test_desktop_main_suppress_qt_font_stderr_handler_installs_chain() -> None:
+    """``_suppress_qt_font_pointsize_stderr_spam`` filters ``QFont::setPointSize`` noise via ``qInstallMessageHandler``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("def _suppress_qt_font_pointsize_stderr_spam() -> None:")
+    end = text.index("\n\ndef main():", start)
+    chunk = text[start:end]
+    assert chunk.count("qInstallMessageHandler(_handler)") == 1
+    assert chunk.count("QFont::setPointSize") == 1
+    assert chunk.count("Point size <= 0") == 1
+    assert chunk.count("must be greater than 0") == 1
+    assert chunk.count("getattr(_handler, \"_prev\", None)") == 1
+
+
+def test_desktop_main_entrypoint_boot_sequence() -> None:
+    """``main()`` installs the Qt log filter, parses args, applies theme, resumes last DB, shows ``MainWindow``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("def main():")
+    end = text.index('\n\nif __name__ == "__main__":', start)
+    chunk = text[start:end]
+    assert chunk.count("_suppress_qt_font_pointsize_stderr_spam()") == 1
+    assert chunk.count("parser.parse_args()") == 1
+    assert chunk.count("QApplication(sys.argv)") == 1
+    assert chunk.count("apply_dark_theme(app)") == 1
+    assert chunk.count("MainWindow(db_path=db_path)") == 1
+    assert chunk.count("window.show()") == 1
+    assert chunk.count("sys.exit(app.exec())") == 1
+    assert chunk.count('QSettings().value("company_database_path", "", type=str)') == 1
+    assert chunk.count("Path(last).is_file()") == 1
 
 
 def test_audit_tab_f5_refresh_shortcut_wired() -> None:
