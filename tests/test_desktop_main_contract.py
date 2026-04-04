@@ -544,6 +544,33 @@ def test_main_window_build_ui_tab_tooltips_intake_f5_and_window_drops() -> None:
     assert chunk.count("self.setAcceptDrops(True)") == 1
 
 
+def test_main_window_build_ui_document_intake_split_inbox_header_and_f5() -> None:
+    """Document Intake tab builds inbox header (brand colour), horizontal splitter, sizes, F5, first tab."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("        # ── Tab 1: Document Intake")
+    end = text.index("        # ── Tab 2:", start)
+    chunk = text[start:end]
+    assert chunk.count("INBOX_HEADER_COLOR") == 1
+    assert chunk.count('lbl_inbox = QLabel("  Document Inbox")') == 1
+    assert chunk.count("QSplitter(Qt.Orientation.Horizontal)") == 1
+    assert chunk.count("splitter.setSizes([380, 720])") == 1
+    assert chunk.count('QShortcut(QKeySequence("F5"), intake_widget)') == 1
+    assert chunk.count("self._tabs.addTab(intake_widget,") == 1
+    assert "Document Intake" in chunk
+
+
+def test_main_window_build_ui_status_bar_ready_message_and_qstatusbar() -> None:
+    """``_build_ui`` creates a ``QStatusBar`` with a ready line that mentions File → Backup."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("        # Status bar")
+    end = text.index("        # Drag & drop on the main window itself", start)
+    chunk = text[start:end]
+    assert chunk.count("self._status_bar = QStatusBar()") == 1
+    assert chunk.count("self.setStatusBar(self._status_bar)") == 1
+    assert chunk.count("self._status_bar.showMessage(") == 1
+    assert "File → Backup saves the company .db." in chunk
+
+
 def test_main_window_init_wires_databases_build_ui_and_refresh() -> None:
     """``MainWindow.__init__`` opens DB layers, seeds COA, builds UI, refreshes inbox, updates banner."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -808,6 +835,19 @@ def test_main_window_on_approve_mark_posted_reject_detail_flow() -> None:
     assert chunk.count('self._db.set_status(doc_id, "Needs Review")') == 1
     assert chunk.count('"Not Yet Approved"') == 1
     assert chunk.count("self._detail.load_document(doc_id, self._db)") == 3
+
+
+def test_main_window_on_mark_posted_warns_until_approved() -> None:
+    """``_on_mark_posted`` blocks until status is Approved, then sets Posted and refreshes UI."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_mark_posted(self, doc_id: int):")
+    end = text.index("    def _on_reject(self, doc_id: int):", start)
+    chunk = text[start:end]
+    assert chunk.count("self._db.get_document(doc_id)") == 1
+    assert chunk.count('row["status"] != "Approved"') == 1
+    assert chunk.count('"Not Yet Approved"') == 1
+    assert chunk.count('self._db.set_status(doc_id, "Posted")') == 1
+    assert chunk.count("self._detail.load_document(doc_id, self._db)") == 1
 
 
 def test_main_window_on_import_and_files_dropped_delegate_to_import_files() -> None:
