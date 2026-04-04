@@ -1314,6 +1314,17 @@ def test_inbox_widget_drag_enter_move_accept_urls_ignore_other_mimes() -> None:
     assert chunk.count("event.ignore()") == 1
 
 
+def test_inbox_widget_populate_plain_cells_and_status_color() -> None:
+    """``populate`` fills text columns with ``plain_display_table_item`` and colours status from ``STATUS_COLORS``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def populate(self, rows: list):")
+    end = text.index("    def selected_doc_id(self) -> int | None:", start)
+    chunk = text[start:end]
+    assert chunk.count("plain_display_table_item(") == 4
+    assert chunk.count("STATUS_COLORS.get(status") == 1
+    assert chunk.count("status_item.setForeground(QColor(color))") == 1
+
+
 def test_inbox_widget_table_has_hover_tooltip() -> None:
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("class InboxWidget")
@@ -2115,6 +2126,19 @@ def test_main_window_bank_database_closes_and_applies_extensions_twice() -> None
     chunk = text[start:end]
     assert chunk.count("self._bank_db.close()") == 3
     assert chunk.count("apply_extensions(self._bank_db._conn)") == 2
+
+
+def test_main_window_sqlite_layers_constructed_twice_and_document_db_closed_thrice() -> None:
+    """Boot and ``_load_company_at_path`` each build document/bank/GL/COA; closing matches bank shutdown sites."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("class MainWindow(QMainWindow):")
+    end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
+    chunk = text[start:end]
+    assert chunk.count("self._db.close()") == 3
+    assert chunk.count("DocumentDatabase(") == 2
+    assert chunk.count("BankDatabase(") == 2
+    assert chunk.count("GLDatabase(") == 2
+    assert chunk.count("COADatabase(") == 2
 
 
 def test_main_window_coa_tab_changed_signal_wired_after_initial_and_rebuild() -> None:
