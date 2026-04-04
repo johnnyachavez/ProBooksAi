@@ -622,6 +622,10 @@ def test_main_window_rebuild_bank_related_tabs_replaces_seven_tabs_and_rewires_c
     assert chunk.count("for i in range(7, 0, -1):") == 1
     assert chunk.count("self._tabs.removeTab(i)") == 1
     assert chunk.count("self._tabs.insertTab(i, widget, title)") == 1
+    assert chunk.count("for i, (title, widget) in enumerate(tab_specs, start=1):") == 1
+    assert chunk.count("self._bank_tab = self._tabs.widget(1)") == 1
+    assert chunk.count("self._register_tab = self._tabs.widget(2)") == 1
+    assert chunk.count("self._coa_tab = self._tabs.widget(3)") == 1
     assert chunk.count("BankImportTab(") == 1
     assert chunk.count("RegisterTab(") == 1
     assert chunk.count("COATab(") == 1
@@ -891,9 +895,14 @@ def test_main_window_import_files_filters_extensions_adds_documents_refreshes_in
     end = text.index("    def _on_selection_changed(self):", start)
     chunk = text[start:end]
     assert chunk.count("ACCEPTED_EXTENSIONS") == 1
+    assert chunk.count("skipped.append(Path(path).name)") == 1
     assert chunk.count("self._db.add_document(path, mime, store=True)") == 1
+    assert chunk.count("imported += 1") == 1
     assert chunk.count("self._refresh_inbox()") == 1
+    assert chunk.count("if skipped:") == 1
     assert chunk.count('"Skipped Files"') == 1
+    assert chunk.count("if imported:") == 1
+    assert chunk.count("Imported {imported} document(s).") == 1
 
 
 def test_main_window_import_files_mime_guess_fallback_and_import_error_status() -> None:
