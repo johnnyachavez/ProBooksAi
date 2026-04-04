@@ -286,6 +286,11 @@ def test_desktop_main_app_header_banner_branding_and_set_company_name() -> None:
     chunk = text[start:end]
     assert chunk.count('QLabel("ProBooks+ai")') == 1
     assert "INBOX_HEADER_COLOR" in chunk
+    assert chunk.count("setFixedHeight(44)") == 1
+    assert chunk.count("QHBoxLayout(self)") == 1
+    assert chunk.count("layout.setContentsMargins(14, 0, 14, 0)") == 1
+    assert chunk.count("layout.addStretch()") == 1
+    assert chunk.count("border-bottom: 2px solid #4a6fa8") == 1
     assert chunk.count(".setToolTip(") == 3
     assert chunk.count("escape_ampersand_for_qt(company_name)") == 1
     assert chunk.count("def set_company_name(self, name: str):") == 1
@@ -2042,16 +2047,22 @@ def test_desktop_main_detail_pane_preview_placeholder_label_styling() -> None:
 
 
 def test_desktop_main_detail_pane_four_action_buttons_toolbar_loop_and_styles() -> None:
-    """Detail actions: four ``QPushButton``s, shared min-height loop, per-button colours, then ``clicked.connect``."""
+    """Detail actions: four buttons, styles, ``clicked.connect``, layout stretch, then disabled until a doc loads."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("        # -- Action buttons --------------------------------------------------")
-    end = text.index("        layout.addLayout(btn_layout)", start)
+    end = text.index(
+        "    def load_document(self, doc_id: int, db: DocumentDatabase):",
+        start,
+    )
     chunk = text[start:end]
     assert chunk.count("QPushButton(") == 4
     assert chunk.count("for btn in (self._btn_run, self._btn_approve, self._btn_post, self._btn_reject):") == 1
     assert chunk.count("btn.setMinimumHeight(32)") == 1
     assert chunk.count("self._btn_run.setStyleSheet(") == 1
     assert chunk.count("self._btn_reject.setStyleSheet(") == 1
+    assert chunk.count("layout.addLayout(btn_layout)") == 1
+    assert chunk.count("layout.addStretch()") == 1
+    assert chunk.count("self._set_buttons_enabled(False)") == 1
 
 
 def test_desktop_main_coa_select_placeholder_and_combo_refresh() -> None:
