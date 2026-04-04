@@ -2095,6 +2095,18 @@ def test_main_window_coa_database_four_call_sites() -> None:
     assert chunk.count("self._coa_db.") == 4
 
 
+def test_main_window_banner_tabs_status_bar_and_worker_counts() -> None:
+    """Chrome widgets and ``self._worker`` substring occurrences (busy guards count twice per line)."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("class MainWindow(QMainWindow):")
+    end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
+    chunk = text[start:end]
+    assert chunk.count("self._header.") == 2
+    assert chunk.count("self._status_bar.showMessage(") == 11
+    assert chunk.count("self._tabs.") == 18
+    assert chunk.count("self._worker") == 13
+
+
 def test_main_window_document_database_call_counts_for_intake_and_workflow() -> None:
     """``MainWindow`` uses ``DocumentDatabase`` for listing, fetch, import, AI save, approve, and six status updates."""
     text = _MAIN.read_text(encoding="utf-8")
