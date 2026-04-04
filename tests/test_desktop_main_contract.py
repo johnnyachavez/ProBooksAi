@@ -3757,6 +3757,8 @@ def test_desktop_main_cli_and_qt_app_strings_use_probooks_plus_ai() -> None:
     hel = PROBOOKS_HELP_EPILOG.read_text(encoding="utf-8")
     assert "probooks.backup" in hel
     assert "File → Backup" in hel
+    assert "UTF-8 BOM for Excel" in hel
+    assert "import csv --errors-out" in hel
     assert 'description="ProBooks+ai desktop application"' in text
     assert "epilog=" in text
     assert "EXCEL_COA_WORKBOOK_ARGPARSE_EPILOG" in text

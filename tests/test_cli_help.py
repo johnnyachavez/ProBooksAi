@@ -53,3 +53,5 @@ def test_probooks_help_epilog_and_exit_zero() -> None:
     assert "Excel COA workbook" in text
     assert "probooks.backup" in text
     assert "File → Backup" in text
+    assert "UTF-8 BOM for Excel" in text
+    assert "import csv --errors-out" in text

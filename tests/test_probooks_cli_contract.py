@@ -23,6 +23,7 @@ def test_probooks_cli_description_epilog_and_default_db_help() -> None:
     assert "EXCEL_COA_WORKBOOK_ARGPARSE_EPILOG" in cli
     assert "generate_workbook.py" in hel
     assert "Excel COA workbook" in hel
+    assert "UTF-8 BOM for Excel" in hel
 
 
 def test_probooks_cli_wires_backup_restore_subcommands() -> None:
