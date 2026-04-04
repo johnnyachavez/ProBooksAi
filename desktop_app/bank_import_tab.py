@@ -13,7 +13,8 @@ PySide6 widget for bank account setup, CSV import, and statement reconciliation.
 **F5** (when this tab or its children have focus) reloads accounts and import batches and
 re-selects the same batch when it still exists, refreshing transactions and reconciliation.
 **Help** → **Bank import shortcuts…** shows the same **F5** summary and points at Register shortcuts.
-**Right-click** the **Import Batches** table, **register preview** grid, or **Manage Bank Accounts** tables
+**Right-click** the **Import Batches** table, **register preview** grid, **AI-assisted line reconciliation** table,
+or **Manage Bank Accounts** tables
 (including empty area) for **Keyboard shortcuts…** and row actions; each **QAction** has **setToolTip** where shown.
 Those tables have hover **tooltips** summarizing the same; **Import Batches** column headers have **setToolTip** per section. The right-pane **BlankBankRegisterTable** uses the same stylesheet as the Register tab grid and **setToolTip** on each column header.
 
@@ -1253,7 +1254,11 @@ class BankImportTab(QWidget):
             "Reconciled checkboxes are UI-only; register data is unchanged."
         )
         recon_col_layout.addWidget(lbl_ai_line)
-        self._line_match_panel = StatementLineMatchPanel(self._db, parent=self)
+        self._line_match_panel = StatementLineMatchPanel(
+            self._db,
+            parent=self,
+            bank_import_shortcuts_help=self._show_bank_import_keyboard_shortcuts_help,
+        )
         recon_col_layout.addWidget(self._line_match_panel)
         self._line_match_panel.set_context(None, None)
         if self._register_tab is not None:

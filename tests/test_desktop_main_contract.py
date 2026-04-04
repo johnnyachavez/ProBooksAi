@@ -5402,6 +5402,10 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
     assert "_after_stmt_match_sync" in bit
     sm = (_DESKTOP_APP_DIR / "statement_line_match_panel.py").read_text(encoding="utf-8")
     assert "from desktop_app.qt_combo_ids import coerce_combo_int_id" in sm
+    assert "customContextMenuRequested" in sm
+    assert "copy_table_row_as_tsv" in sm
+    assert "bank_import_shortcuts_help" in sm
+    assert "StatementLineMatchPanel(" in bit and "bank_import_shortcuts_help=" in bit
     run_sm = sm.split("def _on_run_clicked", 1)[1].split("def _mark_reviewed_selected", 1)[0]
     assert "coerce_combo_int_id(b.get(\"bank_account_id\"))" in run_sm
     assert "line_match_results_ready = Signal(int, list)" in sm

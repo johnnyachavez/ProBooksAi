@@ -2,11 +2,13 @@
 AI-assisted statement line reconciliation panel (Bank Import tab).
 
 Shows Matched / Missing / Extra with review checkboxes (UI state only; no DB writes).
+**Right-click** the grid for **Keyboard shortcuts…** (when wired from Bank Import) and **Copy row** (TSV).
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from functools import partial
+from typing import TYPE_CHECKING, Callable, Optional
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QBrush
@@ -16,6 +18,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMenu,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -23,6 +26,10 @@ from PySide6.QtWidgets import (
 )
 
 from desktop_app.qt_combo_ids import coerce_combo_int_id
+from desktop_app.table_clipboard import (
+    CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
+    copy_table_row_as_tsv,
+)
 from probooksai.statement_line_match import (
     STATUS_EXTRA,
     STATUS_MATCHED,
@@ -66,11 +73,18 @@ class StatementLineMatchPanel(QGroupBox):
     #: Emitted after a successful compare: ``(bank_account_id, results)`` for Register **Stmt match** sync.
     line_match_results_ready = Signal(int, list)
 
-    def __init__(self, db: BankDatabase, parent=None):
+    def __init__(
+        self,
+        db: BankDatabase,
+        parent=None,
+        *,
+        bank_import_shortcuts_help: Optional[Callable[[], None]] = None,
+    ):
         super().__init__("AI-assisted line reconciliation (mock extract)", parent)
         self._db = db
         self._rows: list[dict] = []
         self._populating = False
+        self._bank_import_shortcuts_help = bank_import_shortcuts_help
         self.setToolTip(
             "Compare mock ‘statement’ lines to register transactions for the selected batch period. "
             "Matched / Missing / Extra use amount, date ±2 days, and description similarity. "
@@ -143,8 +157,12 @@ class StatementLineMatchPanel(QGroupBox):
             )
         self._table.setToolTip(
             "Status colors: Matched (green tint), Missing statement-side (amber), "
-            "Extra register-side (blue). Reconciled checkboxes are local UI state only."
+            "Extra register-side (blue). Reconciled checkboxes are local UI state only. "
+            "Right-click a row for Copy row (TSV); "
+            "Keyboard shortcuts opens the Bank import help when this panel is embedded there."
         )
+        self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._table.customContextMenuRequested.connect(self._on_table_context_menu)
         self._table.itemChanged.connect(self._on_item_changed)
         layout.addWidget(self._table)
 
@@ -258,6 +276,32 @@ class StatementLineMatchPanel(QGroupBox):
     def _on_item_changed(self, item: QTableWidgetItem) -> None:
         if self._populating or item.column() != _COL_REVIEWED:
             return
+
+    def _on_table_context_menu(self, pos) -> None:
+        menu = QMenu(self)
+        if self._bank_import_shortcuts_help is not None:
+            act_keys = menu.addAction(
+                "Keyboard shortcuts…", self._bank_import_shortcuts_help
+            )
+            act_keys.setToolTip(
+                "Same summary as Help → Bank import shortcuts… "
+                "(F5, batches, register preview, reconciliation). "
+                + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+            )
+        idx = self._table.indexAt(pos)
+        if idx.isValid() and idx.row() >= 0:
+            if menu.actions():
+                menu.addSeparator()
+            row = idx.row()
+            act_copy = menu.addAction(
+                "Copy row", partial(copy_table_row_as_tsv, self._table, row)
+            )
+            act_copy.setToolTip(
+                "Copy this reconciliation row as tab-separated text for pasting into a spreadsheet or editor. "
+                + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+            )
+        if menu.actions():
+            menu.exec(self._table.viewport().mapToGlobal(pos))
 
     def _on_run_clicked(self) -> None:
         from probooksai.statement_line_match import (
