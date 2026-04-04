@@ -37,7 +37,7 @@ def test_write_rules_csv(tmp_path):
     p = tmp_path / "rules.csv"
     n = write_rules_csv(str(p), rows)
     assert n == 1
-    with p.open(encoding="utf-8", newline="") as f:
+    with p.open(encoding="utf-8-sig", newline="") as f:
         r = list(csv.reader(f))
     assert r[0] == ["pattern", "coa_account", "priority", "is_active"]
     assert r[1][0] == "AMAZON"
@@ -50,7 +50,7 @@ def test_write_rules_csv_empty(tmp_path):
     p = tmp_path / "empty.csv"
     n = write_rules_csv(str(p), [])
     assert n == 0
-    text = p.read_text(encoding="utf-8")
+    text = p.read_text(encoding="utf-8-sig")
     assert "pattern" in text
 
 

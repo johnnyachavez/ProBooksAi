@@ -65,7 +65,8 @@ class AuditTab(QWidget):
         row.addWidget(btn_refresh)
         btn_export = QPushButton("Export CSV…")
         btn_export.setToolTip(
-            "Export the current audit log grid to CSV (respects Entity type and optional id)."
+            "Export the current audit log grid to CSV (respects Entity type and optional id). "
+            "UTF-8 with BOM for Excel."
         )
         btn_export.clicked.connect(self._export_csv)
         row.addWidget(btn_export)

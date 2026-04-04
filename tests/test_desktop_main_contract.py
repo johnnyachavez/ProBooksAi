@@ -4021,6 +4021,7 @@ def test_reports_tab_run_and_export_buttons_have_tooltips() -> None:
     text = (_DESKTOP_APP_DIR / "reports_tab.py").read_text(encoding="utf-8")
     assert "b.setToolTip(tip)" in text
     assert "btn_export.setToolTip" in text
+    assert "UTF-8 with BOM for Excel" in text
     assert "F5 re-runs" in text
     assert "_start.setToolTip" in text
     assert "_end.setToolTip" in text
@@ -4067,6 +4068,7 @@ def test_journal_tab_export_csv_button_has_tooltip() -> None:
     jt = (_DESKTOP_APP_DIR / "journal_tab.py").read_text(encoding="utf-8")
     assert "btn_export.setToolTip" in jt
     assert "journal entries" in jt
+    assert "UTF-8 with BOM for Excel" in jt
     assert "_start.setToolTip" in jt
     assert "_end.setToolTip" in jt
     assert "lbl_j_from.setToolTip" in jt
@@ -4083,6 +4085,7 @@ def test_journal_tab_export_csv_button_has_tooltip() -> None:
 def test_audit_tab_export_and_apply_filter_buttons_have_tooltips() -> None:
     at = (_DESKTOP_APP_DIR / "audit_tab.py").read_text(encoding="utf-8")
     assert "btn_export.setToolTip" in at
+    assert "UTF-8 with BOM for Excel" in at
     assert "btn_apply.setToolTip" in at
     assert "_ent_type.setToolTip" in at
     assert "_ent_id.setToolTip" in at
@@ -5169,6 +5172,9 @@ def test_extra_tabs_exposes_business_shortcuts_dialog_for_help_menu() -> None:
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
     assert "def show_business_keyboard_shortcuts_dialog" in et
     assert "def _business_keyboard_shortcuts_help_text" in et
+    assert "UTF-8 with BOM for Excel" in et.split("def _business_keyboard_shortcuts_help_text", 1)[1].split(
+        "def show_business_keyboard_shortcuts_dialog", 1
+    )[0]
     assert (
         et.count("lambda: show_business_keyboard_shortcuts_dialog(self)") == 4
     ), "Rules, AR, AP, Payroll grids should open Business shortcuts from context menu"
@@ -5755,6 +5761,37 @@ def test_register_tab_export_csv_writes_utf8_sig_for_excel() -> None:
     text = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
     chunk = text.split("def _export_csv(self):", 1)[1].split("def _on_coa_changed", 1)[0]
     assert 'encoding="utf-8-sig"' in chunk
+
+
+def test_probooksai_tab_csv_writers_use_utf8_sig_for_excel() -> None:
+    """Journal, Reports, Audit, Rules, and AR/AP list exports share Excel-friendly CSV encoding."""
+    gl = (REPO_ROOT / "probooksai" / "gl.py").read_text(encoding="utf-8")
+    assert re.search(
+        r"def write_journal_export_csv\(.*?encoding=\"utf-8-sig\"",
+        gl,
+        re.DOTALL,
+    )
+
+    fr = (REPO_ROOT / "probooksai" / "financial_reports.py").read_text(encoding="utf-8")
+    assert re.search(
+        r"def write_report_csv\(.*?encoding=\"utf-8-sig\"",
+        fr,
+        re.DOTALL,
+    )
+
+    al = (REPO_ROOT / "probooksai" / "audit_log.py").read_text(encoding="utf-8")
+    assert re.search(
+        r"def write_audit_csv\(.*?encoding=\"utf-8-sig\"",
+        al,
+        re.DOTALL,
+    )
+
+    re_csv = (REPO_ROOT / "probooksai" / "rules_engine.py").read_text(encoding="utf-8")
+    wru = re_csv.split("def write_rules_csv", 1)[1].split("def read_rules_csv", 1)[0]
+    assert 'encoding="utf-8-sig"' in wru
+
+    bu = (REPO_ROOT / "probooksai" / "business.py").read_text(encoding="utf-8")
+    assert bu.count('with open(path, "w", newline="", encoding="utf-8-sig") as f:') == 8
 
 
 def test_register_tab_cleared_actions_document_shortcuts_in_tooltips() -> None:

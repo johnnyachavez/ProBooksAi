@@ -69,12 +69,12 @@ def delete_rule(conn: sqlite3.Connection, rule_id: int) -> None:
 
 def write_rules_csv(path: str, rows: list) -> int:
     """
-    Write categorization rules to UTF-8 CSV (pattern, coa_account, priority, is_active).
+    Write categorization rules to UTF-8 CSV with BOM for Excel (pattern, coa_account, priority, is_active).
 
     *rows* are sqlite3.Row or dict-like rows from :func:`list_rules`.
     Returns the number of data rows written (excluding the header).
     """
-    with open(path, "w", newline="", encoding="utf-8") as f:
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(["pattern", "coa_account", "priority", "is_active"])
         n = 0

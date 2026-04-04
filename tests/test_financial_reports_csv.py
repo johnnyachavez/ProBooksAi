@@ -16,7 +16,7 @@ def test_write_report_csv_with_preamble(tmp_path):
         preamble=["Title line", "Subtitle"],
     )
     assert n == 2
-    with p.open(encoding="utf-8", newline="") as f:
+    with p.open(encoding="utf-8-sig", newline="") as f:
         rows = list(csv.reader(f))
     assert rows[0] == ["Title line"]
     assert rows[1] == ["Subtitle"]
@@ -29,5 +29,5 @@ def test_write_report_csv_no_preamble(tmp_path):
     p = tmp_path / "x.csv"
     n = write_report_csv(str(p), ["x"], [[9]])
     assert n == 1
-    text = p.read_text(encoding="utf-8")
+    text = p.read_text(encoding="utf-8-sig")
     assert "9" in text

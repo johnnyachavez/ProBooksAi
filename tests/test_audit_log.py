@@ -21,10 +21,10 @@ def test_write_audit_csv_roundtrip(tmp_path):
     path = tmp_path / "audit.csv"
     n = write_audit_csv(str(path), rows)
     assert n == 1
-    text = path.read_text(encoding="utf-8")
+    text = path.read_text(encoding="utf-8-sig")
     assert "bank_transaction" in text
     assert "42" in text
-    with path.open(encoding="utf-8", newline="") as f:
+    with path.open(encoding="utf-8-sig", newline="") as f:
         r = list(csv.reader(f))
     assert len(r) == 2
     assert r[0][0] == "changed_at"

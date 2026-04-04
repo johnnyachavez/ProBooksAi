@@ -104,7 +104,8 @@ class ReportsTab(QWidget):
             row.addWidget(b)
         btn_export = QPushButton("Export CSV…")
         btn_export.setToolTip(
-            "Export the current report table to CSV (run a report first)."
+            "Export the current report table to CSV (run a report first). "
+            "UTF-8 with BOM for Excel."
         )
         btn_export.clicked.connect(self._export_csv)
         row.addWidget(btn_export)

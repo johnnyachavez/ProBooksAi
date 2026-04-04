@@ -611,10 +611,10 @@ class GLDatabase:
 
 def write_journal_export_csv(path: str, rows: list[dict]) -> int:
     """
-    Write *rows* from :meth:`GLDatabase.journal_export_rows` to UTF-8 CSV.
+    Write *rows* from :meth:`GLDatabase.journal_export_rows` to UTF-8 CSV with BOM for Excel.
     Returns the number of data lines (excluding the header).
     """
-    with open(path, "w", newline="", encoding="utf-8") as f:
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(
             [

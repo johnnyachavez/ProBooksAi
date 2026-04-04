@@ -380,7 +380,7 @@ class TestGLDatabase:
         p = tmp_path / "je.csv"
         n = write_journal_export_csv(str(p), rows)
         assert n == 2
-        text = p.read_text(encoding="utf-8")
+        text = p.read_text(encoding="utf-8-sig")
         assert "1000" in text
         assert "day total" in text
 

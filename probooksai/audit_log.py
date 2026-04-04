@@ -104,10 +104,10 @@ def list_filtered(
 
 def write_audit_csv(path: str, rows: list) -> int:
     """
-    Write *rows* (sqlite3.Row or dict-like audit_log columns) to UTF-8 CSV.
+    Write *rows* (sqlite3.Row or dict-like audit_log columns) to UTF-8 CSV with BOM for Excel.
     Returns the number of data rows written (excluding the header).
     """
-    with open(path, "w", newline="", encoding="utf-8") as f:
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(
             [

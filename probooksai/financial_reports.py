@@ -116,12 +116,12 @@ def write_report_csv(
     preamble: Optional[list[str]] = None,
 ) -> int:
     """
-    Write a UTF-8 CSV for a report table.
+    Write a UTF-8 CSV with BOM for Excel for a report table.
 
     *preamble* lines are written as single-column rows, then a blank row, then the table.
     Returns the number of data rows (excluding preamble and header).
     """
-    with open(path, "w", newline="", encoding="utf-8") as f:
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         if preamble:
             for line in preamble:

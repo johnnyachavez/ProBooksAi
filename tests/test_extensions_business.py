@@ -435,9 +435,9 @@ def test_write_customers_and_vendors_csv(db, tmp_path):
     vp = tmp_path / "vendors.csv"
     assert business.write_customers_csv(db._conn, str(cp)) == 1
     assert business.write_vendors_csv(db._conn, str(vp)) == 1
-    ctext = cp.read_text(encoding="utf-8")
+    ctext = cp.read_text(encoding="utf-8-sig")
     assert "Acme" in ctext and "a@example.com" in ctext
-    with vp.open(encoding="utf-8", newline="") as f:
+    with vp.open(encoding="utf-8-sig", newline="") as f:
         vrows = list(csv.reader(f))
     assert vrows[0][-1] == "is_1099"
     assert vrows[1][1] == "Vendor1"
@@ -466,9 +466,9 @@ def test_write_invoices_and_bills_csv(db, tmp_path):
     bp = tmp_path / "bill.csv"
     assert business.write_invoices_csv(db._conn, str(ip)) == 1
     assert business.write_bills_csv(db._conn, str(bp)) == 1
-    itext = ip.read_text(encoding="utf-8")
+    itext = ip.read_text(encoding="utf-8-sig")
     assert "INV-X" in itext and "Buyer" in itext
-    btext = bp.read_text(encoding="utf-8")
+    btext = bp.read_text(encoding="utf-8-sig")
     assert "Supplier" in btext and "B-9" in btext
 
 
@@ -493,24 +493,24 @@ def test_write_invoices_and_bills_csv_subset_ids(db, tmp_path):
     )
     ip = tmp_path / "inv_order.csv"
     assert business.write_invoices_csv(db._conn, str(ip), invoice_ids=[i2, i1]) == 2
-    inv_text = ip.read_text(encoding="utf-8")
+    inv_text = ip.read_text(encoding="utf-8-sig")
     assert inv_text.index("INV-2") < inv_text.index("INV-1")
 
     ip_one = tmp_path / "inv_one.csv"
     assert business.write_invoices_csv(db._conn, str(ip_one), invoice_ids=[i2]) == 1
-    assert "INV-2" in ip_one.read_text(encoding="utf-8")
-    assert "INV-1" not in ip_one.read_text(encoding="utf-8")
+    assert "INV-2" in ip_one.read_text(encoding="utf-8-sig")
+    assert "INV-1" not in ip_one.read_text(encoding="utf-8-sig")
 
     b1 = business.create_bill(db._conn, vid, "2024-02-01", 10.0, vendor_invoice_number="VB1")
     b2 = business.create_bill(db._conn, vid, "2024-02-02", 20.0, vendor_invoice_number="VB2")
     bp = tmp_path / "bills_order.csv"
     assert business.write_bills_csv(db._conn, str(bp), bill_ids=[b2, b1]) == 2
-    bill_text = bp.read_text(encoding="utf-8")
+    bill_text = bp.read_text(encoding="utf-8-sig")
     assert bill_text.index("VB2") < bill_text.index("VB1")
 
     bp_one = tmp_path / "bill_one.csv"
     assert business.write_bills_csv(db._conn, str(bp_one), bill_ids=[b2]) == 1
-    one_b = bp_one.read_text(encoding="utf-8")
+    one_b = bp_one.read_text(encoding="utf-8-sig")
     assert "VB2" in one_b and "VB1" not in one_b
 
 
@@ -595,20 +595,20 @@ def test_write_ar_and_ap_payments_csv(db, tmp_path):
     app = tmp_path / "ap_pay.csv"
     assert business.write_ar_payments_csv(db._conn, str(arp)) == 1
     assert business.write_ap_payments_csv(db._conn, str(app)) == 1
-    art = arp.read_text(encoding="utf-8")
+    art = arp.read_text(encoding="utf-8-sig")
     assert "PayerCo" in art and "DEP-1" in art and "Operating" in art
-    apt = app.read_text(encoding="utf-8")
+    apt = app.read_text(encoding="utf-8-sig")
     assert "PayeeCo" in apt and "CHK-9" in apt and "Operating" in apt
 
     aral = tmp_path / "ar_alloc.csv"
     apal = tmp_path / "ap_alloc.csv"
     assert business.write_ar_payment_allocations_csv(db._conn, str(aral)) == 1
     assert business.write_ap_payment_allocations_csv(db._conn, str(apal)) == 1
-    assert "P-1" in aral.read_text(encoding="utf-8") and "40.00" in aral.read_text(
-        encoding="utf-8"
+    assert "P-1" in aral.read_text(encoding="utf-8-sig") and "40.00" in aral.read_text(
+        encoding="utf-8-sig"
     )
-    assert "PayeeCo" in apal.read_text(encoding="utf-8") and "15.00" in apal.read_text(
-        encoding="utf-8"
+    assert "PayeeCo" in apal.read_text(encoding="utf-8-sig") and "15.00" in apal.read_text(
+        encoding="utf-8-sig"
     )
 
 

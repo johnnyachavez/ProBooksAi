@@ -130,9 +130,9 @@ def update_customer(
 
 
 def write_customers_csv(conn: sqlite3.Connection, path: str) -> int:
-    """Export all customers to UTF-8 CSV. Returns row count (excluding header)."""
+    """Export all customers to UTF-8 CSV with BOM for Excel. Returns row count (excluding header)."""
     rows = list_customers(conn)
-    with open(path, "w", newline="", encoding="utf-8") as f:
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(["id", "name", "email", "phone", "address", "notes"])
         n = 0
@@ -290,7 +290,7 @@ def write_invoices_csv(
     *,
     invoice_ids: Optional[list[int]] = None,
 ) -> int:
-    """Export invoice header list (same join as :func:`list_invoices`) to UTF-8 CSV.
+    """Export invoice header list (same join as :func:`list_invoices`) to UTF-8 CSV with BOM for Excel.
 
     If *invoice_ids* is set, only those ids are written, in that order (skips unknown ids).
     """
@@ -298,7 +298,7 @@ def write_invoices_csv(
     if invoice_ids is not None:
         by_id = {dict(r)["id"]: r for r in rows}
         rows = [by_id[i] for i in invoice_ids if i in by_id]
-    with open(path, "w", newline="", encoding="utf-8") as f:
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(
             [
@@ -400,9 +400,9 @@ def list_ar_payments(conn: sqlite3.Connection) -> list:
 
 
 def write_ar_payments_csv(conn: sqlite3.Connection, path: str) -> int:
-    """Export AR payments to UTF-8 CSV. Returns row count (excluding header)."""
+    """Export AR payments to UTF-8 CSV with BOM for Excel. Returns row count (excluding header)."""
     rows = list_ar_payments(conn)
-    with open(path, "w", newline="", encoding="utf-8") as f:
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(
             [
@@ -454,9 +454,9 @@ def list_ap_payments(conn: sqlite3.Connection) -> list:
 
 
 def write_ap_payments_csv(conn: sqlite3.Connection, path: str) -> int:
-    """Export AP payments to UTF-8 CSV. Returns row count (excluding header)."""
+    """Export AP payments to UTF-8 CSV with BOM for Excel. Returns row count (excluding header)."""
     rows = list_ap_payments(conn)
-    with open(path, "w", newline="", encoding="utf-8") as f:
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(
             [
@@ -510,9 +510,9 @@ def list_ar_payment_allocations(conn: sqlite3.Connection) -> list:
 
 
 def write_ar_payment_allocations_csv(conn: sqlite3.Connection, path: str) -> int:
-    """Export AR payment allocation lines to UTF-8 CSV. Returns row count (excluding header)."""
+    """Export AR payment allocation lines to UTF-8 CSV with BOM for Excel. Returns row count (excluding header)."""
     rows = list_ar_payment_allocations(conn)
-    with open(path, "w", newline="", encoding="utf-8") as f:
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(
             [
@@ -568,9 +568,9 @@ def list_ap_payment_allocations(conn: sqlite3.Connection) -> list:
 
 
 def write_ap_payment_allocations_csv(conn: sqlite3.Connection, path: str) -> int:
-    """Export AP payment allocation lines to UTF-8 CSV. Returns row count (excluding header)."""
+    """Export AP payment allocation lines to UTF-8 CSV with BOM for Excel. Returns row count (excluding header)."""
     rows = list_ap_payment_allocations(conn)
-    with open(path, "w", newline="", encoding="utf-8") as f:
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(
             [
@@ -744,9 +744,9 @@ def update_vendor(
 
 
 def write_vendors_csv(conn: sqlite3.Connection, path: str) -> int:
-    """Export all vendors to UTF-8 CSV. Returns row count (excluding header)."""
+    """Export all vendors to UTF-8 CSV with BOM for Excel. Returns row count (excluding header)."""
     rows = list_vendors(conn)
-    with open(path, "w", newline="", encoding="utf-8") as f:
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(["id", "name", "email", "phone", "address", "notes", "is_1099"])
         n = 0
@@ -868,7 +868,7 @@ def write_bills_csv(
     *,
     bill_ids: Optional[list[int]] = None,
 ) -> int:
-    """Export bill header list (same join as :func:`list_bills`) to UTF-8 CSV.
+    """Export bill header list (same join as :func:`list_bills`) to UTF-8 CSV with BOM for Excel.
 
     If *bill_ids* is set, only those ids are written, in that order (skips unknown ids).
     """
@@ -876,7 +876,7 @@ def write_bills_csv(
     if bill_ids is not None:
         by_id = {dict(r)["id"]: r for r in rows}
         rows = [by_id[i] for i in bill_ids if i in by_id]
-    with open(path, "w", newline="", encoding="utf-8") as f:
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(
             [

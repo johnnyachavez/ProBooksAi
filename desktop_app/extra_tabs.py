@@ -1654,7 +1654,7 @@ class ARTab(QWidget):
         if not path:
             return
         data = business.ar_aging_buckets(self._conn, as_of)[0]
-        with open(path, "w", newline="", encoding="utf-8") as fp:
+        with open(path, "w", newline="", encoding="utf-8-sig") as fp:
             w = csv.writer(fp)
             w.writerow(
                 ["Customer", "Invoice id", "Balance", "Bucket", "Days past due", "As of"]
@@ -2644,7 +2644,7 @@ class APTab(QWidget):
         if not path:
             return
         data = business.ap_aging_buckets(self._conn, as_of)[0]
-        with open(path, "w", newline="", encoding="utf-8") as fp:
+        with open(path, "w", newline="", encoding="utf-8-sig") as fp:
             w = csv.writer(fp)
             w.writerow(
                 ["Vendor", "Bill id", "Balance", "Bucket", "Days past due", "As of"]
@@ -3186,7 +3186,7 @@ class PayrollTaxTab(QWidget):
                 ok_tip="Close; upgrade schema or restart the app.",
             )
             return
-        with open(path, "w", newline="", encoding="utf-8") as fp:
+        with open(path, "w", newline="", encoding="utf-8-sig") as fp:
             w = csv.writer(fp)
             w.writerow(
                 ["code", "name", "jurisdiction", "employee_total", "employer_total"]
@@ -3589,7 +3589,7 @@ class TaxSettingsTab(QWidget):
             business.get_setting(self._conn, "default_tax_name", "Sales tax")
             or "Sales tax"
         )
-        with open(path, "w", newline="", encoding="utf-8") as fp:
+        with open(path, "w", newline="", encoding="utf-8-sig") as fp:
             w = csv.writer(fp)
             w.writerow(["ProBooks+ai sales tax summary"])
             w.writerow(["Tax label", label])
@@ -3632,6 +3632,8 @@ def _business_keyboard_shortcuts_help_text() -> str:
         "These shortcuts apply when the Business tab or its controls have focus:\n\n"
         "F5 — Refresh the current sub-tab list (Rules, Invoices, Bills, Payroll). "
         "Tax % has no list to reload.\n\n"
+        "CSV exports from Business (Rules, aging, customer/vendor lists, invoices/bills, payments, "
+        "allocations, payroll tax report, sales tax summary) use UTF-8 with BOM for Excel.\n\n"
         "On Tax % (settings):\n"
         "Ctrl+S — Save default tax name and rate (standard Save shortcut)\n\n"
         "Right-click the Rules, Invoices, Bills, or Payroll grid (including empty area) "
