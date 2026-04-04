@@ -546,10 +546,15 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
         f"(QAction={n_qa}, _menu_action_tip={n_tip}, addAction={n_add}; "
         "9 File + 1 View loop + 3 Edit + 1 Tools + 7 Help)"
     )
+    n_dis = chunk.count("setEnabled(False)")
+    assert n_dis == 6, (
+        f"expected 6 disabled menu actions (Save, Save As, Undo, Redo, Prefs, Tools); "
+        f"got {n_dis}"
+    )
     n_trig = chunk.count(".triggered.connect(")
-    assert n_trig == 15, (
-        f"expected 15 .triggered.connect( in menu bar (7 File + View loop + 7 Help; "
-        f"Save/Save As, Undo/Redo/Prefs, Tools omit connect while disabled); got {n_trig}"
+    assert n_trig == n_qa - n_dis, (
+        f"each enabled menu QAction should wire .triggered.connect( "
+        f"(QAction={n_qa}, setEnabled(False)={n_dis}, .triggered.connect={n_trig})"
     )
     assert "\n            act_import_docs,\n" in chunk
     assert "\n            act_open_company,\n" in chunk
