@@ -25,6 +25,26 @@ def test_dates_within_days() -> None:
     assert not dates_within_days("", "2024-06-01", 2)
 
 
+def test_dates_within_days_mdy_and_iso_datetime_prefix() -> None:
+    assert dates_within_days("1/15/2024", "2024-01-15", 2)
+    assert dates_within_days("01-15-2024", "2024-01-16", 2)
+    assert dates_within_days("2024-06-01T14:30:00", "2024-06-02", 2)
+    assert dates_within_days("2024/03/10", "2024-03-11", 2)
+
+
+def test_dates_within_days_day_first_when_month_gt_12_impossible() -> None:
+    """``13/02/2024`` is parsed as DD/MM (Feb 13), not US month 13."""
+    assert dates_within_days("13/02/2024", "2024-02-13", 2)
+
+
+def test_compare_stmt_mdy_date_matches_register_iso() -> None:
+    stmt = [{"txn_date": "1/10/2024", "amount": -10.0, "description": "Gas"}]
+    reg = [{"id": 1, "txn_date": "2024-01-10", "amount": -10.0, "description": "Gas"}]
+    out = compare_statement_to_register(stmt, reg)
+    assert len(out) == 1
+    assert out[0]["status"] == STATUS_MATCHED
+
+
 def test_descriptions_match_substring_and_fuzzy() -> None:
     assert descriptions_match("AMAZON MARKETPLACE", "amazon")
     assert descriptions_match("coffee", "COFFEE SHOP DOWNTOWN")

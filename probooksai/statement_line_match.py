@@ -7,6 +7,10 @@ Used by the Bank Import tab; does not modify the database or the register grid.
 Amounts are compared after coercion so string values with ``$``/commas/whitespace (typical of
 extracts) still match SQLite float/int register values; accounting-style parentheses
 ``(12.34)`` denote negatives.
+
+``txn_date`` strings accept ISO ``YYYY-MM-DD`` (including an ISO prefix before ``T``), US
+``MM/DD/YYYY`` and ``MM-DD-YYYY``, ``YYYY/MM/DD``, then ``DD/MM/YYYY`` / ``DD-MM-YYYY`` when
+US month/day order does not parse (e.g. day > 12).
 """
 
 from __future__ import annotations
@@ -30,9 +34,46 @@ def _parse_iso_date(s: str) -> Optional[datetime]:
         return None
 
 
+def _coerce_date_to_iso(raw: str) -> Optional[str]:
+    """
+    Normalize a transaction date string to ``YYYY-MM-DD`` for comparison.
+
+    Uses the first whitespace-separated token (so ``2024-01-15T12:00`` and ``1/15/2024 posted``
+    both work). Returns ``None`` when no format matches.
+    """
+    s = str(raw or "").strip()
+    if not s:
+        return None
+    head = s.split()[0]
+    if len(head) >= 10:
+        prefix = head[:10]
+        if _parse_iso_date(prefix):
+            return prefix
+    for fmt in ("%m/%d/%Y", "%m-%d-%Y"):
+        try:
+            return datetime.strptime(head, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    for fmt in ("%d/%m/%Y", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(head, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    for fmt in ("%Y/%m/%d",):
+        try:
+            return datetime.strptime(head, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return None
+
+
 def dates_within_days(d1: str, d2: str, days: int = 2) -> bool:
-    """True when both parse as YYYY-MM-DD and |delta| <= *days*."""
-    a, b = _parse_iso_date(d1), _parse_iso_date(d2)
+    """True when both dates coerce to ISO and |delta| <= *days*."""
+    iso1 = _coerce_date_to_iso(d1)
+    iso2 = _coerce_date_to_iso(d2)
+    if not iso1 or not iso2:
+        return False
+    a, b = _parse_iso_date(iso1), _parse_iso_date(iso2)
     if a is None or b is None:
         return False
     return abs((a - b).days) <= days
@@ -88,9 +129,11 @@ def descriptions_match(desc_stmt: str, desc_reg: str) -> bool:
 
 def transaction_pair_matches(stmt: dict[str, Any], reg: dict[str, Any]) -> bool:
     """A row is a candidate MATCH when amount, date (±2d), and description rules pass."""
+    d_stmt = str(stmt.get("txn_date") or "")
+    d_reg = str(reg.get("txn_date") or "")
     return (
         amounts_equal(stmt.get("amount"), reg.get("amount"))
-        and dates_within_days(str(stmt.get("txn_date") or ""), str(reg.get("txn_date") or ""), 2)
+        and dates_within_days(d_stmt, d_reg, 2)
         and descriptions_match(
             str(stmt.get("description") or ""),
             str(reg.get("description") or ""),
@@ -109,9 +152,11 @@ def _description_match_score(stmt: dict[str, Any], reg: dict[str, Any]) -> float
 
 
 def _date_distance_days(stmt: dict[str, Any], reg: dict[str, Any]) -> int:
-    a, b = _parse_iso_date(str(stmt.get("txn_date") or "")), _parse_iso_date(
-        str(reg.get("txn_date") or "")
-    )
+    ia = _coerce_date_to_iso(str(stmt.get("txn_date") or ""))
+    ib = _coerce_date_to_iso(str(reg.get("txn_date") or ""))
+    if not ia or not ib:
+        return 9999
+    a, b = _parse_iso_date(ia), _parse_iso_date(ib)
     if a is None or b is None:
         return 9999
     return abs((a - b).days)
