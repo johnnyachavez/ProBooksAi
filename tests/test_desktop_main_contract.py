@@ -490,6 +490,16 @@ def test_main_window_toolbar_and_menu_bar_qaction_counts() -> None:
     assert text[mb_s:mb_e].count("QAction(") == 21
 
 
+def test_main_window_build_ui_instantiates_one_toolbar() -> None:
+    """``_build_ui`` creates one ``QToolBar`` and calls ``addToolBar`` once (before ``_build_menu_bar``)."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("def _build_ui(self):")
+    end = text.index("def _build_menu_bar", start)
+    chunk = text[start:end]
+    assert chunk.count("QToolBar(") == 1
+    assert chunk.count("self.addToolBar(") == 1
+
+
 def test_main_toolbar_import_and_refresh_tooltips_echo_file_menu_and_backup() -> None:
     """Main toolbar **Import** / **Refresh** mirror File backup hints; no ad-hoc ``setStatusTip``."""
     text = _MAIN.read_text(encoding="utf-8")
