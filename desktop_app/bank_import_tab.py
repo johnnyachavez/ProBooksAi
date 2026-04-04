@@ -1127,6 +1127,7 @@ class BankImportTab(QWidget):
         btn_import = QPushButton("📥  Import CSV…")
         btn_import.setToolTip(
             "Import bank transactions from a CSV file for the selected account (writes to the company .db). "
+            "The open dialog reuses the last folder you picked from Import CSV or Import PDF. "
             "File → Backup / probooks backup before re-import experiments or large replaces."
         )
         btn_import.clicked.connect(self._on_import_csv)
@@ -1135,6 +1136,7 @@ class BankImportTab(QWidget):
         btn_pdf = QPushButton("📄  Import PDF\u2026")
         btn_pdf.setToolTip(
             "Digital PDFs with a text layer only. Scanned statements need OCR (not included). "
+            "The open dialog reuses the last folder you picked from Import CSV or Import PDF. "
             "Parsed rows write to the company SQLite file (File → Backup / probooks backup first if unsure)."
         )
         btn_pdf.clicked.connect(self._on_import_pdf)

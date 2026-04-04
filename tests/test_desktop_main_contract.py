@@ -4032,6 +4032,8 @@ def test_bank_import_header_buttons_manage_and_csv_have_tooltips() -> None:
     text = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
     assert "btn_manage.setToolTip" in text
     assert "btn_import.setToolTip" in text
+    assert "btn_pdf.setToolTip" in text
+    assert "last folder you picked from Import CSV or Import PDF" in text
     assert "Keyboard shortcuts" in text
     assert "hdr_lbl.setToolTip" in text
     assert "lbl_import_batches.setToolTip" in text
