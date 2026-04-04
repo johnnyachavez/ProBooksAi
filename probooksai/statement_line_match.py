@@ -17,7 +17,8 @@ US month/day order does not parse (e.g. day > 12).
 Description similarity joins **description**, **ref_number**, and **memo** (non-empty parts,
 normalized spacing) on each side so register fields split across columns still match a single
 statement line (including extracts that carry check or confirmation numbers). Embedded line breaks
-in those text fields are treated as spaces before comparison.
+in those text fields are treated as spaces before comparison; non-breaking spaces (NBSP) are
+normalized to ordinary spaces.
 """
 
 from __future__ import annotations
@@ -38,9 +39,11 @@ def _strip_pasted_breaks(s: str) -> str:
 
 
 def _normalize_paste_whitespace(s: str) -> str:
-    """Turn pasted line/field breaks into spaces; collapse runs (memo / description text)."""
+    """Turn pasted line/field breaks and NBSP into spaces; collapse runs (memo / description)."""
     t = (
         s.strip()
+        .replace("\u00a0", " ")
+        .replace("\u202f", " ")
         .replace("\r\n", " ")
         .replace("\r", " ")
         .replace("\n", " ")
