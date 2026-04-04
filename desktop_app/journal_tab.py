@@ -115,7 +115,9 @@ class JournalTab(QWidget):
         self._lines.setHorizontalHeaderLabels(
             ["Account", "Debit", "Credit", "Description", "Entry memo"]
         )
-        self._lines.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self._lines.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Stretch
+        )
         self._lines.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._lines.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._lines.customContextMenuRequested.connect(self._on_lines_context_menu)
@@ -156,9 +158,9 @@ class JournalTab(QWidget):
             lambda: show_more_main_tabs_keyboard_shortcuts_dialog(self),
         )
         act_keys.setToolTip(
-    "Same summary as Help → More tab shortcuts (F5)… (Journal, COA, Reports, Audit chords). "
-    "Company .db safety: File → Backup / Restore (probooks.backup)."
-)
+            "Same summary as Help → More tab shortcuts (F5)… (Journal, COA, Reports, Audit chords). "
+            "Company .db safety: File → Backup / Restore (probooks.backup)."
+        )
         if not idx.isValid():
             m.exec(self._list.viewport().mapToGlobal(pos))
             return
@@ -181,17 +183,20 @@ class JournalTab(QWidget):
             lambda: show_more_main_tabs_keyboard_shortcuts_dialog(self),
         )
         act_keys.setToolTip(
-    "Same summary as Help → More tab shortcuts (F5)… (Journal lines pane, F5 refresh). "
-    "Company .db safety: File → Backup / Restore (probooks.backup)."
-)
+            "Same summary as Help → More tab shortcuts (F5)… (Journal lines pane, F5 refresh). "
+            "Company .db safety: File → Backup / Restore (probooks.backup)."
+        )
         if not idx.isValid():
             m.exec(self._lines.viewport().mapToGlobal(pos))
             return
         row = idx.row()
         m.addSeparator()
-        act_copy = m.addAction("Copy row", partial(copy_table_row_as_tsv, self._lines, row))
+        act_copy = m.addAction(
+            "Copy row", partial(copy_table_row_as_tsv, self._lines, row)
+        )
         act_copy.setToolTip(
-            "Copy this GL line row as tab-separated text for pasting into a spreadsheet or editor."
+            "Copy this GL line row as tab-separated text for pasting into a spreadsheet or editor. "
+            "Company .db safety: File → Backup / Restore (probooks.backup)."
         )
         m.exec(self._lines.viewport().mapToGlobal(pos))
 
