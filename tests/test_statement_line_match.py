@@ -154,6 +154,7 @@ def test_amounts_equal_coerces_currency_strings() -> None:
     assert amounts_equal("$1,\n234.50", 1234.5)
     assert amounts_equal("\t12.50\t", 12.5)
     assert amounts_equal("1\u200b,234.50", 1234.5)
+    assert amounts_equal("1\u202f234.50", 1234.5)
     assert not amounts_equal("n/a", 1.0)
     assert not amounts_equal(None, 1.0)
     assert not amounts_equal(True, 1.0)

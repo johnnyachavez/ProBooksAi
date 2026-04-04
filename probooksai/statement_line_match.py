@@ -8,7 +8,8 @@ Used by the Bank Import tab; does not modify the database or the register grid.
 
 Amounts are compared after coercion so string values with ``$``/commas/whitespace (typical of
 extracts) still match SQLite float/int register values; zero-width space (``U+200B``) is stripped
-from amount and date strings along with pasted line breaks; accounting-style parentheses
+from amount and date strings along with pasted line breaks; NBSP / narrow NBSP are stripped from
+amount strings; accounting-style parentheses
 ``(12.34)`` denote negatives.
 
 ``txn_date`` strings accept ISO ``YYYY-MM-DD`` (including an ISO prefix before ``T``), US
@@ -121,8 +122,9 @@ def _coerce_amount(raw: Any) -> Optional[float]:
 
     Accepts numeric types and strings with optional ``$``, commas, surrounding whitespace,
     Unicode minus ``U+2212`` (common in CSV/PDF extract text), and ignores embedded ``\\r`` /
-    ``\\n`` / tab / zero-width space (pasted spreadsheet or TSV cells). Returns ``None`` when
-    missing or not parseable.
+    ``\\n`` / tab / zero-width space (pasted spreadsheet or TSV cells). NBSP and narrow NBSP
+    (``U+00A0``, ``U+202F``) are removed with grouping commas. Returns ``None`` when missing or
+    not parseable.
     """
     if raw is None:
         return None
@@ -138,7 +140,13 @@ def _coerce_amount(raw: Any) -> Optional[float]:
         s = inner if inner.startswith("-") else f"-{inner}"
     else:
         s = s.replace("\u2212", "-")
-    s = s.replace("$", "").replace("\u00a0", "").replace(",", "").strip()
+    s = (
+        s.replace("$", "")
+        .replace("\u00a0", "")
+        .replace("\u202f", "")
+        .replace(",", "")
+        .strip()
+    )
     try:
         return float(s)
     except (TypeError, ValueError):
