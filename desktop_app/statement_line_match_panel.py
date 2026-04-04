@@ -176,8 +176,8 @@ class StatementLineMatchPanel(QGroupBox):
         self._table.setToolTip(
             "Status colors: Matched (green tint), Missing statement-side (amber), "
             "Extra register-side (blue). Reconciled checkboxes are local UI state only. "
-            "Right-click a row for Copy row (TSV); "
-            "Keyboard shortcuts opens the Bank import help when this panel is embedded there."
+            "Right-click: Export comparison CSV when the table has rows; Copy row (TSV) on a data row; "
+            "Keyboard shortcuts when this panel is embedded in Bank Import."
         )
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._on_table_context_menu)
@@ -340,6 +340,16 @@ class StatementLineMatchPanel(QGroupBox):
             act_keys.setToolTip(
                 "Same summary as Help → Bank import shortcuts… "
                 "(F5, batches, register preview, reconciliation). "
+                + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+            )
+        if self._rows:
+            if menu.actions():
+                menu.addSeparator()
+            act_export = menu.addAction(
+                "Export comparison CSV\u2026", self._on_export_comparison_csv
+            )
+            act_export.setToolTip(
+                "Save all rows in this table to a UTF-8 CSV (same as the toolbar button). "
                 + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
             )
         idx = self._table.indexAt(pos)

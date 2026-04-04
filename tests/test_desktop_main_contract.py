@@ -3600,7 +3600,7 @@ def test_bank_import_tab_exposes_shortcuts_dialog_for_help_menu() -> None:
     assert "restores the company line" in bit
     assert "line-reconciliation grid" in bit
     assert "Export comparison CSV" in bit
-    assert "UTF-8 CSV" in bit
+    assert "empty viewport" in bit
 
 
 def test_register_tab_exposes_shared_shortcuts_dialog_for_help_menu() -> None:
@@ -5419,6 +5419,7 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
     assert "_refresh_match_summary_footer" in sm
     assert "_refresh_reconciled_action_states" in sm
     assert "selectionChanged.connect" in sm
+    assert "act_export = menu.addAction" in sm
     assert "STATUS_MATCHED" in sm
     assert "Bank register" in sm
     assert "status bar" in sm.lower()
