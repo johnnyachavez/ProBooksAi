@@ -1243,14 +1243,17 @@ def test_inbox_widget_context_menu_includes_keyboard_shortcuts_help() -> None:
 
 
 def test_inbox_widget_context_menu_skips_copy_row_when_no_cell() -> None:
-    """Empty-area context menu runs shortcuts-only; **Copy row** appears only after a valid row index."""
+    """Context menu: ``indexAt``, empty-cell early ``exec``, else separator + Copy row; both use viewport global pos."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _on_context_menu(self, pos):")
     end = text.index("    # -- drag & drop", start)
     chunk = text[start:end]
+    assert chunk.count("self.indexAt(pos)") == 1
     assert chunk.count("if not idx.isValid():") == 1
     assert chunk.count("m.addSeparator()") == 1
     assert chunk.count('m.addAction("Copy row"') == 1
+    assert chunk.count("self.viewport().mapToGlobal(pos)") == 2
+    assert chunk.count("m.exec(self.viewport().mapToGlobal(pos))") == 2
 
 
 def test_inbox_widget_context_menu_copy_row_binds_partial_tsv_helper() -> None:
@@ -1402,6 +1405,7 @@ def test_inbox_widget_header_column_widths_and_stretch_policy() -> None:
     end = text.index("    def _on_context_menu(self, pos):", start)
     chunk = text[start:end]
     assert chunk.count("super().__init__(parent)") == 1
+    assert chunk.count("setColumnCount(len(self.COLUMNS))") == 1
     assert chunk.count("setStretchLastSection(False)") == 1
     assert chunk.count("setDefaultSectionSize(110)") == 1
     assert chunk.count("setColumnWidth(0, 40)") == 1
