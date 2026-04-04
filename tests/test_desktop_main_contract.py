@@ -1348,7 +1348,7 @@ def test_desktop_main_inbox_widget_columns_selection_dnd_and_sorting() -> None:
 
 
 def test_inbox_widget_header_column_widths_and_stretch_policy() -> None:
-    """Inbox grid keeps fixed column widths and does not stretch the last header section."""
+    """Inbox grid: column widths, no last-section stretch, alternating rows, hidden row header."""
     text = _MAIN.read_text(encoding="utf-8")
     iw = text.index("class InboxWidget(QTableWidget):")
     start = text.index("    def __init__(self, parent=None):", iw)
@@ -1361,6 +1361,8 @@ def test_inbox_widget_header_column_widths_and_stretch_policy() -> None:
     assert chunk.count("setColumnWidth(2, 80)") == 1
     assert chunk.count("setColumnWidth(3, 110)") == 1
     assert chunk.count("setColumnWidth(4, 120)") == 1
+    assert chunk.count("setAlternatingRowColors(True)") == 1
+    assert chunk.count("verticalHeader().setVisible(False)") == 1
 
 
 def test_inbox_widget_drag_enter_move_accept_urls_ignore_other_mimes() -> None:
@@ -1849,6 +1851,9 @@ def test_desktop_main_detail_pane_populate_ai_result_applies_suggestions() -> No
     assert chunk.count("_populate_fields_from_extraction(result)") == 1
     assert "suggestions and not suggestions.error" in chunk
     assert chunk.count("findData(s_coa, Qt.ItemDataRole.UserRole)") == 1
+    assert chunk.count("self._f_coa.setCurrentIndex(-1)") == 1
+    assert chunk.count("self._f_coa.setEditText(s_coa)") == 1
+    assert chunk.count("self._f_coa.setCurrentIndex(0)") == 1
     assert chunk.count('self._f_confidence.setText(f"{conf:.0%}")') == 1
     assert chunk.count("self._lbl_rationale.setText(suggestions.rationale or \"\")") == 1
 
@@ -1888,11 +1893,15 @@ def test_desktop_main_detail_pane_show_preview_image_scaled_pdf_stub_or_fallback
     start = text.index("    def _show_preview(self, stored_path: str, mimetype: str, page_count):")
     end = text.index("    def _populate_fields(self, row):", start)
     chunk = text[start:end]
-    assert chunk.count("mimetype.startswith(\"image/\")") == 1
+    assert chunk.count("mimetype and mimetype.startswith(\"image/\")") == 1
     assert chunk.count("QPixmap(stored_path)") == 1
+    assert chunk.count("if not pix.isNull():") == 1
     assert chunk.count("400, 300") == 1
     assert chunk.count("Qt.AspectRatioMode.KeepAspectRatio") == 1
+    assert chunk.count("Qt.TransformationMode.SmoothTransformation") == 1
+    assert chunk.count("self._preview_label.setPixmap(pix)") == 1
     assert chunk.count('mimetype == "application/pdf"') == 1
+    assert chunk.count('pages = page_count or "?"') == 1
     assert chunk.count("escape_ampersand_for_qt(Path(stored_path).name)") == 1
     assert chunk.count('"(No preview available)"') == 1
 
