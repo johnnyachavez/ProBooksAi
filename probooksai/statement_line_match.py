@@ -16,7 +16,8 @@ US month/day order does not parse (e.g. day > 12).
 
 Description similarity joins **description**, **ref_number**, and **memo** (non-empty parts,
 normalized spacing) on each side so register fields split across columns still match a single
-statement line (including extracts that carry check or confirmation numbers).
+statement line (including extracts that carry check or confirmation numbers). Embedded line breaks
+in those text fields are treated as spaces before comparison.
 """
 
 from __future__ import annotations
@@ -34,6 +35,18 @@ STATUS_EXTRA = "Extra"
 def _strip_pasted_breaks(s: str) -> str:
     """Remove CR/LF/tab characters common in copied spreadsheet or TSV cells."""
     return s.replace("\r", "").replace("\n", "").replace("\t", "")
+
+
+def _normalize_paste_whitespace(s: str) -> str:
+    """Turn pasted line/field breaks into spaces; collapse runs (memo / description text)."""
+    t = (
+        s.strip()
+        .replace("\r\n", " ")
+        .replace("\r", " ")
+        .replace("\n", " ")
+        .replace("\t", " ")
+    )
+    return " ".join(t.split())
 
 
 def _parse_iso_date(s: str) -> Optional[datetime]:
@@ -133,8 +146,8 @@ def descriptions_match(desc_stmt: str, desc_reg: str) -> bool:
     """
     Basic similarity: substring either way, or SequenceMatcher ratio >= 0.35.
     """
-    na = (desc_stmt or "").strip().lower()
-    nb = (desc_reg or "").strip().lower()
+    na = _normalize_paste_whitespace(desc_stmt or "").lower()
+    nb = _normalize_paste_whitespace(desc_reg or "").lower()
     if not na and not nb:
         return True
     if not na or not nb:
@@ -148,7 +161,7 @@ def _combined_description_for_match(row: dict[str, Any]) -> str:
     """Join non-empty *description*, *ref_number*, and *memo* (``bank_transactions`` shape)."""
     parts: list[str] = []
     for key in ("description", "ref_number", "memo"):
-        t = str(row.get(key) or "").strip()
+        t = _normalize_paste_whitespace(str(row.get(key) or ""))
         if t:
             parts.append(t)
     joined = " ".join(parts).strip()

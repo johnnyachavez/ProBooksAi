@@ -62,6 +62,22 @@ def test_compare_stmt_mdy_date_matches_register_iso() -> None:
     assert out[0]["status"] == STATUS_MATCHED
 
 
+def test_compare_register_multiline_memo_matches_statement() -> None:
+    stmt = [{"txn_date": "2024-01-10", "amount": -5.0, "description": "COFFEE SHOP"}]
+    reg = [
+        {
+            "id": 1,
+            "txn_date": "2024-01-10",
+            "amount": -5.0,
+            "description": "POS",
+            "memo": "COFFEE\nSHOP DOWNTOWN",
+        }
+    ]
+    out = compare_statement_to_register(stmt, reg)
+    assert len(out) == 1
+    assert out[0]["status"] == STATUS_MATCHED
+
+
 def test_compare_register_memo_helps_match_statement_payee() -> None:
     stmt = [{"txn_date": "2024-01-10", "amount": -5.0, "description": "COFFEE"}]
     reg = [
@@ -99,6 +115,18 @@ def test_compare_register_ref_number_helps_match_statement_text() -> None:
     out = compare_statement_to_register(stmt, reg)
     assert len(out) == 1
     assert out[0]["status"] == STATUS_MATCHED
+
+
+def test_normalize_paste_whitespace_collapses_breaks_to_spaces() -> None:
+    from probooksai.statement_line_match import _normalize_paste_whitespace
+
+    assert _normalize_paste_whitespace("a\nb\tc") == "a b c"
+    assert _normalize_paste_whitespace("x\r\ny") == "x y"
+
+
+def test_descriptions_match_treats_newlines_and_tabs_as_spaces() -> None:
+    assert descriptions_match("LINE\nONE", "line one")
+    assert descriptions_match("a\tb", "a b")
 
 
 def test_descriptions_match_substring_and_fuzzy() -> None:
