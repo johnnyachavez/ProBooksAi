@@ -3603,6 +3603,7 @@ def test_bank_import_tab_exposes_shortcuts_dialog_for_help_menu() -> None:
     assert "last folder you used" in bit
     assert "Export reconciliation report (CSV)" in bit
     assert "import file" in bit
+    assert "last folder you picked a bank file" in bit
     assert "empty viewport" in bit
 
 
@@ -5322,6 +5323,8 @@ def test_bank_import_csv_flow_column_map_then_statement_then_worker() -> None:
     start = bit.index("    def _on_import_csv(self):")
     end = bit.index("\n    def _on_manage_accounts(self):", start)
     chunk = bit[start:end]
+    assert "bank_import_open_dialog_start_dir()" in chunk
+    assert "remember_bank_import_import_dir(path)" in chunk
     i_col = chunk.index("col_dlg = ColumnMappingDialog")
     i_per = chunk.index("period_dlg = StatementPeriodDialog")
     i_save = chunk.index("self._db.save_import_column_profile")
@@ -5351,6 +5354,11 @@ def test_bank_import_blank_register_table_columns_empty_rows_and_pdf_dialog() ->
     bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
     assert "BlankBankRegisterTable()" in bit
     assert "Import bank statement PDF (selectable text required)" in bit
+    pdf_chunk = bit.split("def _on_import_pdf(self):", 1)[1].split(
+        "def _on_import_csv(self):", 1
+    )[0]
+    assert "bank_import_open_dialog_start_dir()" in pdf_chunk
+    assert "remember_bank_import_import_dir(path)" in pdf_chunk
     start = bit.index("class BlankBankRegisterTable")
     end = bit.index(
         "\n\n# ===========================================================================\n# ReconciliationPanel",

@@ -294,6 +294,44 @@ def test_write_line_match_comparison_csv_writes_header_and_rows(tmp_path) -> Non
     assert "yes" in text and STATUS_MATCHED in text and "9" in text
 
 
+def test_bank_import_open_dialog_start_dir_empty_without_saved_dir(tmp_path) -> None:
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from desktop_app.bank_import_csv_export_paths import bank_import_open_dialog_start_dir
+
+    ini = tmp_path / "empty.ini"
+    ini.write_text("", encoding="utf-8")
+    qs = QSettings(str(ini), QSettings.Format.IniFormat)
+    assert bank_import_open_dialog_start_dir(settings=qs) == ""
+
+
+def test_bank_import_remember_import_dir_sets_open_dialog_start(tmp_path) -> None:
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from desktop_app.bank_import_csv_export_paths import (
+        bank_import_open_dialog_start_dir,
+        remember_bank_import_import_dir,
+    )
+
+    sub = tmp_path / "imports_here"
+    sub.mkdir()
+    f = sub / "stmt.csv"
+    f.write_text("h\n", encoding="utf-8")
+    ini = tmp_path / "imp.ini"
+    qs = QSettings(str(ini), QSettings.Format.IniFormat)
+    remember_bank_import_import_dir(str(f), settings=qs)
+    qs.sync()
+    assert bank_import_open_dialog_start_dir(settings=qs) == str(sub.resolve())
+
+
 def test_line_compare_export_default_path_uses_home_without_saved_dir(tmp_path) -> None:
     from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QApplication

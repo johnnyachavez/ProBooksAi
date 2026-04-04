@@ -14,6 +14,9 @@ PySide6 widget for bank account setup, CSV import, and statement reconciliation.
 re-selects the same batch when it still exists, refreshing transactions and reconciliation.
 **CSV** exports (**reconciliation report**, **line comparison**) share a remembered save folder
 (``bank_import/last_csv_export_dir`` in ``QSettings``; see ``bank_import_csv_export_paths``).
+**Import CSV…** and **Import PDF…** share a remembered open-dialog folder
+(``bank_import/last_import_dir``).
+
 **Help** → **Bank import shortcuts…** shows the same **F5** summary and points at Register shortcuts.
 **Right-click** the **Import Batches** table, **register preview** grid, **AI-assisted line reconciliation** table,
 or **Manage Bank Accounts** tables
@@ -96,7 +99,9 @@ from desktop_app.table_clipboard import (
 )
 from desktop_app.bank_import_csv_export_paths import (
     bank_import_csv_default_save_path,
+    bank_import_open_dialog_start_dir,
     remember_bank_import_csv_export_parent,
+    remember_bank_import_import_dir,
     suggested_bank_import_batch_csv_filename,
 )
 from desktop_app.statement_line_match_panel import StatementLineMatchPanel
@@ -130,7 +135,8 @@ def _bank_import_keyboard_shortcuts_help_text() -> str:
         "F5 — Refresh accounts and import batches. If an import batch is selected, it is "
         "re-opened when it still exists (register preview and reconciliation update). "
         "**Export reconciliation report (CSV)** suggests a filename from the import file (or batch id) "
-        "and uses the same remembered save folder as **Export comparison CSV\u2026** (line reconciliation).\n\n"
+        "and uses the same remembered save folder as **Export comparison CSV\u2026** (line reconciliation). "
+        "**Import CSV\u2026** and **Import PDF\u2026** reopen the last folder you picked a bank file from.\n\n"
         "AI-assisted line reconciliation (right-hand panel): **Run mock extract & compare** "
         "fills the **Bank register** **Stmt match** column for the same bank account and "
         "switches the main window to that tab (reconciliation mode turns on there). "
@@ -1644,11 +1650,12 @@ class BankImportTab(QWidget):
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Import bank statement PDF (selectable text required)",
-            "",
+            bank_import_open_dialog_start_dir(),
             "PDF documents (*.pdf);;All files (*.*)",
         )
         if not path:
             return
+        remember_bank_import_import_dir(path)
 
         ocr_result = None
         text_layer_empty = False
@@ -1779,11 +1786,12 @@ class BankImportTab(QWidget):
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Import bank transactions CSV (map columns next)",
-            "",
+            bank_import_open_dialog_start_dir(),
             "CSV spreadsheets (*.csv);;All files (*.*)",
         )
         if not path:
             return
+        remember_bank_import_import_dir(path)
 
         # 2. Read & detect headers
         try:

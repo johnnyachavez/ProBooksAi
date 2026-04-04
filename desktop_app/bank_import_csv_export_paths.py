@@ -1,9 +1,11 @@
 """
-Shared **QSettings** directory memory for Bank Import **CSV** save dialogs.
+**QSettings** paths for Bank Import file dialogs (import + CSV export).
 
-Uses ``bank_import/last_csv_export_dir``. Falls back to the older
-``bank_import/line_compare_csv_export_dir`` when the new key is unset so existing installs
-keep their remembered folder.
+**Export:** ``bank_import/last_csv_export_dir`` (legacy read:
+``bank_import/line_compare_csv_export_dir``).
+
+**Open (CSV/PDF):** ``bank_import/last_import_dir`` — folder of the last file chosen
+for **Import CSV…** or **Import PDF…**.
 
 Also provides **suggested export basenames** from the import batch (sanitized file stem or
 ``{prefix}-{id}.csv``), used by reconciliation report and line-comparison exports.
@@ -19,6 +21,7 @@ from PySide6.QtCore import QSettings
 from desktop_app.qt_combo_ids import coerce_combo_int_id
 
 BANK_IMPORT_LAST_CSV_EXPORT_DIR_KEY = "bank_import/last_csv_export_dir"
+BANK_IMPORT_LAST_IMPORT_DIR_KEY = "bank_import/last_import_dir"
 _LEGACY_LINE_COMPARE_CSV_EXPORT_DIR_KEY = "bank_import/line_compare_csv_export_dir"
 
 
@@ -88,4 +91,32 @@ def remember_bank_import_csv_export_parent(
     s.setValue(
         BANK_IMPORT_LAST_CSV_EXPORT_DIR_KEY,
         str(Path(saved_file_path).resolve().parent),
+    )
+
+
+def bank_import_open_dialog_start_dir(
+    *,
+    settings: Optional[QSettings] = None,
+) -> str:
+    """Initial directory for **Import CSV…** / **Import PDF…** (empty string if unset)."""
+    s = settings if settings is not None else QSettings()
+    raw = (s.value(BANK_IMPORT_LAST_IMPORT_DIR_KEY, "", type=str) or "").strip()
+    if not raw:
+        return ""
+    parent = Path(raw)
+    if parent.is_dir():
+        return str(parent)
+    return ""
+
+
+def remember_bank_import_import_dir(
+    chosen_file_path: str,
+    *,
+    settings: Optional[QSettings] = None,
+) -> None:
+    """Remember the folder after the user picks a file in an import open dialog."""
+    s = settings if settings is not None else QSettings()
+    s.setValue(
+        BANK_IMPORT_LAST_IMPORT_DIR_KEY,
+        str(Path(chosen_file_path).resolve().parent),
     )
