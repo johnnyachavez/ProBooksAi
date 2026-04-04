@@ -1048,6 +1048,9 @@ def test_main_window_build_ui_instantiates_core_tab_widgets_once_each() -> None:
     assert chunk.count("JournalTab(") == 1
     assert chunk.count("BusinessHub(") == 1
     assert chunk.count("AuditTab(") == 1
+    assert chunk.count("self._bank_tab = BankImportTab(") == 1
+    assert chunk.count("self._register_tab = RegisterTab(") == 1
+    assert chunk.count("self._coa_tab = COATab(") == 1
 
 
 def test_main_window_build_ui_wires_tabs_container_inbox_and_detail_signals() -> None:
@@ -2021,6 +2024,21 @@ def test_desktop_main_detail_pane_three_section_group_boxes() -> None:
     assert chunk.count('QGroupBox("Preview")') == 1
     assert chunk.count('QGroupBox("Extracted Fields")') == 1
     assert chunk.count('QGroupBox("Categorisation Suggestions")') == 1
+
+
+def test_desktop_main_detail_pane_preview_placeholder_label_styling() -> None:
+    """Preview area uses a centered, minimum-height placeholder with light background before loading media."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index(
+        '        self._preview_label = QLabel("(Select a document to preview)")'
+    )
+    end = text.index("        layout.addWidget(preview_group)", start)
+    chunk = text[start:end]
+    assert chunk.count("Qt.TextFormat.PlainText") == 1
+    assert chunk.count("Qt.AlignmentFlag.AlignCenter") == 1
+    assert chunk.count("setMinimumHeight(180)") == 1
+    assert chunk.count("background: #f0f0f0") == 1
+    assert chunk.count("preview_layout.addWidget(self._preview_label)") == 1
 
 
 def test_desktop_main_detail_pane_four_action_buttons_toolbar_loop_and_styles() -> None:
