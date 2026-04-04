@@ -20,7 +20,8 @@ Description similarity joins **description**, **ref_number**, and **memo** (non-
 normalized spacing) on each side so register fields split across columns still match a single
 statement line (including extracts that carry check or confirmation numbers). Embedded line breaks
 in those text fields are treated as spaces before comparison; non-breaking spaces (NBSP) are
-normalized to ordinary spaces. Zero-width space (``U+200B``) is removed.
+normalized to ordinary spaces. Zero-width space (``U+200B``) and soft hyphen (``U+00AD``,
+PDF optional hyphenation) are removed.
 """
 
 from __future__ import annotations
@@ -50,6 +51,7 @@ def _normalize_paste_whitespace(s: str) -> str:
     t = (
         s.strip()
         .replace("\u200b", "")
+        .replace("\u00ad", "")
         .replace("\u00a0", " ")
         .replace("\u202f", " ")
         .replace("\r\n", " ")
