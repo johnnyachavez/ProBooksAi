@@ -265,6 +265,60 @@ def test_amounts_equal() -> None:
     assert amounts_equal(10.001, 10.0)
 
 
+def test_statement_line_match_panel_reconciled_buttons_follow_content_and_selection() -> None:
+    """Mark-all-Matched needs a Matched row; Mark selected needs a non-empty selection."""
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from probooksai.bank_import import BankDatabase
+    from desktop_app.statement_line_match_panel import StatementLineMatchPanel
+
+    db_path = Path(__file__).resolve().parent / "_stmt_line_match_btn_test.db"
+    if db_path.exists():
+        db_path.unlink()
+    db = BankDatabase(str(db_path))
+    try:
+        panel = StatementLineMatchPanel(db)
+        missing_row = {
+            "status": STATUS_MISSING,
+            "stmt_date": "2024-01-02",
+            "stmt_amount": -2.0,
+            "stmt_description": "X",
+            "register_id": None,
+            "reg_date": "",
+            "reg_amount": 0.0,
+            "reg_description": "",
+        }
+        panel.populate([missing_row])
+        assert panel._btn_clear.isEnabled()
+        assert not panel._btn_mark_matched.isEnabled()
+        assert not panel._btn_mark_sel.isEnabled()
+        panel._table.selectRow(0)
+        assert panel._btn_mark_sel.isEnabled()
+
+        panel.populate(
+            [
+                {
+                    "status": STATUS_MATCHED,
+                    "stmt_date": "2024-01-01",
+                    "stmt_amount": -1.0,
+                    "stmt_description": "A",
+                    "register_id": 1,
+                    "reg_date": "2024-01-01",
+                    "reg_amount": -1.0,
+                    "reg_description": "A",
+                }
+            ]
+        )
+        assert panel._btn_mark_matched.isEnabled()
+    finally:
+        db.close()
+        if db_path.exists():
+            db_path.unlink()
+
+
 def test_statement_line_match_panel_reviewed_flags_need_qt() -> None:
     """Populate table and toggle reviewed checkboxes (requires QApplication)."""
     from PySide6.QtWidgets import QApplication

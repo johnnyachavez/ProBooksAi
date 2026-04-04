@@ -164,6 +164,9 @@ class StatementLineMatchPanel(QGroupBox):
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._on_table_context_menu)
         self._table.itemChanged.connect(self._on_item_changed)
+        self._table.selectionModel().selectionChanged.connect(
+            lambda *_: self._refresh_reconciled_action_states()
+        )
         layout.addWidget(self._table)
 
         self._summary = QLabel("—")
@@ -190,6 +193,22 @@ class StatementLineMatchPanel(QGroupBox):
         self._table.setRowCount(0)
         self._populating = False
         self._summary.setText("—")
+        self._refresh_reconciled_action_states()
+
+    def _refresh_reconciled_action_states(self) -> None:
+        n = self._table.rowCount()
+        if n <= 0:
+            self._btn_mark_sel.setEnabled(False)
+            self._btn_mark_matched.setEnabled(False)
+            self._btn_clear.setEnabled(False)
+            return
+        self._btn_clear.setEnabled(True)
+        has_matched = any(
+            (r.get("status") or "") == STATUS_MATCHED for r in self._rows
+        )
+        self._btn_mark_matched.setEnabled(has_matched)
+        rows_sel = self._table.selectionModel().selectedRows()
+        self._btn_mark_sel.setEnabled(len(rows_sel) > 0)
 
     def populate(self, rows: list[dict]) -> None:
         self._rows = list(rows)
@@ -269,6 +288,7 @@ class StatementLineMatchPanel(QGroupBox):
         self._table.blockSignals(False)
         self._populating = False
         self._refresh_match_summary_footer(matched, missing, extra)
+        self._refresh_reconciled_action_states()
 
     def _refresh_match_summary_footer(
         self,
