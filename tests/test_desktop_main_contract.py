@@ -831,6 +831,7 @@ def test_main_window_on_approve_mark_posted_reject_detail_flow() -> None:
     start = text.index("    def _on_approve(self, doc_id: int):")
     end = text.index("    # -- helpers", start)
     chunk = text[start:end]
+    assert chunk.count("self._detail.collect_approved_values()") == 1
     assert chunk.count("self._db.save_approved(doc_id, values)") == 1
     assert chunk.count('self._db.set_status(doc_id, "Approved")') == 1
     assert chunk.count('self._db.set_status(doc_id, "Posted")') == 1
@@ -1741,6 +1742,35 @@ def test_desktop_main_detail_pane_populate_ai_result_applies_suggestions() -> No
     assert chunk.count("findData(s_coa, Qt.ItemDataRole.UserRole)") == 1
     assert chunk.count('self._f_confidence.setText(f"{conf:.0%}")') == 1
     assert chunk.count("self._lbl_rationale.setText(suggestions.rationale or \"\")") == 1
+
+
+_DETAIL_APPROVED_VALUE_KEYS = (
+    "vendor",
+    "doc_type",
+    "invoice_number",
+    "doc_date",
+    "due_date",
+    "subtotal",
+    "tax",
+    "total",
+    "currency",
+    "notes",
+    "coa_account",
+    "tax_category",
+)
+
+
+def test_desktop_main_detail_pane_collect_approved_values_keys_match_approved_values_columns() -> None:
+    """``collect_approved_values`` dict keys align with ``DocumentDatabase.save_approved`` / ``approved_values``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def collect_approved_values(self) -> dict:")
+    end = text.index(
+        "    def _show_preview(self, stored_path: str, mimetype: str, page_count):",
+        start,
+    )
+    chunk = text[start:end]
+    for key in _DETAIL_APPROVED_VALUE_KEYS:
+        assert chunk.count(f'"{key}":') == 1, key
 
 
 def test_desktop_main_detail_pane_button_slots_require_selected_doc() -> None:
