@@ -588,7 +588,9 @@ def test_main_window_init_wires_databases_build_ui_and_refresh() -> None:
     start = text.index("    def __init__(self, db_path: str | None = None):")
     end = text.index("    # -- UI construction", start)
     chunk = text[start:end]
+    assert chunk.count("super().__init__()") == 1
     assert chunk.count("self.resize(1100, 700)") == 1
+    assert chunk.count("self._db_path = db_path") == 1
     assert chunk.count("DocumentDatabase(") == 1
     assert chunk.count("BankDatabase(") == 1
     assert chunk.count("apply_extensions(") == 1
@@ -669,6 +671,9 @@ def test_main_window_switch_company_create_new_mkdir_and_open_missing_paths() ->
     assert chunk.count("p.parent.mkdir(parents=True, exist_ok=True)") == 1
     assert chunk.count("QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No") == 1
     assert chunk.count('"File exists"') == 1
+    assert chunk.count("Open this existing file as the company database?") == 1
+    assert chunk.count("reply = box.exec()") == 1
+    assert chunk.count("if reply != QMessageBox.StandardButton.Yes:") == 1
     assert chunk.count("elif not p.exists():") == 1
     assert chunk.count('"Not found"') == 1
 
@@ -1384,12 +1389,13 @@ def test_desktop_main_inbox_widget_columns_selection_dnd_and_sorting() -> None:
 
 
 def test_inbox_widget_header_column_widths_and_stretch_policy() -> None:
-    """Inbox grid: column widths, no last-section stretch, alternating rows, hidden row header."""
+    """Inbox grid: ``QTableWidget`` super, column widths, stretch policy, stripes, hidden row header."""
     text = _MAIN.read_text(encoding="utf-8")
     iw = text.index("class InboxWidget(QTableWidget):")
     start = text.index("    def __init__(self, parent=None):", iw)
     end = text.index("    def _on_context_menu(self, pos):", start)
     chunk = text[start:end]
+    assert chunk.count("super().__init__(parent)") == 1
     assert chunk.count("setStretchLastSection(False)") == 1
     assert chunk.count("setDefaultSectionSize(110)") == 1
     assert chunk.count("setColumnWidth(0, 40)") == 1
