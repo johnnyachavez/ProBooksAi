@@ -2443,8 +2443,9 @@ def test_main_window_on_about_shows_branded_version_dialog() -> None:
     assert "Keyboard shortcuts are summarized under <b>Help</b>." in chunk
     assert "\\u00a9 2026 ProBooks+ai" in chunk
     assert (
-        'ok_tip="Close; Help lists shortcuts; File → Backup/Restore uses probooks.backup (same as CLI)."'
+        'ok_tip="Close; Help lists shortcuts (including UTF-8 BOM CSV for Excel); "'
         in chunk
+        and 'File → Backup/Restore uses probooks.backup (same as CLI)."' in chunk
     )
 
 
@@ -3559,6 +3560,10 @@ def test_main_help_menu_status_tips_mention_utf8_bom_csv_exports() -> None:
         "help_menu.addSeparator()", 1
     )[0]
     assert "UTF-8 BOM CSV exports and cross-links Register, Business, and Bank Import" in more
+    about = chunk.split("act_about = QAction", 1)[1].split(
+        "help_menu.addAction(act_about)", 1
+    )[0]
+    assert "Help shortcuts (UTF-8 BOM CSV)" in about
 
 
 def test_more_main_tabs_shortcuts_module_exposes_help_dialog() -> None:

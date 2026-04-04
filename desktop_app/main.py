@@ -1239,7 +1239,8 @@ class MainWindow(QMainWindow):
         act_about = QAction("&About ProBooks+ai", self)
         _menu_action_tip(
             act_about,
-            "Application name and version; Ok also notes Help shortcuts and File backup (probooks.backup).",
+            "Application name and version; Ok also notes Help shortcuts (UTF-8 BOM CSV), "
+            "and File backup (probooks.backup).",
         )
         act_about.triggered.connect(self._on_about)
         help_menu.addAction(act_about)
@@ -1304,7 +1305,8 @@ class MainWindow(QMainWindow):
             f"Version {ver} \u2014 AI-powered bookkeeping for small business.<br><br>"
             f"Keyboard shortcuts are summarized under <b>Help</b>.<br><br>"
             f"\u00a9 2026 ProBooks+ai",
-            ok_tip="Close; Help lists shortcuts; File → Backup/Restore uses probooks.backup (same as CLI).",
+            ok_tip="Close; Help lists shortcuts (including UTF-8 BOM CSV for Excel); "
+            "File → Backup/Restore uses probooks.backup (same as CLI).",
         )
 
     def _on_import(self):
