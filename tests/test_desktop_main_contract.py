@@ -606,6 +606,59 @@ def test_main_window_close_event_closes_database_connections() -> None:
     assert chunk.count("super().closeEvent(event)") == 1
 
 
+def test_main_window_switch_backup_restore_guard_busy_ai_worker() -> None:
+    """Switch company, File → Backup, and File → Restore each block on a running ``AIWorker``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    spans = (
+        (
+            "    def _switch_company_database(self, path: str, *, create_new: bool = False) -> None:",
+            "    def _on_backup_company(self):",
+        ),
+        ("    def _on_backup_company(self):", "    def _on_restore_company(self):"),
+        (
+            "    def _on_restore_company(self):",
+            "    def _on_open_company_database(self):",
+        ),
+    )
+    for start_m, end_m in spans:
+        start = text.index(start_m)
+        end = text.index(end_m, start)
+        chunk = text[start:end]
+        assert chunk.count("if self._worker and self._worker.isRunning():") == 1, start_m
+
+
+def test_main_window_on_backup_company_calls_backup_database_and_dialog_flow() -> None:
+    """``_on_backup_company`` saves via ``backup_database`` and surfaces busy/failure/success boxes."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_backup_company(self):")
+    end = text.index("    def _on_restore_company(self):", start)
+    chunk = text[start:end]
+    assert chunk.count("QFileDialog.getSaveFileName(") == 1
+    assert chunk.count("backup_database(src, Path(path))") == 1
+    assert chunk.count('"Backup failed"') == 2
+    assert chunk.count('"Backup complete"') == 1
+    assert (
+        "Wait for AI extraction to finish before backing up." in chunk
+    )
+
+
+def test_main_window_on_restore_company_restores_and_reload_paths() -> None:
+    """``_on_restore_company`` closes DBs, calls ``restore_database``, reloads on success and on errors."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_restore_company(self):")
+    end = text.index("    def _on_open_company_database(self):", start)
+    chunk = text[start:end]
+    assert chunk.count("self._db.close()") == 1
+    assert chunk.count("self._bank_db.close()") == 1
+    assert chunk.count("restore_database(Path(path), target, overwrite=True)") == 1
+    assert chunk.count("self._load_company_at_path(str(target))") == 3
+    assert chunk.count('"Restore failed"') == 2
+    assert chunk.count('"Restore complete"') == 1
+    assert (
+        "Wait for AI extraction to finish before restoring." in chunk
+    )
+
+
 def test_main_window_drag_drop_handlers_follow_menu_bar() -> None:
     """``MainWindow`` implements window-level drag/drop after ``_build_menu_bar`` (``setAcceptDrops``)."""
     text = _MAIN.read_text(encoding="utf-8")
