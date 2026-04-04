@@ -500,6 +500,17 @@ def test_main_window_build_ui_instantiates_one_toolbar() -> None:
     assert chunk.count("self.addToolBar(") == 1
 
 
+def test_main_window_build_ui_sets_central_status_and_eight_main_tabs() -> None:
+    """``_build_ui`` attaches one central widget, one status bar, and eight ``_tabs.addTab`` calls."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("def _build_ui(self):")
+    end = text.index("def _build_menu_bar", start)
+    chunk = text[start:end]
+    assert chunk.count("self.setCentralWidget(") == 1
+    assert chunk.count("self.setStatusBar(") == 1
+    assert chunk.count("self._tabs.addTab(") == 8
+
+
 def test_main_toolbar_import_and_refresh_tooltips_echo_file_menu_and_backup() -> None:
     """Main toolbar **Import** / **Refresh** mirror File backup hints; no ad-hoc ``setStatusTip``."""
     text = _MAIN.read_text(encoding="utf-8")
