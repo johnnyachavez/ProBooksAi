@@ -147,6 +147,19 @@ def test_main_menu_action_tip_mentioning_clipboard_includes_backup_suffix() -> N
         )
 
 
+def test_copy_company_database_path_action_uses_menu_action_tip() -> None:
+    """**Copy company database path** must use ``_menu_action_tip`` so status bar matches hover text."""
+    text = _MAIN.read_text(encoding="utf-8")
+    assert text.count("act_copy_db_path.setToolTip(") == 0
+    assert text.count("act_copy_db_path.setStatusTip(") == 0
+    start = text.index("act_copy_db_path = QAction")
+    end = text.index("act_copy_db_path.triggered.connect", start)
+    block = text[start:end]
+    assert "_menu_action_tip(" in block
+    tip_start = block.index("_menu_action_tip(")
+    assert "act_copy_db_path" in block[tip_start : tip_start + 160]
+
+
 # Static ``QMessageBox.*`` entry points skip ``tip_message_box_buttons`` / ``setToolTip`` on the dialog.
 _DESKTOP_FORBIDDEN_STATIC_QMESSAGEBOX_CALLS: tuple[str, ...] = (
     "QMessageBox.information(",
