@@ -5420,6 +5420,7 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
     assert "_refresh_reconciled_action_states" in sm
     assert "selectionChanged.connect" in sm
     assert "act_export = menu.addAction" in sm
+    assert "_suggested_line_compare_csv_filename" in sm
     assert "STATUS_MATCHED" in sm
     assert "Bank register" in sm
     assert "status bar" in sm.lower()

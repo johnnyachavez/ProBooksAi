@@ -294,6 +294,26 @@ def test_write_line_match_comparison_csv_writes_header_and_rows(tmp_path) -> Non
     assert "yes" in text and STATUS_MATCHED in text and "9" in text
 
 
+def test_suggested_line_compare_csv_filename_uses_batch_stem_or_id() -> None:
+    from desktop_app.statement_line_match_panel import _suggested_line_compare_csv_filename
+
+    assert _suggested_line_compare_csv_filename(None) == "line-reconciliation-comparison.csv"
+    assert (
+        _suggested_line_compare_csv_filename(
+            {"filename": r"C:\Data\January Stmt.csv", "id": 1}
+        )
+        == "January-Stmt-line-compare.csv"
+    )
+    assert (
+        _suggested_line_compare_csv_filename({"id": 99, "filename": ""})
+        == "line-compare-batch-99.csv"
+    )
+    assert (
+        _suggested_line_compare_csv_filename({"id": "12", "filename": None})
+        == "line-compare-batch-12.csv"
+    )
+
+
 def test_write_line_match_comparison_csv_quotes_commas_in_descriptions(tmp_path) -> None:
     rows = [
         {

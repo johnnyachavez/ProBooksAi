@@ -3,13 +3,15 @@ AI-assisted statement line reconciliation panel (Bank Import tab).
 
 Shows Matched / Missing / Extra with review checkboxes (UI state only; no DB writes).
 **Export comparison CSV** writes the current grid (including reconciled yes/no) via
-``probooksai.statement_line_match.write_line_match_comparison_csv``.
+``probooksai.statement_line_match.write_line_match_comparison_csv``; the save dialog suggests a
+basename from the import batch filename (or batch id).
 **Right-click** the grid for **Keyboard shortcuts…** (when wired from Bank Import) and **Copy row** (TSV).
 """
 
 from __future__ import annotations
 
 from functools import partial
+from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional
 
 from PySide6.QtCore import Qt, Signal
@@ -74,6 +76,30 @@ _HEADERS = [
 _BG_MATCHED = QColor(28, 60, 40)
 _BG_MISSING = QColor(70, 50, 22)
 _BG_EXTRA = QColor(28, 45, 70)
+
+
+def _suggested_line_compare_csv_filename(batch: Optional[dict]) -> str:
+    """
+    Default ``*.csv`` basename for **Export comparison CSV** (import batch context).
+
+    Uses the batch ``filename`` stem when set (sanitized); otherwise ``line-compare-batch-{id}``.
+    """
+    if not batch:
+        return "line-reconciliation-comparison.csv"
+    raw = str(batch.get("filename") or "").strip()
+    if raw:
+        base = Path(raw.replace("\\", "/")).name
+        stem = Path(base).stem.strip() or "import"
+        safe = "".join(
+            ch if ch.isalnum() or ch in (" ", "-", "_", ".") else "_" for ch in stem
+        )
+        safe = safe.strip("._- ")[:100] or "import"
+        safe = "-".join(part for part in safe.split() if part)
+        return f"{safe}-line-compare.csv"
+    bid = coerce_combo_int_id(batch.get("id"))
+    if bid is not None:
+        return f"line-compare-batch-{bid}.csv"
+    return "line-reconciliation-comparison.csv"
 
 
 class StatementLineMatchPanel(QGroupBox):
@@ -150,7 +176,8 @@ class StatementLineMatchPanel(QGroupBox):
         self._btn_export_csv = QPushButton("Export comparison CSV\u2026")
         self._btn_export_csv.setToolTip(
             "Save the current Matched / Missing / Extra rows to a UTF-8 CSV "
-            "(amounts as numbers; Reconciled column reflects checkboxes in this panel)."
+            "(amounts as numbers; Reconciled column reflects checkboxes). "
+            "The save dialog suggests a name from the import batch filename when available."
         )
         self._btn_export_csv.clicked.connect(self._on_export_comparison_csv)
         btn_row.addWidget(self._btn_export_csv)
@@ -349,7 +376,8 @@ class StatementLineMatchPanel(QGroupBox):
                 "Export comparison CSV\u2026", self._on_export_comparison_csv
             )
             act_export.setToolTip(
-                "Save all rows in this table to a UTF-8 CSV (same as the toolbar button). "
+                "Save all rows in this table to a UTF-8 CSV (same as the toolbar button; "
+                "suggested filename from the import batch when available). "
                 + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
             )
         idx = self._table.indexAt(pos)
@@ -370,10 +398,12 @@ class StatementLineMatchPanel(QGroupBox):
     def _on_export_comparison_csv(self) -> None:
         if not self._rows:
             return
+        suggest = _suggested_line_compare_csv_filename(self._batch)
+        default_path = str(Path.home() / suggest)
         path, _ = QFileDialog.getSaveFileName(
             self,
             "Save line reconciliation comparison (CSV)",
-            "",
+            default_path,
             "CSV spreadsheets (*.csv);;All files (*.*)",
         )
         if not path:
