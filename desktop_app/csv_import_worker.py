@@ -1,4 +1,7 @@
-"""Background CSV bank import with progress and cancel (Phase 21)."""
+"""Background CSV bank import with progress and cancel (Phase 21).
+
+``import_kwargs`` must include ``csv_content`` as **decoded** Unicode (Bank Import reads ``utf-8-sig`` before starting the worker).
+"""
 
 from __future__ import annotations
 
@@ -6,7 +9,7 @@ from PySide6.QtCore import QThread, Signal
 
 
 class CsvImportWorker(QThread):
-    """Runs :meth:`BankDatabase.import_csv` on a dedicated DB connection."""
+    """Runs :meth:`BankDatabase.import_csv` on a worker thread with its own ``BankDatabase`` connection."""
 
     finished_ok = Signal(dict)
     failed = Signal(str)

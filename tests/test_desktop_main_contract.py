@@ -5445,6 +5445,12 @@ def test_bank_import_csv_export_paths_wires_bidirectional_folder_fallbacks() -> 
     assert "_resolved_import_parent(s)" in save_fn
 
 
+def test_csv_import_worker_module_documents_decoded_utf8_sig_content() -> None:
+    text = (_DESKTOP_APP_DIR / "csv_import_worker.py").read_text(encoding="utf-8")
+    assert "utf-8-sig" in text
+    assert "csv_content" in text
+
+
 def test_bank_import_csv_flow_column_map_then_statement_then_worker() -> None:
     """CSV path: map columns → statement period → save profile → threaded import with progress UI."""
     bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")

@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import pytest
 
+from tests.repo_paths import REPO_ROOT
+
 from probooksai.bank_import import (
     BankDatabase,
     ACCOUNT_TYPES,
@@ -673,6 +675,19 @@ class TestReconciliationExport:
         assert "2024-01-05" in text
         assert "Deposit" in text
         assert "50" in text
+
+
+def test_parse_csv_docstring_mentions_utf8_sig() -> None:
+    text = (REPO_ROOT / "probooksai" / "bank_import.py").read_text(encoding="utf-8")
+    chunk = text.split("def parse_csv(\n", 1)[1][:900]
+    assert "utf-8-sig" in chunk
+
+
+def test_import_csv_method_docstring_mentions_utf8_sig_csv_content() -> None:
+    text = (REPO_ROOT / "probooksai" / "bank_import.py").read_text(encoding="utf-8")
+    chunk = text.split("    def import_csv(\n", 1)[1][:1400]
+    assert "utf-8-sig" in chunk
+    assert "csv_content" in chunk
 
 
 def test_register_payee_two_line_plain_prioritizes_coa_then_memo() -> None:

@@ -270,12 +270,14 @@ def parse_csv(
     encoding: str = "utf-8",
 ) -> list[dict]:
     """
-    Parse *content* (CSV text) using the supplied column-name mapping.
+    Parse *content* (Unicode CSV text; callers decode bytes—use ``utf-8-sig`` for typical bank/Excel files).
 
     Returns a list of dicts with keys:
         txn_date, description, amount, ref_number
 
     Rows where date or amount cannot be parsed are silently skipped.
+
+    *encoding* is unused; decoding happens before *content* is built.
     """
     rows = []
     reader = csv.DictReader(io.StringIO(content))
@@ -1098,6 +1100,9 @@ class BankDatabase:
     ) -> dict:
         """
         High-level helper: parse CSV → create batch → import transactions.
+
+        *csv_content* must be decoded text. The desktop Bank Import tab reads the file with
+        ``encoding='utf-8-sig'`` so an Excel BOM is stripped before this runs.
 
         Returns dict with keys:
             batch_id, inserted, skipped, parse_errors
