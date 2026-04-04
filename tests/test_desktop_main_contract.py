@@ -3521,6 +3521,7 @@ def test_more_main_tabs_shortcuts_module_exposes_help_dialog() -> None:
     text = path.read_text(encoding="utf-8")
     assert "def show_more_main_tabs_keyboard_shortcuts_dialog" in text
     assert "def more_main_tabs_keyboard_shortcuts_help_text" in text
+    assert "UTF-8 with BOM for Excel" in text
     assert "Ctrl+7 Business" in text
     assert "Ctrl+2 Bank Import" in text
     assert "Help → Document intake shortcuts" in text

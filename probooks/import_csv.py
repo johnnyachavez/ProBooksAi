@@ -87,7 +87,10 @@ def import_bank_csv(
     invert_amounts: bool = False,
     errors_file: Path | None = None,
 ) -> ImportResult:
-    """Insert rows into bank_transactions; create import_batch. Skips bad rows."""
+    """Insert rows into bank_transactions; create import_batch. Skips bad rows.
+
+    When *errors_file* is set, skipped rows are written as UTF-8 CSV with BOM for Excel.
+    """
     raw_name = csv_path.name
     cur = conn.execute(
         """
@@ -163,7 +166,7 @@ def import_bank_csv(
     conn.commit()
 
     if errors_file is not None and err_lines:
-        with errors_file.open("w", encoding="utf-8", newline="") as ef:
+        with errors_file.open("w", encoding="utf-8-sig", newline="") as ef:
             w = csv.writer(ef)
             w.writerow(["row_index", "reason", "raw_cells"])
             w.writerows(err_lines)

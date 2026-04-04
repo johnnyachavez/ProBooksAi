@@ -15,6 +15,7 @@ def more_main_tabs_keyboard_shortcuts_help_text() -> str:
         "Reports — F5 re-runs the last Trial Balance, Income Statement, or Balance Sheet "
         "you opened, if any.\n"
         "Audit log — F5 reloads the log (same as Refresh).\n\n"
+        "Export CSV on Journal, Reports, and Audit uses UTF-8 with BOM for Excel.\n\n"
         "View menu: Ctrl+1 Document Intake, Ctrl+2 Bank Import, Ctrl+3 Register, "
         "Ctrl+4 Chart of Accounts, Ctrl+5 Reports, Ctrl+6 Journal, Ctrl+7 Business, "
         "Ctrl+8 Audit log.\n"

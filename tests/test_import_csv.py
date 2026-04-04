@@ -83,5 +83,6 @@ def test_import_csv_skips_bad_row_and_errors_out(tmp_path: Path) -> None:
     assert r.rows_imported == 1
     assert r.rows_skipped == 1
     assert err.is_file()
-    assert "bad_date" in err.read_text()
+    assert err.read_bytes().startswith(b"\xef\xbb\xbf")
+    assert "bad_date" in err.read_text(encoding="utf-8-sig")
     conn.close()
