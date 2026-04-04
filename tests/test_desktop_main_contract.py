@@ -511,6 +511,18 @@ def test_main_window_build_ui_sets_central_status_and_eight_main_tabs() -> None:
     assert chunk.count("self._tabs.addTab(") == 8
 
 
+def test_main_window_build_ui_tab_tooltips_intake_f5_and_window_drops() -> None:
+    """``_build_ui`` sets eight tab bar tooltips, Intake F5 shortcut, and main-window drag/drop."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("def _build_ui(self):")
+    end = text.index("def _build_menu_bar", start)
+    chunk = text[start:end]
+    assert chunk.count("main_tab_bar.setTabToolTip(") == 8
+    assert chunk.count('QShortcut(QKeySequence("F5"), intake_widget)') == 1
+    assert chunk.count("sc_intake_f5.activated.connect(self._refresh_inbox)") == 1
+    assert chunk.count("self.setAcceptDrops(True)") == 1
+
+
 def test_main_toolbar_import_and_refresh_tooltips_echo_file_menu_and_backup() -> None:
     """Main toolbar **Import** / **Refresh** mirror File backup hints; no ad-hoc ``setStatusTip``."""
     text = _MAIN.read_text(encoding="utf-8")
