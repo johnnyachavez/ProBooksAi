@@ -31,6 +31,7 @@ require probooks/cli.py
 require probooks/help_epilog.py
 require desktop_app/main.py
 require desktop_app/qt_combo_ids.py
+require desktop_app/bank_import_csv_export_paths.py
 require desktop_app/statement_line_match_panel.py
 require probooksai/statement_line_match.py
 

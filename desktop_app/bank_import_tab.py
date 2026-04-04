@@ -12,6 +12,8 @@ PySide6 widget for bank account setup, CSV import, and statement reconciliation.
 
 **F5** (when this tab or its children have focus) reloads accounts and import batches and
 re-selects the same batch when it still exists, refreshing transactions and reconciliation.
+**CSV** exports (**reconciliation report**, **line comparison**) share a remembered save folder
+(``bank_import/last_csv_export_dir`` in ``QSettings``; see ``bank_import_csv_export_paths``).
 **Help** → **Bank import shortcuts…** shows the same **F5** summary and points at Register shortcuts.
 **Right-click** the **Import Batches** table, **register preview** grid, **AI-assisted line reconciliation** table,
 or **Manage Bank Accounts** tables
@@ -92,6 +94,10 @@ from desktop_app.table_clipboard import (
     copy_table_row_as_tsv,
     plain_display_table_item,
 )
+from desktop_app.bank_import_csv_export_paths import (
+    bank_import_csv_default_save_path,
+    remember_bank_import_csv_export_parent,
+)
 from desktop_app.statement_line_match_panel import StatementLineMatchPanel
 from desktop_app.theme import (
     AMOUNT_NEGATIVE,
@@ -121,7 +127,9 @@ def _bank_import_keyboard_shortcuts_help_text() -> str:
     """Plain text for **Help → Bank import shortcuts…** (aligned with **F5** behavior)."""
     return (
         "F5 — Refresh accounts and import batches. If an import batch is selected, it is "
-        "re-opened when it still exists (register preview and reconciliation update).\n\n"
+        "re-opened when it still exists (register preview and reconciliation update). "
+        "**Export reconciliation report (CSV)** suggests a batch-based filename and uses the same "
+        "remembered save folder as **Export comparison CSV\u2026** (line reconciliation).\n\n"
         "AI-assisted line reconciliation (right-hand panel): **Run mock extract & compare** "
         "fills the **Bank register** **Stmt match** column for the same bank account and "
         "switches the main window to that tab (reconciliation mode turns on there). "
@@ -1915,17 +1923,26 @@ class BankImportTab(QWidget):
     # Reconcile
     # -----------------------------------------------------------------------
 
+    def _suggested_reconciliation_csv_filename(self) -> str:
+        if self._current_batch_id is None:
+            return "bank-reconciliation-report.csv"
+        return f"bank-reconciliation-batch-{self._current_batch_id}.csv"
+
     def _on_export_reconciliation_csv(self):
         if self._current_batch_id is None:
             return
+        suggest = self._suggested_reconciliation_csv_filename()
+        default_path = bank_import_csv_default_save_path(suggest)
         path, _ = QFileDialog.getSaveFileName(
             self,
             "Save bank reconciliation report (CSV)",
-            "",
+            default_path,
             "CSV spreadsheets (*.csv);;All files (*.*)",
         )
         if not path:
             return
+        if not path.lower().endswith(".csv"):
+            path += ".csv"
         try:
             self._db.export_batch_reconciliation_csv(
                 self._current_batch_id,
@@ -1940,6 +1957,7 @@ class BankImportTab(QWidget):
                 ok_tip="Close; check path, permissions, and disk space.",
             )
             return
+        remember_bank_import_csv_export_parent(path)
         message_box_information_ok(
             self,
             "Export complete",

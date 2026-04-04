@@ -30,6 +30,7 @@ Require-File "probooks/cli.py"
 Require-File "probooks/help_epilog.py"
 Require-File "desktop_app/main.py"
 Require-File "desktop_app/qt_combo_ids.py"
+Require-File "desktop_app/bank_import_csv_export_paths.py"
 Require-File "desktop_app/statement_line_match_panel.py"
 Require-File "probooksai/statement_line_match.py"
 

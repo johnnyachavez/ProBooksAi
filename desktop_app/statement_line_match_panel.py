@@ -5,7 +5,8 @@ Shows Matched / Missing / Extra with review checkboxes (UI state only; no DB wri
 **Export comparison CSV** writes the current grid (including reconciled yes/no) via
 ``probooksai.statement_line_match.write_line_match_comparison_csv``; the save dialog suggests a
 basename from the import batch filename (or batch id) and re-opens in the last folder used
-(``QSettings`` key ``bank_import/line_compare_csv_export_dir``).
+for Bank Import CSV exports (``bank_import/last_csv_export_dir``; legacy
+``bank_import/line_compare_csv_export_dir`` is still read if unset).
 **Right-click** the grid for **Keyboard shortcuts…** (when wired from Bank Import) and **Copy row** (TSV).
 """
 
@@ -15,7 +16,7 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional
 
-from PySide6.QtCore import QSettings, Qt, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QBrush
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -31,6 +32,10 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from desktop_app.bank_import_csv_export_paths import (
+    bank_import_csv_default_save_path,
+    remember_bank_import_csv_export_parent,
+)
 from desktop_app.qt_combo_ids import coerce_combo_int_id
 from desktop_app.qt_mnemonic import (
     escape_ampersand_for_qt,
@@ -77,24 +82,6 @@ _HEADERS = [
 _BG_MATCHED = QColor(28, 60, 40)
 _BG_MISSING = QColor(70, 50, 22)
 _BG_EXTRA = QColor(28, 45, 70)
-
-_LINE_COMPARE_CSV_EXPORT_DIR_KEY = "bank_import/line_compare_csv_export_dir"
-
-
-def _line_compare_export_default_path(
-    suggested_filename: str,
-    *,
-    settings: Optional[QSettings] = None,
-) -> str:
-    """Initial path for **Export comparison CSV** (remembered directory + suggested basename)."""
-    s = settings if settings is not None else QSettings()
-    raw = (s.value(_LINE_COMPARE_CSV_EXPORT_DIR_KEY, "", type=str) or "").strip()
-    if raw:
-        parent = Path(raw)
-        if parent.is_dir():
-            return str(parent / suggested_filename)
-    return str(Path.home() / suggested_filename)
-
 
 def _suggested_line_compare_csv_filename(batch: Optional[dict]) -> str:
     """
@@ -417,7 +404,7 @@ class StatementLineMatchPanel(QGroupBox):
         if not self._rows:
             return
         suggest = _suggested_line_compare_csv_filename(self._batch)
-        default_path = _line_compare_export_default_path(suggest)
+        default_path = bank_import_csv_default_save_path(suggest)
         path, _ = QFileDialog.getSaveFileName(
             self,
             "Save line reconciliation comparison (CSV)",
@@ -444,10 +431,7 @@ class StatementLineMatchPanel(QGroupBox):
                 ok_tip="Close; check path, permissions, disk space, and row alignment.",
             )
             return
-        QSettings().setValue(
-            _LINE_COMPARE_CSV_EXPORT_DIR_KEY,
-            str(Path(path).resolve().parent),
-        )
+        remember_bank_import_csv_export_parent(path)
         message_box_information_ok(
             self,
             "Export complete",

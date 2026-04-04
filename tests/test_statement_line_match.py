@@ -301,12 +301,12 @@ def test_line_compare_export_default_path_uses_home_without_saved_dir(tmp_path) 
     if QApplication.instance() is None:
         QApplication(sys.argv)
 
-    from desktop_app.statement_line_match_panel import _line_compare_export_default_path
+    from desktop_app.bank_import_csv_export_paths import bank_import_csv_default_save_path
 
     ini = tmp_path / "fresh.ini"
     ini.write_text("", encoding="utf-8")
     qs = QSettings(str(ini), QSettings.Format.IniFormat)
-    p = _line_compare_export_default_path("suggest.csv", settings=qs)
+    p = bank_import_csv_default_save_path("suggest.csv", settings=qs)
     assert p == str(Path.home() / "suggest.csv")
 
 
@@ -317,19 +317,39 @@ def test_line_compare_export_default_path_uses_saved_directory(tmp_path) -> None
     if QApplication.instance() is None:
         QApplication(sys.argv)
 
-    from desktop_app.statement_line_match_panel import (
-        _LINE_COMPARE_CSV_EXPORT_DIR_KEY,
-        _line_compare_export_default_path,
+    from desktop_app.bank_import_csv_export_paths import (
+        BANK_IMPORT_LAST_CSV_EXPORT_DIR_KEY,
+        bank_import_csv_default_save_path,
     )
 
     export_dir = tmp_path / "saved_exports"
     export_dir.mkdir()
     ini = tmp_path / "st.ini"
     qs = QSettings(str(ini), QSettings.Format.IniFormat)
-    qs.setValue(_LINE_COMPARE_CSV_EXPORT_DIR_KEY, str(export_dir.resolve()))
+    qs.setValue(BANK_IMPORT_LAST_CSV_EXPORT_DIR_KEY, str(export_dir.resolve()))
     qs.sync()
-    assert _line_compare_export_default_path("out.csv", settings=qs) == str(
+    assert bank_import_csv_default_save_path("out.csv", settings=qs) == str(
         export_dir / "out.csv"
+    )
+
+
+def test_bank_import_csv_default_save_path_reads_legacy_line_compare_key(tmp_path) -> None:
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from desktop_app.bank_import_csv_export_paths import bank_import_csv_default_save_path
+
+    export_dir = tmp_path / "legacy_only"
+    export_dir.mkdir()
+    ini = tmp_path / "legacy.ini"
+    qs = QSettings(str(ini), QSettings.Format.IniFormat)
+    qs.setValue("bank_import/line_compare_csv_export_dir", str(export_dir.resolve()))
+    qs.sync()
+    assert bank_import_csv_default_save_path("r.csv", settings=qs) == str(
+        export_dir / "r.csv"
     )
 
 

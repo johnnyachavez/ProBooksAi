@@ -3601,6 +3601,7 @@ def test_bank_import_tab_exposes_shortcuts_dialog_for_help_menu() -> None:
     assert "line-reconciliation grid" in bit
     assert "Export comparison CSV" in bit
     assert "last folder you used" in bit
+    assert "Export reconciliation report (CSV)" in bit
     assert "empty viewport" in bit
 
 
@@ -5330,10 +5331,14 @@ def test_bank_import_tab_reconciliation_export_file_dialog_caption() -> None:
     """Reconciliation export save dialog states format and matches CSV filter wording."""
     bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
     assert "Save bank reconciliation report (CSV)" in bit
+    assert "def _suggested_reconciliation_csv_filename(self)" in bit
+    assert "bank_import_csv_default_save_path" in bit
+    assert "remember_bank_import_csv_export_parent" in bit
     start = bit.index("def _on_export_reconciliation_csv(self):")
     end = bit.index("\n\n    def _on_reconcile(self):", start)
     chunk = bit[start:end]
     assert chunk.count("CSV spreadsheets (*.csv);;All files (*.*)") == 1
+    assert 'path += ".csv"' in chunk
 
 
 def test_bank_import_blank_register_table_columns_empty_rows_and_pdf_dialog() -> None:
@@ -5405,6 +5410,7 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
     assert "after_stmt_match_sync" in bit
     assert "_after_stmt_match_sync" in bit
     sm = (_DESKTOP_APP_DIR / "statement_line_match_panel.py").read_text(encoding="utf-8")
+    assert "from desktop_app.bank_import_csv_export_paths import" in sm
     assert "from desktop_app.qt_combo_ids import coerce_combo_int_id" in sm
     assert "customContextMenuRequested" in sm
     assert "copy_table_row_as_tsv" in sm
@@ -5426,9 +5432,8 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
         "def _on_run_clicked", 1
     )[0]
     assert 'path += ".csv"' in export_sm
-    assert "_line_compare_export_default_path" in export_sm
-    assert "_LINE_COMPARE_CSV_EXPORT_DIR_KEY" in export_sm
-    assert "setValue" in export_sm
+    assert "bank_import_csv_default_save_path" in export_sm
+    assert "remember_bank_import_csv_export_parent" in export_sm
     assert "STATUS_MATCHED" in sm
     assert "Bank register" in sm
     assert "status bar" in sm.lower()
