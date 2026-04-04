@@ -822,18 +822,6 @@ def test_pr_template_lists_readme_excel_workbook_anchor_checklist() -> None:
         assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
 
 
-def test_pr_template_readme_desktop_anchor_checklist_cites_help_epilog_tests() -> None:
-    """PR template Desktop anchor row should cite help_epilog-related layout tests."""
-    text = GITHUB_PULL_REQUEST_TEMPLATE_MD.read_text(encoding="utf-8")
-    assert "`## Desktop app (PySide6)`** was renamed" in text
-    for name in (
-        "test_review_html_readme_desktop_documentation_card_mentions_file_backup",
-        "test_review_html_python_desktop_section_mentions_help_epilog",
-        "test_static_shell_page_sub_mentions_help_epilog",
-    ):
-        assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
-
-
 def test_pr_template_lists_readme_default_database_paths_checklist() -> None:
     """PR template should remind editors to sync README default DB paths + ROADMAP #21 note + tests."""
     text = GITHUB_PULL_REQUEST_TEMPLATE_MD.read_text(encoding="utf-8")
@@ -975,16 +963,60 @@ def test_contributing_ci_documents_readme_python_cli_anchor_bullet() -> None:
         assert name in bullet, f"CONTRIBUTING Python CLI anchor bullet should mention {name!r}"
 
 
-def test_contributing_ci_documents_readme_desktop_help_epilog_layout_tests() -> None:
-    """Continuous integration README Desktop bullet lists layout tests for help_epilog hub copy."""
+def test_contributing_ci_documents_readme_web_shell_anchor_bullet() -> None:
+    """Continuous integration section documents the README ## Web shell (review) anchor + layout tests."""
     md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
     ci_start = md.index("### Continuous integration")
     table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
     chunk = md[ci_start:table_start]
-    desk = chunk.index("**README `## Desktop app (PySide6)` anchor**")
-    nxt = chunk.index("\n- **README `### Excel workbook", desk)
-    bullet = chunk[desk:nxt]
+    start = chunk.index("**README `## Web shell (review)` anchor**")
+    end = chunk.index("\n- **README `## Python CLI` anchor**", start)
+    bullet = chunk[start:end]
+    assert "README.md#web-shell-review" in bullet
     for name in (
+        "test_docs_indexes_link_readme_web_shell_review",
+        "test_github_issue_templates_reference_core_docs",
+        "test_review_html_links_readme_web_shell_and_desktop_anchors",
+        "test_pr_template_lists_readme_web_shell_review_checklist",
+        "test_contributing_ci_documents_readme_web_shell_anchor_bullet",
+    ):
+        assert name in bullet, f"CONTRIBUTING Web shell anchor bullet should mention {name!r}"
+
+
+def test_pr_template_lists_readme_web_shell_review_checklist() -> None:
+    """PR template should remind editors to sync README ## Web shell (review) / #web-shell-review + layout tests."""
+    text = GITHUB_PULL_REQUEST_TEMPLATE_MD.read_text(encoding="utf-8")
+    assert "**`## Web shell (review)`**" in text
+    assert "**`#web-shell-review`**" in text
+    assert "**README `## Web shell (review)` anchor**" in text
+    for name in (
+        "test_docs_indexes_link_readme_web_shell_review",
+        "test_github_issue_templates_reference_core_docs",
+        "test_review_html_links_readme_web_shell_and_desktop_anchors",
+        "test_pr_template_lists_readme_web_shell_review_checklist",
+        "test_contributing_ci_documents_readme_web_shell_anchor_bullet",
+    ):
+        assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
+
+
+def test_contributing_ci_documents_readme_desktop_app_anchor_bullet() -> None:
+    """Continuous integration section documents the README ## Desktop app (PySide6) anchor + layout tests."""
+    md = DOCS_CONTRIBUTING_MD.read_text(encoding="utf-8")
+    ci_start = md.index("### Continuous integration")
+    table_start = md.index("| **`test_pyproject_contract.py`**", ci_start)
+    chunk = md[ci_start:table_start]
+    start = chunk.index("**README `## Desktop app (PySide6)` anchor**")
+    end = chunk.index("\n- **README `### Default database paths (Windows)`**", start)
+    bullet = chunk[start:end]
+    assert "README.md#desktop-app-pyside6" in bullet
+    for name in (
+        "test_hub_docs_link_readme_desktop_app_section",
+        "test_readme_docs_bar_links_desktop_app_anchor",
+        "test_pr_template_lists_readme_desktop_app_anchor_checklist",
+        "test_contributing_ci_documents_readme_desktop_app_anchor_bullet",
+        "test_github_issue_templates_reference_core_docs",
+        "test_static_html_links_readme_desktop_section",
+        "test_review_html_links_readme_web_shell_and_desktop_anchors",
         "test_review_html_readme_desktop_documentation_card_mentions_file_backup",
         "test_hub_docs_related_docs_link_readme_desktop_app_segment",
         "test_contributing_ci_documents_hub_readme_desktop_app_segment",
@@ -993,6 +1025,30 @@ def test_contributing_ci_documents_readme_desktop_help_epilog_layout_tests() -> 
         "test_static_shell_page_sub_mentions_help_epilog",
     ):
         assert name in bullet, f"CONTRIBUTING Desktop anchor bullet should mention {name!r}"
+
+
+def test_pr_template_lists_readme_desktop_app_anchor_checklist() -> None:
+    """PR template should remind editors to sync README ## Desktop app (PySide6) / #desktop-app-pyside6 + layout tests."""
+    text = GITHUB_PULL_REQUEST_TEMPLATE_MD.read_text(encoding="utf-8")
+    assert "**`## Desktop app (PySide6)`**" in text
+    assert "**`#desktop-app-pyside6`**" in text
+    assert "**README `## Desktop app (PySide6)` anchor**" in text
+    for name in (
+        "test_hub_docs_link_readme_desktop_app_section",
+        "test_readme_docs_bar_links_desktop_app_anchor",
+        "test_pr_template_lists_readme_desktop_app_anchor_checklist",
+        "test_contributing_ci_documents_readme_desktop_app_anchor_bullet",
+        "test_github_issue_templates_reference_core_docs",
+        "test_static_html_links_readme_desktop_section",
+        "test_review_html_links_readme_web_shell_and_desktop_anchors",
+        "test_review_html_readme_desktop_documentation_card_mentions_file_backup",
+        "test_hub_docs_related_docs_link_readme_desktop_app_segment",
+        "test_contributing_ci_documents_hub_readme_desktop_app_segment",
+        "test_pr_template_lists_hub_docs_readme_desktop_app_segment_checklist",
+        "test_review_html_python_desktop_section_mentions_help_epilog",
+        "test_static_shell_page_sub_mentions_help_epilog",
+    ):
+        assert name in text, f"PULL_REQUEST_TEMPLATE.md should mention {name!r}"
 
 
 def test_pr_template_issues_backlog_checklist_cites_layout_sync_tests() -> None:
@@ -1479,9 +1535,20 @@ def test_pr_template_ci_bundle_lists_cursor_rule_and_layout_guard_tests() -> Non
         "test_readme_contributing_section_mentions_conftest",
         "test_readme_python_cli_section_mentions_backup_restore_online_api",
         "test_readme_docs_bar_links_python_cli_anchor",
+        "test_issues_backlog_documents_excel_help_epilog",
+        "test_pr_template_lists_readme_python_cli_anchor_checklist",
+        "test_contributing_ci_documents_readme_python_cli_anchor_bullet",
+        "test_hub_docs_related_docs_link_readme_python_cli_segment",
+        "test_contributing_ci_documents_hub_readme_python_cli_segment",
+        "test_pr_template_lists_hub_docs_readme_python_cli_segment_checklist",
+        "test_docs_indexes_link_readme_web_shell_review",
+        "test_pr_template_lists_readme_web_shell_review_checklist",
+        "test_contributing_ci_documents_readme_web_shell_anchor_bullet",
+        "test_hub_docs_link_readme_desktop_app_section",
+        "test_pr_template_lists_readme_desktop_app_anchor_checklist",
+        "test_contributing_ci_documents_readme_desktop_app_anchor_bullet",
         "test_hub_docs_related_docs_link_readme_excel_workbook_template",
         "test_hub_docs_related_docs_link_readme_default_database_paths",
-        "test_hub_docs_related_docs_link_readme_python_cli_segment",
         "test_hub_docs_related_docs_link_readme_desktop_app_segment",
         "test_contributing_ci_documents_hub_readme_desktop_app_segment",
         "test_pr_template_lists_hub_docs_readme_desktop_app_segment_checklist",
@@ -1561,7 +1628,18 @@ def test_cursor_rule_github_work_context_points_at_contributing_ci() -> None:
         "test_readme_contributing_section_mentions_conftest",
         "test_readme_python_cli_section_mentions_backup_restore_online_api",
         "test_readme_docs_bar_links_python_cli_anchor",
+        "test_issues_backlog_documents_excel_help_epilog",
+        "test_pr_template_lists_readme_python_cli_anchor_checklist",
+        "test_contributing_ci_documents_readme_python_cli_anchor_bullet",
         "test_hub_docs_related_docs_link_readme_python_cli_segment",
+        "test_contributing_ci_documents_hub_readme_python_cli_segment",
+        "test_pr_template_lists_hub_docs_readme_python_cli_segment_checklist",
+        "test_docs_indexes_link_readme_web_shell_review",
+        "test_pr_template_lists_readme_web_shell_review_checklist",
+        "test_contributing_ci_documents_readme_web_shell_anchor_bullet",
+        "test_hub_docs_link_readme_desktop_app_section",
+        "test_pr_template_lists_readme_desktop_app_anchor_checklist",
+        "test_contributing_ci_documents_readme_desktop_app_anchor_bullet",
         "test_hub_docs_related_docs_link_readme_desktop_app_segment",
         "test_contributing_ci_documents_hub_readme_desktop_app_segment",
         "test_pr_template_lists_hub_docs_readme_desktop_app_segment_checklist",
@@ -1608,10 +1686,21 @@ def test_contributing_ci_documents_cursor_github_work_context_rule_test() -> Non
     assert "test_readme_contributing_section_mentions_conftest" in chunk
     assert "test_readme_python_cli_section_mentions_backup_restore_online_api" in chunk
     assert "test_readme_docs_bar_links_python_cli_anchor" in chunk
+    assert "test_issues_backlog_documents_excel_help_epilog" in layout_bullet
+    assert "test_pr_template_lists_readme_python_cli_anchor_checklist" in layout_bullet
+    assert "test_contributing_ci_documents_readme_python_cli_anchor_bullet" in layout_bullet
+    assert "test_hub_docs_related_docs_link_readme_python_cli_segment" in layout_bullet
+    assert "test_contributing_ci_documents_hub_readme_python_cli_segment" in layout_bullet
+    assert "test_pr_template_lists_hub_docs_readme_python_cli_segment_checklist" in layout_bullet
+    assert "test_docs_indexes_link_readme_web_shell_review" in layout_bullet
+    assert "test_pr_template_lists_readme_web_shell_review_checklist" in layout_bullet
+    assert "test_contributing_ci_documents_readme_web_shell_anchor_bullet" in layout_bullet
+    assert "test_hub_docs_link_readme_desktop_app_section" in layout_bullet
+    assert "test_pr_template_lists_readme_desktop_app_anchor_checklist" in layout_bullet
+    assert "test_contributing_ci_documents_readme_desktop_app_anchor_bullet" in layout_bullet
     assert "test_cursor_rule_github_work_context_points_at_contributing_ci" in chunk
     assert "test_hub_docs_related_docs_link_readme_excel_workbook_template" in chunk
     assert "test_hub_docs_related_docs_link_readme_default_database_paths" in chunk
-    assert "test_hub_docs_related_docs_link_readme_python_cli_segment" in chunk
     assert "test_hub_docs_related_docs_link_readme_desktop_app_segment" in chunk
     assert "test_contributing_ci_documents_hub_readme_desktop_app_segment" in chunk
     assert "test_pr_template_lists_hub_docs_readme_desktop_app_segment_checklist" in chunk

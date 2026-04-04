@@ -91,7 +91,9 @@ class JournalTab(QWidget):
         b.clicked.connect(self._refresh_list)
         row.addWidget(b)
         btn_export = QPushButton("Export CSV…")
-        btn_export.setToolTip("Export journal entries in the current date filter range to CSV.")
+        btn_export.setToolTip(
+            "Export journal entries in the current date filter range to CSV."
+        )
         btn_export.clicked.connect(self._export_csv)
         row.addWidget(btn_export)
         row.addStretch()
@@ -126,7 +128,9 @@ class JournalTab(QWidget):
         )
         split.addWidget(self._lines)
         split.setSizes([260, 600])
-        split.setToolTip("Entries list on the left; general-ledger lines for the selected entry on the right.")
+        split.setToolTip(
+            "Entries list on the left; general-ledger lines for the selected entry on the right."
+        )
         layout.addWidget(split)
 
         tip = QLabel(

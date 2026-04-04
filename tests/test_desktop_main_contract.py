@@ -529,6 +529,9 @@ def test_reports_tab_run_and_export_buttons_have_tooltips() -> None:
     assert "_summary.setToolTip" in text
     assert "tip.setToolTip" in text
     assert "self._table.setToolTip(" in text
+    assert "act_keys.setToolTip" in text
+    assert "act_copy.setToolTip" in text
+    assert text.count("Company .db safety: File → Backup / Restore (probooks.backup).") >= 2
 
 
 def test_bank_import_header_buttons_manage_and_csv_have_tooltips() -> None:
@@ -570,6 +573,9 @@ def test_journal_tab_export_csv_button_has_tooltip() -> None:
     assert "tip.setToolTip" in jt
     assert "self._list.setToolTip(" in jt
     assert "self._lines.setToolTip(" in jt
+    assert "act_keys.setToolTip" in jt
+    assert "act_copy.setToolTip" in jt
+    assert jt.count("Company .db safety: File → Backup / Restore (probooks.backup).") >= 4
 
 
 def test_audit_tab_export_and_apply_filter_buttons_have_tooltips() -> None:

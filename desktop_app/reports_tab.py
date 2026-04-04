@@ -111,7 +111,9 @@ class ReportsTab(QWidget):
         layout.addLayout(row)
 
         self._table = QTableWidget()
-        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self._table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch
+        )
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._on_report_context_menu)
         self._table.setSortingEnabled(True)
@@ -158,16 +160,20 @@ class ReportsTab(QWidget):
             lambda: show_more_main_tabs_keyboard_shortcuts_dialog(self),
         )
         act_keys.setToolTip(
-            "Same summary as Help → More tab shortcuts (F5)… (Reports, F5 re-run last report)."
+            "Same summary as Help → More tab shortcuts (F5)… (Reports, F5 re-run last report). "
+            "Company .db safety: File → Backup / Restore (probooks.backup)."
         )
         if not idx.isValid():
             m.exec(self._table.viewport().mapToGlobal(pos))
             return
         row = idx.row()
         m.addSeparator()
-        act_copy = m.addAction("Copy row", partial(copy_table_row_as_tsv, self._table, row))
+        act_copy = m.addAction(
+            "Copy row", partial(copy_table_row_as_tsv, self._table, row)
+        )
         act_copy.setToolTip(
-            "Copy this report row as tab-separated text for pasting into a spreadsheet or editor."
+            "Copy this report row as tab-separated text for pasting into a spreadsheet or editor. "
+            "Company .db safety: File → Backup / Restore (probooks.backup)."
         )
         m.exec(self._table.viewport().mapToGlobal(pos))
 
@@ -200,7 +206,9 @@ class ReportsTab(QWidget):
         start = self._start.text().strip() or None
         end = self._end.text().strip() or None
         data = financial_reports.trial_balance_report(self._conn, start, end)
-        rows = [[d["account"], d["total_debit"], d["total_credit"], d["net"]] for d in data]
+        rows = [
+            [d["account"], d["total_debit"], d["total_credit"], d["net"]] for d in data
+        ]
         headers = ["Account", "Debit", "Credit", "Net (D−C)"]
         self._fill_table(headers, rows, numeric_columns=frozenset({1, 2, 3}))
         self._summary.setText(f"{len(data)} account(s) with activity.")
