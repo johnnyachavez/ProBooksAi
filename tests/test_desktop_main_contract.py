@@ -510,6 +510,14 @@ def test_main_toolbar_import_and_refresh_tooltips_echo_file_menu_and_backup() ->
     assert "File → Backup" in ref or "probooks backup" in ref.lower()
 
 
+def test_menu_action_tip_helper_sets_matching_status_and_hover_text() -> None:
+    """``_menu_action_tip`` must keep status bar and QAction hover text in lockstep."""
+    text = _MAIN.read_text(encoding="utf-8")
+    assert (
+        "    act.setStatusTip(tip)\n    act.setToolTip(tip)" in text
+    ), "_menu_action_tip should call setStatusTip then setToolTip with the same tip"
+
+
 def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
     text = _MAIN.read_text(encoding="utf-8")
     assert "def _menu_action_tip" in text
