@@ -556,6 +556,9 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
         f"each enabled menu QAction should wire .triggered.connect( "
         f"(QAction={n_qa}, setEnabled(False)={n_dis}, .triggered.connect={n_trig})"
     )
+    assert chunk.count(".addSeparator()") == 3, (
+        "expected file_menu, edit_menu, and help_menu each to call addSeparator() once"
+    )
     assert "\n            act_import_docs,\n" in chunk
     assert "\n            act_open_company,\n" in chunk
     assert "\n            act_copy_db_path,\n" in chunk
