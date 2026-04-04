@@ -3600,6 +3600,7 @@ def test_bank_import_tab_exposes_shortcuts_dialog_for_help_menu() -> None:
     assert "restores the company line" in bit
     assert "line-reconciliation grid" in bit
     assert "Export comparison CSV" in bit
+    assert "last folder you used" in bit
     assert "empty viewport" in bit
 
 
@@ -5425,6 +5426,9 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
         "def _on_run_clicked", 1
     )[0]
     assert 'path += ".csv"' in export_sm
+    assert "_line_compare_export_default_path" in export_sm
+    assert "_LINE_COMPARE_CSV_EXPORT_DIR_KEY" in export_sm
+    assert "setValue" in export_sm
     assert "STATUS_MATCHED" in sm
     assert "Bank register" in sm
     assert "status bar" in sm.lower()

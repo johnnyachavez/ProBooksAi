@@ -294,6 +294,45 @@ def test_write_line_match_comparison_csv_writes_header_and_rows(tmp_path) -> Non
     assert "yes" in text and STATUS_MATCHED in text and "9" in text
 
 
+def test_line_compare_export_default_path_uses_home_without_saved_dir(tmp_path) -> None:
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from desktop_app.statement_line_match_panel import _line_compare_export_default_path
+
+    ini = tmp_path / "fresh.ini"
+    ini.write_text("", encoding="utf-8")
+    qs = QSettings(str(ini), QSettings.Format.IniFormat)
+    p = _line_compare_export_default_path("suggest.csv", settings=qs)
+    assert p == str(Path.home() / "suggest.csv")
+
+
+def test_line_compare_export_default_path_uses_saved_directory(tmp_path) -> None:
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from desktop_app.statement_line_match_panel import (
+        _LINE_COMPARE_CSV_EXPORT_DIR_KEY,
+        _line_compare_export_default_path,
+    )
+
+    export_dir = tmp_path / "saved_exports"
+    export_dir.mkdir()
+    ini = tmp_path / "st.ini"
+    qs = QSettings(str(ini), QSettings.Format.IniFormat)
+    qs.setValue(_LINE_COMPARE_CSV_EXPORT_DIR_KEY, str(export_dir.resolve()))
+    qs.sync()
+    assert _line_compare_export_default_path("out.csv", settings=qs) == str(
+        export_dir / "out.csv"
+    )
+
+
 def test_suggested_line_compare_csv_filename_uses_batch_stem_or_id() -> None:
     from desktop_app.statement_line_match_panel import _suggested_line_compare_csv_filename
 
