@@ -492,7 +492,12 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
     end = text.index("def dragEnterEvent", start)
     chunk = text[start:end]
     assert ".setStatusTip(" not in chunk
-    assert chunk.count("_menu_action_tip(") >= 21
+    assert ".setToolTip(" not in chunk, (
+        "_build_menu_bar must not call setToolTip on QActions; use _menu_action_tip only"
+    )
+    assert chunk.count("_menu_action_tip(") == 21, (
+        "expected 21 menu tips (9 File + 1 View loop + 3 Edit + 1 Tools + 7 Help)"
+    )
     assert "\n            act_import_docs,\n" in chunk
     assert "\n            act_open_company,\n" in chunk
     assert "\n            act_copy_db_path,\n" in chunk
