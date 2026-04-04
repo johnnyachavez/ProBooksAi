@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 from desktop_app.more_main_tabs_shortcuts import (
     show_more_main_tabs_keyboard_shortcuts_dialog,
 )
+from desktop_app.qt_combo_ids import coerce_combo_int_id
 from desktop_app.qt_mnemonic import (
     escape_ampersand_for_qt,
     message_box_critical_ok,
@@ -164,9 +165,8 @@ class AuditTab(QWidget):
         id_txt = self._ent_id.text().strip()
         eid = None
         if id_txt:
-            try:
-                eid = int(id_txt)
-            except ValueError:
+            eid = coerce_combo_int_id(id_txt)
+            if eid is None:
                 message_box_warning_ok(
                     self,
                     "Audit log",
@@ -215,9 +215,8 @@ class AuditTab(QWidget):
         id_txt = self._ent_id.text().strip()
         eid = None
         if id_txt:
-            try:
-                eid = int(id_txt)
-            except ValueError:
+            eid = coerce_combo_int_id(id_txt)
+            if eid is None:
                 message_box_warning_ok(
                     self,
                     "Audit log",
@@ -241,8 +240,8 @@ class AuditTab(QWidget):
                 i, 0, plain_display_table_item((r["changed_at"] or "")[:19])
             )
             self._tbl.setItem(i, 1, plain_display_table_item(r["entity_type"]))
-            eid = int(r["entity_id"])
-            self._tbl.setItem(i, 2, IntSortTableItem(str(eid), eid))
+            row_eid = coerce_combo_int_id(r["entity_id"]) or 0
+            self._tbl.setItem(i, 2, IntSortTableItem(str(row_eid), row_eid))
             self._tbl.setItem(i, 3, plain_display_table_item(r["field"]))
             self._tbl.setItem(i, 4, plain_display_table_item(r["old_value"] or ""))
             self._tbl.setItem(i, 5, plain_display_table_item(r["new_value"] or ""))

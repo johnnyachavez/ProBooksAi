@@ -4,3 +4,6 @@
 *.yml text eol=lf
 *.yaml text eol=lf
 *.sh text eol=lf
+
+# Test fixtures: keep PDF bytes exact (no CRLF “normalization”).
+tests/fixtures/*.pdf binary

@@ -29,6 +29,9 @@ Require-File "probooks/__main__.py"
 Require-File "probooks/cli.py"
 Require-File "probooks/help_epilog.py"
 Require-File "desktop_app/main.py"
+Require-File "desktop_app/qt_combo_ids.py"
+Require-File "desktop_app/statement_line_match_panel.py"
+Require-File "probooksai/statement_line_match.py"
 
 Require-File "scripts/capture_ui_screenshot.py"
 Require-File "scripts/build_desktop.ps1"
@@ -54,6 +57,8 @@ Require-File "review.html"
 
 Require-File "examples/sample_bank.csv"
 Require-File "generate_workbook.py"
+Require-File "scripts/generate_issue_11_fixture_pdf.py"
+Require-File "tests/fixtures/issue_11_chase_statement.pdf"
 
 Require-File "tests/test_ci_validate_layout_sync.py"
 Require-File "tests/conftest.py"

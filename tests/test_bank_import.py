@@ -9,6 +9,8 @@ import pytest
 from probooksai.bank_import import (
     BankDatabase,
     ACCOUNT_TYPES,
+    MANUAL_ENTRY_BATCH_FILENAME,
+    make_manual_entry_fingerprint,
     parse_date,
     parse_amount,
     parse_csv,
@@ -698,6 +700,53 @@ def test_register_number_two_line_plain_type_tags() -> None:
     assert _register_number_two_line_plain(
         {"ref_number": "z", "amount": 0.0, "transfer_to_bank_account_id": None}
     ) == "z\nTXN"
+
+
+def test_make_manual_entry_fingerprint_unique() -> None:
+    fps = {make_manual_entry_fingerprint() for _ in range(100)}
+    assert len(fps) == 100
+    assert all(fp.startswith("manual:") for fp in fps)
+
+
+def test_manual_entry_batch_idempotent_per_account(db) -> None:
+    aid = db.add_bank_account("Main")
+    b1 = db.get_or_create_manual_entry_batch_id(aid)
+    b2 = db.get_or_create_manual_entry_batch_id(aid)
+    assert b1 == b2
+    batch = db.get_batch(b1)
+    assert dict(batch)["filename"] == MANUAL_ENTRY_BATCH_FILENAME
+
+
+def test_manual_entry_batch_distinct_accounts(db) -> None:
+    a1 = db.add_bank_account("A")
+    a2 = db.add_bank_account("B")
+    assert db.get_or_create_manual_entry_batch_id(a1) != db.get_or_create_manual_entry_batch_id(
+        a2
+    )
+
+
+def test_insert_manual_transaction_persists_and_unique_fingerprints(db) -> None:
+    aid = db.add_bank_account("Main")
+    tid = db.insert_manual_transaction(
+        aid,
+        "2024-06-01",
+        -12.5,
+        description="Coffee",
+        ref_number="1088",
+        memo="breakfast",
+    )
+    assert tid > 0
+    row = dict(db.get_transaction(tid))
+    assert row["amount"] == pytest.approx(-12.5)
+    assert row["description"] == "Coffee"
+    assert row["ref_number"] == "1088"
+    assert row["memo"] == "breakfast"
+    assert row["fingerprint"].startswith("manual:")
+    fps = set()
+    for i in range(5):
+        tid2 = db.insert_manual_transaction(aid, "2024-06-02", float(i + 1), description="x")
+        fps.add(dict(db.get_transaction(tid2))["fingerprint"])
+    assert len(fps) == 5
 
 
 def test_batch_reconciled_map_matches_import_batches(db) -> None:

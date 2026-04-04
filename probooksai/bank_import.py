@@ -7,7 +7,8 @@ Schema
 ------
   bank_accounts        – per-account configuration (name, number, bank, type)
   bank_import_batches  – one row per imported CSV file, with statement dates
-                         and balances for reconciliation
+                         and balances for reconciliation; plus one sentinel batch per
+                         account (``(Manual entry)``) for register-typed manual lines
   bank_transactions    – individual transaction rows (outflows negative); optional
                          per-row ``cleared`` flag for the desktop register
 
@@ -34,6 +35,7 @@ import io
 import os
 import re
 import sqlite3
+import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -46,6 +48,9 @@ from probooksai.database import default_intake_sqlite_path
 
 RECONCILE_TOLERANCE = 0.00   # cents-exact reconciliation
 ACCOUNT_TYPES = ("checking", "savings", "credit_card", "other")
+
+# One sentinel import batch per bank account for register-typed manual lines (not from CSV).
+MANUAL_ENTRY_BATCH_FILENAME = "(Manual entry)"
 
 # ---------------------------------------------------------------------------
 # Schema versioning (Issue #21)
@@ -245,6 +250,11 @@ def make_fingerprint(bank_account_id: int, txn_date: str, description: str, amou
     """Return a stable hex fingerprint for deduplication."""
     key = f"{bank_account_id}|{txn_date}|{description}|{round(amount, 2):.2f}|{ref_number}"
     return hashlib.sha256(key.encode()).hexdigest()
+
+
+def make_manual_entry_fingerprint() -> str:
+    """Return a unique fingerprint for a manually entered row (never collides with CSV hashes)."""
+    return f"manual:{uuid.uuid4().hex}"
 
 
 # ---------------------------------------------------------------------------
@@ -559,6 +569,60 @@ class BankDatabase:
         )
         self._conn.commit()
         return cur.lastrowid
+
+    def get_or_create_manual_entry_batch_id(self, bank_account_id: int) -> int:
+        """Return the id of the per-account sentinel batch used for register manual entry."""
+        row = self._conn.execute(
+            """
+            SELECT id FROM bank_import_batches
+            WHERE bank_account_id = ? AND filename = ?
+            LIMIT 1
+            """,
+            (bank_account_id, MANUAL_ENTRY_BATCH_FILENAME),
+        ).fetchone()
+        if row is not None:
+            return int(row["id"])
+        return self.create_batch(bank_account_id, filename=MANUAL_ENTRY_BATCH_FILENAME)
+
+    def insert_manual_transaction(
+        self,
+        bank_account_id: int,
+        txn_date: str,
+        amount: float,
+        *,
+        description: str = "",
+        ref_number: str = "",
+        memo: str = "",
+    ) -> int:
+        """
+        Insert one bank transaction tied to the account's manual-entry sentinel batch.
+
+        ``amount`` follows the usual sign convention (deposits positive, payments negative).
+        """
+        batch_id = self.get_or_create_manual_entry_batch_id(bank_account_id)
+        fp = make_manual_entry_fingerprint()
+        cur = self._conn.execute(
+            """
+            INSERT INTO bank_transactions
+                (batch_id, bank_account_id, txn_date,
+                 description, amount, ref_number, fingerprint,
+                 memo, coa_account)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                batch_id,
+                bank_account_id,
+                txn_date,
+                description,
+                amount,
+                ref_number,
+                fp,
+                memo,
+                "",
+            ),
+        )
+        self._conn.commit()
+        return int(cur.lastrowid)
 
     def get_batch(self, batch_id: int) -> Optional[sqlite3.Row]:
         return self._conn.execute(

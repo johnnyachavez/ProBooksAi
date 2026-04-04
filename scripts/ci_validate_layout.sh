@@ -30,6 +30,9 @@ require probooks/__main__.py
 require probooks/cli.py
 require probooks/help_epilog.py
 require desktop_app/main.py
+require desktop_app/qt_combo_ids.py
+require desktop_app/statement_line_match_panel.py
+require probooksai/statement_line_match.py
 
 require scripts/capture_ui_screenshot.py
 require scripts/build_desktop.ps1
@@ -55,6 +58,8 @@ require review.html
 
 require examples/sample_bank.csv
 require generate_workbook.py
+require scripts/generate_issue_11_fixture_pdf.py
+require tests/fixtures/issue_11_chase_statement.pdf
 
 require tests/test_ci_validate_layout_sync.py
 require tests/conftest.py

@@ -1,24 +1,31 @@
 """
 desktop_app.bank_import_tab
 ============================
+**Architecture:** This tab owns **bank account** setup, **import batches**, **CSV/PDF** intake,
+and **statement reconciliation**. The **Bank register** tab is the primary grid for working
+existing **bank_transactions** (COA, cleared, GL posting, payment links). The right-hand
+**register preview** is a batch-scoped, register-styled readout of imported rows—not a second
+full register.
+
 PySide6 widget for bank account setup, CSV import, and statement reconciliation.
-**CSV import** shows a **QProgressDialog** whose **Cancel** button has its own hover tooltip (dialog chrome also has a summary tooltip).
+**CSV import** shows a **QProgressDialog** titled **Importing bank CSV**; its **Cancel** button has its own hover tooltip (dialog chrome also has a summary tooltip).
 
 **F5** (when this tab or its children have focus) reloads accounts and import batches and
 re-selects the same batch when it still exists, refreshing transactions and reconciliation.
 **Help** → **Bank import shortcuts…** shows the same **F5** summary and points at Register shortcuts.
-**Right-click** the **Import Batches** table, **imported transactions**, or **Manage Bank Accounts** tables
+**Right-click** the **Import Batches** table, **register preview** grid, or **Manage Bank Accounts** tables
 (including empty area) for **Keyboard shortcuts…** and row actions; each **QAction** has **setToolTip** where shown.
-Those tables (and **TransactionsTable**) have hover **tooltips** summarizing the same.
+Those tables have hover **tooltips** summarizing the same; **Import Batches** column headers have **setToolTip** per section. The right-pane **BlankBankRegisterTable** uses the same stylesheet as the Register tab grid and **setToolTip** on each column header.
 
 Tabs / widgets
 --------------
-  BankImportTab          – top-level QWidget (root **setToolTip**; left **batch list** column **QWidget** hint; header **Bank Account** label + combo; horizontal + vertical **QSplitter** tooltips; footer **F5** hint tooltip)
+  BankImportTab          – top-level QWidget (root **setToolTip**; left **batch list** column **QWidget** hint + **batch workflow** hint under **Import Batches:**; header **Bank Account** label + combo; **Import formats** hint under the import buttons; horizontal + vertical **QSplitter** tooltips; footer **F5** hint tooltip)
   ManageAccountsDialog   – CRUD dialog for bank_accounts (window tooltip; add/edit sub-dialog window + field tooltips; delete **Yes**/**No**)
   StatementPeriodDialog  – statement dates and balances (window + field + note tooltips; OK/Cancel via ``tip_qdialog_button_box``)
   ColumnMappingDialog    – map CSV headers (window + combo + OK/Cancel via ``tip_qdialog_button_box``)
-  TransactionsTable      – QTableWidget showing imported bank_transactions
+  BlankBankRegisterTable – **QTableWidget** (Date…Balance; blank editable rows, or read-only import rows + padded blanks when a batch is selected)
   ReconciliationPanel    – statement vs import summary (**QGroupBox** + value labels + status **tooltips**)
+  StatementLineMatchPanel – mock statement extract vs register (**Matched** / **Missing** / **Extra**; review checkboxes, UI-only); **Run mock extract & compare** also pushes **Stmt match** onto the **Bank register** tab when a ``register_tab`` is wired (optional **after_stmt_match_sync** focuses that tab).
 """
 
 from __future__ import annotations
@@ -26,7 +33,7 @@ from __future__ import annotations
 import sqlite3
 from functools import partial
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from PySide6.QtCore import QDate, QSettings, Qt, Signal
 from PySide6.QtGui import QColor, QKeySequence, QShortcut
@@ -51,6 +58,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSplitter,
     QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -62,6 +70,11 @@ from probooksai.bank_import import (
 from probooksai.coa_db import COADatabase
 
 from desktop_app.audit_dialog import show_entity_audit_history
+from desktop_app.qt_combo_ids import (
+    coerce_combo_int_id,
+    combo_index_for_int_user_data,
+    combo_int_ids_equal,
+)
 from desktop_app.csv_import_worker import CsvImportWorker
 from desktop_app.open_attachment import open_local_attachment
 from desktop_app.qt_mnemonic import (
@@ -74,9 +87,15 @@ from desktop_app.qt_mnemonic import (
 )
 from desktop_app.table_clipboard import (
     CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
-    NumericAmountTableItem,
+    QTABLE_PLAIN_TEXT_ROLE,
     copy_table_row_as_tsv,
     plain_display_table_item,
+)
+from desktop_app.statement_line_match_panel import StatementLineMatchPanel
+from desktop_app.theme import (
+    AMOUNT_NEGATIVE,
+    AMOUNT_POSITIVE,
+    register_table_style_sheet,
 )
 
 # ---------------------------------------------------------------------------
@@ -97,15 +116,16 @@ def _format_currency(value: Optional[float]) -> str:
     return f"${value:,.2f}"
 
 
-def _color_for_amount(amount: float) -> QColor:
-    return QColor("#C62828") if amount < 0 else QColor("#1B5E20")
-
-
 def _bank_import_keyboard_shortcuts_help_text() -> str:
     """Plain text for **Help → Bank import shortcuts…** (aligned with **F5** behavior)."""
     return (
         "F5 — Refresh accounts and import batches. If an import batch is selected, it is "
-        "re-opened when it still exists (transactions and reconciliation update).\n\n"
+        "re-opened when it still exists (register preview and reconciliation update).\n\n"
+        "AI-assisted line reconciliation (right-hand panel): **Run mock extract & compare** "
+        "fills the **Bank register** **Stmt match** column for the same bank account and "
+        "switches the main window to that tab (reconciliation mode turns on there). "
+        "If that account cannot be opened on the register, a warning explains that **Stmt match** was not updated. "
+        "On success the main **status bar** also shows a short confirmation, then restores the company line.\n\n"
         "Manage Bank Accounts (dialog): right-click the accounts table (including empty area) "
         "for Keyboard shortcuts… (same as this dialog).\n\n"
         "Document Intake:\n"
@@ -211,7 +231,7 @@ class ManageAccountsDialog(QDialog):
             return
         row = idx.row()
         it = self._table.item(row, 0)
-        if it is None or it.data(Qt.ItemDataRole.UserRole) is None:
+        if it is None or coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole)) is None:
             m.exec(self._table.viewport().mapToGlobal(pos))
             return
         m.addSeparator()
@@ -225,10 +245,15 @@ class ManageAccountsDialog(QDialog):
     def _refresh(self):
         self._table.setSortingEnabled(False)
         accounts = self._db.list_bank_accounts()
-        self._table.setRowCount(len(accounts))
-        for r, acct in enumerate(accounts):
+        packed = [
+            (aid, acct)
+            for acct in accounts
+            if (aid := coerce_combo_int_id(acct["id"])) is not None
+        ]
+        self._table.setRowCount(len(packed))
+        for r, (aid, acct) in enumerate(packed):
             name_it = plain_display_table_item(acct["name"] or "")
-            name_it.setData(Qt.ItemDataRole.UserRole, int(acct["id"]))
+            name_it.setData(Qt.ItemDataRole.UserRole, aid)
             self._table.setItem(r, 0, name_it)
             self._table.setItem(
                 r, 1, plain_display_table_item(acct["account_number"] or "")
@@ -247,14 +272,10 @@ class ManageAccountsDialog(QDialog):
         it = self._table.item(row, 0)
         if it is None:
             return None
-        aid = it.data(Qt.ItemDataRole.UserRole)
+        aid = coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole))
         if aid is None:
             return None
-        try:
-            aid_int = int(aid)
-        except (TypeError, ValueError):
-            return None
-        return self._db.get_bank_account(aid_int)
+        return self._db.get_bank_account(aid)
 
     def _on_add(self):
         dlg = _AccountEditDialog(db=self._db, coa_db=self._coa_db, parent=self)
@@ -309,7 +330,16 @@ class ManageAccountsDialog(QDialog):
         )
         reply = box.exec()
         if reply == QMessageBox.StandardButton.Yes:
-            self._db.delete_bank_account(acct["id"])
+            aid = coerce_combo_int_id(acct["id"])
+            if aid is None:
+                message_box_warning_ok(
+                    self,
+                    "Cannot delete",
+                    "This account row has no valid id.",
+                    ok_tip="Close; refresh the list (F5) or pick another row.",
+                )
+                return
+            self._db.delete_bank_account(aid)
             self._refresh()
             self.accountsChanged.emit()
 
@@ -420,8 +450,17 @@ class _AccountEditDialog(QDialog):
             )
         else:
             o = dict(self._account)
+            edit_id = coerce_combo_int_id(self._account["id"])
+            if edit_id is None:
+                message_box_warning_ok(
+                    self,
+                    "Cannot save",
+                    "This account has no valid id.",
+                    ok_tip="Close; cancel and reopen Manage Accounts.",
+                )
+                return
             self._db.update_bank_account(
-                account_id=self._account["id"],
+                account_id=edit_id,
                 name=name,
                 account_number=self._number.text().strip(),
                 bank_name=self._bank.text().strip(),
@@ -659,44 +698,150 @@ class StatementPeriodDialog(QDialog):
 
 
 # ===========================================================================
-# TransactionsTable
+# BlankBankRegisterTable
 # ===========================================================================
 
-class TransactionsTable(QTableWidget):
-    """Displays bank transactions (read-only)."""
+class BlankBankRegisterTable(QTableWidget):
+    """Register-style grid: blank editable rows, or import-batch rows (read-only) + padded blanks."""
 
-    COLUMNS = ["Date", "Description", "Amount", "Reference"]
+    COLUMNS = ["Date", "Description", "Debit", "Credit", "Balance"]
+    _HEADER_TIPS = (
+        "Transaction date from the import (ISO).",
+        "Payee or memo text from the import.",
+        "Positive amounts (typical deposits / inflows) for this batch; shown in green.",
+        "Absolute value of negative amounts (payments / outflows); shown in red.",
+        "Running total after each row when the batch has a beginning balance "
+        "(green if ≥ 0, red if negative; same accent colors as the Register tab).",
+    )
+    DEFAULT_ROW_COUNT = 15
+    _RO_FLAGS = Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("bankRegisterTable")
+        self.setStyleSheet(register_table_style_sheet())
         self.setColumnCount(len(self.COLUMNS))
         self.setHorizontalHeaderLabels(self.COLUMNS)
-        self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        for col, tip in enumerate(self._HEADER_TIPS):
+            h = self.horizontalHeaderItem(col)
+            if h is not None:
+                h.setToolTip(tip)
+        self.reset_blank()
+        self.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked
+            | QAbstractItemView.EditTrigger.EditKeyPressed
+            | QAbstractItemView.EditTrigger.AnyKeyPressed
+            | QAbstractItemView.EditTrigger.SelectedClicked
+        )
+        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
+        self.setAlternatingRowColors(True)
+        self.setShowGrid(False)
+        self.setWordWrap(True)
+        self.verticalHeader().setVisible(False)
         self.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.setSortingEnabled(True)
+        self.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        self.setSortingEnabled(False)
         self.setToolTip(
-            "Transactions for the selected import batch. Right-click for Keyboard shortcuts… "
+            "Register-style preview: select an import batch to load its rows (debit/credit split); "
+            "running balance fills when the batch has a beginning balance. "
+            "Padding rows stay editable scratch space. Right-click for Keyboard shortcuts… "
             "(including on empty area)."
         )
 
-    def populate(self, transactions: list):
-        self.setSortingEnabled(False)
-        self.setRowCount(len(transactions))
-        for r, txn in enumerate(transactions):
-            date_item = plain_display_table_item(txn["txn_date"] or "")
-            date_item.setData(Qt.ItemDataRole.UserRole, txn["id"])
-            self.setItem(r, 0, date_item)
-            self.setItem(r, 1, plain_display_table_item(txn["description"] or ""))
+    def reset_blank(self) -> None:
+        """Restore default empty editable rows (no batch selection)."""
+        self.setRowCount(self.DEFAULT_ROW_COUNT)
+        for r in range(self.DEFAULT_ROW_COUNT):
+            for c in range(len(self.COLUMNS)):
+                it = QTableWidgetItem("")
+                it.setFlags(
+                    Qt.ItemFlag.ItemIsSelectable
+                    | Qt.ItemFlag.ItemIsEnabled
+                    | Qt.ItemFlag.ItemIsEditable
+                )
+                self.setItem(r, c, it)
 
-            amount = float(txn["amount"])
-            amt_item = NumericAmountTableItem(amount)
-            amt_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            amt_item.setForeground(_color_for_amount(amount))
-            self.setItem(r, 2, amt_item)
+    def populate_import_batch(
+        self,
+        transactions: list,
+        *,
+        beginning_balance: Optional[float] = None,
+    ) -> None:
+        """Debit/credit split; optional running balance from *beginning_balance* + each row amount (date order)."""
+        n = len(transactions)
+        total_rows = max(n, self.DEFAULT_ROW_COUNT)
+        self.setRowCount(total_rows)
 
-            self.setItem(r, 3, plain_display_table_item(txn["ref_number"] or ""))
-        self.setSortingEnabled(True)
+        running: Optional[float] = (
+            float(beginning_balance) if beginning_balance is not None else None
+        )
+
+        for r in range(n):
+            row = dict(transactions[r])
+            tid = row.get("id")
+            date_it = plain_display_table_item(row.get("txn_date") or "")
+            tid_coerced = coerce_combo_int_id(tid)
+            if tid_coerced is not None:
+                date_it.setData(Qt.ItemDataRole.UserRole, tid_coerced)
+            date_it.setFlags(self._RO_FLAGS)
+            self.setItem(r, 0, date_it)
+
+            desc_it = plain_display_table_item(row.get("description") or "")
+            desc_it.setFlags(self._RO_FLAGS)
+            self.setItem(r, 1, desc_it)
+
+            amt = float(row.get("amount") or 0.0)
+            debit_txt = f"${amt:,.2f}" if amt > 0 else ""
+            credit_txt = f"${abs(amt):,.2f}" if amt < 0 else ""
+            debit_it = QTableWidgetItem(escape_ampersand_for_qt(debit_txt))
+            debit_it.setTextAlignment(
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+            )
+            debit_it.setFlags(self._RO_FLAGS)
+            debit_it.setData(QTABLE_PLAIN_TEXT_ROLE, debit_txt)
+            if debit_txt:
+                debit_it.setForeground(QColor(AMOUNT_POSITIVE))
+            self.setItem(r, 2, debit_it)
+            credit_it = QTableWidgetItem(escape_ampersand_for_qt(credit_txt))
+            credit_it.setTextAlignment(
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+            )
+            credit_it.setFlags(self._RO_FLAGS)
+            credit_it.setData(QTABLE_PLAIN_TEXT_ROLE, credit_txt)
+            if credit_txt:
+                credit_it.setForeground(QColor(AMOUNT_NEGATIVE))
+            self.setItem(r, 3, credit_it)
+
+            if running is not None:
+                running = round(running + amt, 2)
+                bal_txt = f"${running:,.2f}"
+            else:
+                bal_txt = ""
+            bal_it = QTableWidgetItem(escape_ampersand_for_qt(bal_txt))
+            bal_it.setTextAlignment(
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+            )
+            bal_it.setFlags(self._RO_FLAGS)
+            if bal_txt:
+                bal_it.setForeground(
+                    QColor(AMOUNT_NEGATIVE)
+                    if running < 0
+                    else QColor(AMOUNT_POSITIVE)
+                )
+            bal_it.setData(QTABLE_PLAIN_TEXT_ROLE, bal_txt)
+            self.setItem(r, 4, bal_it)
+
+        for r in range(n, total_rows):
+            for c in range(len(self.COLUMNS)):
+                it = QTableWidgetItem("")
+                it.setFlags(
+                    Qt.ItemFlag.ItemIsSelectable
+                    | Qt.ItemFlag.ItemIsEnabled
+                    | Qt.ItemFlag.ItemIsEditable
+                )
+                self.setItem(r, c, it)
 
 
 # ===========================================================================
@@ -869,18 +1014,57 @@ class BankImportTab(QWidget):
 
     Layout (horizontal splitter):
       Left  – account selector, batch list, import & manage buttons
-      Right – top: transactions table; bottom: reconciliation panel
+      Right – top: **BlankBankRegisterTable** (import batch rows when selected); bottom: **Statement reconciliation** … + **Reconciliation** panel
     """
 
-    def __init__(self, db: BankDatabase, coa_db: Optional[COADatabase] = None, parent=None):
+    def __init__(
+        self,
+        db: BankDatabase,
+        coa_db: Optional[COADatabase] = None,
+        *,
+        register_tab=None,
+        after_stmt_match_sync: Optional[Callable[[], None]] = None,
+        parent=None,
+    ):
         super().__init__(parent)
         self._db = db
         self._coa_db = coa_db
+        self._register_tab = register_tab
+        self._after_stmt_match_sync = after_stmt_match_sync
         self._current_batch_id: Optional[int] = None
         self._current_account_id: Optional[int] = None
         self._import_worker: Optional[CsvImportWorker] = None
         self._build_ui()
         self._refresh_accounts()
+
+    def _forward_line_match_to_register(self, bank_account_id: object, results: list) -> None:
+        """Sync AI line reconciliation table to **Bank register → Stmt match** overlay."""
+        if self._register_tab is None:
+            return
+        aid = coerce_combo_int_id(bank_account_id)
+        if aid is None:
+            message_box_warning_ok(
+                self,
+                "Stmt match sync",
+                "Invalid bank account id for Stmt match sync.",
+                ok_tip="Close; select a bank account on Bank Import, then run compare again.",
+            )
+            return
+        applied = self._register_tab.apply_line_match_results_from_import(
+            aid, list(results)
+        )
+        if not applied:
+            message_box_warning_ok(
+                self,
+                "Stmt match sync",
+                "Could not select that bank account on Bank register. "
+                "It may have been removed or the lists are out of date. "
+                "Stmt match was not updated.",
+                ok_tip="Close; try F5 on Bank Import and Register, or Manage Accounts….",
+            )
+        fn = self._after_stmt_match_sync
+        if applied and fn is not None:
+            fn()
 
     def _build_ui(self):
         self.setToolTip(
@@ -895,14 +1079,14 @@ class BankImportTab(QWidget):
         hdr_row = QHBoxLayout()
         hdr_lbl = QLabel("🏦  Bank Account:")
         hdr_lbl.setToolTip(
-            "Label for the account selector; batches and transactions below belong to this bank account."
+            "Label for the account selector; import batches below belong to this bank account."
         )
         hdr_row.addWidget(hdr_lbl)
 
         self._acct_combo = QComboBox()
         self._acct_combo.setMinimumWidth(220)
         self._acct_combo.setToolTip(
-            "Bank account whose import batches and transactions are shown below."
+            "Bank account whose import batches are listed below."
         )
         self._acct_combo.currentIndexChanged.connect(self._on_account_changed)
         hdr_row.addWidget(self._acct_combo)
@@ -935,6 +1119,20 @@ class BankImportTab(QWidget):
         hdr_row.addStretch()
         outer.addLayout(hdr_row)
 
+        import_hint = QLabel(
+            "Import formats: <b>CSV</b> — typical bank export. "
+            "<b>PDF</b> — digital statements with <i>selectable</i> text only; "
+            "image-only (scanned) PDFs are not supported yet — use CSV or a download from your bank."
+        )
+        import_hint.setTextFormat(Qt.TextFormat.RichText)
+        import_hint.setWordWrap(True)
+        import_hint.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        import_hint.setToolTip(
+            "ProBooks+ai reads text embedded in PDFs; it does not OCR scans. "
+            "For photo or scanned statements, use CSV until automatic OCR ships (Phase 7)."
+        )
+        outer.addWidget(import_hint)
+
         # ── Splitter: batch list (left) | detail (right) ──────────────────
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
@@ -952,9 +1150,31 @@ class BankImportTab(QWidget):
             "Same shared company .db as the rest of the app (File → Backup / probooks backup)."
         )
         left_layout.addWidget(lbl_import_batches)
+        batch_hint = QLabel(
+            "Batches appear after you <b>Import CSV</b> or <b>Import PDF</b> for the account above. "
+            "Select a batch to load transactions and reconciliation on the right."
+        )
+        batch_hint.setTextFormat(Qt.TextFormat.RichText)
+        batch_hint.setWordWrap(True)
+        batch_hint.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        batch_hint.setToolTip(
+            "Each import creates a batch for the selected bank account. "
+            "Use Manage Accounts… if no account is listed yet."
+        )
+        left_layout.addWidget(batch_hint)
         self._batch_table = QTableWidget()
         self._batch_table.setColumnCount(3)
         self._batch_table.setHorizontalHeaderLabels(["Imported", "Statement Period", "Reconciled"])
+        for col, tip in enumerate(
+            (
+                "Date this batch was imported (YYYY-MM-DD).",
+                "Statement start → end dates for this batch, if provided at import.",
+                "Whether Mark Reconciled has been applied for this batch.",
+            )
+        ):
+            h = self._batch_table.horizontalHeaderItem(col)
+            if h is not None:
+                h.setToolTip(tip)
         self._batch_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._batch_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._batch_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -972,15 +1192,52 @@ class BankImportTab(QWidget):
         left_layout.addWidget(self._batch_table)
         splitter.addWidget(left)
 
-        # Right: transactions + reconciliation
+        # Right: blank register shell + reconciliation
         right_splitter = QSplitter(Qt.Orientation.Vertical)
 
-        self._txn_table = TransactionsTable()
+        txn_col = QWidget()
+        txn_col_layout = QVBoxLayout(txn_col)
+        txn_col_layout.setContentsMargins(0, 0, 0, 0)
+        txn_col_layout.setSpacing(6)
+
+        self._txn_table = BlankBankRegisterTable()
         self._txn_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._txn_table.customContextMenuRequested.connect(
             self._on_import_txn_context_menu
         )
-        right_splitter.addWidget(self._txn_table)
+        txn_col_layout.addWidget(self._txn_table, stretch=1)
+        right_splitter.addWidget(txn_col)
+
+        recon_col = QWidget()
+        recon_col_layout = QVBoxLayout(recon_col)
+        recon_col_layout.setContentsMargins(0, 0, 0, 0)
+        recon_col_layout.setSpacing(6)
+
+        lbl_recon_header = QLabel("Statement reconciliation:")
+        lbl_recon_header.setToolTip(
+            "Statement period, opening and closing balances, and Mark Reconciled for the batch "
+            "selected on the left. Same company .db (File → Backup / probooks backup)."
+        )
+        recon_col_layout.addWidget(lbl_recon_header)
+
+        self._recon_placeholder = QLabel()
+        self._recon_placeholder.setTextFormat(Qt.TextFormat.RichText)
+        self._recon_placeholder.setWordWrap(True)
+        self._recon_placeholder.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        self._recon_placeholder.setToolTip(
+            "Statement period, balances, and Mark Reconciled apply to the batch highlighted on the left."
+        )
+        recon_col_layout.addWidget(self._recon_placeholder)
+
+        self._recon_panel_empty_hint = QLabel(
+            "Select a batch on the left to view statement reconciliation"
+        )
+        self._recon_panel_empty_hint.setWordWrap(True)
+        self._recon_panel_empty_hint.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        self._recon_panel_empty_hint.setToolTip(
+            "Statement balances, difference, and Mark Reconciled populate after you pick a batch on the left."
+        )
+        recon_col_layout.addWidget(self._recon_panel_empty_hint)
 
         self._recon_panel = ReconciliationPanel()
         self._recon_panel.reconcileRequested.connect(self._on_reconcile)
@@ -988,17 +1245,33 @@ class BankImportTab(QWidget):
         self._recon_panel.toleranceChanged.connect(
             self._on_reconciliation_tolerance_changed
         )
-        right_splitter.addWidget(self._recon_panel)
+        recon_col_layout.addWidget(self._recon_panel, stretch=1)
+
+        lbl_ai_line = QLabel("AI-assisted line reconciliation:")
+        lbl_ai_line.setToolTip(
+            "Mock PDF extract vs register (Matched / Missing / Extra). "
+            "Reconciled checkboxes are UI-only; register data is unchanged."
+        )
+        recon_col_layout.addWidget(lbl_ai_line)
+        self._line_match_panel = StatementLineMatchPanel(self._db, parent=self)
+        recon_col_layout.addWidget(self._line_match_panel)
+        self._line_match_panel.set_context(None, None)
+        if self._register_tab is not None:
+            self._line_match_panel.line_match_results_ready.connect(
+                self._forward_line_match_to_register
+            )
+
+        right_splitter.addWidget(recon_col)
 
         right_splitter.setSizes([400, 200])
         right_splitter.setToolTip(
-            "Drag to give more space to imported transactions or to the reconciliation panel. "
+            "Drag to give more space to the register preview or to the reconciliation panel. "
             "Both panes show data from the shared company SQLite file (File → Backup / probooks backup)."
         )
         splitter.addWidget(right_splitter)
         splitter.setSizes([280, 720])
         splitter.setToolTip(
-            "Drag to widen the import batch list or the transactions and reconciliation area. "
+            "Drag to widen the import batch list or the register preview and reconciliation area. "
             "All bank import data is in the open company .db (File → Backup / Restore, probooks.backup)."
         )
 
@@ -1006,8 +1279,8 @@ class BankImportTab(QWidget):
 
         tip = QLabel(
             "F5 refreshes accounts and import batches; if a batch is selected, it is re-opened when "
-            "it still exists (updates transactions and reconciliation). "
-            "Right-click the batch or transaction table, or the Manage Bank Accounts table "
+            "it still exists (preview + reconciliation refresh). "
+            "Right-click the batch or register preview, or the Manage Bank Accounts table "
             "(even on empty area), for Keyboard shortcuts…. "
             "Help → Bank import shortcuts…; Register tab: Help → Bank register keyboard shortcuts…. "
             "Company SQLite: File → Backup / Restore (probooks.backup, CLI probooks backup/restore)."
@@ -1025,6 +1298,34 @@ class BankImportTab(QWidget):
         sc_reload.setContext(Qt.WidgetWithChildrenShortcut)
         sc_reload.activated.connect(self._reload_bank_import_view)
 
+        self._sync_right_pane_placeholder_visibility()
+
+    def _sync_right_pane_placeholder_visibility(self) -> None:
+        """Show short hints when no batch is loaded so the reconciliation area reads clearly."""
+        aid = self._current_account_id
+        batches = getattr(self, "_batches", None)
+        if self._current_batch_id is not None:
+            self._recon_placeholder.setVisible(False)
+            self._recon_panel_empty_hint.setVisible(False)
+            return
+
+        self._recon_placeholder.setVisible(True)
+        self._recon_panel_empty_hint.setVisible(False)
+
+        if aid is None:
+            self._recon_placeholder.setText(
+                "After you select an account and an <b>import batch</b>, statement balances and "
+                "<b>Mark Reconciled</b> apply here."
+            )
+        elif batches is not None and len(batches) == 0:
+            self._recon_placeholder.setText(
+                "Reconciliation needs an import batch with statement dates and balances—create one via "
+                "<b>Import CSV</b> or <b>Import PDF</b> first."
+            )
+        else:
+            self._recon_placeholder.setVisible(False)
+            self._recon_panel_empty_hint.setVisible(True)
+
     # -----------------------------------------------------------------------
     # Account helpers
     # -----------------------------------------------------------------------
@@ -1040,13 +1341,8 @@ class BankImportTab(QWidget):
             it = self._batch_table.item(r, 0)
             if it is None:
                 continue
-            bid = it.data(Qt.ItemDataRole.UserRole)
-            if bid is None:
-                continue
-            try:
-                if int(bid) != int(saved_batch):
-                    continue
-            except (TypeError, ValueError):
+            bid = coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole))
+            if bid is None or not combo_int_ids_equal(bid, saved_batch):
                 continue
             self._batch_table.selectRow(r)
             self._on_batch_selected()
@@ -1065,31 +1361,34 @@ class BankImportTab(QWidget):
             self._acct_combo.addItem("(no accounts – click Manage Accounts)", None)
         else:
             for acct in accounts:
+                aid = coerce_combo_int_id(acct["id"])
+                if aid is None:
+                    continue
                 label = f"{acct['name']} – {acct['bank_name'] or 'Bank'}"
-                self._acct_combo.addItem(
-                    escape_ampersand_for_qt(label), acct["id"]
-                )
+                self._acct_combo.addItem(escape_ampersand_for_qt(label), aid)
         self._acct_combo.blockSignals(False)
 
-        # Restore previous selection if possible
+        # Restore previous selection if possible (int-safe: combo userData may not match type)
         if prev_id is not None:
-            for i in range(self._acct_combo.count()):
-                if self._acct_combo.itemData(i) == prev_id:
-                    self._acct_combo.setCurrentIndex(i)
-                    break
+            ix = combo_index_for_int_user_data(self._acct_combo, prev_id)
+            if ix is not None:
+                self._acct_combo.setCurrentIndex(ix)
 
         self._on_account_changed()
 
     def _on_account_changed(self):
-        aid = self._acct_combo.currentData()
+        aid = coerce_combo_int_id(self._acct_combo.currentData())
         self._current_account_id = aid
         self._current_batch_id = None
-        self._txn_table.setRowCount(0)
+        self._txn_table.reset_blank()
         self._recon_panel._reset()
+        self._line_match_panel.set_context(aid, None)
         if aid is not None:
             self._refresh_batches(aid)
         else:
             self._batch_table.setRowCount(0)
+            self._batches = []
+        self._sync_right_pane_placeholder_visibility()
 
     # -----------------------------------------------------------------------
     # Batch list
@@ -1099,8 +1398,13 @@ class BankImportTab(QWidget):
         self._batch_table.setSortingEnabled(False)
         batches = self._db.list_batches(account_id)
         self._batches = batches
-        self._batch_table.setRowCount(len(batches))
-        for r, b in enumerate(batches):
+        packed = [
+            (bid, b)
+            for b in batches
+            if (bid := coerce_combo_int_id(b["id"])) is not None
+        ]
+        self._batch_table.setRowCount(len(packed))
+        for r, (bid, b) in enumerate(packed):
             imported_at = (b["imported_at"] or "")[:10]
             period = ""
             if b["statement_start"] and b["statement_end"]:
@@ -1108,7 +1412,7 @@ class BankImportTab(QWidget):
             reconciled_text = "✅ Yes" if b["is_reconciled"] else "No"
 
             item0 = plain_display_table_item(imported_at)
-            item0.setData(Qt.ItemDataRole.UserRole, b["id"])
+            item0.setData(Qt.ItemDataRole.UserRole, bid)
             self._batch_table.setItem(r, 0, item0)
             self._batch_table.setItem(r, 1, plain_display_table_item(period))
             item_recon = plain_display_table_item(reconciled_text)
@@ -1116,6 +1420,7 @@ class BankImportTab(QWidget):
                 item_recon.setForeground(QColor("green"))
             self._batch_table.setItem(r, 2, item_recon)
         self._batch_table.setSortingEnabled(True)
+        self._sync_right_pane_placeholder_visibility()
 
     def _on_import_txn_context_menu(self, pos):
         idx = self._txn_table.indexAt(pos)
@@ -1125,7 +1430,7 @@ class BankImportTab(QWidget):
         )
         act_keys.setToolTip(
             "Same summary as Help → Bank import shortcuts… "
-            "(F5, batches, transactions, reconciliation). "
+            "(F5, batches, register preview, reconciliation). "
             + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
@@ -1133,14 +1438,16 @@ class BankImportTab(QWidget):
             return
         row = idx.row()
         it = self._txn_table.item(row, 0)
-        if it is None or it.data(Qt.ItemDataRole.UserRole) is None:
+        tid = (
+            coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole)) if it is not None else None
+        )
+        if tid is None:
             menu.exec(self._txn_table.viewport().mapToGlobal(pos))
             return
-        tid = it.data(Qt.ItemDataRole.UserRole)
         menu.addSeparator()
         act_att = menu.addAction(
             "Open attachment…",
-            partial(self._open_import_txn_attachment, int(tid)),
+            partial(self._open_import_txn_attachment, tid),
         )
         act_att.setToolTip("Open the linked file for this imported transaction if a path is set.")
         act_copy = menu.addAction("Copy row", partial(copy_table_row_as_tsv, self._txn_table, row))
@@ -1158,7 +1465,7 @@ class BankImportTab(QWidget):
                 self,
                 self._db._conn,
                 "bank_transaction",
-                int(tid),
+                tid,
                 window_title=f"Change history — transaction #{tid}",
                 empty_message="No audit entries recorded for this transaction yet.",
             )
@@ -1182,7 +1489,7 @@ class BankImportTab(QWidget):
         )
         act_keys.setToolTip(
             "Same summary as Help → Bank import shortcuts… "
-            "(F5, batches, transactions, reconciliation). "
+            "(F5, batches, register preview, reconciliation). "
             + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
@@ -1190,10 +1497,12 @@ class BankImportTab(QWidget):
             return
         row = idx.row()
         it = self._batch_table.item(row, 0)
-        if it is None or it.data(Qt.ItemDataRole.UserRole) is None:
+        bid = (
+            coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole)) if it is not None else None
+        )
+        if bid is None:
             menu.exec(self._batch_table.viewport().mapToGlobal(pos))
             return
-        bid = it.data(Qt.ItemDataRole.UserRole)
         menu.addSeparator()
         act_copy = menu.addAction("Copy row", partial(copy_table_row_as_tsv, self._batch_table, row))
         act_copy.setToolTip(
@@ -1210,7 +1519,7 @@ class BankImportTab(QWidget):
                 self,
                 self._db._conn,
                 "bank_import_batch",
-                int(bid),
+                bid,
                 window_title=f"Change history — import batch #{bid}",
                 empty_message="No audit entries recorded for this import batch yet.",
             )
@@ -1218,29 +1527,51 @@ class BankImportTab(QWidget):
     def _on_batch_selected(self):
         row = self._batch_table.currentRow()
         if not hasattr(self, "_batches") or row < 0:
+            self._current_batch_id = None
+            self._txn_table.reset_blank()
+            self._recon_panel._reset()
+            self._line_match_panel.set_context(self._current_account_id, None)
+            self._sync_right_pane_placeholder_visibility()
             return
         it = self._batch_table.item(row, 0)
         if it is None:
+            self._current_batch_id = None
+            self._txn_table.reset_blank()
+            self._recon_panel._reset()
+            self._line_match_panel.set_context(self._current_account_id, None)
+            self._sync_right_pane_placeholder_visibility()
             return
-        bid = it.data(Qt.ItemDataRole.UserRole)
+        bid = coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole))
         if bid is None:
+            self._current_batch_id = None
+            self._txn_table.reset_blank()
+            self._recon_panel._reset()
+            self._line_match_panel.set_context(self._current_account_id, None)
+            self._sync_right_pane_placeholder_visibility()
             return
-        try:
-            bid_int = int(bid)
-        except (TypeError, ValueError):
-            return
-        batch = next((b for b in self._batches if int(b["id"]) == bid_int), None)
+        batch = next(
+            (b for b in self._batches if combo_int_ids_equal(b["id"], bid)), None
+        )
         if batch is None:
             self._current_batch_id = None
+            self._txn_table.reset_blank()
+            self._recon_panel._reset()
+            self._line_match_panel.set_context(self._current_account_id, None)
+            self._sync_right_pane_placeholder_visibility()
             return
-        self._current_batch_id = batch["id"]
+        self._current_batch_id = bid
         self._load_batch(batch)
+        self._line_match_panel.set_context(self._current_account_id, dict(batch))
 
     def _on_reconciliation_tolerance_changed(self):
         if self._current_batch_id is None or not hasattr(self, "_batches"):
             return
         batch = next(
-            (b for b in self._batches if b["id"] == self._current_batch_id),
+            (
+                b
+                for b in self._batches
+                if combo_int_ids_equal(b["id"], self._current_batch_id)
+            ),
             None,
         )
         if batch is not None:
@@ -1253,7 +1584,10 @@ class BankImportTab(QWidget):
             statement_start=batch["statement_start"],
             statement_end=batch["statement_end"],
         )
-        self._txn_table.populate(txns)
+        self._txn_table.populate_import_batch(
+            txns,
+            beginning_balance=batch.get("beginning_balance"),
+        )
 
         # Compute reconciliation (no side effects)
         if batch["beginning_balance"] is not None and batch["ending_balance"] is not None:
@@ -1269,6 +1603,7 @@ class BankImportTab(QWidget):
             self._recon_panel.update_from_batch(batch, recon)
         else:
             self._recon_panel.update_from_batch(batch, None)
+        self._sync_right_pane_placeholder_visibility()
 
     # -----------------------------------------------------------------------
     # Import CSV
@@ -1285,17 +1620,33 @@ class BankImportTab(QWidget):
             return
 
         path, _ = QFileDialog.getOpenFileName(
-            self, "Select bank statement PDF", "", "PDF Files (*.pdf);;All Files (*)"
+            self,
+            "Import bank statement PDF (selectable text required)",
+            "",
+            "PDF documents (*.pdf);;All files (*.*)",
         )
         if not path:
             return
 
+        ocr_result = None
+        text_layer_empty = False
         try:
-            from probooksai.statement_pdf import extract_text_from_pdf
             from probooksai.statement_extract import parse_statement_text
+            from probooksai.statement_ocr_stub import (
+                StatementScanStatus,
+                extract_rows_from_statement_scan,
+            )
+            from probooksai.statement_pdf import extract_text_from_pdf
 
             text = extract_text_from_pdf(path)
+            text_layer_empty = not (text or "").strip()
             rows = parse_statement_text(text)
+            if text_layer_empty or not rows:
+                ocr_result = extract_rows_from_statement_scan(
+                    path, mime_type="application/pdf"
+                )
+                if ocr_result.rows:
+                    rows = ocr_result.rows
         except ImportError as exc:
             message_box_warning_ok(
                 self,
@@ -1314,13 +1665,49 @@ class BankImportTab(QWidget):
             return
 
         if not rows:
+            lines = [
+                "No transaction lines could be imported from this PDF.",
+                "",
+            ]
+            if text_layer_empty:
+                lines.append(
+                    "No selectable text was found in this file. It may be a scanned PDF "
+                    "(image-only) with no text layer."
+                )
+                lines.append("")
+            else:
+                lines.append(
+                    "No lines with a leading date and trailing amount were found in the "
+                    "extracted text."
+                )
+                lines.append("")
+            lines.append("Digital PDFs with selectable text work best for Import PDF.")
+            lines.append("")
+            if (
+                ocr_result is not None
+                and ocr_result.status == StatementScanStatus.FAILED
+                and ocr_result.error
+            ):
+                lines.append(
+                    escape_ampersand_for_qt(
+                        f"Statement scan could not finish: {ocr_result.error}"
+                    )
+                )
+                lines.append("")
+            elif (
+                ocr_result is not None
+                and ocr_result.status == StatementScanStatus.NOT_IMPLEMENTED
+            ):
+                lines.append(
+                    "Automatic OCR for scanned statements is not available in this build yet "
+                    "(Phase 7 vision path)."
+                )
+                lines.append("")
+            lines.append("You can still use Import CSV.")
             message_box_information_ok(
                 self,
                 "No transaction lines",
-                "No lines with a leading date and trailing amount were found.\n\n"
-                "This works on digital PDFs with selectable text. "
-                "Scanned statements require OCR (Phase 7 vision path). "
-                "You can still use Import CSV.",
+                "\n".join(lines),
                 ok_tip="Close; use a text-based PDF or import via CSV.",
             )
             return
@@ -1368,7 +1755,10 @@ class BankImportTab(QWidget):
 
         # 1. Pick file
         path, _ = QFileDialog.getOpenFileName(
-            self, "Select Bank Statement CSV", "", "CSV Files (*.csv);;All Files (*)"
+            self,
+            "Import bank transactions CSV (map columns next)",
+            "",
+            "CSV spreadsheets (*.csv);;All files (*.*)",
         )
         if not path:
             return
@@ -1451,7 +1841,7 @@ class BankImportTab(QWidget):
             "CSV import progress. Cancel stops further rows; some transactions may already be saved."
         )
         prog_dlg.setLabelText("Importing…")
-        prog_dlg.setWindowTitle("CSV import")
+        prog_dlg.setWindowTitle("Importing bank CSV")
         prog_dlg.setWindowModality(Qt.WindowModality.WindowModal)
         prog_dlg.setMinimumDuration(0)
         prog_dlg.setRange(0, 0)
@@ -1475,7 +1865,7 @@ class BankImportTab(QWidget):
                 extra = "\n\nImport was cancelled; some rows may have been saved."
             message_box_information_ok(
                 self,
-                "Import Complete",
+                "Import complete",
                 f"Imported {result['inserted']} new transaction(s).\n"
                 f"Skipped {result['skipped']} duplicate(s)."
                 + extra,
@@ -1520,9 +1910,9 @@ class BankImportTab(QWidget):
             return
         path, _ = QFileDialog.getSaveFileName(
             self,
-            "Save reconciliation report",
+            "Save bank reconciliation report (CSV)",
             "",
-            "CSV Files (*.csv);;All Files (*)",
+            "CSV spreadsheets (*.csv);;All files (*.*)",
         )
         if not path:
             return

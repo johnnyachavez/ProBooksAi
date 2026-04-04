@@ -58,6 +58,11 @@ from PySide6.QtCore import QDate, QSettings, Qt
 from PySide6.QtGui import QGuiApplication, QHideEvent, QKeySequence, QShortcut, QShowEvent
 
 from desktop_app.open_attachment import open_local_attachment
+from desktop_app.qt_combo_ids import (
+    coerce_combo_int_id,
+    combo_index_for_int_user_data,
+    combo_int_ids_equal,
+)
 from desktop_app.qt_mnemonic import (
     escape_ampersand_for_qt,
     message_box_critical_ok,
@@ -97,22 +102,15 @@ def _table_row_entity_id(tbl: QTableWidget, row: int) -> int | None:
     it = tbl.item(row, 0)
     if it is None:
         return None
-    v = it.data(Qt.ItemDataRole.UserRole)
+    v = coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole))
     if v is not None:
-        try:
-            return int(v)
-        except (TypeError, ValueError):
-            pass
+        return v
     plain = it.data(QTABLE_PLAIN_TEXT_ROLE)
     if isinstance(plain, str) and plain.strip():
-        try:
-            return int(plain.strip())
-        except ValueError:
-            pass
-    try:
-        return int((it.text() or "").strip())
-    except ValueError:
-        return None
+        v2 = coerce_combo_int_id(plain.strip())
+        if v2 is not None:
+            return v2
+    return coerce_combo_int_id((it.text() or "").strip())
 
 
 def _rule_id_at_row(tbl: QTableWidget, row: int) -> int | None:
@@ -122,13 +120,7 @@ def _rule_id_at_row(tbl: QTableWidget, row: int) -> int | None:
     it = tbl.item(row, 0)
     if it is None:
         return None
-    v = it.data(Qt.ItemDataRole.UserRole)
-    if v is None:
-        return None
-    try:
-        return int(v)
-    except (TypeError, ValueError):
-        return None
+    return coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole))
 
 
 def _payroll_run_id_at_row(tbl: QTableWidget, row: int) -> int | None:
@@ -138,13 +130,7 @@ def _payroll_run_id_at_row(tbl: QTableWidget, row: int) -> int | None:
     it = tbl.item(row, 0)
     if it is None:
         return None
-    v = it.data(Qt.ItemDataRole.UserRole)
-    if v is None:
-        return None
-    try:
-        return int(v)
-    except (TypeError, ValueError):
-        return None
+    return coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole))
 
 
 def _wire_enter_opens_edit(tbl: QTableWidget, edit_handler) -> None:
@@ -213,17 +199,12 @@ _AP_PAYMENT_BANK_KEY = "business/ap_payment_bank_id"
 def _restore_payment_bank_combo(cb: QComboBox, settings_key: str) -> None:
     """Select last-used bank account id in *cb* (index 0 = none), if still listed."""
     raw = QSettings().value(settings_key, -1)
-    try:
-        bid = int(raw) if raw is not None and raw != "" else -1
-    except (TypeError, ValueError):
-        bid = -1
-    if bid <= 0:
+    bid = coerce_combo_int_id(raw)
+    if bid is None or bid <= 0:
         return
-    for i in range(1, cb.count()):
-        data = cb.itemData(i)
-        if data is not None and int(data) == bid:
-            cb.setCurrentIndex(i)
-            break
+    ix = combo_index_for_int_user_data(cb, bid, start=1)
+    if ix is not None:
+        cb.setCurrentIndex(ix)
 
 
 def _save_payment_bank_choice(cb: QComboBox, settings_key: str) -> None:
@@ -233,8 +214,8 @@ def _save_payment_bank_choice(cb: QComboBox, settings_key: str) -> None:
     if idx <= 0:
         s.setValue(settings_key, -1)
         return
-    bd = cb.itemData(idx)
-    s.setValue(settings_key, int(bd) if bd is not None else -1)
+    bd = coerce_combo_int_id(cb.itemData(idx))
+    s.setValue(settings_key, bd if bd is not None else -1)
 
 
 _NEW_INVOICE_CUSTOMER_KEY = "business/new_invoice_customer_id"
@@ -253,22 +234,17 @@ _BUSINESS_HUB_SUBTAB_KEY = "business/hub_subtab_index"
 def _restore_entity_combo(cb: QComboBox, settings_key: str) -> None:
     """Reselect last-used customer or vendor id in *cb* if still listed."""
     raw = QSettings().value(settings_key, -1)
-    try:
-        eid = int(raw) if raw is not None and raw != "" else -1
-    except (TypeError, ValueError):
-        eid = -1
-    if eid <= 0:
+    eid = coerce_combo_int_id(raw)
+    if eid is None or eid <= 0:
         return
-    for i in range(cb.count()):
-        data = cb.itemData(i)
-        if data is not None and int(data) == eid:
-            cb.setCurrentIndex(i)
-            break
+    ix = combo_index_for_int_user_data(cb, eid)
+    if ix is not None:
+        cb.setCurrentIndex(ix)
 
 
 def _save_entity_combo(cb: QComboBox, settings_key: str) -> None:
-    data = cb.currentData()
-    QSettings().setValue(settings_key, int(data) if data is not None else -1)
+    cid = coerce_combo_int_id(cb.currentData())
+    QSettings().setValue(settings_key, cid if cid is not None else -1)
 
 
 def _sync_filtered_entity_combo(
@@ -288,15 +264,19 @@ def _sync_filtered_entity_combo(
         tag_1099_vendors=tag_1099,
         always_include_ids=always_include_ids,
     )
-    prev = cb.currentData()
+    prev_id = coerce_combo_int_id(cb.currentData())
     cb.blockSignals(True)
     cb.clear()
     for r in rows:
-        cb.addItem(escape_ampersand_for_qt(r["name"] or ""), int(r["id"]))
+        rid = coerce_combo_int_id(r["id"])
+        if rid is None:
+            continue
+        cb.addItem(escape_ampersand_for_qt(r["name"] or ""), rid)
     cb.blockSignals(False)
     if cb.count() == 0:
         return
-    pick = next((i for i in range(cb.count()) if cb.itemData(i) == prev), 0)
+    ix = combo_index_for_int_user_data(cb, prev_id)
+    pick = ix if ix is not None else 0
     cb.setCurrentIndex(min(pick, cb.count() - 1))
 
 
@@ -457,11 +437,16 @@ class RulesTab(QWidget):
 
     def _refresh(self):
         rows = rules_engine.list_rules(self._conn)
+        packed = [
+            (rid, r)
+            for r in rows
+            if (rid := coerce_combo_int_id(r["id"])) is not None
+        ]
         self._tbl.setSortingEnabled(False)
-        self._tbl.setRowCount(len(rows))
-        for i, r in enumerate(rows):
+        self._tbl.setRowCount(len(packed))
+        for i, (rid, r) in enumerate(packed):
             it0 = plain_display_table_item(r["pattern"] or "")
-            it0.setData(Qt.ItemDataRole.UserRole, int(r["id"]))
+            it0.setData(Qt.ItemDataRole.UserRole, rid)
             self._tbl.setItem(i, 0, it0)
             self._tbl.setItem(i, 1, plain_display_table_item(r["coa_account"] or ""))
             pri = int(r["priority"])
@@ -555,7 +540,7 @@ class RulesTab(QWidget):
             )
             return
         all_rules = rules_engine.list_rules(self._conn)
-        cur = next((x for x in all_rules if x["id"] == rid), None)
+        cur = next((x for x in all_rules if combo_int_ids_equal(x["id"], rid)), None)
         if cur is None:
             self._refresh()
             return
@@ -860,10 +845,14 @@ class ARTab(QWidget):
         rows = business_list_filter.filter_business_rows(
             all_rows, self._inv_filter.text(), business_list_filter.AR_INVOICE_FILTER_KEYS
         )
+        packed = [
+            (rid, r)
+            for r in rows
+            if (rid := coerce_combo_int_id(r["id"])) is not None
+        ]
         self._tbl.setSortingEnabled(False)
-        self._tbl.setRowCount(len(rows))
-        for i, r in enumerate(rows):
-            rid = int(r["id"])
+        self._tbl.setRowCount(len(packed))
+        for i, (rid, r) in enumerate(packed):
             id_it = _IntSortTableItem(str(rid), rid)
             id_it.setData(Qt.ItemDataRole.UserRole, rid)
             self._tbl.setItem(i, 0, id_it)
@@ -1046,10 +1035,10 @@ class ARTab(QWidget):
         no.setToolTip("Internal notes about this customer (optional).")
 
         def load_customer(_index: int | None = None) -> None:
-            cid = cb.currentData()
+            cid = coerce_combo_int_id(cb.currentData())
             if cid is None:
                 return
-            row = business.get_customer(self._conn, int(cid))
+            row = business.get_customer(self._conn, cid)
             if row is None:
                 return
             ne.setText(row["name"] or "")
@@ -1083,7 +1072,7 @@ class ARTab(QWidget):
             return
         if not ne.text().strip():
             return
-        cid = cb.currentData()
+        cid = coerce_combo_int_id(cb.currentData())
         if cid is None:
             message_box_warning_ok(
                 self,
@@ -1095,7 +1084,7 @@ class ARTab(QWidget):
         try:
             business.update_customer(
                 self._conn,
-                int(cid),
+                cid,
                 ne.text().strip(),
                 email=em.text().strip(),
                 phone=ph.text().strip(),
@@ -1180,7 +1169,7 @@ class ARTab(QWidget):
             return
         if not invno.text().strip():
             return
-        cust_id = cb.currentData()
+        cust_id = coerce_combo_int_id(cb.currentData())
         if cust_id is None:
             message_box_warning_ok(
                 self,
@@ -1192,7 +1181,7 @@ class ARTab(QWidget):
         try:
             business.create_invoice(
                 self._conn,
-                int(cust_id),
+                cust_id,
                 invno.text().strip(),
                 idate.date().toString("yyyy-MM-dd"),
                 due_date=due_e.text().strip(),
@@ -1244,7 +1233,10 @@ class ARTab(QWidget):
         )
         outer = QVBoxLayout(d)
         f = QFormLayout()
-        inv_cust_id = int(inv["customer_id"])
+        inv_cust_id = coerce_combo_int_id(inv["customer_id"])
+        if inv_cust_id is None:
+            self._refresh()
+            return
         ensure_cust = frozenset({inv_cust_id})
         cust_filt = QLineEdit()
         cust_filt.setPlaceholderText("Filter customers (current invoice customer always listed)…")
@@ -1266,11 +1258,8 @@ class ARTab(QWidget):
         f.addRow("Filter list", cust_filt)
         f.addRow("Customer", cb)
         sync_edit_inv_customers()
-        idx = next(
-            (i for i in range(cb.count()) if cb.itemData(i) == inv_cust_id),
-            0,
-        )
-        cb.setCurrentIndex(idx)
+        idx = combo_index_for_int_user_data(cb, inv_cust_id)
+        cb.setCurrentIndex(idx if idx is not None else 0)
         invno = QLineEdit(inv["invoice_number"] or "")
         invno.setToolTip("Unique invoice number (required).")
         idate = QDateEdit()
@@ -1395,7 +1384,7 @@ class ARTab(QWidget):
                 ok_tip="Close; ensure at least one line has qty × rate > 0.",
             )
             return
-        new_cust = cb.currentData()
+        new_cust = coerce_combo_int_id(cb.currentData())
         if new_cust is None:
             message_box_warning_ok(
                 self,
@@ -1408,7 +1397,7 @@ class ARTab(QWidget):
             business.update_invoice(
                 self._conn,
                 inv_id,
-                int(new_cust),
+                new_cust,
                 invno.text().strip(),
                 idate.date().toString("yyyy-MM-dd"),
                 due_date=due_e.text().strip(),
@@ -1485,9 +1474,10 @@ class ARTab(QWidget):
         except sqlite3.OperationalError:
             banks = []
         for b in banks:
-            bank_cb.addItem(
-                escape_ampersand_for_qt(b["name"] or ""), int(b["id"])
-            )
+            bid = coerce_combo_int_id(b["id"])
+            if bid is None:
+                continue
+            bank_cb.addItem(escape_ampersand_for_qt(b["name"] or ""), bid)
         _restore_payment_bank_combo(bank_cb, _AR_PAYMENT_BANK_KEY)
         form.addRow("Payment date", pdate)
         form.addRow("Amount *", pay_amt)
@@ -1516,18 +1506,23 @@ class ARTab(QWidget):
         )
 
         def rebuild_ar_alloc_table(_idx: int | None = None) -> None:
-            cid = cust_cb.currentData()
+            cid = coerce_combo_int_id(cust_cb.currentData())
             alloc_tbl.setSortingEnabled(False)
             alloc_tbl.setRowCount(0)
             if cid is None:
                 alloc_tbl.setSortingEnabled(True)
                 return
-            opens = business.list_open_invoices_for_customer(self._conn, int(cid))
-            alloc_tbl.setRowCount(len(opens))
+            opens = business.list_open_invoices_for_customer(self._conn, cid)
+            open_packed = [
+                (iid, r)
+                for r in opens
+                if (iid := coerce_combo_int_id(r["id"])) is not None
+            ]
+            alloc_tbl.setRowCount(len(open_packed))
             align_rc = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-            for i, r in enumerate(opens):
+            for i, (iid, r) in enumerate(open_packed):
                 it0 = plain_display_table_item(r["invoice_number"] or "")
-                it0.setData(Qt.ItemDataRole.UserRole, int(r["id"]))
+                it0.setData(Qt.ItemDataRole.UserRole, iid)
                 alloc_tbl.setItem(i, 0, it0)
                 alloc_tbl.setItem(
                     i, 1, plain_display_table_item(r["invoice_date"] or "")
@@ -1586,7 +1581,7 @@ class ARTab(QWidget):
         outer.addWidget(bb)
         if d.exec() != QDialog.DialogCode.Accepted:
             return
-        cid = cust_cb.currentData()
+        cid = coerce_combo_int_id(cust_cb.currentData())
         if cid is None:
             message_box_warning_ok(
                 self,
@@ -1605,7 +1600,9 @@ class ARTab(QWidget):
             v = round(w.value(), 2)
             if v <= 0.005:
                 continue
-            iid = int(it.data(Qt.ItemDataRole.UserRole))
+            iid = coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole))
+            if iid is None:
+                continue
             allocs.append((iid, v))
         if not allocs:
             message_box_warning_ok(
@@ -1625,14 +1622,12 @@ class ARTab(QWidget):
             )
             return
         bidx = bank_cb.currentIndex()
-        bank_account_id = None
-        if bidx > 0:
-            bd = bank_cb.itemData(bidx)
-            if bd is not None:
-                bank_account_id = int(bd)
+        bank_account_id = (
+            coerce_combo_int_id(bank_cb.itemData(bidx)) if bidx > 0 else None
+        )
         business.record_ar_payment(
             self._conn,
-            int(cid),
+            cid,
             pdate.date().toString("yyyy-MM-dd"),
             amt,
             allocs,
@@ -1714,7 +1709,11 @@ class ARTab(QWidget):
         filtered = business_list_filter.filter_business_rows(
             all_rows, filt, business_list_filter.AR_INVOICE_FILTER_KEYS
         )
-        vis_ids = [int(r["id"]) for r in filtered]
+        vis_ids = [
+            iid
+            for r in filtered
+            if (iid := coerce_combo_int_id(r["id"])) is not None
+        ]
         scope = _prompt_list_csv_export_scope(self, "invoices", bool(filt), vis_ids)
         if scope is None:
             return
@@ -1934,10 +1933,14 @@ class APTab(QWidget):
         rows = business_list_filter.filter_business_rows(
             all_rows, self._bill_filter.text(), business_list_filter.AP_BILL_FILTER_KEYS
         )
+        packed = [
+            (bid, r)
+            for r in rows
+            if (bid := coerce_combo_int_id(r["id"])) is not None
+        ]
         self._tbl.setSortingEnabled(False)
-        self._tbl.setRowCount(len(rows))
-        for i, r in enumerate(rows):
-            bid = int(r["id"])
+        self._tbl.setRowCount(len(packed))
+        for i, (bid, r) in enumerate(packed):
             id_it = _IntSortTableItem(str(bid), bid)
             id_it.setData(Qt.ItemDataRole.UserRole, bid)
             self._tbl.setItem(i, 0, id_it)
@@ -2092,10 +2095,10 @@ class APTab(QWidget):
         irs.setToolTip("Mark if this vendor should be included in 1099-style reporting.")
 
         def load_vendor(_index: int | None = None) -> None:
-            vid = cb.currentData()
+            vid = coerce_combo_int_id(cb.currentData())
             if vid is None:
                 return
-            row = business.get_vendor(self._conn, int(vid))
+            row = business.get_vendor(self._conn, vid)
             if row is None:
                 return
             ne.setText(row["name"] or "")
@@ -2135,7 +2138,7 @@ class APTab(QWidget):
             return
         if not ne.text().strip():
             return
-        vid = cb.currentData()
+        vid = coerce_combo_int_id(cb.currentData())
         if vid is None:
             message_box_warning_ok(
                 self,
@@ -2147,7 +2150,7 @@ class APTab(QWidget):
         try:
             business.update_vendor(
                 self._conn,
-                int(vid),
+                vid,
                 ne.text().strip(),
                 email=em.text().strip(),
                 phone=ph.text().strip(),
@@ -2246,7 +2249,7 @@ class APTab(QWidget):
         f.addRow(bb)
         if d.exec() != QDialog.DialogCode.Accepted:
             return
-        vid = cb.currentData()
+        vid = coerce_combo_int_id(cb.currentData())
         if vid is None:
             message_box_warning_ok(
                 self,
@@ -2257,7 +2260,7 @@ class APTab(QWidget):
             return
         business.create_bill(
             self._conn,
-            int(vid),
+            vid,
             bdt.date().toString("yyyy-MM-dd"),
             amt.value(),
             vendor_invoice_number=vinv.text().strip(),
@@ -2300,7 +2303,10 @@ class APTab(QWidget):
             "Update vendor, amounts, dates, memo, or attachment (not allowed when AP payments are applied)."
         )
         f = QFormLayout(d)
-        bill_vid = int(b["vendor_id"])
+        bill_vid = coerce_combo_int_id(b["vendor_id"])
+        if bill_vid is None:
+            self._refresh()
+            return
         ensure_v = frozenset({bill_vid})
         vend_filt = QLineEdit()
         vend_filt.setPlaceholderText("Filter vendors (current bill vendor always listed)…")
@@ -2323,11 +2329,8 @@ class APTab(QWidget):
         f.addRow("Filter list", vend_filt)
         f.addRow("Vendor", cb)
         sync_edit_bill_vendors()
-        vidx = next(
-            (i for i in range(cb.count()) if cb.itemData(i) == bill_vid),
-            0,
-        )
-        cb.setCurrentIndex(vidx)
+        vidx = combo_index_for_int_user_data(cb, bill_vid)
+        cb.setCurrentIndex(vidx if vidx is not None else 0)
         vinv = QLineEdit(b["vendor_invoice_number"] or "")
         vinv.setToolTip("Vendor’s invoice or reference number (optional).")
         amt = QDoubleSpinBox()
@@ -2374,7 +2377,7 @@ class APTab(QWidget):
         f.addRow(bb)
         if d.exec() != QDialog.DialogCode.Accepted:
             return
-        new_vid = cb.currentData()
+        new_vid = coerce_combo_int_id(cb.currentData())
         if new_vid is None:
             message_box_warning_ok(
                 self,
@@ -2387,7 +2390,7 @@ class APTab(QWidget):
             business.update_bill(
                 self._conn,
                 bill_id,
-                int(new_vid),
+                new_vid,
                 bdt.date().toString("yyyy-MM-dd"),
                 amt.value(),
                 vendor_invoice_number=vinv.text().strip(),
@@ -2456,9 +2459,10 @@ class APTab(QWidget):
         except sqlite3.OperationalError:
             banks = []
         for b in banks:
-            bank_cb.addItem(
-                escape_ampersand_for_qt(b["name"] or ""), int(b["id"])
-            )
+            bid = coerce_combo_int_id(b["id"])
+            if bid is None:
+                continue
+            bank_cb.addItem(escape_ampersand_for_qt(b["name"] or ""), bid)
         _restore_payment_bank_combo(bank_cb, _AP_PAYMENT_BANK_KEY)
         form.addRow("Payment date", pdate)
         form.addRow("Amount *", pay_amt)
@@ -2487,19 +2491,24 @@ class APTab(QWidget):
         )
 
         def rebuild_ap_alloc_table(_idx: int | None = None) -> None:
-            vid = vend_cb.currentData()
+            vid = coerce_combo_int_id(vend_cb.currentData())
             alloc_tbl.setSortingEnabled(False)
             alloc_tbl.setRowCount(0)
             if vid is None:
                 alloc_tbl.setSortingEnabled(True)
                 return
-            opens = business.list_open_bills_for_vendor(self._conn, int(vid))
-            alloc_tbl.setRowCount(len(opens))
+            opens = business.list_open_bills_for_vendor(self._conn, vid)
+            open_packed = [
+                (bid, r)
+                for r in opens
+                if (bid := coerce_combo_int_id(r["id"])) is not None
+            ]
+            alloc_tbl.setRowCount(len(open_packed))
             align_rc = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-            for i, r in enumerate(opens):
-                label = (r["vendor_invoice_number"] or "").strip() or f"Bill #{r['id']}"
+            for i, (bid, r) in enumerate(open_packed):
+                label = (r["vendor_invoice_number"] or "").strip() or f"Bill #{bid}"
                 it0 = plain_display_table_item(label)
-                it0.setData(Qt.ItemDataRole.UserRole, int(r["id"]))
+                it0.setData(Qt.ItemDataRole.UserRole, bid)
                 alloc_tbl.setItem(i, 0, it0)
                 alloc_tbl.setItem(
                     i, 1, plain_display_table_item(r["bill_date"] or "")
@@ -2562,7 +2571,7 @@ class APTab(QWidget):
         outer.addWidget(bb)
         if d.exec() != QDialog.DialogCode.Accepted:
             return
-        vid = vend_cb.currentData()
+        vid = coerce_combo_int_id(vend_cb.currentData())
         if vid is None:
             message_box_warning_ok(
                 self,
@@ -2581,7 +2590,9 @@ class APTab(QWidget):
             v = round(w.value(), 2)
             if v <= 0.005:
                 continue
-            bid = int(it.data(Qt.ItemDataRole.UserRole))
+            bid = coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole))
+            if bid is None:
+                continue
             allocs.append((bid, v))
         if not allocs:
             message_box_warning_ok(
@@ -2601,14 +2612,12 @@ class APTab(QWidget):
             )
             return
         bidx = bank_cb.currentIndex()
-        bank_account_id = None
-        if bidx > 0:
-            bd = bank_cb.itemData(bidx)
-            if bd is not None:
-                bank_account_id = int(bd)
+        bank_account_id = (
+            coerce_combo_int_id(bank_cb.itemData(bidx)) if bidx > 0 else None
+        )
         business.record_ap_payment(
             self._conn,
-            int(vid),
+            vid,
             pdate.date().toString("yyyy-MM-dd"),
             amt,
             allocs,
@@ -2690,7 +2699,11 @@ class APTab(QWidget):
         filtered = business_list_filter.filter_business_rows(
             all_rows, filt, business_list_filter.AP_BILL_FILTER_KEYS
         )
-        vis_ids = [int(r["id"]) for r in filtered]
+        vis_ids = [
+            bid
+            for r in filtered
+            if (bid := coerce_combo_int_id(r["id"])) is not None
+        ]
         scope = _prompt_list_csv_export_scope(self, "bills", bool(filt), vis_ids)
         if scope is None:
             return
@@ -2992,10 +3005,11 @@ class PayrollTaxTab(QWidget):
                 ok_tip="Close; use Tax codes to add at least one active code.",
             )
             return
-        existing = {
-            row["tax_item_id"]: row
-            for row in business.list_payroll_run_tax_lines(self._conn, run_id)
-        }
+        existing: dict[int, object] = {}
+        for row in business.list_payroll_run_tax_lines(self._conn, run_id):
+            k = coerce_combo_int_id(row["tax_item_id"])
+            if k is not None:
+                existing[k] = row
         d = QDialog(self)
         d.setWindowTitle(f"Payroll tax lines — run #{run_id}")
         d.setToolTip(
@@ -3012,7 +3026,20 @@ class PayrollTaxTab(QWidget):
             "Placeholder workflow: enter tax amounts per code for this pay run; saved amounts export in tax CSV."
         )
         v.addWidget(lbl_pt_run_tax_intro)
-        tbl = QTableWidget(len(items), 4)
+        item_rows = [
+            (lid, it)
+            for it in items
+            if (lid := coerce_combo_int_id(it["id"])) is not None
+        ]
+        if not item_rows:
+            message_box_warning_ok(
+                self,
+                "Payroll taxes",
+                "No tax codes with valid ids could be loaded.",
+                ok_tip="Close; check company data or schema.",
+            )
+            return
+        tbl = QTableWidget(len(item_rows), 4)
         tbl.setHorizontalHeaderLabels(["Code", "Name", "Employee $", "Employer $"])
         tbl.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         tbl.setToolTip(
@@ -3020,8 +3047,7 @@ class PayrollTaxTab(QWidget):
         )
         tbl.setSortingEnabled(False)
         spin_pairs: list[tuple[int, QDoubleSpinBox, QDoubleSpinBox]] = []
-        for i, it in enumerate(items):
-            iid = it["id"]
+        for i, (lid, it) in enumerate(item_rows):
             tbl.setItem(i, 0, plain_display_table_item(it["code"] or ""))
             tbl.setItem(i, 1, plain_display_table_item(it["name"] or ""))
             se = QDoubleSpinBox()
@@ -3030,13 +3056,13 @@ class PayrollTaxTab(QWidget):
             sr = QDoubleSpinBox()
             sr.setRange(-9_999_999.99, 9_999_999.99)
             sr.setDecimals(2)
-            prev = existing.get(iid)
+            prev = existing.get(lid)
             if prev:
                 se.setValue(float(prev["employee_amount"]))
                 sr.setValue(float(prev["employer_amount"]))
             tbl.setCellWidget(i, 2, se)
             tbl.setCellWidget(i, 3, sr)
-            spin_pairs.append((iid, se, sr))
+            spin_pairs.append((lid, se, sr))
         tbl.setSortingEnabled(True)
         _attach_table_copy_row_menu(tbl, d)
         v.addWidget(tbl)
@@ -3191,11 +3217,16 @@ class PayrollTaxTab(QWidget):
             ORDER BY p.pay_date DESC
             """
         ).fetchall()
-        self._run_rows = [dict(x) for x in rows]
+        self._run_rows = []
+        for x in rows:
+            d = dict(x)
+            if coerce_combo_int_id(d["id"]) is None:
+                continue
+            self._run_rows.append(d)
         self._tbl.setSortingEnabled(False)
         self._tbl.setRowCount(len(self._run_rows))
         for i, r in enumerate(self._run_rows):
-            rid = int(r["id"])
+            rid = coerce_combo_int_id(r["id"])
             it0 = _IntSortTableItem(str(rid), rid)
             it0.setData(Qt.ItemDataRole.UserRole, rid)
             self._tbl.setItem(i, 0, it0)
@@ -3212,10 +3243,10 @@ class PayrollTaxTab(QWidget):
             self._tbl.setItem(i, 4, _FloatSortTableItem(f"{d:.2f}", d))
             self._tbl.setItem(i, 5, _FloatSortTableItem(f"{n:.2f}", n))
             je = r.get("journal_entry_id")
-            if je is None:
+            jid = coerce_combo_int_id(je) if je is not None else None
+            if jid is None:
                 self._tbl.setItem(i, 6, plain_display_table_item(""))
             else:
-                jid = int(je)
                 self._tbl.setItem(i, 6, _IntSortTableItem(str(jid), jid))
         self._tbl.setSortingEnabled(True)
 
@@ -3230,7 +3261,9 @@ class PayrollTaxTab(QWidget):
                 ok_tip="Close; select a run, then Post selected run to GL again.",
             )
             return
-        run = next((x for x in self._run_rows if int(x["id"]) == rid), None)
+        run = next(
+            (x for x in self._run_rows if combo_int_ids_equal(x["id"], rid)), None
+        )
         if run is None:
             self._refresh()
             message_box_information_ok(
@@ -3317,7 +3350,7 @@ class PayrollTaxTab(QWidget):
             eid = gl.create_journal_entry(
                 entry_date=str(run["pay_date"]),
                 lines=lines,
-                memo=f"Payroll run #{run['id']}",
+                memo=f"Payroll run #{rid}",
                 source="payroll",
             )
         except ValueError as exc:
@@ -3330,7 +3363,7 @@ class PayrollTaxTab(QWidget):
             return
         self._conn.execute(
             "UPDATE payroll_runs SET journal_entry_id = ? WHERE id = ?",
-            (eid, run["id"]),
+            (eid, rid),
         )
         self._conn.commit()
         message_box_information_ok(
@@ -3379,7 +3412,10 @@ class PayrollTaxTab(QWidget):
         f = QFormLayout(d)
         cb = QComboBox()
         for e in emps:
-            cb.addItem(escape_ampersand_for_qt(e["name"] or ""), e["id"])
+            eid = coerce_combo_int_id(e["id"])
+            if eid is None:
+                continue
+            cb.addItem(escape_ampersand_for_qt(e["name"] or ""), eid)
         cb.setToolTip("Employee for this pay run.")
         gross = QDoubleSpinBox()
         gross.setRange(0, 9_999_999)
@@ -3405,12 +3441,21 @@ class PayrollTaxTab(QWidget):
         f.addRow(bb)
         if d.exec() != QDialog.DialogCode.Accepted:
             return
+        eid = coerce_combo_int_id(cb.currentData())
+        if eid is None:
+            message_box_warning_ok(
+                self,
+                "Payroll",
+                "Select a valid employee for this pay run.",
+                ok_tip="Close; pick an employee in the combo, then try again.",
+            )
+            return
         pay_d = pd.date().toPython()
         ps = date_cls(pay_d.year, pay_d.month, 1).isoformat()
         pe = pay_d.isoformat()
         business.create_payroll_run(
             self._conn,
-            cb.currentData(),
+            eid,
             ps,
             pe,
             pd.date().toString("yyyy-MM-dd"),
@@ -3655,9 +3700,8 @@ class BusinessHub(QWidget):
             "Default sales tax name and rate for new invoices; export sales tax summary CSV.",
         )
         raw_idx = QSettings().value(_BUSINESS_HUB_SUBTAB_KEY, 0)
-        try:
-            want_idx = int(raw_idx) if raw_idx is not None and raw_idx != "" else 0
-        except (TypeError, ValueError):
+        want_idx = coerce_combo_int_id(raw_idx)
+        if want_idx is None:
             want_idx = 0
         n_tabs = self._business_subtabs.count()
         want_idx = max(0, min(want_idx, n_tabs - 1))

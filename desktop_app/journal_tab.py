@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 from desktop_app.more_main_tabs_shortcuts import (
     show_more_main_tabs_keyboard_shortcuts_dialog,
 )
+from desktop_app.qt_combo_ids import coerce_combo_int_id
 from desktop_app.qt_mnemonic import (
     escape_ampersand_for_qt,
     message_box_critical_ok,
@@ -206,12 +207,16 @@ class JournalTab(QWidget):
         self._list.clear()
         start = self._start.text().strip() or None
         end = self._end.text().strip() or None
-        self._entries = self._gl.list_journal_entries(start, end)
+        raw = self._gl.list_journal_entries(start, end)
+        self._entries = [
+            e for e in raw if coerce_combo_int_id(e["id"]) is not None
+        ]
         for e in self._entries:
+            eid = coerce_combo_int_id(e["id"])
             memo = (e["memo"] or "")[:60]
-            label = f"{e['entry_date']}  #{e['id']}  {memo}"
+            label = f"{e['entry_date']}  #{eid}  {memo}"
             it = QListWidgetItem(escape_ampersand_for_qt(label))
-            it.setData(Qt.ItemDataRole.UserRole, e["id"])
+            it.setData(Qt.ItemDataRole.UserRole, eid)
             it.setData(QLIST_PLAIN_TEXT_ROLE, label)
             self._list.addItem(it)
         if len(self._entries) > 0:
@@ -256,13 +261,8 @@ class JournalTab(QWidget):
         if it is None:
             self._lines.setRowCount(0)
             return
-        eid = it.data(Qt.ItemDataRole.UserRole)
-        if eid is None:
-            self._lines.setRowCount(0)
-            return
-        try:
-            eid_int = int(eid)
-        except (TypeError, ValueError):
+        eid_int = coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole))
+        if eid_int is None:
             self._lines.setRowCount(0)
             return
         entry = self._gl.get_journal_entry(eid_int)

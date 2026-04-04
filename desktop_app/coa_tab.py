@@ -51,6 +51,7 @@ from PySide6.QtWidgets import (
 from probooksai.coa_db import COADatabase, COA_ACCOUNT_TYPES
 
 from desktop_app.audit_dialog import show_entity_audit_history
+from desktop_app.qt_combo_ids import coerce_combo_int_id
 from desktop_app.more_main_tabs_shortcuts import (
     show_more_main_tabs_keyboard_shortcuts_dialog,
 )
@@ -386,11 +387,16 @@ class COATab(QWidget):
     def _refresh(self):
         include_inactive = self._chk_inactive.isChecked()
         rows = self._db.list_accounts(include_inactive=include_inactive)
+        packed = [
+            (aid, row)
+            for row in rows
+            if (aid := coerce_combo_int_id(row["id"])) is not None
+        ]
         self._table.setSortingEnabled(False)
-        self._table.setRowCount(len(rows))
-        for r, row in enumerate(rows):
+        self._table.setRowCount(len(packed))
+        for r, (aid, row) in enumerate(packed):
             num_it = _CoaAccountNumberTableItem(
-                str(row["account_number"]), int(row["id"])
+                str(row["account_number"]), aid
             )
             self._table.setItem(r, 0, num_it)
             self._table.setItem(r, 1, plain_display_table_item(row["account_name"] or ""))
@@ -406,7 +412,7 @@ class COATab(QWidget):
             self._table.setItem(r, 5, active_item)
         self._table.setSortingEnabled(True)
 
-        count = len(rows)
+        count = len(packed)
         self._lbl_count.setText(f"{count} account{'s' if count != 1 else ''}")
 
     def _selected_id(self) -> Optional[int]:
@@ -415,7 +421,9 @@ class COATab(QWidget):
             return None
         r = self._table.currentRow()
         item = self._table.item(r, 0)
-        return item.data(Qt.ItemDataRole.UserRole) if item else None
+        if item is None:
+            return None
+        return coerce_combo_int_id(item.data(Qt.ItemDataRole.UserRole))
 
     def _on_coa_context_menu(self, pos):
         idx = self._table.indexAt(pos)
@@ -434,10 +442,14 @@ class COATab(QWidget):
             return
         row = idx.row()
         item = self._table.item(row, 0)
-        if item is None or item.data(Qt.ItemDataRole.UserRole) is None:
+        aid = (
+            coerce_combo_int_id(item.data(Qt.ItemDataRole.UserRole))
+            if item is not None
+            else None
+        )
+        if aid is None:
             menu.exec(self._table.viewport().mapToGlobal(pos))
             return
-        aid = item.data(Qt.ItemDataRole.UserRole)
         menu.addSeparator()
         act_copy = menu.addAction("Copy row", partial(copy_table_row_as_tsv, self._table, row))
         act_copy.setToolTip(
@@ -454,7 +466,7 @@ class COATab(QWidget):
                 self,
                 self._db._conn,
                 "coa_account",
-                int(aid),
+                aid,
                 window_title=f"Change history — COA account #{aid}",
                 empty_message="No audit entries recorded for this account yet.",
             )

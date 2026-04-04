@@ -35,7 +35,14 @@ from functools import partial
 from pathlib import Path
 
 from PySide6.QtCore import (
-    Qt, QThread, Signal, QMimeData, QSettings, QUrl, qInstallMessageHandler,
+    Qt,
+    QMimeData,
+    QSettings,
+    QThread,
+    QTimer,
+    QUrl,
+    Signal,
+    qInstallMessageHandler,
 )
 from PySide6.QtGui import (
     QAction,
@@ -83,6 +90,7 @@ from desktop_app.local_docs import resolve_local_roadmap_path
 from desktop_app.more_main_tabs_shortcuts import (
     show_more_main_tabs_keyboard_shortcuts_dialog,
 )
+from desktop_app.qt_combo_ids import coerce_combo_int_id
 from desktop_app.table_clipboard import (
     CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
     IntSortTableItem,
@@ -145,6 +153,9 @@ ACCEPTED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png"}
 STATUS_COLORS = THEME_STATUS_COLORS
 
 INBOX_HEADER_COLOR = "#1F3864"  # dark navy – matches ProBooks+ai branding
+
+# Temporary status bar duration after Bank Import → Register **Stmt match** sync.
+_STMT_MATCH_SYNC_STATUS_MS = 8000
 
 COMPANY_NAME = "CHAVAN TRUCKING CORPORATION"  # placeholder – replace with real company/file name
 
@@ -265,10 +276,14 @@ class InboxWidget(QTableWidget):
     # -- population ----------------------------------------------------------
 
     def populate(self, rows: list):
+        packed = [
+            (did, row)
+            for row in rows
+            if (did := coerce_combo_int_id(row["id"])) is not None
+        ]
         self.setSortingEnabled(False)
-        self.setRowCount(len(rows))
-        for r, row in enumerate(rows):
-            did = int(row["id"])
+        self.setRowCount(len(packed))
+        for r, (did, row) in enumerate(packed):
             id_cell = IntSortTableItem(str(did), did)
             id_cell.setData(Qt.ItemDataRole.UserRole, did)
             self.setItem(r, 0, id_cell)
@@ -293,19 +308,13 @@ class InboxWidget(QTableWidget):
         r = self.currentRow()
         it = self.item(r, 0)
         if it is not None:
-            eid = it.data(Qt.ItemDataRole.UserRole)
+            eid = coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole))
             if eid is not None:
-                try:
-                    return int(eid)
-                except (TypeError, ValueError):
-                    pass
+                return eid
         raw = table_cell_clipboard_text(self, r, 0).strip()
         if not raw:
             return None
-        try:
-            return int(raw)
-        except ValueError:
-            return None
+        return coerce_combo_int_id(raw)
 
 
 # ---------------------------------------------------------------------------
@@ -504,9 +513,14 @@ class DetailPane(QScrollArea):
     # -- public interface ----------------------------------------------------
 
     def load_document(self, doc_id: int, db: DocumentDatabase):
-        self._doc_id = doc_id
-        row = db.get_document(doc_id)
+        did = coerce_combo_int_id(doc_id)
+        if did is None:
+            self.clear_view()
+            return
+        self._doc_id = did
+        row = db.get_document(did)
         if not row:
+            self.clear_view()
             return
         self._lbl_filename.setText(escape_ampersand_for_qt(row["filename"]))
         status = row["status"]
@@ -518,8 +532,8 @@ class DetailPane(QScrollArea):
         self._show_preview(row["stored_path"], row["mimetype"], row["page_count"])
 
         # Fill from approved values if present, else from extraction
-        approved = db.get_approved(doc_id)
-        extraction = db.get_latest_extraction(doc_id)
+        approved = db.get_approved(did)
+        extraction = db.get_latest_extraction(did)
         src = approved or extraction
         self._populate_fields(src)
 
@@ -912,12 +926,18 @@ class MainWindow(QMainWindow):
 
         self._tabs.addTab(intake_widget, "📄  Document Intake")
 
-        # ── Tab 2: Bank Import & Reconciliation ─────────────────────────────
-        self._bank_tab = BankImportTab(self._bank_db, self._coa_db)
+        # ── Tab 2: Bank Import ───────────────────────────────────────────────
+        # Register is constructed first so Import can hold a reference for Stmt match sync.
+        self._register_tab = RegisterTab(self._bank_db, self._coa_db, self._gl_db)
+        self._bank_tab = BankImportTab(
+            self._bank_db,
+            self._coa_db,
+            register_tab=self._register_tab,
+            after_stmt_match_sync=self._focus_bank_register_tab,
+        )
         self._tabs.addTab(self._bank_tab, "🏦  Bank Import")
 
-        # ── Tab 3: Bank register (Phase 3) ──────────────────────────────────
-        self._register_tab = RegisterTab(self._bank_db, self._coa_db, self._gl_db)
+        # ── Tab 3: Bank register ──────────────────────────────────────────────
         self._tabs.addTab(self._register_tab, "📒  Bank register")
 
         # ── Tab 4: Chart of Accounts Editor ─────────────────────────────────
@@ -1319,8 +1339,13 @@ class MainWindow(QMainWindow):
         doc_id = self._inbox.selected_doc_id()
         if doc_id is not None:
             self._detail.load_document(doc_id, self._db)
+        else:
+            self._detail.clear_view()
 
     def _on_run_ai(self, doc_id: int):
+        did = coerce_combo_int_id(doc_id)
+        if did is None:
+            return
         if self._worker and self._worker.isRunning():
             message_box_information_ok(
                 self,
@@ -1330,7 +1355,7 @@ class MainWindow(QMainWindow):
             )
             return
 
-        row = self._db.get_document(doc_id)
+        row = self._db.get_document(did)
         if not row:
             return
 
@@ -1349,26 +1374,32 @@ class MainWindow(QMainWindow):
         self._status_bar.showMessage(
             f"Running AI extraction on {escape_ampersand_for_qt(row['filename'])}\u2026"
         )
-        self._db.set_status(doc_id, "Extracted")
+        self._db.set_status(did, "Extracted")
 
-        self._worker = AIWorker(doc_id, row["stored_path"], row["mimetype"], self._coa)
-        self._worker.finished.connect(lambda res, sug: self._on_ai_done(doc_id, res, sug))
-        self._worker.error.connect(lambda err: self._on_ai_error(doc_id, err))
+        self._worker = AIWorker(did, row["stored_path"], row["mimetype"], self._coa)
+        self._worker.finished.connect(lambda res, sug: self._on_ai_done(did, res, sug))
+        self._worker.error.connect(lambda err: self._on_ai_error(did, err))
         self._worker.start()
 
     def _on_ai_done(self, doc_id: int, result, suggestions):
-        self._db.save_extraction(doc_id, result)
-        self._db.set_status(doc_id, "Needs Review")
-        self._detail.populate_ai_result(result, suggestions)
+        did = coerce_combo_int_id(doc_id)
+        if did is None:
+            return
+        self._db.save_extraction(did, result)
+        self._db.set_status(did, "Needs Review")
         self._refresh_inbox()
-        doc = self._db.get_document(doc_id)
-        name = doc["filename"] if doc else str(doc_id)
+        self._detail.populate_ai_result(result, suggestions)
+        doc = self._db.get_document(did)
+        name = doc["filename"] if doc else str(did)
         self._status_bar.showMessage(
             f"AI extraction complete for {escape_ampersand_for_qt(name)}."
         )
 
     def _on_ai_error(self, doc_id: int, error: str):
-        self._db.set_status(doc_id, "Error")
+        did = coerce_combo_int_id(doc_id)
+        if did is None:
+            return
+        self._db.set_status(did, "Error")
         self._refresh_inbox()
         message_box_critical_ok(
             self,
@@ -1379,15 +1410,20 @@ class MainWindow(QMainWindow):
         self._status_bar.showMessage("AI extraction failed.")
 
     def _on_approve(self, doc_id: int):
+        did = coerce_combo_int_id(doc_id)
+        if did is None:
+            return
         values = self._detail.collect_approved_values()
-        self._db.save_approved(doc_id, values)
-        self._db.set_status(doc_id, "Approved")
+        self._db.save_approved(did, values)
+        self._db.set_status(did, "Approved")
         self._refresh_inbox()
-        self._detail.load_document(doc_id, self._db)
         self._status_bar.showMessage("Document approved and values saved.")
 
     def _on_mark_posted(self, doc_id: int):
-        row = self._db.get_document(doc_id)
+        did = coerce_combo_int_id(doc_id)
+        if did is None:
+            return
+        row = self._db.get_document(did)
         if row and row["status"] != "Approved":
             message_box_warning_ok(
                 self,
@@ -1396,15 +1432,16 @@ class MainWindow(QMainWindow):
                 ok_tip="Close; use Approve in the detail pane first.",
             )
             return
-        self._db.set_status(doc_id, "Posted")
+        self._db.set_status(did, "Posted")
         self._refresh_inbox()
-        self._detail.load_document(doc_id, self._db)
         self._status_bar.showMessage("Document marked as Posted.")
 
     def _on_reject(self, doc_id: int):
-        self._db.set_status(doc_id, "Needs Review")
+        did = coerce_combo_int_id(doc_id)
+        if did is None:
+            return
+        self._db.set_status(did, "Needs Review")
         self._refresh_inbox()
-        self._detail.load_document(doc_id, self._db)
         self._status_bar.showMessage("Document flagged \u2013 Needs Review.")
 
     # -- helpers -------------------------------------------------------------
@@ -1412,6 +1449,7 @@ class MainWindow(QMainWindow):
     def _refresh_inbox(self):
         docs = self._db.list_documents()
         self._inbox.populate(docs)
+        self._on_selection_changed()
 
     def _on_coa_changed(self):
         """Called when the COA editor modifies the chart of accounts."""
@@ -1427,6 +1465,27 @@ class MainWindow(QMainWindow):
         if index < 0 or index >= self._tabs.count():
             return
         self._tabs.setCurrentIndex(index)
+
+    def _focus_bank_register_tab(self) -> None:
+        """Focus **Bank register** after Bank Import syncs line-match results to Stmt match.
+
+        Shows a temporary **status bar** message, then schedules :meth:`_update_company_status`
+        so the default company line returns when the message clears.
+        """
+        if not hasattr(self, "_tabs") or not hasattr(self, "_register_tab"):
+            return
+        idx = self._tabs.indexOf(self._register_tab)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+            if hasattr(self, "_status_bar"):
+                self._status_bar.showMessage(
+                    "Stmt match updated on Bank register. Reconciliation mode is on.",
+                    _STMT_MATCH_SYNC_STATUS_MS,
+                )
+                QTimer.singleShot(
+                    _STMT_MATCH_SYNC_STATUS_MS,
+                    self._update_company_status,
+                )
 
     def _sync_window_title(self) -> None:
         ver = application_version()
@@ -1458,9 +1517,10 @@ class MainWindow(QMainWindow):
             self._tabs.removeTab(i)
             if w is not None:
                 w.deleteLater()
+        reg_tab = RegisterTab(self._bank_db, self._coa_db, self._gl_db)
         tab_specs = [
-            ("🏦  Bank Import", BankImportTab(self._bank_db, self._coa_db)),
-            ("📒  Bank register", RegisterTab(self._bank_db, self._coa_db, self._gl_db)),
+            ("🏦  Bank Import", BankImportTab(self._bank_db, self._coa_db, register_tab=reg_tab, after_stmt_match_sync=self._focus_bank_register_tab)),
+            ("📒  Bank register", reg_tab),
             ("📊  Chart of Accounts", COATab(self._coa_db)),
             ("📈  Reports", ReportsTab(self._bank_db._conn)),
             ("📗  Journal", JournalTab(self._bank_db._conn)),

@@ -70,6 +70,7 @@ def test_desktop_main_imports_backup_data_layers_and_tab_widgets() -> None:
     assert "message_box_information_ok" in head
     assert "message_box_warning_ok" in head
     assert "tip_message_box_buttons" in head
+    assert "from desktop_app.qt_combo_ids import coerce_combo_int_id" in head
     assert "from desktop_app.table_clipboard import" in head
     assert "CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX" in head
     assert "IntSortTableItem" in head
@@ -83,7 +84,10 @@ def test_desktop_main_imports_pyside6_core_widgets() -> None:
     """``main`` imports the Qt types used by ``MainWindow``, workers, and dialogs."""
     text = _MAIN.read_text(encoding="utf-8")
     head = text.split("def _document_intake_keyboard_shortcuts_help_text", 1)[0]
-    assert "QThread, Signal" in head
+    assert "QThread" in head
+    assert "Signal" in head
+    assert "QTimer" in head
+    assert "QMimeData" in head
     assert "qInstallMessageHandler" in head
     assert "QMainWindow" in head
     assert "QApplication" in head
@@ -104,6 +108,26 @@ def test_desktop_main_imports_pyside6_core_widgets() -> None:
     assert "QComboBox" in head and "QLineEdit" in head
     assert "QDoubleSpinBox" in head and "QPlainTextEdit" in head
     assert "QPushButton" in head and "QGroupBox" in head
+
+
+def test_desktop_main_imports_pyside6_core_gui_widgets_source_order() -> None:
+    """``main`` groups PySide6 imports **QtCore → QtGui → QtWidgets** in that order."""
+    text = _MAIN.read_text(encoding="utf-8")
+    head = text.split("def _document_intake_keyboard_shortcuts_help_text", 1)[0]
+    c = head.index("from PySide6.QtCore import (")
+    g = head.index("from PySide6.QtGui import (")
+    w = head.index("from PySide6.QtWidgets import (")
+    assert c < g < w
+
+
+def test_desktop_main_imports_probooks_probooksai_desktop_app_source_order() -> None:
+    """Third-party import block runs **probooks** → **probooksai** → **desktop_app** (first line of each)."""
+    text = _MAIN.read_text(encoding="utf-8")
+    head = text.split("def _document_intake_keyboard_shortcuts_help_text", 1)[0]
+    pb = head.index("from probooks.backup import backup_database, restore_database")
+    pai = head.index("from probooksai.database import DocumentDatabase")
+    da = head.index("from desktop_app.bank_import_tab import (")
+    assert pb < pai < da
 
 
 def test_desktop_main_imports_stdlib_os_path_sqlite_mimetypes_argparse() -> None:
@@ -907,6 +931,17 @@ def test_main_window_build_ui_central_status_bar_before_window_accept_drops_orde
     assert cen < stc < ssb < dnd < acc
 
 
+def test_main_window_intake_left_inbox_header_row_before_inbox_widget_order() -> None:
+    """Document Intake left column adds the navy **Document Inbox** header before constructing ``InboxWidget``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("        # Left: inbox")
+    end = text.index("        splitter.addWidget(left)", start)
+    chunk = text[start:end]
+    hdr = chunk.index("left_layout.addWidget(lbl_inbox)")
+    ib = chunk.index("self._inbox = InboxWidget()")
+    assert hdr < ib
+
+
 def test_main_window_build_ui_document_intake_split_inbox_header_and_f5() -> None:
     """Document Intake tab builds inbox header (brand colour), horizontal splitter, sizes, F5, first tab."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -1030,6 +1065,18 @@ def test_main_window_init_database_and_ui_bootstrap_order() -> None:
     assert positions == sorted(positions)
 
 
+def test_main_window_init_super_resize_before_db_path_assignment_order() -> None:
+    """``MainWindow.__init__`` calls ``super``, resizes the window, then records ``_db_path``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def __init__(self, db_path: str | None = None):")
+    end = text.index("    # -- UI construction", start)
+    chunk = text[start:end]
+    su = chunk.index("super().__init__()")
+    rs = chunk.index("self.resize(1100, 700)")
+    dp = chunk.index("self._db_path = db_path")
+    assert su < rs < dp
+
+
 def test_main_window_load_company_at_path_reopens_dbs_rebuilds_tabs_and_refreshes() -> None:
     """``_load_company_at_path`` mirrors startup DB wiring, rebuilds bank tabs, clears/refreshes UI."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -1091,6 +1138,63 @@ def test_main_window_switch_company_resolves_path_closes_dbs_before_reload() -> 
     assert r < c1 < c2 < ld
 
 
+def test_main_window_switch_company_database_busy_worker_guard_before_path_resolution_order() -> None:
+    """``_switch_company_database`` blocks on a running ``AIWorker`` before wrapping ``path`` in ``Path``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _switch_company_database(self, path: str, *, create_new: bool = False) -> None:")
+    end = text.index("    def _on_backup_company(self):", start)
+    chunk = text[start:end]
+    busy = chunk.index("if self._worker and self._worker.isRunning():")
+    pp = chunk.index("p = Path(path)")
+    assert busy < pp
+
+
+def test_main_window_switch_company_path_wrap_create_new_branch_before_missing_file_else_order() -> None:
+    """``_switch_company_database`` uses ``Path(path)``, then ``if create_new:``, then ``elif not p.exists()``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _switch_company_database(self, path: str, *, create_new: bool = False) -> None:")
+    end = text.index("    def _on_backup_company(self):", start)
+    chunk = text[start:end]
+    pp = chunk.index("p = Path(path)")
+    cn = chunk.index("if create_new:")
+    miss = chunk.index("elif not p.exists():")
+    assert pp < cn < miss
+
+
+def test_main_window_switch_company_create_new_existing_file_qmessagebox_icon_title_text_before_buttons_order() -> None:
+    """When ``create_new`` targets an existing path, the prompt ``QMessageBox`` sets icon, title, body, then buttons."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _switch_company_database(self, path: str, *, create_new: bool = False) -> None:")
+    end = text.index("    def _on_backup_company(self):", start)
+    chunk = text[start:end]
+    sub_start = chunk.index("            if p.exists():")
+    sub_end = chunk.index("        elif not p.exists():", sub_start)
+    sub = chunk[sub_start:sub_end]
+    bx = sub.index("box = QMessageBox(self)")
+    ic = sub.index("box.setIcon(QMessageBox.Icon.Question)")
+    wt = sub.index('box.setWindowTitle("File exists")')
+    tx = sub.index("box.setText(")
+    sb = sub.index("box.setStandardButtons(")
+    assert bx < ic < wt < tx < sb
+
+
+def test_main_window_switch_company_create_new_file_exists_qmessagebox_buttons_tooltip_tip_exec_order() -> None:
+    """File-exists prompt sets standard/default buttons, dialog tooltip, button tips, then ``exec``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _switch_company_database(self, path: str, *, create_new: bool = False) -> None:")
+    end = text.index("    def _on_backup_company(self):", start)
+    chunk = text[start:end]
+    sub_start = chunk.index("            if p.exists():")
+    sub_end = chunk.index("        elif not p.exists():", sub_start)
+    sub = chunk[sub_start:sub_end]
+    sb = sub.index("box.setStandardButtons(")
+    db = sub.index("box.setDefaultButton(QMessageBox.StandardButton.No)")
+    dlg_tt = sub.index("box.setToolTip(")
+    tip = sub.index("tip_message_box_buttons(")
+    ex = sub.index("reply = box.exec()")
+    assert sb < db < dlg_tt < tip < ex
+
+
 def test_main_window_rebuild_removes_tabs_before_tab_specs_insert() -> None:
     """``_rebuild_bank_related_tabs`` removes old tabs, defines ``tab_specs``, then ``insertTab`` in a loop."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -1103,6 +1207,20 @@ def test_main_window_rebuild_removes_tabs_before_tab_specs_insert() -> None:
     assert rm < ts < ins
 
 
+def test_main_window_rebuild_bank_tabs_insert_loop_then_widget_refs_and_coa_signal_order() -> None:
+    """After ``insertTab`` loop, ``_rebuild_bank_related_tabs`` caches tab refs **1→3** then wires ``coaChanged``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _rebuild_bank_related_tabs(self):")
+    end = text.index("    def _load_company_at_path(", start)
+    chunk = text[start:end]
+    ins = chunk.index("for i, (title, widget) in enumerate(tab_specs, start=1):")
+    w1 = chunk.index("self._bank_tab = self._tabs.widget(1)")
+    w2 = chunk.index("self._register_tab = self._tabs.widget(2)")
+    w3 = chunk.index("self._coa_tab = self._tabs.widget(3)")
+    sig = chunk.index("self._coa_tab.coaChanged.connect(self._on_coa_changed)")
+    assert ins < w1 < w2 < w3 < sig
+
+
 def test_main_window_on_backup_save_dialog_try_backup_before_complete_dialog() -> None:
     """``_on_backup_company`` runs ``backup_database`` before the **Backup complete** dialog."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -1112,6 +1230,68 @@ def test_main_window_on_backup_save_dialog_try_backup_before_complete_dialog() -
     b = chunk.index("backup_database(src, Path(path))")
     c = chunk.index('"Backup complete"')
     assert b < c
+
+
+def test_main_window_on_backup_company_dialog_empty_path_suffix_before_backup_database_order() -> None:
+    """``_on_backup_company`` picks a path, skips empty, normalizes ``.db``, then calls ``backup_database``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_backup_company(self):")
+    end = text.index("    def _on_restore_company(self):", start)
+    chunk = text[start:end]
+    dlg = chunk.index("QFileDialog.getSaveFileName(")
+    emp = chunk.index("if not path:")
+    suf = chunk.index('if not path.lower().endswith(".db"):')
+    bk = chunk.index("backup_database(src, Path(path))")
+    assert dlg < emp < suf < bk
+
+
+def test_main_window_on_backup_company_busy_worker_guard_before_src_resolve_order() -> None:
+    """``_on_backup_company`` blocks on a running ``AIWorker`` before resolving the live ``src`` path."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_backup_company(self):")
+    end = text.index("    def _on_restore_company(self):", start)
+    chunk = text[start:end]
+    busy = chunk.index("if self._worker and self._worker.isRunning():")
+    src = chunk.index("src = Path(self._bank_db._db_path).resolve()")
+    assert busy < src
+
+
+def test_main_window_on_backup_company_try_backup_database_except_valueerror_before_os_sqlite_order() -> None:
+    """``_on_backup_company`` wraps ``backup_database`` in ``try`` / ``ValueError`` / ``OSError|sqlite`` handlers."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_backup_company(self):")
+    end = text.index("    def _on_restore_company(self):", start)
+    chunk = text[start:end]
+    tr = chunk.index("        try:")
+    bk = chunk.index("backup_database(src, Path(path))")
+    ev = chunk.index("        except ValueError as exc:")
+    eo = chunk.index("        except (OSError, sqlite3.Error) as exc:")
+    assert tr < bk < ev < eo
+
+
+def test_main_window_on_restore_company_try_restore_database_except_valueerror_before_os_sqlite_order() -> None:
+    """``_on_restore_company`` wraps ``restore_database`` in ``try`` / ``ValueError`` / ``OSError|sqlite`` handlers."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_restore_company(self):")
+    end = text.index("    def _on_open_company_database(self):", start)
+    chunk = text[start:end]
+    bc = chunk.index("        self._bank_db.close()")
+    tr = chunk.index("        try:", bc)
+    rst = chunk.index("            restore_database(Path(path), target, overwrite=True)")
+    ev = chunk.index("        except ValueError as exc:", bc)
+    eo = chunk.index("        except (OSError, sqlite3.Error) as exc:", bc)
+    assert bc < tr < rst < ev < eo
+
+
+def test_main_window_on_restore_company_success_reload_before_complete_information_dialog_order() -> None:
+    """On successful restore, ``_load_company_at_path`` runs at module indent before the **Restore complete** dialog."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_restore_company(self):")
+    end = text.index("    def _on_open_company_database(self):", start)
+    chunk = text[start:end]
+    ld = chunk.index("        self._load_company_at_path(str(target))")
+    done = chunk.index('"Restore complete"')
+    assert ld < done
 
 
 def test_main_window_on_restore_confirm_dialog_picker_close_restore_reload_complete_order() -> None:
@@ -1129,6 +1309,72 @@ def test_main_window_on_restore_confirm_dialog_picker_close_restore_reload_compl
     last_reload = chunk.rindex(sub)
     done = chunk.index('"Restore complete"')
     assert ex < pick < c1 < rst < last_reload < done
+
+
+def test_main_window_on_restore_company_confirm_box_exec_before_backup_picker_order() -> None:
+    """``_on_restore_company`` constructs the warning ``QMessageBox``, ``exec``s it, then shows the open-file dialog."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_restore_company(self):")
+    end = text.index("    def _on_open_company_database(self):", start)
+    chunk = text[start:end]
+    bx = chunk.index("box = QMessageBox(self)")
+    ex = chunk.index("reply = box.exec()")
+    pick = chunk.index("path, _ = QFileDialog.getOpenFileName(")
+    assert bx < ex < pick
+
+
+def test_main_window_on_restore_company_busy_worker_guard_before_confirm_box_order() -> None:
+    """``_on_restore_company`` blocks on a running ``AIWorker`` before building the warning ``QMessageBox``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_restore_company(self):")
+    end = text.index("    def _on_open_company_database(self):", start)
+    chunk = text[start:end]
+    busy = chunk.index("if self._worker and self._worker.isRunning():")
+    box = chunk.index("box = QMessageBox(self)")
+    assert busy < box
+
+
+def test_main_window_on_restore_company_qmessagebox_icon_title_text_before_standard_buttons_order() -> None:
+    """Destructive restore confirm builds icon, title, body text, then standard buttons on the ``QMessageBox``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_restore_company(self):")
+    end = text.index("    def _on_open_company_database(self):", start)
+    chunk = text[start:end]
+    bx = chunk.index("box = QMessageBox(self)")
+    ic = chunk.index("box.setIcon(QMessageBox.Icon.Warning)")
+    wt = chunk.index('box.setWindowTitle("Restore company database (probooks restore)")')
+    tx = chunk.index("box.setText(")
+    sb = chunk.index("box.setStandardButtons(")
+    assert bx < ic < wt < tx < sb
+
+
+def test_main_window_on_restore_company_qmessagebox_buttons_tooltip_tip_exec_order() -> None:
+    """Restore confirm sets standard/default buttons, dialog tooltip, ``tip_message_box_buttons``, then ``exec``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_restore_company(self):")
+    end = text.index("    def _on_open_company_database(self):", start)
+    chunk = text[start:end]
+    pick = chunk.index("path, _ = QFileDialog.getOpenFileName(")
+    sb = chunk.index("box.setStandardButtons(")
+    db = chunk.index("box.setDefaultButton(QMessageBox.StandardButton.No)")
+    dlg_tt = chunk.index("box.setToolTip(")
+    tip = chunk.index("tip_message_box_buttons(")
+    ex = chunk.index("reply = box.exec()")
+    assert sb < db < dlg_tt < tip < ex < pick
+
+
+def test_main_window_on_restore_company_picker_target_same_file_guard_before_close_databases_order() -> None:
+    """After the backup picker, ``_on_restore_company`` resolves target, blocks same-as-live path, then closes DBs."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_restore_company(self):")
+    end = text.index("    def _on_open_company_database(self):", start)
+    chunk = text[start:end]
+    pick = chunk.index("path, _ = QFileDialog.getOpenFileName(")
+    emp = chunk.index("if not path:")
+    tgt = chunk.index("target = Path(self._bank_db._db_path).resolve()")
+    same = chunk.index("if Path(path).resolve() == target:")
+    cdb = chunk.index("self._db.close()")
+    assert pick < emp < tgt < same < cdb
 
 
 def test_main_window_rebuild_bank_related_tabs_replaces_seven_tabs_and_rewires_coa() -> None:
@@ -1194,6 +1440,7 @@ def test_main_window_switch_company_create_new_mkdir_and_open_missing_paths() ->
     start = text.index("    def _switch_company_database(self, path: str, *, create_new: bool = False) -> None:")
     end = text.index("    def _on_backup_company(self):", start)
     chunk = text[start:end]
+    assert chunk.index("        if create_new:") < chunk.index("        elif not p.exists():")
     assert chunk.count("if create_new:") == 1
     assert chunk.count("p.parent.mkdir(parents=True, exist_ok=True)") == 1
     assert chunk.count("QMessageBox.Icon.Question") == 1
@@ -1423,6 +1670,18 @@ def test_main_window_on_open_company_database_reads_settings_and_switches() -> N
     )
 
 
+def test_main_window_on_open_company_database_prev_start_dir_before_file_dialog_order() -> None:
+    """``_on_open_company_database`` reads settings, derives ``start_dir``, then shows the open-file dialog."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_open_company_database(self):")
+    end = text.index("    def _on_new_company_database(self):", start)
+    chunk = text[start:end]
+    prev = chunk.index('prev = QSettings().value("company_database_path", "", type=str) or ""')
+    sd = chunk.index('start_dir = str(Path(prev).parent) if prev else ""')
+    dlg = chunk.index("QFileDialog.getOpenFileName(")
+    assert prev < sd < dlg
+
+
 def test_main_window_on_new_company_database_suffixes_db_and_switches() -> None:
     """``_on_new_company_database`` saves a .db path and opens via switch with ``create_new=True``."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -1449,15 +1708,28 @@ def test_main_window_on_new_company_database_suffixes_db_and_switches() -> None:
     )
 
 
+def test_main_window_on_new_company_database_prev_start_dir_before_save_dialog_order() -> None:
+    """``_on_new_company_database`` reads settings, derives ``start_dir``, then shows the save-file dialog."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_new_company_database(self):")
+    end = text.index("    def closeEvent(self, event):", start)
+    chunk = text[start:end]
+    prev = chunk.index('prev = QSettings().value("company_database_path", "", type=str) or ""')
+    sd = chunk.index('start_dir = str(Path(prev).parent) if prev else ""')
+    dlg = chunk.index("QFileDialog.getSaveFileName(")
+    assert prev < sd < dlg
+
+
 def test_main_window_on_run_ai_guards_worker_api_key_and_starts_ai_worker() -> None:
     """``_on_run_ai`` blocks on running worker / missing key, then runs ``AIWorker`` with signal hooks."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _on_run_ai(self, doc_id: int):")
     end = text.index("    def _on_ai_done(self, doc_id: int, result, suggestions):", start)
     chunk = text[start:end]
+    assert "did = coerce_combo_int_id(doc_id)" in chunk
     assert chunk.count("if self._worker and self._worker.isRunning():") == 1
     assert '"AI Running"' in chunk
-    assert chunk.count("self._db.get_document(doc_id)") == 1
+    assert chunk.count("self._db.get_document(did)") == 1
     assert chunk.count("if not row:") == 1
     assert (
         "Please wait \\u2013 AI extraction is already in progress." in chunk
@@ -1470,22 +1742,22 @@ def test_main_window_on_run_ai_guards_worker_api_key_and_starts_ai_worker() -> N
         in chunk
     )
     assert 'ok_tip="Close; set the key, restart the app, then run AI again."' in chunk
-    assert chunk.count('self._db.set_status(doc_id, "Extracted")') == 1
+    assert chunk.count('self._db.set_status(did, "Extracted")') == 1
     assert (
         chunk.count(
-            "AIWorker(doc_id, row[\"stored_path\"], row[\"mimetype\"], self._coa)"
+            "AIWorker(did, row[\"stored_path\"], row[\"mimetype\"], self._coa)"
         )
         == 1
     )
     assert (
         chunk.count(
-            ".finished.connect(lambda res, sug: self._on_ai_done(doc_id, res, sug))"
+            ".finished.connect(lambda res, sug: self._on_ai_done(did, res, sug))"
         )
         == 1
     )
     assert (
         chunk.count(
-            ".error.connect(lambda err: self._on_ai_error(doc_id, err))"
+            ".error.connect(lambda err: self._on_ai_error(did, err))"
         )
         == 1
     )
@@ -1498,11 +1770,11 @@ def test_main_window_on_ai_done_and_error_finalize_extraction() -> None:
     start = text.index("    def _on_ai_done(self, doc_id: int, result, suggestions):")
     end = text.index("    def _on_approve(self, doc_id: int):", start)
     chunk = text[start:end]
-    assert chunk.count("self._db.save_extraction(doc_id, result)") == 1
-    assert chunk.count('self._db.set_status(doc_id, "Needs Review")') == 1
+    assert chunk.count("self._db.save_extraction(did, result)") == 1
+    assert chunk.count('self._db.set_status(did, "Needs Review")') == 1
     assert chunk.count("self._detail.populate_ai_result(result, suggestions)") == 1
     assert chunk.count("self._refresh_inbox()") == 2
-    assert chunk.count('self._db.set_status(doc_id, "Error")') == 1
+    assert chunk.count('self._db.set_status(did, "Error")') == 1
     assert chunk.count('"AI Extraction Failed"') == 1
     assert chunk.count("message_box_critical_ok(") == 1
     assert (
@@ -1514,18 +1786,18 @@ def test_main_window_on_ai_done_and_error_finalize_extraction() -> None:
 
 
 def test_main_window_on_approve_mark_posted_reject_detail_flow() -> None:
-    """Approve / posted / reject slots persist status, refresh inbox, and reload the detail pane."""
+    """Approve / posted / reject slots persist status and refresh inbox (selection sync reloads detail)."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _on_approve(self, doc_id: int):")
     end = text.index("    # -- helpers", start)
     chunk = text[start:end]
     assert chunk.count("self._detail.collect_approved_values()") == 1
-    assert chunk.count("self._db.save_approved(doc_id, values)") == 1
-    assert chunk.count('self._db.set_status(doc_id, "Approved")') == 1
-    assert chunk.count('self._db.set_status(doc_id, "Posted")') == 1
-    assert chunk.count('self._db.set_status(doc_id, "Needs Review")') == 1
+    assert chunk.count("self._db.save_approved(did, values)") == 1
+    assert chunk.count('self._db.set_status(did, "Approved")') == 1
+    assert chunk.count('self._db.set_status(did, "Posted")') == 1
+    assert chunk.count('self._db.set_status(did, "Needs Review")') == 1
     assert chunk.count('"Not Yet Approved"') == 1
-    assert chunk.count("self._detail.load_document(doc_id, self._db)") == 3
+    assert chunk.count("self._detail.load_document(did, self._db)") == 0
     assert "Document approved and values saved." in chunk
     assert "Document marked as Posted." in chunk
     flagged = "Document flagged \u2013 Needs Review."
@@ -1539,13 +1811,13 @@ def test_main_window_on_mark_posted_warns_until_approved() -> None:
     start = text.index("    def _on_mark_posted(self, doc_id: int):")
     end = text.index("    def _on_reject(self, doc_id: int):", start)
     chunk = text[start:end]
-    assert chunk.count("self._db.get_document(doc_id)") == 1
+    assert chunk.count("self._db.get_document(did)") == 1
     assert chunk.count('row["status"] != "Approved"') == 1
     assert chunk.count('"Not Yet Approved"') == 1
     assert "Please approve the document before marking it as Posted." in chunk
     assert 'ok_tip="Close; use Approve in the detail pane first."' in chunk
-    assert chunk.count('self._db.set_status(doc_id, "Posted")') == 1
-    assert chunk.count("self._detail.load_document(doc_id, self._db)") == 1
+    assert chunk.count('self._db.set_status(did, "Posted")') == 1
+    assert chunk.count("self._detail.load_document(did, self._db)") == 0
 
 
 def test_main_window_on_mark_posted_fetches_row_before_not_approved_gate() -> None:
@@ -1554,24 +1826,23 @@ def test_main_window_on_mark_posted_fetches_row_before_not_approved_gate() -> No
     start = text.index("    def _on_mark_posted(self, doc_id: int):")
     end = text.index("    def _on_reject(self, doc_id: int):", start)
     chunk = text[start:end]
-    g = chunk.index("self._db.get_document(doc_id)")
+    g = chunk.index("self._db.get_document(did)")
     n = chunk.index('"Not Yet Approved"')
-    p = chunk.index('self._db.set_status(doc_id, "Posted")')
+    p = chunk.index('self._db.set_status(did, "Posted")')
     assert g < n < p
 
 
 def test_main_window_on_mark_posted_success_branch_persist_refresh_detail_message_order() -> None:
-    """After the **Not Yet Approved** gate, posted flow sets **Posted**, refreshes, reloads detail, status."""
+    """After the **Not Yet Approved** gate, posted flow sets **Posted**, refreshes (syncs detail), status."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _on_mark_posted(self, doc_id: int):")
     end = text.index("    def _on_reject(self, doc_id: int):", start)
     chunk = text[start:end]
     gate = chunk.index('"Not Yet Approved"')
-    st = chunk.index('self._db.set_status(doc_id, "Posted")')
+    st = chunk.index('self._db.set_status(did, "Posted")')
     rf = chunk.index("self._refresh_inbox()")
-    ld = chunk.index("self._detail.load_document(doc_id, self._db)")
     msg = chunk.index("Document marked as Posted.")
-    assert gate < st < rf < ld < msg
+    assert gate < st < rf < msg
 
 
 def test_main_window_on_run_ai_busy_fetch_key_status_worker_start_order() -> None:
@@ -1580,28 +1851,30 @@ def test_main_window_on_run_ai_busy_fetch_key_status_worker_start_order() -> Non
     start = text.index("    def _on_run_ai(self, doc_id: int):")
     end = text.index("    def _on_ai_done(self, doc_id: int, result, suggestions):", start)
     chunk = text[start:end]
+    co = chunk.index("did = coerce_combo_int_id(doc_id)")
     busy = chunk.index("if self._worker and self._worker.isRunning():")
-    row = chunk.index("row = self._db.get_document(doc_id)")
+    row = chunk.index("row = self._db.get_document(did)")
     key = chunk.index('if not os.environ.get("OPENAI_API_KEY"):')
     msg = chunk.index("Running AI extraction on")
-    st = chunk.index('self._db.set_status(doc_id, "Extracted")')
+    st = chunk.index('self._db.set_status(did, "Extracted")')
     wk = chunk.index("self._worker = AIWorker(")
     go = chunk.index("self._worker.start()")
-    assert busy < row < key < msg < st < wk < go
+    assert co < busy < row < key < msg < st < wk < go
 
 
 def test_main_window_on_ai_done_save_status_detail_refresh_message_order() -> None:
-    """``_on_ai_done`` saves extraction, sets **Needs Review**, fills detail, refreshes inbox, then status text."""
+    """``_on_ai_done`` saves extraction, sets **Needs Review**, refreshes inbox (syncs detail), fills AI fields, status."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _on_ai_done(self, doc_id: int, result, suggestions):")
     end = text.index("    def _on_ai_error(self, doc_id: int, error: str):", start)
     chunk = text[start:end]
-    a = chunk.index("self._db.save_extraction(doc_id, result)")
-    b = chunk.index('self._db.set_status(doc_id, "Needs Review")')
-    c = chunk.index("self._detail.populate_ai_result(result, suggestions)")
-    d = chunk.index("self._refresh_inbox()")
+    co = chunk.index("did = coerce_combo_int_id(doc_id)")
+    a = chunk.index("self._db.save_extraction(did, result)")
+    b = chunk.index('self._db.set_status(did, "Needs Review")')
+    c = chunk.index("self._refresh_inbox()")
+    d = chunk.index("self._detail.populate_ai_result(result, suggestions)")
     e = chunk.index("AI extraction complete for")
-    assert a < b < c < d < e
+    assert co < a < b < c < d < e
 
 
 def test_main_window_on_ai_error_status_refresh_critical_then_status_message_order() -> None:
@@ -1610,39 +1883,40 @@ def test_main_window_on_ai_error_status_refresh_critical_then_status_message_ord
     start = text.index("    def _on_ai_error(self, doc_id: int, error: str):")
     end = text.index("    def _on_approve(self, doc_id: int):", start)
     chunk = text[start:end]
-    a = chunk.index('self._db.set_status(doc_id, "Error")')
+    co = chunk.index("did = coerce_combo_int_id(doc_id)")
+    a = chunk.index('self._db.set_status(did, "Error")')
     b = chunk.index("self._refresh_inbox()")
     c = chunk.index('"AI Extraction Failed"')
     d = chunk.index('self._status_bar.showMessage("AI extraction failed.")')
-    assert a < b < c < d
+    assert co < a < b < c < d
 
 
 def test_main_window_on_approve_save_status_refresh_detail_message_order() -> None:
-    """``_on_approve`` saves values, sets **Approved**, refreshes, reloads detail, then status text."""
+    """``_on_approve`` saves values, sets **Approved**, refreshes inbox (syncs detail), then status text."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _on_approve(self, doc_id: int):")
     end = text.index("    def _on_mark_posted(self, doc_id: int):", start)
     chunk = text[start:end]
+    co = chunk.index("did = coerce_combo_int_id(doc_id)")
     a = chunk.index("self._detail.collect_approved_values()")
-    b = chunk.index("self._db.save_approved(doc_id, values)")
-    c = chunk.index('self._db.set_status(doc_id, "Approved")')
+    b = chunk.index("self._db.save_approved(did, values)")
+    c = chunk.index('self._db.set_status(did, "Approved")')
     d = chunk.index("self._refresh_inbox()")
-    e = chunk.index("self._detail.load_document(doc_id, self._db)")
     f = chunk.index("Document approved and values saved.")
-    assert a < b < c < d < e < f
+    assert co < a < b < c < d < f
 
 
 def test_main_window_on_reject_status_refresh_detail_message_order() -> None:
-    """``_on_reject`` sets **Needs Review**, refreshes, reloads detail, then status text."""
+    """``_on_reject`` sets **Needs Review**, refreshes inbox (syncs detail), then status text."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _on_reject(self, doc_id: int):")
     end = text.index("    # -- helpers", start)
     chunk = text[start:end]
-    a = chunk.index('self._db.set_status(doc_id, "Needs Review")')
+    co = chunk.index("did = coerce_combo_int_id(doc_id)")
+    a = chunk.index('self._db.set_status(did, "Needs Review")')
     b = chunk.index("self._refresh_inbox()")
-    c = chunk.index("self._detail.load_document(doc_id, self._db)")
     d = chunk.index("Document flagged")
-    assert a < b < c < d
+    assert co < a < b < d
 
 
 def test_main_window_import_files_refresh_before_skipped_then_import_count_messages() -> None:
@@ -1658,24 +1932,51 @@ def test_main_window_import_files_refresh_before_skipped_then_import_count_messa
 
 
 def test_desktop_main_detail_pane_load_document_hydration_pipeline_order() -> None:
-    """``load_document`` stores id, loads row, filename, preview, approved/extraction, fields, then enables actions."""
+    """``load_document`` coerces id, stores it, loads row, filename, preview, approved/extraction, fields, then enables actions."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def load_document(self, doc_id: int, db: DocumentDatabase):")
     end = text.index("    def populate_ai_result(self, result, suggestions=None):", start)
     chunk = text[start:end]
-    a = chunk.index("self._doc_id = doc_id")
-    b = chunk.index("row = db.get_document(doc_id)")
+    co = chunk.index("did = coerce_combo_int_id(doc_id)")
+    a = chunk.index("self._doc_id = did")
+    b = chunk.index("row = db.get_document(did)")
     c = chunk.index('self._lbl_filename.setText(escape_ampersand_for_qt(row["filename"]))')
     d = chunk.index('self._show_preview(row["stored_path"], row["mimetype"], row["page_count"])')
-    e = chunk.index("approved = db.get_approved(doc_id)")
-    ex = chunk.index("extraction = db.get_latest_extraction(doc_id)")
+    e = chunk.index("approved = db.get_approved(did)")
+    ex = chunk.index("extraction = db.get_latest_extraction(did)")
     sr = chunk.index("src = approved or extraction")
     f = chunk.index("self._populate_fields(src)")
     cat = chunk.index("        if approved:")
     coa = chunk.index('self._set_coa_combo_raw(approved["coa_account"])')
     tax = chunk.index('self._f_tax_cat.setText(approved["tax_category"] or "")')
     g = chunk.index("self._set_buttons_enabled(True)")
-    assert a < b < c < d < e < ex < sr < f < cat < coa < tax < g
+    assert co < a < b < c < d < e < ex < sr < f < cat < coa < tax < g
+
+
+def test_desktop_main_detail_pane_load_document_filename_status_richtext_before_preview_order() -> None:
+    """``load_document`` sets filename, builds rich status text, then calls ``_show_preview``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def load_document(self, doc_id: int, db: DocumentDatabase):")
+    end = text.index("    def populate_ai_result(self, result, suggestions=None):", start)
+    chunk = text[start:end]
+    fn = chunk.index('self._lbl_filename.setText(escape_ampersand_for_qt(row["filename"]))')
+    st = chunk.index('status = row["status"]')
+    fmt = chunk.index("self._lbl_status.setTextFormat(Qt.TextFormat.RichText)")
+    lab = chunk.index('self._lbl_status.setText(f"Status: <b style')
+    pv = chunk.index('self._show_preview(row["stored_path"], row["mimetype"], row["page_count"])')
+    assert fn < st < fmt < lab < pv
+
+
+def test_desktop_main_detail_pane_load_document_get_row_guard_before_filename_order() -> None:
+    """``load_document`` fetches the row, applies the empty guard, then sets the filename label."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def load_document(self, doc_id: int, db: DocumentDatabase):")
+    end = text.index("    def populate_ai_result(self, result, suggestions=None):", start)
+    chunk = text[start:end]
+    gr = chunk.index("row = db.get_document(did)")
+    gu = chunk.index("if not row:")
+    fn = chunk.index('self._lbl_filename.setText(escape_ampersand_for_qt(row["filename"]))')
+    assert gr < gu < fn
 
 
 def test_desktop_main_detail_pane_populate_ai_result_extraction_before_suggestions() -> None:
@@ -1741,6 +2042,10 @@ def test_main_window_on_import_and_files_dropped_delegate_to_import_files() -> N
     assert (
         'Documents (*.pdf *.jpg *.jpeg *.png);;All Files (*.*)' in imp_chunk
     )
+    dlg = imp_chunk.index("QFileDialog.getOpenFileNames(")
+    gate = imp_chunk.index("if paths:")
+    imp = imp_chunk.index("self._import_files(paths)")
+    assert dlg < gate < imp
 
     drop_s = imp_e
     drop_e = text.index("    def _import_files(self, paths: list[str]):", drop_s)
@@ -1749,7 +2054,7 @@ def test_main_window_on_import_and_files_dropped_delegate_to_import_files() -> N
 
 
 def test_main_window_on_selection_changed_loads_detail_when_row_selected() -> None:
-    """Inbox selection changes load the active document into the detail pane."""
+    """Inbox selection changes load the active document or clear the detail pane when nothing is selected."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _on_selection_changed(self):")
     end = text.index("    def _on_run_ai(self, doc_id: int):", start)
@@ -1757,10 +2062,11 @@ def test_main_window_on_selection_changed_loads_detail_when_row_selected() -> No
     assert chunk.count("self._inbox.selected_doc_id()") == 1
     assert chunk.count("if doc_id is not None:") == 1
     assert chunk.count("self._detail.load_document(doc_id, self._db)") == 1
+    assert chunk.count("self._detail.clear_view()") == 1
 
 
 def test_main_window_on_selection_changed_doc_id_before_load_document_order() -> None:
-    """``_on_selection_changed`` reads ``selected_doc_id`` before conditionally loading the detail pane."""
+    """``_on_selection_changed`` reads ``selected_doc_id`` before load vs clear."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _on_selection_changed(self):")
     end = text.index("    def _on_run_ai(self, doc_id: int):", start)
@@ -1768,7 +2074,8 @@ def test_main_window_on_selection_changed_doc_id_before_load_document_order() ->
     d = chunk.index("doc_id = self._inbox.selected_doc_id()")
     g = chunk.index("if doc_id is not None:")
     ld = chunk.index("self._detail.load_document(doc_id, self._db)")
-    assert d < g < ld
+    cl = chunk.index("self._detail.clear_view()")
+    assert d < g < ld < cl
 
 
 def test_main_window_import_files_filters_extensions_adds_documents_refreshes_inbox() -> None:
@@ -1822,14 +2129,27 @@ def test_main_window_import_files_mime_guess_fallback_and_import_error_status() 
     assert "Error importing" in chunk
 
 
+def test_main_window_import_files_try_add_document_before_except_order() -> None:
+    """``_import_files`` wraps ``add_document`` in ``try`` / ``except`` around each accepted path."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _import_files(self, paths: list[str]):")
+    end = text.index("    def _on_selection_changed(self):", start)
+    chunk = text[start:end]
+    tr = chunk.index("try:")
+    ad = chunk.index("self._db.add_document(path, mime, store=True)")
+    ex = chunk.index("except Exception as exc:")
+    assert tr < ad < ex
+
+
 def test_main_window_refresh_inbox_and_coa_changed_sync_lists() -> None:
-    """``_refresh_inbox`` repopulates the inbox; ``_on_coa_changed`` refreshes COA-derived UI."""
+    """``_refresh_inbox`` repopulates the inbox and syncs selection; ``_on_coa_changed`` refreshes COA-derived UI."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _refresh_inbox(self):")
     end = text.index("    def _set_main_tab_index(self, index: int) -> None:", start)
     chunk = text[start:end]
     assert chunk.count("self._db.list_documents()") == 1
     assert chunk.count("self._inbox.populate(docs)") == 1
+    assert chunk.count("self._on_selection_changed()") == 1
     assert chunk.count("load_coa()") == 1
     assert chunk.count("self._coa_db.display_list()") == 1
     assert chunk.count("self._detail.update_coa(coa_display)") == 1
@@ -1841,13 +2161,16 @@ def test_main_window_refresh_inbox_and_coa_changed_sync_lists() -> None:
 
 
 def test_main_window_refresh_inbox_list_documents_before_populate_order() -> None:
-    """``_refresh_inbox`` loads the document list before pushing rows into the inbox table."""
+    """``_refresh_inbox`` lists docs, populates inbox, then syncs selection to the detail pane."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _refresh_inbox(self):")
     end = text.index("    def _on_coa_changed(self):", start)
     chunk = text[start:end]
     assert chunk.index("docs = self._db.list_documents()") < chunk.index(
         "self._inbox.populate(docs)"
+    )
+    assert chunk.index("self._inbox.populate(docs)") < chunk.index(
+        "self._on_selection_changed()"
     )
 
 
@@ -2018,6 +2341,22 @@ def test_main_window_rebuild_bank_tab_specs_title_order() -> None:
     )
     positions = [chunk.index(t) for t in titles]
     assert positions == sorted(positions)
+    assert "after_stmt_match_sync=self._focus_bank_register_tab" in chunk
+
+
+def test_main_window_build_ui_wires_stmt_match_sync_focus_register() -> None:
+    """``MainWindow`` passes ``after_stmt_match_sync`` into ``BankImportTab`` (build + rebuild) and defines ``_focus_bank_register_tab``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    assert "def _focus_bank_register_tab(self)" in text
+    assert text.count("after_stmt_match_sync=self._focus_bank_register_tab") == 2
+    assert "Stmt match updated on Bank register" in text
+    assert "_STMT_MATCH_SYNC_STATUS_MS = 8000" in text
+    focus_body = text.split("def _focus_bank_register_tab", 1)[1].split(
+        "def _sync_window_title", 1
+    )[0]
+    assert "_STMT_MATCH_SYNC_STATUS_MS" in focus_body
+    assert "QTimer.singleShot" in focus_body
+    assert "self._update_company_status" in focus_body
 
 
 def test_main_window_build_menu_bar_wires_all_action_triggers() -> None:
@@ -2114,7 +2453,7 @@ def test_main_window_set_tab_sync_title_and_company_status_helpers() -> None:
     assert chunk.count("self.setWindowTitle(") == 2
     assert chunk.count("ProBooks+ai –") == 2
     assert chunk.count("self._sync_window_title()") == 1
-    assert chunk.count("self._status_bar.showMessage(") == 1
+    assert chunk.count("self._status_bar.showMessage(") == 2
     assert "File → Backup copies this .db." in chunk
     assert chunk.count("self._header.set_company_name(") == 2
     assert 'self._header.set_company_name("No company file")' in chunk
@@ -2209,9 +2548,28 @@ def test_main_window_build_ui_bank_register_coa_tabs_receive_expected_db_deps() 
     start = text.index("        # ── Tab 2: Bank Import")
     end = text.index("        # ── Tabs 5–7:", start)
     chunk = text[start:end]
-    assert chunk.count("BankImportTab(self._bank_db, self._coa_db)") == 1
+    assert chunk.count("register_tab=self._register_tab") == 1
+    assert chunk.count("after_stmt_match_sync=self._focus_bank_register_tab") == 1
     assert chunk.count("RegisterTab(self._bank_db, self._coa_db, self._gl_db)") == 1
     assert chunk.count("COATab(self._coa_db)") == 1
+
+
+def test_main_window_build_ui_tabs_2_through_4_ctor_before_add_tab_coa_signal_before_add_tab_order() -> None:
+    """Tabs 2–4 construct each widget before ``addTab``; COA tab wires ``coaChanged`` before ``addTab``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("        # ── Tab 2: Bank Import")
+    end = text.index("        # ── Tabs 5–7:", start)
+    chunk = text[start:end]
+    r_ctor = chunk.index(
+        "self._register_tab = RegisterTab(self._bank_db, self._coa_db, self._gl_db)"
+    )
+    b_ctor = chunk.index("self._bank_tab = BankImportTab(")
+    b_tab = chunk.index('self._tabs.addTab(self._bank_tab, "🏦  Bank Import")')
+    r_tab = chunk.index('self._tabs.addTab(self._register_tab, "📒  Bank register")')
+    c_ctor = chunk.index("self._coa_tab = COATab(self._coa_db)")
+    c_sig = chunk.index("self._coa_tab.coaChanged.connect(self._on_coa_changed)")
+    c_tab = chunk.index('self._tabs.addTab(self._coa_tab, "📊  Chart of Accounts")')
+    assert r_ctor < b_ctor < b_tab < r_tab < c_ctor < c_sig < c_tab
 
 
 def test_main_window_build_ui_reports_journal_business_audit_use_shared_bank_connection() -> None:
@@ -2238,6 +2596,9 @@ def test_main_window_build_ui_wires_tabs_container_inbox_and_detail_signals() ->
     assert chunk.count("container_layout.setSpacing(0)") == 1
     assert chunk.count("container_layout.addWidget(self._header)") == 1
     assert chunk.count("container_layout.addWidget(self._tabs)") == 1
+    assert chunk.index("container_layout.addWidget(self._header)") < chunk.index(
+        "container_layout.addWidget(self._tabs)"
+    )
     assert chunk.count("self._coa_tab.coaChanged.connect(self._on_coa_changed)") == 1
     assert chunk.count("self._inbox.filesDropped.connect(self._on_files_dropped)") == 1
     assert chunk.count(
@@ -2295,6 +2656,21 @@ def test_main_toolbar_import_refresh_trigger_same_handlers_as_shortcuts_help() -
     assert chunk.count("act_refresh.triggered.connect(self._refresh_inbox)") == 1
 
 
+def test_main_window_build_ui_toolbar_import_refresh_tooltip_connect_before_add_action_order() -> None:
+    """Toolbar **Import** / **Refresh** actions set tooltips, wire slots, then ``addAction`` (per button)."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("# Toolbar")
+    end = text.index("# Container: header banner + tab widget", start)
+    chunk = text[start:end]
+    ti = chunk.index("act_import.setToolTip(")
+    ci = chunk.index("act_import.triggered.connect(self._on_import)")
+    ai = chunk.index("toolbar.addAction(act_import)")
+    tr = chunk.index("act_refresh.setToolTip(")
+    cr = chunk.index("act_refresh.triggered.connect(self._refresh_inbox)")
+    ar = chunk.index("toolbar.addAction(act_refresh)")
+    assert ti < ci < ai < tr < cr < ar
+
+
 def test_main_window_toolbar_import_separator_refresh_wire_order() -> None:
     """Toolbar wires **Import**, separator, then **Refresh** (define → add → sep → define → add)."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -2331,6 +2707,18 @@ def test_desktop_main_detail_pane_extracted_fields_form_row_order() -> None:
     assert positions == sorted(positions)
 
 
+def test_desktop_main_detail_pane_extracted_fields_group_tooltip_form_before_vendor_widget_order() -> None:
+    """``DetailPane.__init__`` builds **Extracted Fields** group, tooltip, ``QFormLayout``, then the vendor field."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index('        fields_group = QGroupBox("Extracted Fields")')
+    end = text.index("        self._f_vendor   = QLineEdit()", start)
+    chunk = text[start:end]
+    fg = chunk.index('        fields_group = QGroupBox("Extracted Fields")')
+    tt = chunk.index("        fields_group.setToolTip(")
+    frm = chunk.index("        form = QFormLayout(fields_group)")
+    assert fg < tt < frm
+
+
 def test_desktop_main_detail_pane_categorisation_form_row_order() -> None:
     """``DetailPane`` **Categorisation** form rows follow COA → tax → confidence → rationale."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -2345,6 +2733,21 @@ def test_desktop_main_detail_pane_categorisation_form_row_order() -> None:
     )
     positions = [chunk.index(r) for r in rows]
     assert positions == sorted(positions)
+
+
+def test_desktop_main_detail_pane_categorisation_group_tooltip_layout_combo_fill_editable_order() -> None:
+    """Categorisation: ``QGroupBox`` → tooltip → ``QFormLayout`` → COA combo → fill → ``setEditable``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index('        cat_group = QGroupBox("Categorisation Suggestions")')
+    end = text.index("        self._f_coa.setToolTip(", start)
+    chunk = text[start:end]
+    cg = chunk.index('        cat_group = QGroupBox("Categorisation Suggestions")')
+    tt = chunk.index("        cat_group.setToolTip(")
+    cl = chunk.index("        cat_layout = QFormLayout(cat_group)")
+    fc = chunk.index("        self._f_coa      = QComboBox()")
+    fil = chunk.index("        self._fill_coa_combo(coa_list)")
+    ed = chunk.index("        self._f_coa.setEditable(True)")
+    assert cg < tt < cl < fc < fil < ed
 
 
 def test_desktop_main_detail_pane_action_buttons_toolbar_order() -> None:
@@ -2500,6 +2903,17 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
     assert 'f"Show this main tab ({sc}).{_view_tab_tip_suffix}"' in chunk
 
 
+def test_main_window_build_menu_bar_menu_bar_before_file_menu_order() -> None:
+    """``_build_menu_bar`` calls ``menuBar()`` before adding the **File** menu."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _build_menu_bar(self):")
+    end = text.index("\n\n    # -- drag & drop on window", start)
+    chunk = text[start:end]
+    mb = chunk.index("mb = self.menuBar()")
+    fm = chunk.index('file_menu = mb.addMenu("&File")')
+    assert mb < fm
+
+
 def test_main_help_menu_wires_document_intake_shortcuts_dialog() -> None:
     text = _MAIN.read_text(encoding="utf-8")
     assert "show_document_intake_keyboard_shortcuts_dialog" in text
@@ -2583,6 +2997,28 @@ def test_inbox_widget_context_menu_skips_copy_row_when_no_cell() -> None:
     assert chunk.count("m.exec(self.viewport().mapToGlobal(pos))") == 2
 
 
+def test_inbox_widget_context_menu_actions_and_branches_source_order() -> None:
+    """``_on_context_menu`` builds the menu, shortcuts action + tip, invalid early exit, then copy + final ``exec``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _on_context_menu(self, pos):")
+    end = text.index("    # -- drag & drop", start)
+    chunk = text[start:end]
+    ia = chunk.index("idx = self.indexAt(pos)")
+    mn = chunk.index("m = QMenu(self)")
+    ka = chunk.index("act_keys = m.addAction(")
+    kt = chunk.index("act_keys.setToolTip(")
+    iv = chunk.index("if not idx.isValid():")
+    rr = chunk.index("row = idx.row()")
+    sp = chunk.index("m.addSeparator()")
+    ca = chunk.index('act_copy = m.addAction("Copy row"')
+    ct = chunk.index("act_copy.setToolTip(")
+    ex0 = chunk.index("m.exec(self.viewport().mapToGlobal(pos))")
+    ex1 = chunk.rindex("m.exec(self.viewport().mapToGlobal(pos))")
+    assert ia < mn < ka < kt < iv < rr
+    assert iv < ex0 < rr
+    assert rr < sp < ca < ct < ex1
+
+
 def test_inbox_widget_context_menu_copy_row_binds_partial_tsv_helper() -> None:
     """Inbox **Copy row** uses ``functools.partial`` with ``copy_table_row_as_tsv``."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -2609,6 +3045,19 @@ def test_desktop_main_show_intake_shortcuts_dialog_delegates_to_message_box() ->
     assert "Company .db: File → Backup / Restore (probooks.backup)." in chunk
 
 
+def test_desktop_main_show_intake_shortcuts_dialog_title_before_help_text_call_order() -> None:
+    """Dialog title string appears before ``_document_intake_keyboard_shortcuts_help_text()`` in the call."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index(
+        "def show_document_intake_keyboard_shortcuts_dialog(parent: QWidget) -> None:"
+    )
+    end = text.index("\n\n# Accepted MIME types / file extensions", start)
+    chunk = text[start:end]
+    tit = chunk.index('"Document intake shortcuts"')
+    hel = chunk.index("_document_intake_keyboard_shortcuts_help_text()")
+    assert tit < hel
+
+
 def test_desktop_main_document_intake_shortcuts_help_text_sections() -> None:
     """Intake shortcuts help lists File/View/Bank sections and backup cross-links."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -2627,6 +3076,22 @@ def test_desktop_main_document_intake_shortcuts_help_text_sections() -> None:
     assert "Help → Business shortcuts" in chunk
     assert chunk.count("probooks.backup") >= 2
     assert "Keyboard shortcuts…" in chunk
+
+
+def test_desktop_main_document_intake_help_text_file_view_bank_section_order() -> None:
+    """Intake shortcuts help string orders **File** → **View**; **Business** precedes **Bank workflows**."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("def _document_intake_keyboard_shortcuts_help_text() -> str:")
+    end = text.index(
+        "def show_document_intake_keyboard_shortcuts_dialog(parent: QWidget) -> None:", start
+    )
+    chunk = text[start:end]
+    f = chunk.index('"File menu:\\n"')
+    v = chunk.index('"View menu:\\n"')
+    b = chunk.index('"Bank workflows:\\n"')
+    assert f < v < b
+    bus = chunk.index('"Business:\\n"')
+    assert bus < b
 
 
 def test_desktop_main_intake_accepted_mimes_extensions_and_status_colors_alias() -> None:
@@ -2648,6 +3113,18 @@ def test_desktop_main_intake_accepted_mimes_extensions_and_status_colors_alias()
     assert (
         'ACCEPTED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png"}' in chunk
     )
+
+
+def test_desktop_main_accepted_mimes_extensions_status_colors_source_order() -> None:
+    """Module-level intake filters declare **MIMES → EXTENSIONS → STATUS_COLORS** in that order."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("# Accepted MIME types / file extensions")
+    end = text.index("INBOX_HEADER_COLOR = ", start)
+    chunk = text[start:end]
+    m = chunk.index("ACCEPTED_MIMES = ")
+    e = chunk.index("ACCEPTED_EXTENSIONS = ")
+    s = chunk.index("STATUS_COLORS = THEME_STATUS_COLORS")
+    assert m < e < s
 
 
 def test_desktop_main_inbox_header_color_and_placeholder_company_name() -> None:
@@ -2713,6 +3190,22 @@ def test_desktop_main_ai_worker_init_assigns_doc_path_mimetype_and_coa() -> None
     assert chunk.count("self._coa     = coa") == 1
 
 
+def test_desktop_main_ai_worker_init_super_doc_path_mimetype_coa_assignment_order() -> None:
+    """``AIWorker.__init__`` calls ``super`` then assigns ``_doc_id`` → ``_path`` → ``_mimetype`` → ``_coa``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index(
+        "    def __init__(self, doc_id: int, path: str, mimetype: str, coa: list):"
+    )
+    end = text.index("    def run(self):", start)
+    chunk = text[start:end]
+    su = chunk.index("super().__init__()")
+    d = chunk.index("self._doc_id  = doc_id")
+    p = chunk.index("self._path    = path")
+    m = chunk.index("self._mimetype = mimetype")
+    c = chunk.index("self._coa     = coa")
+    assert su < d < p < m < c
+
+
 def test_desktop_main_ai_worker_run_extract_error_gate_suggest_finish_order() -> None:
     """``AIWorker.run`` extracts, checks ``result.error``, categorizes, then emits ``finished``."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -2724,6 +3217,17 @@ def test_desktop_main_ai_worker_run_extract_error_gate_suggest_finish_order() ->
     sg = chunk.index("suggestions = suggest_categories(result, self._coa)")
     fn = chunk.index("self.finished.emit(result, suggestions)")
     assert ex < er < sg < fn
+
+
+def test_desktop_main_ai_worker_run_try_imports_extractor_before_categorizer_order() -> None:
+    """``AIWorker.run`` imports ``extract_document`` before ``suggest_categories`` inside the ``try`` block."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def run(self):", text.index("class AIWorker(QThread):"))
+    end = text.index("class InboxWidget(QTableWidget):", start)
+    chunk = text[start:end]
+    imx = chunk.index("from ai.extractor import extract_document")
+    imc = chunk.index("from ai.categorizer import suggest_categories")
+    assert imx < imc
 
 
 def test_desktop_main_ai_worker_run_error_paths_extractor_and_exception() -> None:
@@ -2766,6 +3270,15 @@ def test_inbox_widget_class_docstring_mentions_context_menu_tooltips() -> None:
     assert "Copy row" in head
 
 
+def test_inbox_widget_columns_constant_before_init_definition_order() -> None:
+    """``COLUMNS`` is defined on ``InboxWidget`` before ``__init__`` uses ``len(self.COLUMNS)``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    iw = text.index("class InboxWidget(QTableWidget):")
+    cols = text.index('    COLUMNS = ["#", "Filename", "Type", "Status", "Date"]', iw)
+    init = text.index("    def __init__(self, parent=None):", iw)
+    assert cols < init
+
+
 def test_desktop_main_inbox_widget_columns_selection_dnd_and_sorting() -> None:
     """``InboxWidget`` uses fixed columns, row selection, no in-grid edit, drops, and sort toggles in populate."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -2806,6 +3319,30 @@ def test_inbox_widget_header_column_widths_and_stretch_policy() -> None:
     assert chunk.count("verticalHeader().setVisible(False)") == 1
 
 
+def test_inbox_widget_init_super_before_set_column_count_order() -> None:
+    """``InboxWidget.__init__`` calls ``super().__init__`` before ``setColumnCount``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    iw = text.index("class InboxWidget(QTableWidget):")
+    start = text.index("    def __init__(self, parent=None):", iw)
+    end = text.index("    def _on_context_menu(self, pos):", start)
+    chunk = text[start:end]
+    su = chunk.index("super().__init__(parent)")
+    cc = chunk.index("self.setColumnCount(len(self.COLUMNS))")
+    assert su < cc
+
+
+def test_inbox_widget_init_set_column_count_before_horizontal_header_labels_order() -> None:
+    """``InboxWidget.__init__`` sets the column count before applying header labels."""
+    text = _MAIN.read_text(encoding="utf-8")
+    iw = text.index("class InboxWidget(QTableWidget):")
+    start = text.index("    def __init__(self, parent=None):", iw)
+    end = text.index("    def _on_context_menu(self, pos):", start)
+    chunk = text[start:end]
+    cc = chunk.index("self.setColumnCount(len(self.COLUMNS))")
+    hl = chunk.index("self.setHorizontalHeaderLabels(self.COLUMNS)")
+    assert cc < hl
+
+
 def test_inbox_widget_init_set_column_width_indices_ascending_source_order() -> None:
     """``InboxWidget.__init__`` applies column widths for indices **0 → 4** in ascending order."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -2835,6 +3372,17 @@ def test_inbox_widget_drag_enter_move_accept_urls_ignore_other_mimes() -> None:
     assert chunk.count("event.ignore()") == 1
 
 
+def test_inbox_widget_drag_enter_drag_move_drop_method_definition_order() -> None:
+    """``InboxWidget`` declares URL drag handlers **enter → move → drop** before ``populate``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("class InboxWidget(QTableWidget):")
+    de = text.index("    def dragEnterEvent(self, event: QDragEnterEvent):", start)
+    dm = text.index("    def dragMoveEvent(self, event):", start)
+    dr = text.index("    def dropEvent(self, event: QDropEvent):", start)
+    po = text.index("    def populate(self, rows: list):", start)
+    assert de < dm < dr < po
+
+
 def test_inbox_widget_drop_event_maps_local_urls_before_emit() -> None:
     """``InboxWidget.dropEvent`` reads URL list, keeps local files, then emits paths."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -2858,11 +3406,9 @@ def test_inbox_widget_selected_doc_id_user_role_then_clipboard_fallback() -> Non
     assert chunk.count("self.selectedItems()") == 1
     assert chunk.count("self.currentRow()") == 1
     assert chunk.count("Qt.ItemDataRole.UserRole") == 1
+    assert "coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole))" in chunk
     assert chunk.count("table_cell_clipboard_text(self, r, 0)") == 1
-    assert chunk.count("except (TypeError, ValueError):") == 1
-    assert chunk.count("except ValueError:") == 1
-    assert chunk.count("return int(eid)") == 1
-    assert chunk.count("return int(raw)") == 1
+    assert "return coerce_combo_int_id(raw)" in chunk
 
 
 def test_inbox_widget_selected_doc_id_selection_row_item_before_clipboard_fallback_order() -> None:
@@ -2898,12 +3444,25 @@ def test_inbox_widget_populate_sortable_id_cells_type_column_and_import_date() -
     chunk = text[start:end]
     assert chunk.count("self.setSortingEnabled(False)") == 1
     assert chunk.count("self.setSortingEnabled(True)") == 1
-    assert chunk.count("self.setRowCount(len(rows))") == 1
-    assert chunk.count('int(row["id"])') == 1
+    assert chunk.count("self.setRowCount(len(packed))") == 1
+    assert "coerce_combo_int_id(row[\"id\"])" in chunk
     assert chunk.count("id_cell.setData(Qt.ItemDataRole.UserRole, did)") == 1
     assert chunk.count('doc_type = "PDF" if "pdf" in mime else "Image"') == 1
     assert chunk.count('(row["import_date"] or "")[:10]') == 1
     assert chunk.count('fn = row["filename"] or ""') == 1
+
+
+def test_inbox_widget_populate_sort_off_rows_loop_sort_on_order() -> None:
+    """``populate`` disables sorting, sets row count, fills rows, then re-enables sorting."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def populate(self, rows: list):")
+    end = text.index("    def selected_doc_id(self) -> int | None:", start)
+    chunk = text[start:end]
+    off = chunk.index("self.setSortingEnabled(False)")
+    rc = chunk.index("self.setRowCount(len(packed))")
+    lp = chunk.index("for r, (did, row) in enumerate(packed):")
+    on = chunk.index("self.setSortingEnabled(True)")
+    assert off < rc < lp < on
 
 
 def test_inbox_widget_populate_setitem_columns_in_table_order() -> None:
@@ -3036,6 +3595,9 @@ def test_bank_import_tab_exposes_shortcuts_dialog_for_help_menu() -> None:
     assert "def _bank_import_keyboard_shortcuts_help_text" in bit
     assert "Help → Business shortcuts" in bit
     assert "Help → Document intake shortcuts" in bit
+    assert "If that account cannot be opened on the register" in bit
+    assert "status bar" in bit.lower()
+    assert "restores the company line" in bit
 
 
 def test_register_tab_exposes_shared_shortcuts_dialog_for_help_menu() -> None:
@@ -3191,6 +3753,53 @@ def test_desktop_main_detail_pane_init_subsection_banners_order() -> None:
     assert positions == sorted(positions)
 
 
+def test_desktop_main_detail_pane_document_info_filename_before_status_labels_order() -> None:
+    """``DetailPane.__init__`` wires filename (create → add) before status (create → add)."""
+    text = _MAIN.read_text(encoding="utf-8")
+    dp = text.index("class DetailPane(QScrollArea):")
+    init = text.index("    def __init__(self, coa_list: list[str], parent=None):", dp)
+    di = text.index("        # -- Document info ", init)
+    pr = text.index("        # -- Preview ", init)
+    chunk = text[di:pr]
+    fn = chunk.index('self._lbl_filename = QLabel("No document selected")')
+    af = chunk.index("layout.addWidget(self._lbl_filename)")
+    st = chunk.index('self._lbl_status = QLabel("")')
+    as_ = chunk.index("layout.addWidget(self._lbl_status)")
+    assert fn < af < st < as_
+
+
+def test_main_window_intake_coa_display_list_before_detail_pane_ctor_order() -> None:
+    """Intake builds ``coa_display_list(self._coa)`` before constructing ``DetailPane(coa_display)``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("        # Right: detail pane")
+    end = text.index("        splitter.addWidget(self._detail)", start)
+    chunk = text[start:end]
+    cd = chunk.index("coa_display = coa_display_list(self._coa)")
+    dp = chunk.index("self._detail = DetailPane(coa_display)")
+    assert cd < dp
+
+
+def test_desktop_main_detail_pane_extracted_fields_widget_ctor_vendor_through_notes_order() -> None:
+    """``DetailPane.__init__`` constructs extracted-field widgets **vendor → … → notes** before ``form.addRow``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    dp = text.index("class DetailPane(QScrollArea):")
+    init = text.index("    def __init__(self, coa_list: list[str], parent=None):", dp)
+    fs = text.index("        # -- Extracted fields ", init)
+    fe = text.index("        form.addRow(\"Vendor / Customer:\", self._f_vendor)", fs)
+    chunk = text[fs:fe]
+    v = chunk.index("self._f_vendor   = QLineEdit()")
+    dt = chunk.index("self._f_doctype  = QComboBox()")
+    inv = chunk.index("self._f_inv_num  = QLineEdit()")
+    d = chunk.index("self._f_date     = QLineEdit()")
+    due = chunk.index("self._f_due_date = QLineEdit()")
+    sub = chunk.index("self._f_subtotal = QDoubleSpinBox()")
+    tax = chunk.index("self._f_tax      = QDoubleSpinBox()")
+    tot = chunk.index("self._f_total    = QDoubleSpinBox()")
+    cur = chunk.index("self._f_currency = QLineEdit()")
+    notes = chunk.index("self._f_notes    = QPlainTextEdit()")
+    assert v < dt < inv < d < due < sub < tax < tot < cur < notes
+
+
 def test_desktop_main_detail_pane_init_super_inner_scroll_layout_filename_status_before_preview() -> None:
     """``DetailPane.__init__`` attaches the inner widget, lays out filename/status, then the preview group."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -3207,6 +3816,24 @@ def test_desktop_main_detail_pane_init_super_inner_scroll_layout_filename_status
     st = chunk.index('self._lbl_status = QLabel("")')
     pr = chunk.index('preview_group = QGroupBox("Preview")')
     assert su < inn < sw < lv < fn < af < st < pr
+
+
+def test_desktop_main_detail_pane_preview_group_layout_label_inner_outer_add_widget_order() -> None:
+    """``DetailPane.__init__`` builds the preview ``QGroupBox``, inner layout, label, then inner/outer ``addWidget``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    dp = text.index("class DetailPane(QScrollArea):")
+    init = text.index("    def __init__(self, coa_list: list[str], parent=None):", dp)
+    pub = text.index("    # -- public interface ----------------------------------------------------", init)
+    chunk = text[init:pub]
+    pr = text.index("        # -- Preview ", init)
+    fe = text.index("        # -- Extracted fields ", init)
+    prev = text[pr:fe]
+    pg = prev.index('preview_group = QGroupBox("Preview")')
+    pl = prev.index("preview_layout = QVBoxLayout(preview_group)")
+    lb = prev.index('self._preview_label = QLabel("(Select a document to preview)")')
+    inn = prev.index("preview_layout.addWidget(self._preview_label)")
+    out = prev.index("layout.addWidget(preview_group)")
+    assert pg < pl < lb < inn < out
 
 
 def test_desktop_main_main_window_subsection_banners_order() -> None:
@@ -3302,6 +3929,21 @@ def test_desktop_main_entrypoint_boot_sequence() -> None:
     )
 
 
+def test_desktop_main_main_argparse_build_parse_before_qapplication_order() -> None:
+    """``main()`` resolves version, builds the parser, adds flags, parses args, then constructs ``QApplication``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("def main():")
+    end = text.index('\n\nif __name__ == "__main__":', start)
+    chunk = text[start:end]
+    ver = chunk.index("ver = application_version()")
+    prs = chunk.index("parser = argparse.ArgumentParser(")
+    av = chunk.index('"--version",')
+    adb = chunk.index('"--database",')
+    par = chunk.index("args = parser.parse_args()")
+    qap = chunk.index("QApplication(sys.argv)")
+    assert ver < prs < av < adb < par < qap
+
+
 def test_desktop_main_module_main_guard_invokes_main() -> None:
     """Running ``desktop_app/main.py`` as a script should call ``main()``."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -3315,6 +3957,14 @@ def test_audit_tab_f5_refresh_shortcut_wired() -> None:
     text = path.read_text(encoding="utf-8")
     assert 'QKeySequence("F5")' in text
     assert "activated.connect(self._refresh)" in text
+
+
+def test_audit_tab_entity_id_uses_coerce_combo_int_id() -> None:
+    at = (_DESKTOP_APP_DIR / "audit_tab.py").read_text(encoding="utf-8")
+    assert "from desktop_app.qt_combo_ids import coerce_combo_int_id" in at
+    assert at.count("coerce_combo_int_id(id_txt)") == 2
+    ref = at.split("def _refresh(self):", 1)[1].split("def _on_audit_context_menu", 1)[0]
+    assert "coerce_combo_int_id(r[\"entity_id\"])" in ref
 
 
 def test_reports_tab_f5_rerun_last_report_shortcut_wired() -> None:
@@ -3503,9 +4153,9 @@ def test_desktop_main_detail_pane_wires_actions_load_ai_and_clear() -> None:
     assert chunk.count("self.approve.emit(self._doc_id)") == 1
     assert chunk.count("self.markPosted.emit(self._doc_id)") == 1
     assert chunk.count("self.reject.emit(self._doc_id)") == 1
-    assert chunk.count("db.get_document(doc_id)") == 1
-    assert chunk.count("db.get_approved(doc_id)") == 1
-    assert chunk.count("db.get_latest_extraction(doc_id)") == 1
+    assert chunk.count("db.get_document(did)") == 1
+    assert chunk.count("db.get_approved(did)") == 1
+    assert chunk.count("db.get_latest_extraction(did)") == 1
     assert chunk.count("self._show_preview(row[\"stored_path\"]") == 1
     assert chunk.count("def populate_ai_result(self, result, suggestions=None):") == 1
     assert chunk.count("def collect_approved_values(self) -> dict:") == 1
@@ -3534,11 +4184,12 @@ def test_desktop_main_detail_pane_load_document_approved_or_extraction_and_enabl
     start = text.index("    def load_document(self, doc_id: int, db: DocumentDatabase):")
     end = text.index("    def populate_ai_result(self, result, suggestions=None):", start)
     chunk = text[start:end]
-    assert chunk.count("self._doc_id = doc_id") == 1
+    assert "did = coerce_combo_int_id(doc_id)" in chunk
+    assert chunk.count("self._doc_id = did") == 1
     assert chunk.count("if not row:") == 1
-    assert chunk.count("db.get_document(doc_id)") == 1
-    assert chunk.count("approved = db.get_approved(doc_id)") == 1
-    assert chunk.count("extraction = db.get_latest_extraction(doc_id)") == 1
+    assert chunk.count("db.get_document(did)") == 1
+    assert chunk.count("approved = db.get_approved(did)") == 1
+    assert chunk.count("extraction = db.get_latest_extraction(did)") == 1
     assert chunk.count("src = approved or extraction") == 1
     assert chunk.count("self._populate_fields(src)") == 1
     assert chunk.count("if approved:") == 1
@@ -3973,15 +4624,29 @@ def test_desktop_main_detail_pane_clear_view_resets_doc_fields_and_disables_acti
     assert chunk.count("self._set_buttons_enabled(False)") == 1
 
 
+def test_desktop_main_detail_pane_clear_view_preview_notes_rationale_coa_before_disable_order() -> None:
+    """``clear_view`` resets the preview stub, clears key fields, resets COA index, then disables actions."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def clear_view(self):")
+    end = text.index("class AppHeaderWidget(QFrame):", start)
+    chunk = text[start:end]
+    pr = chunk.index('self._preview_label.setText("(Select a document to preview)")')
+    v = chunk.index("self._f_vendor.clear()")
+    n = chunk.index("self._f_notes.clear()")
+    rat = chunk.index("self._lbl_rationale.clear()")
+    coa = chunk.index("if self._f_coa.count() > 0:")
+    dis = chunk.index("self._set_buttons_enabled(False)")
+    assert pr < v < n < rat < coa < dis
+
+
 def test_main_window_on_reject_sets_needs_review_refreshes_and_status_message() -> None:
     """Reject flags the document for review again, syncs inbox + detail, and updates the status bar."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _on_reject(self, doc_id: int):")
     end = text.index("    # -- helpers", start)
     chunk = text[start:end]
-    assert chunk.count('self._db.set_status(doc_id, "Needs Review")') == 1
+    assert chunk.count('self._db.set_status(did, "Needs Review")') == 1
     assert chunk.count("self._refresh_inbox()") == 1
-    assert chunk.count("self._detail.load_document(doc_id, self._db)") == 1
     assert chunk.count("Document flagged \\u2013 Needs Review.") == 1
 
 
@@ -4253,13 +4918,13 @@ def test_main_window_inbox_widget_referenced_four_times() -> None:
     assert chunk.count("self._inbox.") == 4
 
 
-def test_main_window_detail_pane_thirteen_call_sites() -> None:
-    """``MainWindow`` wires the detail pane for signals, load, AI, approve flow, and COA refresh."""
+def test_main_window_detail_pane_eleven_call_sites() -> None:
+    """``MainWindow`` wires the detail pane for signals, load/clear-on-deselect, AI populate, approve collect, COA."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("class MainWindow(QMainWindow):")
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
-    assert chunk.count("self._detail.") == 13
+    assert chunk.count("self._detail.") == 11
 
 
 def test_main_window_coa_database_four_call_sites() -> None:
@@ -4278,8 +4943,8 @@ def test_main_window_banner_tabs_status_bar_and_worker_counts() -> None:
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
     assert chunk.count("self._header.") == 2
-    assert chunk.count("self._status_bar.showMessage(") == 11
-    assert chunk.count("self._tabs.") == 18
+    assert chunk.count("self._status_bar.showMessage(") == 12
+    assert chunk.count("self._tabs.") == 20
     assert chunk.count("self._worker") == 13
 
 
@@ -4332,11 +4997,11 @@ def test_main_window_document_database_call_counts_for_intake_and_workflow() -> 
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
     assert chunk.count("self._db.list_documents()") == 1
-    assert chunk.count("self._db.get_document(doc_id)") == 3
+    assert chunk.count("self._db.get_document(did)") == 3
     assert chunk.count("self._db.add_document(path, mime, store=True)") == 1
-    assert chunk.count("self._db.save_extraction(doc_id, result)") == 1
-    assert chunk.count("self._db.save_approved(doc_id, values)") == 1
-    assert chunk.count("self._db.set_status(doc_id,") == 6
+    assert chunk.count("self._db.save_extraction(did, result)") == 1
+    assert chunk.count("self._db.save_approved(did, values)") == 1
+    assert chunk.count("self._db.set_status(did,") == 6
     assert chunk.count("application_version()") == 2
 
 
@@ -4466,6 +5131,21 @@ def test_business_hub_f5_refresh_current_subtab_shortcut_wired() -> None:
     assert "def _refresh_current_subtab" in text
 
 
+def test_extra_tabs_filtered_entity_combo_uses_qt_combo_ids() -> None:
+    et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
+    qi = et.index("from desktop_app.qt_combo_ids import")
+    qj = et.index("\n\n", qi)
+    id_block = et[qi:qj]
+    assert "coerce_combo_int_id" in id_block
+    assert "combo_index_for_int_user_data" in id_block
+    assert "combo_int_ids_equal" in id_block
+    sync = et.split("def _sync_filtered_entity_combo", 1)[1].split(
+        "def _prompt_as_of_date", 1
+    )[0]
+    assert "prev_id = coerce_combo_int_id(cb.currentData())" in sync
+    assert "combo_index_for_int_user_data(cb, prev_id)" in sync
+
+
 def test_extra_tabs_exposes_business_shortcuts_dialog_for_help_menu() -> None:
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
     assert "def show_business_keyboard_shortcuts_dialog" in et
@@ -4477,6 +5157,133 @@ def test_extra_tabs_exposes_business_shortcuts_dialog_for_help_menu() -> None:
         "show_business_keyboard_shortcuts_dialog(menu_parent)"
         in et[et.index("def _attach_table_copy_row_menu") : et.index("def _wire_find_focuses_line_edit")]
     ), "Business dialog tables should open Business shortcuts from context menu"
+
+
+def test_qt_combo_ids_module_defines_int_user_data_helpers() -> None:
+    t = (_DESKTOP_APP_DIR / "qt_combo_ids.py").read_text(encoding="utf-8")
+    assert "def coerce_combo_int_id" in t
+    assert "def combo_int_ids_equal" in t
+    assert "def combo_index_for_int_user_data" in t
+    assert "start: int = 0" in t
+
+
+def test_extra_tabs_save_entity_and_payment_bank_use_coerce_combo_int_id() -> None:
+    et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
+    pay = et.split("def _save_payment_bank_choice", 1)[1].split(
+        "_NEW_INVOICE_CUSTOMER_KEY", 1
+    )[0]
+    assert "coerce_combo_int_id(cb.itemData(idx))" in pay
+    ent = et.split("def _save_entity_combo", 1)[1].split(
+        "def _sync_filtered_entity_combo", 1
+    )[0]
+    assert "coerce_combo_int_id(cb.currentData())" in ent
+
+
+def test_extra_tabs_restore_payment_bank_uses_combo_index_start_one() -> None:
+    et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
+    fn = et.split("def _restore_payment_bank_combo", 1)[1].split(
+        "def _save_payment_bank_choice", 1
+    )[0]
+    assert "bid = coerce_combo_int_id(raw)" in fn
+    assert "combo_index_for_int_user_data(cb, bid, start=1)" in fn
+
+
+def test_extra_tabs_new_pay_run_coerces_employee_combo_id() -> None:
+    et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
+    chunk = et.split("def _new_run(self):", 1)[1].split("class TaxSettingsTab", 1)[0]
+    assert "eid = coerce_combo_int_id(cb.currentData())" in chunk
+    assert "business.create_payroll_run(\n            self._conn,\n            eid," in chunk
+
+
+def test_extra_tabs_sync_entity_combo_and_ar_ap_payments_coerce_int_ids() -> None:
+    et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
+    rent = et.split("def _restore_entity_combo", 1)[1].split(
+        "def _save_entity_combo", 1
+    )[0]
+    assert "eid = coerce_combo_int_id(raw)" in rent
+    sync = et.split("def _sync_filtered_entity_combo(", 1)[1].split(
+        "def _prompt_as_of_date", 1
+    )[0]
+    assert "prev_id = coerce_combo_int_id(cb.currentData())" in sync
+    assert "combo_index_for_int_user_data(cb, prev_id)" in sync
+    ar = et.split("def rebuild_ar_alloc_table", 1)[1].split("def sync_ar_payment_customers", 1)[0]
+    assert "cid = coerce_combo_int_id(cust_cb.currentData())" in ar
+    ar_pay = et.split("if d.exec() != QDialog.DialogCode.Accepted:\n            return\n        cid = coerce_combo_int_id(cust_cb.currentData())", 1)[
+        1
+    ].split("business.record_ar_payment", 1)[0]
+    assert "iid = coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole))" in ar_pay
+    assert (
+        "bank_account_id = (\n            coerce_combo_int_id(bank_cb.itemData(bidx)) if bidx > 0 else None\n        )"
+        in et
+    )
+    assert "business.record_ar_payment(\n            self._conn,\n            cid," in et
+    assert "business.record_ap_payment(\n            self._conn,\n            vid," in et
+
+
+def test_bank_import_tab_account_combo_uses_int_safe_restore_and_current_data() -> None:
+    """Bank Import account combo restores selection and reads currentData with int coercion (like Register)."""
+    bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
+    ref = bit.split("def _refresh_accounts(self):", 1)[1].split(
+        "def _on_account_changed", 1
+    )[0]
+    assert "combo_index_for_int_user_data" in ref
+    oc = bit.split("def _on_account_changed(self):", 1)[1].split(
+        "def _refresh_batches", 1
+    )[0]
+    assert "aid = coerce_combo_int_id(self._acct_combo.currentData())" in oc
+
+
+def test_bank_import_tab_batch_and_txn_tables_coerce_user_role_ids() -> None:
+    bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
+    assert "combo_int_ids_equal" in bit
+    sel = bit.split("def _selected_account(self):", 1)[1].split("def _on_add(self):", 1)[0]
+    assert "coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole))" in sel
+    reload_chunk = bit.split("def _reload_bank_import_view", 1)[1].split(
+        "def _show_bank_import_keyboard_shortcuts_help", 1
+    )[0]
+    assert "combo_int_ids_equal(bid, saved_batch)" in reload_chunk
+    batch_sel = bit.split("def _on_batch_selected(self):", 1)[1].split(
+        "def _on_reconciliation_tolerance_changed", 1
+    )[0]
+    assert "combo_int_ids_equal(b[\"id\"], bid)" in batch_sel
+    txn_ctx = bit.split("def _on_import_txn_context_menu", 1)[1].split(
+        "def _open_import_txn_attachment", 1
+    )[0]
+    assert "tid = (\n            coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole))" in txn_ctx
+    tol_chunk = bit.split("def _on_reconciliation_tolerance_changed", 1)[1].split(
+        "def _load_batch", 1
+    )[0]
+    assert "combo_int_ids_equal(b[\"id\"], self._current_batch_id)" in tol_chunk
+
+
+def test_extra_tabs_rules_edit_matches_rule_row_by_int_safe_id() -> None:
+    et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
+    edit = et.split("def _edit(self):", 1)[1].split("def _del(self):", 1)[0]
+    assert "combo_int_ids_equal(x[\"id\"], rid)" in edit
+
+
+def test_extra_tabs_payroll_post_gl_matches_run_row_by_int_safe_id() -> None:
+    et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
+    post = et.split("def _post_gl(self):", 1)[1].split("def _new_emp(self):", 1)[0]
+    assert "combo_int_ids_equal(x[\"id\"], rid)" in post
+
+
+def test_extra_tabs_payroll_run_tax_lines_lookup_uses_coerce_combo_int_id() -> None:
+    et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
+    chunk = et.split("def _edit_run_taxes(self):", 1)[1].split(
+        "def _on_payroll_run_double_clicked", 1
+    )[0]
+    assert "coerce_combo_int_id(row[\"tax_item_id\"])" in chunk
+    assert "if (lid := coerce_combo_int_id(it[\"id\"])) is not None" in chunk
+    assert "prev = existing.get(lid)" in chunk
+
+
+def test_extra_tabs_edit_invoice_and_bill_coerce_customer_vendor_ids() -> None:
+    et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
+    inv = et.split("def _edit_inv(self):", 1)[1].split("def _record_ar_payment(self):", 1)[0]
+    assert "inv_cust_id = coerce_combo_int_id(inv[\"customer_id\"])" in inv
+    bill = et.split("def _edit_b(self):", 1)[1].split("def _record_ap_payment(self):", 1)[0]
+    assert "bill_vid = coerce_combo_int_id(b[\"vendor_id\"])" in bill
 
 
 def test_bank_import_tab_f5_reload_shortcut_wired() -> None:
@@ -4491,6 +5298,171 @@ def test_bank_import_tab_f5_reload_shortcut_wired() -> None:
     assert "Bank import shortcuts" in text
     assert "Keyboard shortcuts…" in text
     assert "_show_bank_import_keyboard_shortcuts_help" in text
+
+
+def test_bank_import_tab_csv_import_file_dialog_caption() -> None:
+    """CSV import picker explains mapping step and uses consistent filter wording."""
+    bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
+    assert "Import bank transactions CSV (map columns next)" in bit
+    assert "CSV spreadsheets (*.csv);;All files (*.*)" in bit
+
+
+def test_bank_import_csv_flow_column_map_then_statement_then_worker() -> None:
+    """CSV path: map columns → statement period → save profile → threaded import with progress UI."""
+    bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
+    start = bit.index("    def _on_import_csv(self):")
+    end = bit.index("\n    def _on_manage_accounts(self):", start)
+    chunk = bit[start:end]
+    i_col = chunk.index("col_dlg = ColumnMappingDialog")
+    i_per = chunk.index("period_dlg = StatementPeriodDialog")
+    i_save = chunk.index("self._db.save_import_column_profile")
+    i_work = chunk.index("worker = CsvImportWorker")
+    assert i_col < i_per < i_save < i_work
+    assert 'prog_dlg.setWindowTitle("Importing bank CSV")' in chunk
+    assert "CSV import progress. Cancel stops further rows" in chunk
+
+
+def test_bank_import_tab_reconciliation_export_file_dialog_caption() -> None:
+    """Reconciliation export save dialog states format and matches CSV filter wording."""
+    bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
+    assert "Save bank reconciliation report (CSV)" in bit
+    start = bit.index("def _on_export_reconciliation_csv(self):")
+    end = bit.index("\n\n    def _on_reconcile(self):", start)
+    chunk = bit[start:end]
+    assert chunk.count("CSV spreadsheets (*.csv);;All files (*.*)") == 1
+
+
+def test_bank_import_blank_register_table_columns_empty_rows_and_pdf_dialog() -> None:
+    """Right pane: blank register shell (Date…Balance, 15 editable empty rows, Register tab styling) + PDF caption."""
+    bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
+    assert "BlankBankRegisterTable()" in bit
+    assert "Import bank statement PDF (selectable text required)" in bit
+    start = bit.index("class BlankBankRegisterTable")
+    end = bit.index(
+        "\n\n# ===========================================================================\n# ReconciliationPanel",
+        start,
+    )
+    chunk = bit[start:end]
+    assert 'COLUMNS = ["Date", "Description", "Debit", "Credit", "Balance"]' in chunk
+    assert "DEFAULT_ROW_COUNT = 15" in chunk
+    assert "setRowCount(self.DEFAULT_ROW_COUNT)" in chunk
+    assert 'QTableWidgetItem("")' in chunk
+    assert "register_table_style_sheet()" in chunk
+    assert 'setObjectName("bankRegisterTable")' in chunk
+    assert "EditTrigger.DoubleClicked" in chunk
+    assert "NoEditTriggers" not in chunk
+    assert "def reset_blank(self)" in chunk
+    assert "def populate_import_batch(" in chunk
+    assert "beginning_balance: Optional[float]" in chunk
+    assert "running + amt" in chunk or "running = round(running + amt" in chunk
+    assert "amt > 0" in chunk and "amt < 0" in chunk
+    assert "_HEADER_TIPS" in chunk
+    assert "horizontalHeaderItem(col)" in chunk
+    assert "Running total after each row when the batch has a beginning balance " in chunk
+    assert "AMOUNT_NEGATIVE" in chunk
+    assert "bal_it.setForeground" in chunk
+    assert chunk.count("setData(QTABLE_PLAIN_TEXT_ROLE,") >= 3
+    assert "debit_it.setForeground(QColor(AMOUNT_POSITIVE))" in chunk
+    assert "credit_it.setForeground(QColor(AMOUNT_NEGATIVE))" in chunk
+    assert "lbl_recon_header" in bit
+    assert "Statement reconciliation:" in bit
+    assert "_recon_placeholder" in bit
+    assert "_recon_panel_empty_hint" in bit
+
+
+def test_bank_import_load_batch_populates_register_preview() -> None:
+    """Selecting a batch fills the register preview from ``list_transactions``."""
+    bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
+    start = bit.index("    def _load_batch(self, batch):")
+    end = bit.index("\n    # -----------------------------------------------------------------------", start)
+    chunk = bit[start:end]
+    assert chunk.count("self._txn_table.populate_import_batch(") == 1
+    assert "beginning_balance=batch.get(" in chunk
+    assert "list_transactions(" in chunk
+
+
+def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
+    """Bank Import embeds mock extract vs register reconciliation (Matched / Missing / Extra)."""
+    bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
+    assert "from desktop_app.statement_line_match_panel import StatementLineMatchPanel" in bit
+    assert "StatementLineMatchPanel(" in bit
+    assert "_line_match_panel" in bit
+    assert "_line_match_panel.set_context(" in bit
+    assert "line_match_results_ready.connect" in bit
+    assert "_forward_line_match_to_register" in bit
+    assert "if applied and fn is not None:" in bit
+    assert "Stmt match sync" in bit
+    assert "Stmt match was not updated" in bit
+    fwd = bit.split("    def _forward_line_match_to_register", 1)[1].split(
+        "    def _build_ui(self):", 1
+    )[0]
+    assert "coerce_combo_int_id(bank_account_id)" in fwd
+    assert "Invalid bank account id for Stmt match sync." in fwd
+    assert "after_stmt_match_sync" in bit
+    assert "_after_stmt_match_sync" in bit
+    sm = (_DESKTOP_APP_DIR / "statement_line_match_panel.py").read_text(encoding="utf-8")
+    assert "from desktop_app.qt_combo_ids import coerce_combo_int_id" in sm
+    run_sm = sm.split("def _on_run_clicked", 1)[1].split("def _mark_reviewed_selected", 1)[0]
+    assert "coerce_combo_int_id(b.get(\"bank_account_id\"))" in run_sm
+    assert "line_match_results_ready = Signal(int, list)" in sm
+    assert "Run mock extract & compare" in sm
+    assert "compare_statement_to_register" in sm
+    assert "STATUS_MATCHED" in sm
+    assert "Bank register" in sm
+    assert "status bar" in sm.lower()
+    assert "company line" in sm.lower()
+    assert "returns after" in sm.lower() or "returns." in sm.lower()
+
+
+def test_bank_import_recon_panel_empty_hint_when_no_batch_selected() -> None:
+    """Reconciliation stack shows a fixed line when batches exist but none is selected."""
+    bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
+    msg = "Select a batch on the left to view statement reconciliation"
+    assert msg in bit
+    hint_idx = bit.index("_recon_panel_empty_hint = QLabel")
+    assert "color: #A0A0B0; font-size: 11px;" in bit[hint_idx : hint_idx + 400]
+    sync_start = bit.index("    def _sync_right_pane_placeholder_visibility(self)")
+    sync_end = bit.index("    def _reload_bank_import_view(self)", sync_start)
+    sync = bit[sync_start:sync_end]
+    assert sync.count("self._recon_panel_empty_hint.setVisible(True)") == 1
+    assert sync.count("self._recon_panel_empty_hint.setVisible(False)") == 2
+
+
+def test_bank_import_tab_shows_batch_workflow_hint_by_batch_list() -> None:
+    """Bank Import left pane explains how batches appear and what selection does."""
+    bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
+    assert "batch_hint" in bit
+    assert "Batches appear after you" in bit
+
+
+def test_bank_import_tab_shows_import_format_hint_under_header() -> None:
+    """Bank Import shows a visible CSV vs PDF (text-layer) hint below the import buttons."""
+    bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
+    assert "Import formats:" in bit
+    assert "import_hint" in bit
+    assert "selectable" in bit
+
+
+def test_bank_import_on_import_pdf_text_layer_then_statement_scan_fallback_order() -> None:
+    """PDF import tries text extraction + parse, then ``extract_rows_from_statement_scan`` (Phase 7 OCR hook)."""
+    bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
+    start = bit.index("    def _on_import_pdf(self):")
+    end = bit.index("    def _on_import_csv(self):", start)
+    chunk = bit[start:end]
+    assert chunk.count("extract_text_from_pdf(path)") == 1
+    assert chunk.count("parse_statement_text(text)") == 1
+    assert chunk.count("ocr_result = extract_rows_from_statement_scan(") == 1
+    assert chunk.count('mime_type="application/pdf"') == 1
+    assert "StatementScanStatus" in chunk
+    assert "text_layer_empty" in chunk
+    assert "No selectable text was found" in chunk
+    assert "Automatic OCR for scanned statements is not available" in chunk
+    assert "StatementScanStatus.FAILED" in chunk
+    assert "Statement scan could not finish" in chunk
+    tx = chunk.index("text = extract_text_from_pdf(path)")
+    pr = chunk.index("rows = parse_statement_text(text)")
+    oc = chunk.index("ocr_result = extract_rows_from_statement_scan(")
+    assert tx < pr < oc
 
 
 def test_manage_accounts_dialog_accounts_table_opens_bank_import_shortcuts_help() -> None:
@@ -4582,12 +5554,14 @@ def test_grids_context_menus_use_qaction_hover_tooltips() -> None:
     assert inv_chunk.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
 
 
-def test_bank_import_transactions_table_widget_has_hover_tooltip() -> None:
+def test_bank_import_batch_table_column_header_tooltips() -> None:
+    """Batch list headers explain import date, statement span, and reconciled flag."""
     bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
-    start = bit.index("class TransactionsTable")
-    end = bit.index("\n\n# ===========================================================================", start)
-    chunk = bit[start:end]
-    assert "self.setToolTip(" in chunk
+    i = bit.index('self._batch_table.setHorizontalHeaderLabels(["Imported", "Statement Period", "Reconciled"])')
+    window = bit[i : i + 700]
+    assert window.count("horizontalHeaderItem(col)") >= 1
+    assert "Date this batch was imported (YYYY-MM-DD)." in window
+    assert "Whether Mark Reconciled has been applied for this batch." in window
 
 
 def test_bank_import_context_menu_copy_row_tooltips_mention_backup_safety() -> None:
@@ -4610,6 +5584,90 @@ def test_register_tab_persists_header_state_via_qsettings() -> None:
     text = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
     assert "saveState()" in text and "restoreState" in text
     assert "register/table_header_state_" in text
+
+
+def test_register_and_bank_import_module_docstrings_document_tab_architecture() -> None:
+    """Module docstrings record: Register = primary bank_transactions grid; Bank Import = import + recon."""
+    reg = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
+    reg_doc = reg.split('"""', 2)[1]
+    assert "Architecture note" in reg_doc
+    assert "primary" in reg_doc.lower()
+    assert "bank account register" in reg_doc.lower()
+    assert "Bank Import" in reg_doc
+    assert "manual" in reg_doc.lower() or "add transaction" in reg_doc.lower()
+    bi = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
+    bi_doc = bi.split('"""', 2)[1]
+    assert "**Architecture:**" in bi_doc
+    assert "Bank register" in bi_doc
+    assert "reconciliation" in bi_doc.lower()
+
+
+def test_register_tab_transfer_and_manual_link_coerce_combo_int_ids() -> None:
+    rtab = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
+    assert "coerce_combo_int_id(cb.currentData())" in rtab
+    assert "coerce_combo_int_id(pay.currentData())" in rtab
+    sel = rtab.split("def _selected_txn_ids(self)", 1)[1].split(
+        "def _on_register_cell_double_clicked", 1
+    )[0]
+    assert (
+        "coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole))" in sel
+    ), "Selected register rows should resolve txn id via int-safe UserRole coercion"
+    stmt = rtab.split("def apply_line_match_results_from_import", 1)[1].split(
+        "def _select_bank_account_for_overlay", 1
+    )[0]
+    assert "coerce_combo_int_id(rid)" in stmt
+    assert "want_acct = coerce_combo_int_id(bank_account_id)" in stmt
+    demo = rtab.split("def _maybe_fill_demo_reconciliation_overlay", 1)[1].split(
+        "def _refresh_all_recon_cells", 1
+    )[0]
+    assert "coerce_combo_int_id(res.get(\"register_id\"))" in demo
+
+
+def test_register_tab_min_visible_rows_and_reconciliation_mode() -> None:
+    """Register always pads visible rows; reconciliation mode adds banner + Stmt match column."""
+    import re
+
+    text = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
+    m = re.search(r"_REGISTER_MIN_VISIBLE_ROWS = (\d+)", text)
+    assert m is not None
+    assert 15 <= int(m.group(1)) <= 25
+    assert "Reconciliation Mode Active" in text
+    assert "_COL_RECON_STATUS" in text
+    assert "n_vis = max(n_data, _REGISTER_MIN_VISIBLE_ROWS)" in text
+    assert "def _fill_pad_row(self, row: int)" in text
+    assert "def _on_reconciliation_mode_toggled(self" in text
+    assert "horizontalHeader().setSectionHidden" in text
+    for needle in (
+        "Reconciliation mode",
+        "Stmt match",
+        "_REGISTER_HEADERS_FULL",
+        "_maybe_fill_demo_reconciliation_overlay",
+        "apply_line_match_results_from_import",
+        "_select_bank_account_for_overlay(self, bank_account_id: int) -> bool",
+        "_coerce_register_account_id",
+        "_register_account_ids_equal",
+        "combo_index_for_int_user_data",
+        "_recon_overlay_bank_import_mode",
+    ):
+        assert needle in text, needle
+
+
+def test_register_tab_manual_entry_dialog_and_insert_wiring() -> None:
+    """Register exposes Add transaction… and persists via BankDatabase.insert_manual_transaction."""
+    text = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
+    assert "Add transaction…" in text
+    assert "class ManualTransactionDialog(QDialog):" in text
+    assert "insert_manual_transaction" in text
+    assert "_on_add_manual_transaction" in text
+    assert "parse_amount" in text
+    assert "QDateEdit" in text
+    load = text.index("def _load_transactions(self, bank_account_id: int):")
+    load_end = text.index("def _set_footer(self, debits: float", load)
+    load_chunk = text[load:load_end]
+    assert "n_vis = max(n_data, _REGISTER_MIN_VISIBLE_ROWS)" in load_chunk
+    assert "setSortingEnabled(True)" in load_chunk
+    assert "EditTrigger.SelectedClicked" in text
+    assert "SelectionBehavior.SelectItems" in text
 
 
 def test_register_tab_cleared_actions_document_shortcuts_in_tooltips() -> None:
@@ -4661,6 +5719,10 @@ def test_register_keyboard_shortcuts_help_text_matches_wired_chords() -> None:
     end = text.index("\n\nclass RegisterTab", start)
     chunk = text[start:end]
     for needle in (
+        "Add transaction…",
+        "manual-entry batch",
+        "Reconciliation mode",
+        "Practice rows",
         "Link payment…",
         "F5 — Refresh",
         "Ctrl+Shift+G",
@@ -4671,6 +5733,8 @@ def test_register_keyboard_shortcuts_help_text_matches_wired_chords() -> None:
         "More tab shortcuts (F5)",
         "Business shortcuts",
         "Bank import shortcuts",
+        "status bar",
+        "company line",
     ):
         assert needle in chunk, f"register shortcuts help should mention {needle!r}"
 

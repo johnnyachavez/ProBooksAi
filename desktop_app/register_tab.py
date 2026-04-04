@@ -1,9 +1,22 @@
 """
 desktop_app.register_tab
 ========================
+Architecture note
+-----------------
+This tab is the **primary** day-to-day **bank account register** for ``bank_transactions``
+(categorization, cleared flags, GL posting, payment links, running balance). **Bank Import**
+owns batch CSV/PDF intake and statement reconciliation; the **R** in **Clr** is a
+reconciled-batch indicator on register rows, not a dedicated reconciliation screen by itself.
+**Add transaction…** saves manual lines into ``bank_transactions`` via a per-account sentinel batch.
+A **separate** general register detached from imports would be new product scope if the app
+later splits those views.
+
 Phase 3 – Bank register: chronological transactions for one bank account with
-debit/credit columns, running balance, memo and COA inline edits, sortable columns
+debit/credit columns, running balance, memo and COA inline edits
 (txn id on Date ``UserRole``; balance stays chronological), and footer totals.
+**Add transaction…** persists new lines via a per-account sentinel import batch (``(Manual entry)``); same ``bank_transactions`` rows as CSV imports.
+The grid always shows at least **20** rows (practice lines when short on data; UI-only, not saved).
+**Reconciliation mode** shows a banner and **Stmt match** overlay column (Matched / Missing / Extra demo from mock extract); register stays the base layer.
 Payee column uses a two-line layout (description, then COA or memo sub-line).
 Number column shows reference on the first line and a short type tag (DEP / PMT /
 XFER / TXN) on the second. **Clr** shows **C** when the row is marked cleared on the register, else **R** when the
@@ -32,11 +45,13 @@ from functools import partial
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, QSettings
+from PySide6.QtCore import QDate, Qt, QSettings
 from PySide6.QtGui import QBrush, QColor, QHideEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QComboBox,
+    QDateEdit,
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
@@ -58,12 +73,24 @@ from PySide6.QtWidgets import (
 
 from probooksai import business
 from probooksai.coa_ai_suggest import coa_hints
-from probooksai.bank_import import BankDatabase
+from probooksai.bank_import import BankDatabase, parse_amount
+from probooksai.statement_line_match import (
+    STATUS_EXTRA,
+    STATUS_MATCHED,
+    STATUS_MISSING,
+    compare_statement_to_register,
+    mock_statement_lines_for_comparison,
+)
 from probooksai.coa_db import COADatabase
 from probooksai.gl import GLDatabase
 
 from desktop_app.audit_dialog import show_entity_audit_history
 from desktop_app.open_attachment import open_local_attachment
+from desktop_app.qt_combo_ids import (
+    coerce_combo_int_id,
+    combo_index_for_int_user_data,
+    combo_int_ids_equal,
+)
 from desktop_app.qt_mnemonic import (
     escape_ampersand_for_qt,
     message_box_information_ok,
@@ -110,6 +137,11 @@ _HEADERS = [
     "Match",
 ]
 
+# Visible grid rows when there are fewer saved transactions (editable practice rows, UI-only).
+_REGISTER_MIN_VISIBLE_ROWS = 20
+_COL_RECON_STATUS = 10
+_REGISTER_HEADERS_FULL = _HEADERS + ["Stmt match"]
+
 _MISSING_COA_BG = QColor("#3D3319")
 _NORMAL_BG = QColor(BG_PRIMARY)
 
@@ -150,11 +182,8 @@ def _register_payee_two_line_plain(txn: dict) -> str:
 
 def _register_number_type_tag(txn: dict) -> str:
     """Second line of Number column: inferred register type (QuickBooks-style hint)."""
-    xfer = txn.get("transfer_to_bank_account_id")
-    try:
-        has_xfer = xfer is not None and int(xfer) > 0
-    except (TypeError, ValueError):
-        has_xfer = False
+    xfer_id = coerce_combo_int_id(txn.get("transfer_to_bank_account_id"))
+    has_xfer = xfer_id is not None and xfer_id > 0
     if has_xfer:
         return "XFER"
     try:
@@ -181,13 +210,10 @@ def _batch_reconciled_map(conn: sqlite3.Connection, txns: list) -> dict[int, boo
     ids: set[int] = set()
     for txn in txns:
         d = dict(txn)
-        bid = d.get("batch_id")
+        bid = coerce_combo_int_id(d.get("batch_id"))
         if bid is None:
             continue
-        try:
-            ids.add(int(bid))
-        except (TypeError, ValueError):
-            continue
+        ids.add(bid)
     if not ids:
         return {}
     qmarks = ",".join("?" * len(ids))
@@ -198,14 +224,107 @@ def _batch_reconciled_map(conn: sqlite3.Connection, txns: list) -> dict[int, boo
     out: dict[int, bool] = {}
     for row in cur.fetchall():
         r = dict(row)
-        out[int(r["id"])] = int(r.get("is_reconciled") or 0) == 1
+        bid = coerce_combo_int_id(r["id"])
+        if bid is None:
+            continue
+        out[bid] = int(r.get("is_reconciled") or 0) == 1
     return out
+
+
+def _coerce_register_account_id(raw: object) -> int | None:
+    return coerce_combo_int_id(raw)
+
+
+def _register_account_ids_equal(a: object, b: object) -> bool:
+    """True when both are missing or represent the same bank account id (after int coercion)."""
+    return combo_int_ids_equal(a, b)
+
+
+class ManualTransactionDialog(QDialog):
+    """One manual bank line for :meth:`BankDatabase.insert_manual_transaction`."""
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.setWindowTitle("Add bank transaction")
+        self.setMinimumWidth(420)
+        form = QFormLayout(self)
+        self._date = QDateEdit()
+        self._date.setCalendarPopup(True)
+        self._date.setDisplayFormat("yyyy-MM-dd")
+        self._date.setDate(QDate.currentDate())
+        self._date.setToolTip("Transaction date stored as YYYY-MM-DD in the company database.")
+        form.addRow("Date", self._date)
+        self._amount = QLineEdit()
+        self._amount.setPlaceholderText("e.g. 100.00 or -25.50")
+        self._amount.setToolTip(
+            "Signed amount: positive = deposit / inflow, negative = payment / outflow "
+            "(same convention as CSV import)."
+        )
+        form.addRow("Amount", self._amount)
+        self._desc = QLineEdit()
+        self._desc.setToolTip("Payee or description (first line of the Payee column).")
+        form.addRow("Payee / description", self._desc)
+        self._ref = QLineEdit()
+        self._ref.setToolTip("Optional check number or bank reference.")
+        form.addRow("Number / ref", self._ref)
+        self._memo = QLineEdit()
+        self._memo.setToolTip("Optional memo (editable later in the register grid).")
+        form.addRow("Memo", self._memo)
+        bb = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        tip_qdialog_button_box(
+            bb,
+            ok="Insert this row into bank_transactions (manual-entry batch). "
+            "Company .db: File → Backup / Restore (probooks.backup).",
+            cancel="Close without adding a transaction.",
+        )
+        bb.accepted.connect(self._try_accept)
+        bb.rejected.connect(self.reject)
+        form.addRow(bb)
+
+    def _try_accept(self) -> None:
+        amt = parse_amount(self._amount.text().strip())
+        if amt is None:
+            message_box_warning_ok(
+                self,
+                "Amount",
+                "Enter a valid amount (e.g. 50 or -12.50).",
+                ok_tip="Close; use a number. Positive = deposit, negative = payment.",
+            )
+            return
+        if amt == 0:
+            message_box_warning_ok(
+                self,
+                "Amount",
+                "Amount cannot be zero.",
+                ok_tip="Close; enter a non-zero amount.",
+            )
+            return
+        self.accept()
+
+    def values(self) -> dict:
+        return {
+            "txn_date": self._date.date().toString("yyyy-MM-dd"),
+            "amount": parse_amount(self._amount.text().strip()) or 0.0,
+            "description": self._desc.text().strip(),
+            "ref_number": self._ref.text().strip(),
+            "memo": self._memo.text().strip(),
+        }
 
 
 def _register_keyboard_shortcuts_help_text() -> str:
     """Plain text for Register shortcuts (keep aligned with ``QShortcut`` wiring)."""
     return (
         "These shortcuts apply when the Register tab or its controls have focus:\n\n"
+        "Add transaction… — opens a dialog to save a new line to the register "
+        "(same bank_transactions table as imports; manual-entry batch).\n\n"
+        "Reconciliation mode — checkbox next to Filter: banner + Stmt match overlay (demo); "
+        "register grid stays visible underneath. "
+        "Bank Import **Run mock extract & compare** can populate Stmt match for the same account "
+        "and switch the main window here; the main **status bar** may show a short confirmation, "
+        "then restore the usual company line.\n\n"
+        "Practice rows — blank rows pad the grid to ~20 lines; editable for layout only (not saved).\n\n"
         "Link payment… — suggested-matches list: right-click (including empty area) for "
         "Keyboard shortcuts… (same as this dialog).\n\n"
         "F5 — Refresh\n"
@@ -241,7 +360,8 @@ def show_register_keyboard_shortcuts_dialog(parent: QWidget) -> None:
 
 class RegisterTab(QWidget):
     """
-    Check-register style view for all transactions on a selected bank account.
+    Check-register style view for all transactions on a selected bank account,
+    with **Add transaction…** for persisted manual lines (sentinel import batch).
     """
 
     def __init__(
@@ -258,12 +378,16 @@ class RegisterTab(QWidget):
         self._coa_choices: list[str] = self._coa_db.display_list()
         self._current_account_id: Optional[int] = None
         self._populating = False
+        self._reconciliation_mode = False
+        self._recon_txn_status: dict[int, str] = {}
+        self._recon_overlay_bank_import_mode = False
         self._build_ui()
 
     def _build_ui(self):
         self.setToolTip(
             "Bank register for one account: categorize, splits, transfer links, cleared flags, attachments, and post to GL "
             "(F5 refreshes when Register has focus). "
+            "Use Add transaction… to type new lines into the database (manual-entry batch). "
             "Same company SQLite database as other main tabs; File → Backup / Restore (probooks.backup)."
         )
         layout = QVBoxLayout(self)
@@ -289,6 +413,14 @@ class RegisterTab(QWidget):
         )
         btn_refresh.clicked.connect(self._reload_current)
         row.addWidget(btn_refresh)
+        btn_add = QPushButton("Add transaction…")
+        btn_add.setToolTip(
+            "Open a dialog to insert one bank transaction for the selected account "
+            "(persisted; same table as CSV imports, manual-entry batch). "
+            "Back up the company .db before bulk entry (File → Backup / probooks backup)."
+        )
+        btn_add.clicked.connect(self._on_add_manual_transaction)
+        row.addWidget(btn_add)
         self._btn_post = QPushButton("Post selected to GL")
         self._btn_post.setToolTip(
             "Post selected unposted rows to the general ledger (requires COA and mapped cash accounts). "
@@ -331,6 +463,14 @@ class RegisterTab(QWidget):
         self._restore_register_filter_from_settings()
         self._filter_combo.currentIndexChanged.connect(self._on_register_filter_changed)
         filt.addWidget(self._filter_combo)
+        self._chk_recon = QCheckBox("Reconciliation mode")
+        self._chk_recon.setToolTip(
+            "Show the Stmt match overlay (Matched / Missing / Extra) on the register. "
+            "The grid stays the same; demo classification uses mock statement lines vs loaded transactions. "
+            "Practice rows below data stay UI-only."
+        )
+        self._chk_recon.toggled.connect(self._on_reconciliation_mode_toggled)
+        filt.addWidget(self._chk_recon)
         filt.addStretch()
         layout.addLayout(filt)
 
@@ -386,18 +526,37 @@ class RegisterTab(QWidget):
         tools.addStretch()
         layout.addLayout(tools)
 
+        self._recon_banner = QLabel("Reconciliation Mode Active")
+        self._recon_banner.setVisible(False)
+        self._recon_banner.setWordWrap(True)
+        self._recon_banner.setStyleSheet(
+            "background-color: #3a3518; color: #f5e6a2; padding: 8px 12px; "
+            "font-weight: bold; border-radius: 4px;"
+        )
+        self._recon_banner.setToolTip(
+            "Statement line-match overlay is on: see Stmt match column (demo Matched / Missing / Extra). "
+            "Register layout is unchanged."
+        )
+        layout.addWidget(self._recon_banner)
+
         self._table = QTableWidget()
         self._table.setObjectName("bankRegisterTable")
         self._table.setStyleSheet(register_table_style_sheet())
-        self._table.setColumnCount(len(_HEADERS))
-        self._table.setHorizontalHeaderLabels(_HEADERS)
+        self._table.setColumnCount(len(_REGISTER_HEADERS_FULL))
+        self._table.setHorizontalHeaderLabels(_REGISTER_HEADERS_FULL)
         clr_header = self._table.horizontalHeaderItem(_COL_CLR)
         if clr_header is not None:
             clr_header.setToolTip(
                 "C: cleared on this register. R: CSV import batch is reconciled in Bank Import. "
                 "Double-click a cell here to toggle cleared when the row allows it."
             )
-        self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
+        self._table.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked
+            | QAbstractItemView.EditTrigger.EditKeyPressed
+            | QAbstractItemView.EditTrigger.AnyKeyPressed
+            | QAbstractItemView.EditTrigger.SelectedClicked
+        )
         self._table.setAlternatingRowColors(True)
         # Native grid is unreliable once app-level QTable styles apply; cell borders come from the stylesheet.
         self._table.setShowGrid(False)
@@ -407,13 +566,19 @@ class RegisterTab(QWidget):
         self._table.horizontalHeader().setSectionResizeMode(_COL_COA, QHeaderView.ResizeMode.Stretch)
         self._table.horizontalHeader().setSectionResizeMode(_COL_CLR, QHeaderView.ResizeMode.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(_COL_LINK, QHeaderView.ResizeMode.ResizeToContents)
-        self._table.setSortingEnabled(True)
+        self._table.horizontalHeader().setSectionResizeMode(
+            _COL_RECON_STATUS, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self._table.horizontalHeader().setSectionHidden(_COL_RECON_STATUS, True)
+        self._table.setSortingEnabled(False)
         self._table.itemChanged.connect(self._on_item_changed)
         self._table.cellDoubleClicked.connect(self._on_register_cell_double_clicked)
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._on_register_context_menu)
         self._table.setToolTip(
             "Transactions for the selected bank account and filter; edit memo/COA inline where allowed. "
+            "The grid keeps ~20 visible rows (practice lines when you have fewer saved transactions). "
+            "Use Add transaction… in the toolbar for new persisted lines. "
             "Right-click for Keyboard shortcuts… (empty area OK). F5 refresh; Ctrl+Shift+G post; "
             "Ctrl+Shift+C / Ctrl+Shift+U cleared; Ctrl+Shift+E export. "
             "Same company .db as other tabs (File → Backup / Restore, probooks.backup)."
@@ -447,7 +612,7 @@ class RegisterTab(QWidget):
         )
         self._lbl_net = QLabel("Net: —")
         self._lbl_net.setToolTip(
-            "Debits minus credits for visible rows (running balance order may differ when sorted)."
+            "Debits minus credits for rows currently visible in the grid (respects the filter)."
         )
         for w in (self._lbl_debits, self._lbl_credits, self._lbl_net):
             w.setStyleSheet("font-weight: bold;")
@@ -467,7 +632,10 @@ class RegisterTab(QWidget):
             "Assign a COA account to clear the highlight. "
             "Starred (★) items at the top of the COA list are hints from your rules "
             "and, when OPENAI_API_KEY is set, optional AI picks. "
-            "Balance is the running total in date order (not recalculated for other sorts). "
+            "Balance is the running total in date order for loaded rows. "
+            "Add transaction… saves new lines to the database (manual-entry batch). "
+            "Extra visible rows pad the grid (practice typing; not saved). "
+            "Reconciliation mode adds Stmt match (Matched / Missing / Extra) without hiding the register. "
             "Filter, last bank account, and column widths are remembered per company file for the next session. "
             "With focus on this tab: F5 refreshes, Ctrl+Shift+G posts selected to GL, Ctrl+Shift+C marks cleared, "
             "Ctrl+Shift+U clears cleared, Ctrl+Shift+E exports CSV. "
@@ -481,6 +649,8 @@ class RegisterTab(QWidget):
             "and Help / right-click for Keyboard shortcuts…."
         )
         layout.addWidget(tip)
+
+        self._clear_table()
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -549,42 +719,47 @@ class RegisterTab(QWidget):
             self._acct_combo.addItem("(no bank accounts)", None)
         else:
             for acct in accounts:
+                aid = coerce_combo_int_id(acct["id"])
+                if aid is None:
+                    continue
                 label = f"{acct['name']} – {acct['bank_name'] or 'Bank'}"
-                self._acct_combo.addItem(
-                    escape_ampersand_for_qt(label), acct["id"]
-                )
+                self._acct_combo.addItem(escape_ampersand_for_qt(label), aid)
         self._acct_combo.blockSignals(False)
         picked = False
         if prev is not None:
-            for i in range(self._acct_combo.count()):
-                if self._acct_combo.itemData(i) == prev:
-                    self._acct_combo.setCurrentIndex(i)
-                    picked = True
-                    break
+            ix = combo_index_for_int_user_data(self._acct_combo, prev)
+            if ix is not None:
+                self._acct_combo.setCurrentIndex(ix)
+                picked = True
         if not picked and accounts:
             sid_raw = QSettings().value(self._register_bank_account_settings_key(), -1)
-            try:
-                sid = int(sid_raw) if sid_raw is not None else -1
-            except (TypeError, ValueError):
+            sid = coerce_combo_int_id(sid_raw)
+            if sid is None:
                 sid = -1
             if sid > 0:
-                for i in range(self._acct_combo.count()):
-                    if self._acct_combo.itemData(i) == sid:
-                        self._acct_combo.setCurrentIndex(i)
-                        picked = True
-                        break
+                ix = combo_index_for_int_user_data(self._acct_combo, sid)
+                if ix is not None:
+                    self._acct_combo.setCurrentIndex(ix)
+                    picked = True
         self._on_account_changed()
 
     def _on_account_changed(self):
-        aid = self._acct_combo.currentData()
+        aid = _coerce_register_account_id(self._acct_combo.currentData())
+        prev_id = self._current_account_id
+        if (
+            not _register_account_ids_equal(prev_id, aid)
+            and prev_id is not None
+        ):
+            self._recon_overlay_bank_import_mode = False
+            self._recon_txn_status.clear()
         self._current_account_id = aid
         s = QSettings()
         if aid is None:
             s.remove(self._register_bank_account_settings_key())
             self._clear_table()
             return
-        s.setValue(self._register_bank_account_settings_key(), int(aid))
-        self._load_transactions(int(aid))
+        s.setValue(self._register_bank_account_settings_key(), aid)
+        self._load_transactions(aid)
 
     def _reload_current(self):
         if self._current_account_id is not None:
@@ -593,12 +768,144 @@ class RegisterTab(QWidget):
             self._clear_table()
 
     def _clear_table(self):
+        self._recon_txn_status.clear()
+        self._recon_overlay_bank_import_mode = False
         self._populating = True
         self._table.setSortingEnabled(False)
-        self._table.setRowCount(0)
-        self._table.setSortingEnabled(True)
+        self._table.blockSignals(True)
+        self._table.setRowCount(_REGISTER_MIN_VISIBLE_ROWS)
+        for r in range(_REGISTER_MIN_VISIBLE_ROWS):
+            self._fill_pad_row(r)
+        self._table.blockSignals(False)
         self._populating = False
         self._set_footer(0.0, 0.0, 0.0)
+        self._refresh_all_recon_cells()
+
+    def _on_reconciliation_mode_toggled(self, checked: bool) -> None:
+        self._reconciliation_mode = bool(checked)
+        self._recon_banner.setVisible(self._reconciliation_mode)
+        self._table.horizontalHeader().setSectionHidden(
+            _COL_RECON_STATUS, not self._reconciliation_mode
+        )
+        if not self._reconciliation_mode:
+            self._recon_txn_status.clear()
+            self._recon_overlay_bank_import_mode = False
+        self._reload_current()
+
+    def apply_line_match_results_from_import(
+        self, bank_account_id: int, results: list[dict]
+    ) -> bool:
+        """
+        Apply Bank Import **Run mock extract & compare** results to **Stmt match** overlay.
+
+        Enables reconciliation mode, selects the same bank account when possible, and preserves
+        statuses across F5 / filter reloads until the user turns reconciliation off or switches account.
+
+        Returns False if *bank_account_id* is not in the register account list; reconciliation
+        mode is left off in that case (after a combo refresh).
+        """
+        self._refresh_account_combo()
+        self._recon_overlay_bank_import_mode = True
+        self._recon_txn_status.clear()
+        for res in results:
+            rid = res.get("register_id")
+            rk = coerce_combo_int_id(rid)
+            if rk is None:
+                continue
+            self._recon_txn_status[rk] = str(res.get("status") or "")
+        self._chk_recon.blockSignals(True)
+        self._chk_recon.setChecked(True)
+        self._chk_recon.blockSignals(False)
+        self._reconciliation_mode = True
+        self._recon_banner.setVisible(True)
+        self._table.horizontalHeader().setSectionHidden(_COL_RECON_STATUS, False)
+        want_acct = coerce_combo_int_id(bank_account_id)
+        if want_acct is None or not self._select_bank_account_for_overlay(want_acct):
+            self._chk_recon.blockSignals(True)
+            self._chk_recon.setChecked(False)
+            self._chk_recon.blockSignals(False)
+            self._on_reconciliation_mode_toggled(False)
+            return False
+        return True
+
+    def _select_bank_account_for_overlay(self, bank_account_id: int) -> bool:
+        """Align combo + settings with *bank_account_id* without clearing Bank Import overlay state."""
+        want = coerce_combo_int_id(bank_account_id)
+        if want is None:
+            return False
+        self._acct_combo.blockSignals(True)
+        ix = combo_index_for_int_user_data(self._acct_combo, want)
+        if ix is not None:
+            self._acct_combo.setCurrentIndex(ix)
+        self._acct_combo.blockSignals(False)
+        if ix is None:
+            return False
+        self._current_account_id = want
+        QSettings().setValue(
+            self._register_bank_account_settings_key(), want
+        )
+        self._load_transactions(want)
+        return True
+
+    def _maybe_fill_demo_reconciliation_overlay(self, register_dicts: list[dict]) -> None:
+        """Demo Matched / Missing / Extra from mock statement extract (no separate view)."""
+        if not self._reconciliation_mode:
+            self._recon_txn_status.clear()
+            self._recon_overlay_bank_import_mode = False
+            return
+        if self._recon_overlay_bank_import_mode:
+            return
+        self._recon_txn_status.clear()
+        if not register_dicts:
+            return
+        stmt = mock_statement_lines_for_comparison(register_dicts)
+        for res in compare_statement_to_register(stmt, register_dicts):
+            rk = coerce_combo_int_id(res.get("register_id"))
+            if rk is None:
+                continue
+            self._recon_txn_status[rk] = str(res.get("status") or "")
+
+    def _refresh_all_recon_cells(self) -> None:
+        ro_flags = Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
+        for r in range(self._table.rowCount()):
+            id_it = self._table.item(r, _COL_DATE)
+            tid = None
+            if id_it is not None:
+                tid = coerce_combo_int_id(id_it.data(Qt.ItemDataRole.UserRole))
+            cell = self._table.item(r, _COL_RECON_STATUS)
+            if cell is None:
+                cell = plain_display_table_item("")
+                cell.setFlags(ro_flags)
+                self._table.setItem(r, _COL_RECON_STATUS, cell)
+            cell.setFlags(ro_flags)
+            cell.setBackground(QBrush())
+            if tid is None:
+                cell.setText("")
+                cell.setToolTip(
+                    "Practice row — not in the database. Stmt match is blank."
+                )
+                continue
+            st = self._recon_txn_status.get(tid, "")
+            cell.setText(st)
+            src = (
+                "Bank Import line match"
+                if self._recon_overlay_bank_import_mode
+                else "Mock statement line"
+            )
+            if st == STATUS_MATCHED:
+                cell.setForeground(QColor("#6ecf8a"))
+                cell.setToolTip(f"{src}: matched this register transaction.")
+            elif st == STATUS_MISSING:
+                cell.setForeground(QColor("#e8b060"))
+                cell.setToolTip(f"{src}: no register match (demo).")
+            elif st == STATUS_EXTRA:
+                cell.setForeground(QColor("#7eb3e8"))
+                cell.setToolTip(f"{src}: register line with no statement counterpart (demo).")
+            else:
+                cell.setForeground(QColor())
+                cell.setToolTip(
+                    "Stmt match overlay (Reconciliation mode). Empty when not classified."
+                )
 
     def _apply_payee_two_line_to_item(self, it: QTableWidgetItem, txn: dict) -> None:
         raw = _register_payee_two_line_plain(txn)
@@ -609,6 +916,113 @@ class RegisterTab(QWidget):
         self._table.resizeRowToContents(row)
         if self._table.rowHeight(row) < 40:
             self._table.setRowHeight(row, 40)
+
+    def _fill_pad_row(self, row: int) -> None:
+        """Editable practice row (no txn id); not persisted. Keeps the register grid visibly filled."""
+        edit_flags = (
+            Qt.ItemFlag.ItemIsSelectable
+            | Qt.ItemFlag.ItemIsEnabled
+            | Qt.ItemFlag.ItemIsEditable
+        )
+        ro_flags = Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
+        top_left = Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
+        right_top = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop
+
+        d_it = QTableWidgetItem("")
+        d_it.setFlags(edit_flags)
+        d_it.setTextAlignment(top_left)
+        d_it.setToolTip("Practice row: date is not saved until you use Add transaction….")
+        self._table.setItem(row, _COL_DATE, d_it)
+
+        ref_it = QTableWidgetItem("")
+        ref_it.setFlags(edit_flags)
+        ref_it.setTextAlignment(top_left)
+        ref_it.setToolTip("Practice row: not saved to the database.")
+        self._table.setItem(row, _COL_REF, ref_it)
+
+        pay_it = QTableWidgetItem("")
+        pay_it.setFlags(edit_flags)
+        pay_it.setTextAlignment(top_left)
+        pay_it.setToolTip("Practice row: not saved to the database.")
+        self._table.setItem(row, _COL_PAYEE, pay_it)
+
+        memo_it = QTableWidgetItem("")
+        memo_it.setFlags(edit_flags)
+        memo_it.setTextAlignment(top_left)
+        memo_it.setToolTip("Practice row: not saved to the database.")
+        self._table.setItem(row, _COL_MEMO, memo_it)
+
+        deb_it = QTableWidgetItem("")
+        deb_it.setFlags(edit_flags)
+        deb_it.setTextAlignment(right_top)
+        deb_it.setToolTip("Practice row: debit amount is UI-only here.")
+        self._table.setItem(row, _COL_DEBIT, deb_it)
+
+        cred_it = QTableWidgetItem("")
+        cred_it.setFlags(edit_flags)
+        cred_it.setTextAlignment(right_top)
+        cred_it.setToolTip("Practice row: credit amount is UI-only here.")
+        self._table.setItem(row, _COL_CREDIT, cred_it)
+
+        clr_it = plain_display_table_item("")
+        clr_it.setFlags(ro_flags)
+        clr_it.setTextAlignment(
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop
+        )
+        clr_it.setToolTip("Practice row: Clr applies to saved transactions only.")
+        self._table.setItem(row, _COL_CLR, clr_it)
+
+        bal_it = QTableWidgetItem("")
+        bal_it.setFlags(ro_flags)
+        bal_it.setTextAlignment(right_top)
+        bal_it.setToolTip("Practice row: balance is shown for saved rows above.")
+        self._table.setItem(row, _COL_BAL, bal_it)
+
+        coa_it = plain_display_table_item("—")
+        coa_it.setFlags(ro_flags)
+        coa_it.setTextAlignment(top_left)
+        coa_it.setToolTip("Practice row: use Add transaction… to save a line, then pick COA.")
+        self._table.setItem(row, _COL_COA, coa_it)
+
+        link_it = plain_display_table_item("")
+        link_it.setFlags(ro_flags)
+        link_it.setTextAlignment(top_left)
+        link_it.setToolTip("Practice row: Match applies to saved rows.")
+        self._table.setItem(row, _COL_LINK, link_it)
+
+        self._resize_register_row(row)
+
+    def _on_add_manual_transaction(self) -> None:
+        if self._current_account_id is None:
+            message_box_information_ok(
+                self,
+                "No account",
+                "Select a bank account before adding a transaction.",
+                ok_tip="Close; choose an account in the Bank account combo, then try again.",
+            )
+            return
+        dlg = ManualTransactionDialog(self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        v = dlg.values()
+        try:
+            self._db.insert_manual_transaction(
+                self._current_account_id,
+                v["txn_date"],
+                float(v["amount"]),
+                description=v["description"],
+                ref_number=v["ref_number"],
+                memo=v["memo"],
+            )
+        except sqlite3.IntegrityError as exc:
+            message_box_warning_ok(
+                self,
+                "Cannot save",
+                escape_ampersand_for_qt(str(exc)),
+                ok_tip="Close; this row collided with an existing fingerprint (rare). Try again.",
+            )
+            return
+        self._reload_current()
 
     def _register_filter_param(self) -> Optional[str]:
         data = self._filter_combo.currentData()
@@ -623,7 +1037,7 @@ class RegisterTab(QWidget):
             it = self._table.item(r, _COL_DATE)
             if it is None:
                 continue
-            tid = it.data(Qt.ItemDataRole.UserRole)
+            tid = coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole))
             if tid is not None:
                 ids.append(tid)
         return ids
@@ -635,15 +1049,15 @@ class RegisterTab(QWidget):
         id_item = self._table.item(row, _COL_DATE)
         if id_item is None:
             return
-        tid = id_item.data(Qt.ItemDataRole.UserRole)
+        tid = coerce_combo_int_id(id_item.data(Qt.ItemDataRole.UserRole))
         if tid is None:
             return
-        txn = self._db.get_transaction(int(tid))
+        txn = self._db.get_transaction(tid)
         if txn is None:
             return
         cur = int(dict(txn).get("cleared") or 0) == 1
         try:
-            self._db.update_transaction(int(tid), cleared=0 if cur else 1)
+            self._db.update_transaction(tid, cleared=0 if cur else 1)
         except ValueError as exc:
             message_box_warning_ok(
                 self,
@@ -673,25 +1087,26 @@ class RegisterTab(QWidget):
             return
         row = idx.row()
         it = self._table.item(row, _COL_DATE)
-        if it is None or it.data(Qt.ItemDataRole.UserRole) is None:
+        tid = (
+            coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole)) if it is not None else None
+        )
+        if tid is None:
             menu.exec(self._table.viewport().mapToGlobal(pos))
             return
-        tid = it.data(Qt.ItemDataRole.UserRole)
         menu.addSeparator()
         act_att = menu.addAction(
             "Open attachment…",
-            partial(self._open_register_attachment, int(tid)),
+            partial(self._open_register_attachment, tid),
         )
         act_att.setToolTip("Open the linked file for this register row if a path is set.")
-        tid_int = int(tid)
         act_clr = menu.addAction(
             "Mark cleared",
-            partial(self._set_cleared_on_ids, [tid_int], 1),
+            partial(self._set_cleared_on_ids, [tid], 1),
         )
         act_clr.setToolTip("Set the cleared flag on this row (register cleared column).")
         act_uclr = menu.addAction(
             "Clear cleared",
-            partial(self._set_cleared_on_ids, [tid_int], 0),
+            partial(self._set_cleared_on_ids, [tid], 0),
         )
         act_uclr.setToolTip("Clear the cleared flag on this row.")
         act_copy = menu.addAction("Copy row", partial(copy_table_row_as_tsv, self._table, row))
@@ -709,7 +1124,7 @@ class RegisterTab(QWidget):
                 self,
                 self._db._conn,
                 "bank_transaction",
-                int(tid),
+                tid,
                 window_title=f"Change history — transaction #{tid}",
                 empty_message="No audit entries recorded for this transaction yet.",
             )
@@ -733,7 +1148,10 @@ class RegisterTab(QWidget):
         self._populating = True
         self._table.setSortingEnabled(False)
         self._table.blockSignals(True)
-        self._table.setRowCount(len(rows))
+        n_data = len(rows)
+        n_vis = max(n_data, _REGISTER_MIN_VISIBLE_ROWS)
+        self._table.setRowCount(n_vis)
+        reg_dicts = [dict(t) for t in rows]
 
         running = 0.0
         total_debits = 0.0
@@ -744,7 +1162,7 @@ class RegisterTab(QWidget):
 
         for r, txn in enumerate(rows):
             txn = dict(txn)
-            tid = txn["id"]
+            tid = coerce_combo_int_id(txn.get("id"))
             amt = float(txn["amount"])
             posted = _txn_posted(txn)
 
@@ -760,7 +1178,8 @@ class RegisterTab(QWidget):
             brush = QBrush(row_bg) if missing_coa else QBrush()
 
             d_item = plain_display_table_item(txn["txn_date"] or "")
-            d_item.setData(Qt.ItemDataRole.UserRole, tid)
+            if tid is not None:
+                d_item.setData(Qt.ItemDataRole.UserRole, tid)
             d_item.setFlags(d_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             d_item.setTextAlignment(
                 Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
@@ -832,11 +1251,7 @@ class RegisterTab(QWidget):
                 for it in (debit_item, credit_item, bal_item):
                     it.setBackground(brush)
 
-            bid = txn.get("batch_id")
-            try:
-                b_key = int(bid) if bid is not None else None
-            except (TypeError, ValueError):
-                b_key = None
+            b_key = coerce_combo_int_id(txn.get("batch_id"))
             batch_rec = b_key is not None and rec_map.get(b_key, False)
             txn_cleared = int(txn.get("cleared") or 0) == 1
             if txn_cleared:
@@ -909,15 +1324,18 @@ class RegisterTab(QWidget):
                 combo.setStyleSheet(
                     f"QComboBox {{ background-color: {_MISSING_COA_BG.name()}; }}"
                 )
-            combo.currentIndexChanged.connect(
-                partial(self._on_coa_changed, tid, combo)
-            )
+            if tid is not None:
+                combo.currentIndexChanged.connect(
+                    partial(self._on_coa_changed, tid, combo)
+                )
             self._table.setCellWidget(r, _COL_COA, combo)
 
-            try:
-                bm = business.get_bank_match(self._db._conn, tid)
-            except sqlite3.OperationalError:
-                bm = None
+            bm = None
+            if tid is not None:
+                try:
+                    bm = business.get_bank_match(self._db._conn, tid)
+                except sqlite3.OperationalError:
+                    bm = None
             link_item = plain_display_table_item(_bank_match_label(bm))
             link_item.setFlags(link_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             link_item.setToolTip(
@@ -931,6 +1349,12 @@ class RegisterTab(QWidget):
             self._table.setItem(r, _COL_LINK, link_item)
 
             self._resize_register_row(r)
+
+        for r in range(n_data, n_vis):
+            self._fill_pad_row(r)
+
+        self._maybe_fill_demo_reconciliation_overlay(reg_dicts)
+        self._refresh_all_recon_cells()
 
         self._table.blockSignals(False)
         self._populating = False
@@ -953,7 +1377,7 @@ class RegisterTab(QWidget):
         id_item = self._table.item(row, _COL_DATE)
         if id_item is None:
             return
-        txn_id = id_item.data(Qt.ItemDataRole.UserRole)
+        txn_id = coerce_combo_int_id(id_item.data(Qt.ItemDataRole.UserRole))
         if txn_id is None:
             return
         try:
@@ -1018,7 +1442,9 @@ class RegisterTab(QWidget):
             id_item = self._table.item(r, _COL_DATE)
             if id_item is None:
                 continue
-            tid = id_item.data(Qt.ItemDataRole.UserRole)
+            tid = coerce_combo_int_id(id_item.data(Qt.ItemDataRole.UserRole))
+            if tid is None:
+                continue
             txn = self._db.get_transaction(tid)
             if txn is None:
                 continue
@@ -1084,19 +1510,15 @@ class RegisterTab(QWidget):
             w.writerow(hdr)
             for txn in rows:
                 t = dict(txn)
-                tid = t.get("id")
+                tid = coerce_combo_int_id(t.get("id"))
                 match_txt = ""
                 if tid is not None:
                     try:
-                        bm = business.get_bank_match(self._db._conn, int(tid))
+                        bm = business.get_bank_match(self._db._conn, tid)
                         match_txt = _bank_match_label(bm)
                     except sqlite3.OperationalError:
                         pass
-                bid = t.get("batch_id")
-                try:
-                    b_key = int(bid) if bid is not None else None
-                except (TypeError, ValueError):
-                    b_key = None
+                b_key = coerce_combo_int_id(t.get("batch_id"))
                 batch_rec = (
                     b_key is not None and rec_map.get(b_key, False)
                 )
@@ -1166,9 +1588,9 @@ class RegisterTab(QWidget):
 
         id_it = self._table.item(row, _COL_DATE)
         if id_it is not None:
-            tid = id_it.data(Qt.ItemDataRole.UserRole)
+            tid = coerce_combo_int_id(id_it.data(Qt.ItemDataRole.UserRole))
             if tid is not None:
-                fresh = self._db.get_transaction(int(tid))
+                fresh = self._db.get_transaction(tid)
                 if fresh is not None:
                     pay_it = self._table.item(row, _COL_PAYEE)
                     if pay_it is not None:
@@ -1191,7 +1613,7 @@ class RegisterTab(QWidget):
     def _set_cleared_on_ids(self, ids: list, value: int) -> None:
         for tid in ids:
             try:
-                self._db.update_transaction(int(tid), cleared=value)
+                self._db.update_transaction(tid, cleared=value)
             except ValueError as exc:
                 message_box_warning_ok(
                     self,
@@ -1303,11 +1725,12 @@ class RegisterTab(QWidget):
         )
         cb.addItem("(not a transfer)", None)
         for acct in self._db.list_bank_accounts():
-            if acct["id"] == self._current_account_id:
+            aid = coerce_combo_int_id(acct["id"])
+            if aid is None:
                 continue
-            cb.addItem(
-                escape_ampersand_for_qt(acct["name"] or ""), acct["id"]
-            )
+            if _register_account_ids_equal(aid, self._current_account_id):
+                continue
+            cb.addItem(escape_ampersand_for_qt(acct["name"] or ""), aid)
         f.addRow("Counterparty account", cb)
         bb = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -1322,7 +1745,7 @@ class RegisterTab(QWidget):
         f.addRow(bb)
         if d.exec() != QDialog.DialogCode.Accepted:
             return
-        target = cb.currentData()
+        target = coerce_combo_int_id(cb.currentData())
         for tid in ids:
             try:
                 self._db.update_transaction(
@@ -1503,9 +1926,12 @@ class RegisterTab(QWidget):
         except sqlite3.OperationalError:
             pass
         for s in suggestions:
+            lid_int = coerce_combo_int_id(s.get("link_id"))
+            if lid_int is None:
+                continue
             raw_lbl = s["label"] or ""
             it = QListWidgetItem(escape_ampersand_for_qt(raw_lbl))
-            it.setData(Qt.ItemDataRole.UserRole, (s["link_type"], s["link_id"]))
+            it.setData(Qt.ItemDataRole.UserRole, (s["link_type"], lid_int))
             it.setData(QLIST_PLAIN_TEXT_ROLE, raw_lbl)
             sug_list.addItem(it)
 
@@ -1552,8 +1978,10 @@ class RegisterTab(QWidget):
             data = cur.data(Qt.ItemDataRole.UserRole)
             if not data:
                 return
-            lt, lid = data
-            business.link_bank_transaction(self._db._conn, tid, str(lt), int(lid))
+            lt, lid_int = data
+            if lid_int is None:
+                return
+            business.link_bank_transaction(self._db._conn, tid, str(lt), lid_int)
             state["handled"] = True
             d.accept()
             self._reload_current()
@@ -1600,27 +2028,36 @@ class RegisterTab(QWidget):
             if k == "ar_payment":
                 rows = business.list_ar_payment_choices(self._db._conn)
                 for r in rows:
+                    pid = coerce_combo_int_id(r["id"])
+                    if pid is None:
+                        continue
                     line = (
-                        f"#{r['id']} {r['payment_date']} ${r['amount']:.2f} "
+                        f"#{pid} {r['payment_date']} ${r['amount']:.2f} "
                         f"— {r['party_name']}"
                     )
-                    pay.addItem(escape_ampersand_for_qt(line), r["id"])
+                    pay.addItem(escape_ampersand_for_qt(line), pid)
             elif k == "ap_payment":
                 rows = business.list_ap_payment_choices(self._db._conn)
                 for r in rows:
+                    pid = coerce_combo_int_id(r["id"])
+                    if pid is None:
+                        continue
                     line = (
-                        f"#{r['id']} {r['payment_date']} ${r['amount']:.2f} "
+                        f"#{pid} {r['payment_date']} ${r['amount']:.2f} "
                         f"— {r['party_name']}"
                     )
-                    pay.addItem(escape_ampersand_for_qt(line), r["id"])
+                    pay.addItem(escape_ampersand_for_qt(line), pid)
             else:
                 rows = business.list_payroll_run_choices(self._db._conn)
                 for r in rows:
+                    pid = coerce_combo_int_id(r["id"])
+                    if pid is None:
+                        continue
                     line = (
-                        f"#{r['id']} {r['pay_date']} net ${r['net_pay']:.2f} "
+                        f"#{pid} {r['pay_date']} net ${r['net_pay']:.2f} "
                         f"— {r['party_name']}"
                     )
-                    pay.addItem(escape_ampersand_for_qt(line), r["id"])
+                    pay.addItem(escape_ampersand_for_qt(line), pid)
 
         kind.currentIndexChanged.connect(lambda _=0: refill())
         refill()
@@ -1639,11 +2076,11 @@ class RegisterTab(QWidget):
             return
         if state["handled"]:
             return
-        pid = pay.currentData()
+        pid = coerce_combo_int_id(pay.currentData())
         if pid is None:
             return
         business.link_bank_transaction(
-            self._db._conn, tid, str(kind.currentData()), int(pid)
+            self._db._conn, tid, str(kind.currentData()), pid
         )
         message_box_information_ok(
             self,
