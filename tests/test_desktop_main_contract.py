@@ -74,6 +74,43 @@ def test_act_copy_settooltip_includes_clipboard_backup_suffix() -> None:
             )
 
 
+def test_act_invno_settooltip_includes_clipboard_backup_suffix() -> None:
+    """AR invoice grid **Copy invoice #** uses ``act_invno`` (not ``act_copy``)."""
+    marker = "act_invno.setToolTip("
+    suffix_op = "+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX"
+    for path in _iter_desktop_app_py_files():
+        text = path.read_text(encoding="utf-8")
+        tails = text.split(marker)[1:]
+        if not tails:
+            continue
+        for i, tail in enumerate(tails, start=1):
+            window = tail[:1200]
+            assert suffix_op in window, (
+                f"{path.name}: act_invno.setToolTip block #{i} should use {suffix_op!r} "
+                f"near the start of the call (within {len(window)} chars)"
+            )
+
+
+def test_main_menu_action_tip_mentioning_clipboard_includes_backup_suffix() -> None:
+    """File menu **Copy company database path** uses ``_menu_action_tip``, not ``act_copy.setToolTip``.
+
+    Match **to the clipboard** (user-facing copy wording), not bare ``clipboard`` — later code in
+    ``main.py`` can reference ``QApplication.clipboard()`` within a long scan window.
+    """
+    text = _MAIN.read_text(encoding="utf-8")
+    marker = "_menu_action_tip("
+    suffix_op = "+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX"
+    copy_phrase = "to the clipboard"
+    for i, tail in enumerate(text.split(marker)[1:], start=1):
+        window = tail[:2500]
+        if copy_phrase not in window.lower():
+            continue
+        assert suffix_op in window, (
+            f"main.py: _menu_action_tip block #{i} mentions {copy_phrase!r} but should append {suffix_op!r} "
+            f"in the tip string (within {len(window)} chars)"
+        )
+
+
 # Static ``QMessageBox.*`` entry points skip ``tip_message_box_buttons`` / ``setToolTip`` on the dialog.
 _DESKTOP_FORBIDDEN_STATIC_QMESSAGEBOX_CALLS: tuple[str, ...] = (
     "QMessageBox.information(",
