@@ -267,7 +267,6 @@ def parse_csv(
     amount_col: str,
     description_col: str = "",
     ref_col: str = "",
-    encoding: str = "utf-8",
 ) -> list[dict]:
     """
     Parse *content* (Unicode CSV text; callers decode bytes—use ``utf-8-sig`` for typical bank/Excel files).
@@ -276,8 +275,6 @@ def parse_csv(
         txn_date, description, amount, ref_number
 
     Rows where date or amount cannot be parsed are silently skipped.
-
-    *encoding* is unused; decoding happens before *content* is built.
     """
     rows = []
     reader = csv.DictReader(io.StringIO(content))

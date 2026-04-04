@@ -68,11 +68,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from probooksai.bank_import import (
-    ACCOUNT_TYPES,
-    BankDatabase,
-    parse_csv,
-)
+from probooksai.bank_import import ACCOUNT_TYPES, BankDatabase
 from probooksai.coa_db import COADatabase
 
 from desktop_app.audit_dialog import show_entity_audit_history
