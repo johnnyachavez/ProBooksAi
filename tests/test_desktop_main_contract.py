@@ -1804,6 +1804,19 @@ def test_desktop_main_detail_pane_three_section_group_boxes() -> None:
     assert chunk.count('QGroupBox("Categorisation Suggestions")') == 1
 
 
+def test_desktop_main_detail_pane_four_action_buttons_toolbar_loop_and_styles() -> None:
+    """Detail actions: four ``QPushButton``s, shared min-height loop, per-button colours, then ``clicked.connect``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("        # -- Action buttons --------------------------------------------------")
+    end = text.index("        layout.addLayout(btn_layout)", start)
+    chunk = text[start:end]
+    assert chunk.count("QPushButton(") == 4
+    assert chunk.count("for btn in (self._btn_run, self._btn_approve, self._btn_post, self._btn_reject):") == 1
+    assert chunk.count("btn.setMinimumHeight(32)") == 1
+    assert chunk.count("self._btn_run.setStyleSheet(") == 1
+    assert chunk.count("self._btn_reject.setStyleSheet(") == 1
+
+
 def test_desktop_main_coa_select_placeholder_and_combo_refresh() -> None:
     """``_COA_SELECT_LABEL`` seeds the detail COA combo; ``update_coa`` rebuilds and restores selection."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -2148,6 +2161,16 @@ def test_main_window_coa_tab_changed_signal_wired_after_initial_and_rebuild() ->
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
     assert chunk.count("self._coa_tab.coaChanged.connect(self._on_coa_changed)") == 2
+
+
+def test_main_window_load_coa_three_times_seed_workbook_twice() -> None:
+    """``load_coa`` runs at startup, on COA edits, and after company reload; workbook seed matches bank reopen."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("class MainWindow(QMainWindow):")
+    end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
+    chunk = text[start:end]
+    assert chunk.count("load_coa()") == 3
+    assert chunk.count("seed_from_workbook()") == 2
 
 
 def test_main_window_document_database_call_counts_for_intake_and_workflow() -> None:
