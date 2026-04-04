@@ -159,6 +159,20 @@ _FILE_MENU_QACTION_NAMES: tuple[str, ...] = (
     "act_exit",
 )
 
+_EDIT_TOOLS_HELP_QACTION_NAMES: tuple[str, ...] = (
+    "act_undo",
+    "act_redo",
+    "act_prefs",
+    "act_tools",
+    "act_roadmap",
+    "act_intake_keys",
+    "act_bank_import_keys",
+    "act_register_keys",
+    "act_business_keys",
+    "act_more_tab_keys",
+    "act_about",
+)
+
 
 def test_file_menu_qactions_use_menu_action_tip_only() -> None:
     """**File** menu actions set hover + status text only via ``_menu_action_tip``."""
@@ -167,6 +181,40 @@ def test_file_menu_qactions_use_menu_action_tip_only() -> None:
     end = text.index("# View menu", start)
     chunk = text[start:end]
     for name in _FILE_MENU_QACTION_NAMES:
+        assert chunk.count(f"{name} = QAction(") == 1, name
+        tip_hdr = f"_menu_action_tip(\n            {name},"
+        assert chunk.count(tip_hdr) == 1, f"{name} should use _menu_action_tip once"
+        assert f"{name}.setToolTip(" not in chunk, (
+            f"{name} should not call setToolTip directly; use _menu_action_tip"
+        )
+        assert f"{name}.setStatusTip(" not in chunk, (
+            f"{name} should not call setStatusTip directly; use _menu_action_tip"
+        )
+
+
+def test_view_menu_tab_actions_use_menu_action_tip_only() -> None:
+    """**View** menu tab shortcuts use ``_menu_action_tip(act, …)`` only (no direct tip methods).
+
+    The loop body is written once in source; the list must still enumerate eight main tabs.
+    """
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("# View menu")
+    end = text.index("# Edit menu", start)
+    chunk = text[start:end]
+    assert chunk.count('("Ctrl+') == 8
+    assert chunk.count("act = QAction(") == 1
+    assert chunk.count("_menu_action_tip(act, ") == 1
+    assert "act.setToolTip(" not in chunk
+    assert "act.setStatusTip(" not in chunk
+
+
+def test_edit_tools_help_qactions_use_menu_action_tip_only() -> None:
+    """**Edit**, **Tools**, and **Help** menu actions set hover + status via ``_menu_action_tip`` only."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("# Edit menu")
+    end = text.index("    # -- drag & drop on window", start)
+    chunk = text[start:end]
+    for name in _EDIT_TOOLS_HELP_QACTION_NAMES:
         assert chunk.count(f"{name} = QAction(") == 1, name
         tip_hdr = f"_menu_action_tip(\n            {name},"
         assert chunk.count(tip_hdr) == 1, f"{name} should use _menu_action_tip once"
