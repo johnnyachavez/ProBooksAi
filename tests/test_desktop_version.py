@@ -73,6 +73,8 @@ def test_build_desktop_scripts_echo_application_version_before_pyinstaller() -> 
     assert sh.count("--hidden-import generate_workbook") == 1
     assert ps1.count("--collect-submodules openai") == 1
     assert sh.count("--collect-submodules openai") == 1
+    assert ps1.count("--collect-submodules pydantic") == 1
+    assert sh.count("--collect-submodules pydantic") == 1
     assert ps1.count("--hidden-import pypdf") == 1
     assert sh.count("--hidden-import pypdf") == 1
     needle = "python -m PyInstaller"

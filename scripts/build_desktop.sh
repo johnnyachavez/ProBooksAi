@@ -2,7 +2,7 @@
 # scripts/build_desktop.sh
 # Build a standalone ProBooks+ai desktop executable on macOS / Linux (output: ProBooksPlusAi).
 # Bundles ai/ (Document Intake Run AI), probooks/, probooksai/, desktop_app/, docs/ (ROADMAP.md),
-# pyproject.toml; hidden-import generate_workbook (COA seed); full OpenAI SDK subtree + hidden-import pypdf (ai.extractor).
+# pyproject.toml; hidden-import generate_workbook (COA seed); collect-submodules openai + pydantic; hidden-import pypdf (ai.extractor).
 #
 # Usage:
 #   chmod +x scripts/build_desktop.sh
@@ -39,6 +39,7 @@ python -m PyInstaller \
     --copy-metadata probooks-ai \
     --hidden-import generate_workbook \
     --collect-submodules openai \
+    --collect-submodules pydantic \
     --hidden-import pypdf \
     desktop_app/main.py
 
