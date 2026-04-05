@@ -13,6 +13,8 @@ from tests.repo_paths import (
 def test_desktop_version_module_uses_pyproject_distribution_name() -> None:
     ver_py = (DESKTOP_APP_DIR / "version.py").read_text(encoding="utf-8")
     assert '_PACKAGE = "probooks-ai"' in ver_py
+    assert "def _version_from_pyproject_toml()" in ver_py
+    assert "parent.parent / \"pyproject.toml\"" in ver_py
 
 
 def test_probooks_init_looks_up_same_distribution_name() -> None:

@@ -1,15 +1,47 @@
-"""Application version from installed package metadata (pyproject)."""
+"""Application version: ``importlib.metadata`` when the wheel is installed, else ``pyproject.toml`` in the repo tree."""
 
 from __future__ import annotations
 
 import importlib.metadata
+import re
+from pathlib import Path
 
 _PACKAGE = "probooks-ai"
 _FALLBACK = "0.1.0"
+_VERSION_RE = re.compile(r'^version\s*=\s*["\']([^"\']+)["\']')
+
+
+def _version_from_pyproject_toml() -> str | None:
+    """When the distribution is not installed (e.g. ``python desktop_app/main.py``), read repo ``pyproject.toml``."""
+    path = Path(__file__).resolve().parent.parent / "pyproject.toml"
+    if not path.is_file():
+        return None
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    in_project = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped == "[project]":
+            in_project = True
+            continue
+        if in_project:
+            if stripped.startswith("[") and stripped != "[project]":
+                break
+            line = stripped.split("#", 1)[0].strip()
+            m = _VERSION_RE.match(line)
+            if m:
+                return m.group(1).strip()
+    return None
 
 
 def application_version() -> str:
     try:
         return importlib.metadata.version(_PACKAGE)
     except importlib.metadata.PackageNotFoundError:
-        return _FALLBACK
+        pass
+    v = _version_from_pyproject_toml()
+    if v:
+        return v
+    return _FALLBACK
