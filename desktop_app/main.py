@@ -1390,8 +1390,8 @@ class MainWindow(QMainWindow):
         act_about = QAction("&About ProBooks+ai", self)
         _menu_action_tip(
             act_about,
-            "Application name and version; Ok also notes Help shortcuts (UTF-8 BOM CSV), "
-            "and File backup (probooks.backup).",
+            "Version in the dialog; status bar and banner ProBooks+ai tooltip echo the same package version. "
+            "Ok notes Help shortcuts (UTF-8 BOM CSV) and File backup (probooks.backup).",
         )
         act_about.triggered.connect(self._on_about)
         help_menu.addAction(act_about)
@@ -1458,6 +1458,7 @@ class MainWindow(QMainWindow):
             f"\u00a9 2026 ProBooks+ai",
             ok_tip="Close; Help lists shortcuts (including UTF-8 BOM CSV for Excel); "
             "Bank Import covers AI line reconciliation and Stmt match sync; "
+            "status bar lists ProBooks+ai with the package version (banner name tooltip matches); "
             "File → Backup/Restore uses probooks.backup (same as CLI).",
         )
 

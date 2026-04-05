@@ -3573,6 +3573,8 @@ def test_main_help_menu_status_tips_mention_utf8_bom_csv_exports() -> None:
         "help_menu.addAction(act_about)", 1
     )[0]
     assert "Help shortcuts (UTF-8 BOM CSV)" in about
+    assert "status bar" in about
+    assert "banner ProBooks+ai" in about
 
 
 def test_more_main_tabs_shortcuts_module_exposes_help_dialog() -> None:
@@ -5174,6 +5176,8 @@ def test_about_dialog_ok_tip_mentions_file_backup_cli_parity() -> None:
     chunk = text[start : text.index("def _on_import", start)]
     assert "probooks.backup" in chunk
     assert "File → Backup/Restore" in chunk
+    assert "status bar" in chunk
+    assert "banner name tooltip" in chunk
 
 
 def test_help_about_menu_tip_mentions_ok_backup_hint() -> None:
