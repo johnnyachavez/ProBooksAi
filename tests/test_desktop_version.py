@@ -10,6 +10,8 @@ import probooks
 from desktop_app import version as version_mod
 from desktop_app.version import application_version
 
+from tests.repo_paths import SCRIPTS_BUILD_DESKTOP_PS1, SCRIPTS_BUILD_DESKTOP_SH
+
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -47,3 +49,13 @@ def test_fallback_version_literal_matches_pyproject_toml() -> None:
     assert version_mod._FALLBACK == parsed
     init_text = (_REPO_ROOT / "probooks" / "__init__.py").read_text(encoding="utf-8")
     assert f'return "{parsed}"' in init_text
+
+
+def test_build_desktop_scripts_echo_application_version_before_pyinstaller() -> None:
+    ps1 = SCRIPTS_BUILD_DESKTOP_PS1.read_text(encoding="utf-8")
+    sh = SCRIPTS_BUILD_DESKTOP_SH.read_text(encoding="utf-8")
+    assert "application_version" in ps1
+    assert "application_version" in sh
+    needle = "python -m PyInstaller"
+    assert ps1.index("application_version") < ps1.index(needle)
+    assert sh.index("application_version") < sh.index(needle)
