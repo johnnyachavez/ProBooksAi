@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -1058,6 +1059,316 @@ def test_statement_line_match_panel_run_coerces_string_bank_account_id_in_batch(
         panel.set_context(aid, batch)
         panel._on_run_clicked()
         assert emitted == [aid]
+    finally:
+        db.close()
+        if db_path.exists():
+            db_path.unlink()
+
+
+def test_statement_line_match_panel_line_reconciliation_table_alias() -> None:
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from probooksai.bank_import import BankDatabase
+    from desktop_app.statement_line_match_panel import StatementLineMatchPanel
+
+    db_path = Path(__file__).resolve().parent / "_stmt_line_match_table_alias.db"
+    if db_path.exists():
+        db_path.unlink()
+    db = BankDatabase(str(db_path))
+    try:
+        panel = StatementLineMatchPanel(db)
+        assert panel.line_reconciliation_table() is panel._table
+    finally:
+        db.close()
+        if db_path.exists():
+            db_path.unlink()
+
+
+def test_statement_line_match_panel_try_ctrl_shift_b_without_register_tab_shows_tip() -> None:
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from probooksai.bank_import import BankDatabase
+    from desktop_app.statement_line_match_panel import StatementLineMatchPanel
+
+    db_path = Path(__file__).resolve().parent / "_stmt_line_match_try_b_no_reg.db"
+    if db_path.exists():
+        db_path.unlink()
+    db = BankDatabase(str(db_path))
+    try:
+        panel = StatementLineMatchPanel(db, register_tab=None)
+        panel.populate(
+            [
+                {
+                    "status": STATUS_MATCHED,
+                    "stmt_date": "2024-01-01",
+                    "stmt_amount": -1.0,
+                    "stmt_description": "A",
+                    "register_id": 7,
+                    "reg_date": "2024-01-01",
+                    "reg_amount": -1.0,
+                    "reg_description": "A",
+                }
+            ]
+        )
+        panel._table.setCurrentCell(0, 0)
+        with patch(
+            "desktop_app.statement_line_match_panel.message_box_information_ok"
+        ) as m:
+            panel.try_ctrl_shift_b_open_linked_business()
+        m.assert_called_once()
+        assert m.call_args[0][1] == "Business link"
+    finally:
+        db.close()
+        if db_path.exists():
+            db_path.unlink()
+
+
+def test_statement_line_match_panel_try_ctrl_shift_b_no_current_row_shows_tip() -> None:
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from probooksai.bank_import import BankDatabase
+    from desktop_app.statement_line_match_panel import StatementLineMatchPanel
+
+    class _Reg:
+        def __init__(self) -> None:
+            self.tids: list[int] = []
+
+        def open_linked_business_record_for_transaction_id(self, tid: int) -> None:
+            self.tids.append(int(tid))
+
+    db_path = Path(__file__).resolve().parent / "_stmt_line_match_try_b_no_row.db"
+    if db_path.exists():
+        db_path.unlink()
+    db = BankDatabase(str(db_path))
+    try:
+        reg = _Reg()
+        panel = StatementLineMatchPanel(db, register_tab=reg)
+        panel.populate(
+            [
+                {
+                    "status": STATUS_MATCHED,
+                    "stmt_date": "2024-01-01",
+                    "stmt_amount": -1.0,
+                    "stmt_description": "A",
+                    "register_id": 7,
+                    "reg_date": "2024-01-01",
+                    "reg_amount": -1.0,
+                    "reg_description": "A",
+                }
+            ]
+        )
+        panel._table.selectionModel().clearCurrentIndex()
+        with patch(
+            "desktop_app.statement_line_match_panel.message_box_information_ok"
+        ) as m:
+            panel.try_ctrl_shift_b_open_linked_business()
+        m.assert_called_once()
+        assert reg.tids == []
+    finally:
+        db.close()
+        if db_path.exists():
+            db_path.unlink()
+
+
+def test_statement_line_match_panel_try_ctrl_shift_b_no_register_id_shows_tip() -> None:
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from probooksai.bank_import import BankDatabase
+    from desktop_app.statement_line_match_panel import StatementLineMatchPanel
+
+    class _Reg:
+        def __init__(self) -> None:
+            self.tids: list[int] = []
+
+        def open_linked_business_record_for_transaction_id(self, tid: int) -> None:
+            self.tids.append(int(tid))
+
+    db_path = Path(__file__).resolve().parent / "_stmt_line_match_try_b_no_rid.db"
+    if db_path.exists():
+        db_path.unlink()
+    db = BankDatabase(str(db_path))
+    try:
+        reg = _Reg()
+        panel = StatementLineMatchPanel(db, register_tab=reg)
+        panel.populate(
+            [
+                {
+                    "status": STATUS_MISSING,
+                    "stmt_date": "2024-01-02",
+                    "stmt_amount": -2.0,
+                    "stmt_description": "B",
+                    "register_id": None,
+                    "reg_date": "",
+                    "reg_amount": 0.0,
+                    "reg_description": "",
+                }
+            ]
+        )
+        panel._table.setCurrentCell(0, 0)
+        with patch(
+            "desktop_app.statement_line_match_panel.message_box_information_ok"
+        ) as m:
+            panel.try_ctrl_shift_b_open_linked_business()
+        m.assert_called_once()
+        assert reg.tids == []
+    finally:
+        db.close()
+        if db_path.exists():
+            db_path.unlink()
+
+
+def test_statement_line_match_panel_try_ctrl_shift_b_delegates_to_register_tab() -> None:
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from probooksai.bank_import import BankDatabase
+    from desktop_app.statement_line_match_panel import StatementLineMatchPanel
+
+    class _Reg:
+        def __init__(self) -> None:
+            self.tids: list[int] = []
+
+        def open_linked_business_record_for_transaction_id(self, tid: int) -> None:
+            self.tids.append(int(tid))
+
+    db_path = Path(__file__).resolve().parent / "_stmt_line_match_try_b_delegate.db"
+    if db_path.exists():
+        db_path.unlink()
+    db = BankDatabase(str(db_path))
+    try:
+        reg = _Reg()
+        panel = StatementLineMatchPanel(db, register_tab=reg)
+        panel.populate(
+            [
+                {
+                    "status": STATUS_MATCHED,
+                    "stmt_date": "2024-01-01",
+                    "stmt_amount": -1.0,
+                    "stmt_description": "A",
+                    "register_id": 42,
+                    "reg_date": "2024-01-01",
+                    "reg_amount": -1.0,
+                    "reg_description": "A",
+                }
+            ]
+        )
+        panel._table.setCurrentCell(0, 0)
+        panel.try_ctrl_shift_b_open_linked_business()
+        assert reg.tids == [42]
+    finally:
+        db.close()
+        if db_path.exists():
+            db_path.unlink()
+
+
+def test_statement_line_match_panel_double_click_delegates_without_navigable_match() -> None:
+    """Double-click forwards to the register tab even when ``get_bank_match`` is empty."""
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from probooksai.bank_import import BankDatabase
+    from desktop_app.statement_line_match_panel import StatementLineMatchPanel
+
+    class _Reg:
+        def __init__(self) -> None:
+            self.tids: list[int] = []
+
+        def open_linked_business_record_for_transaction_id(self, tid: int) -> None:
+            self.tids.append(int(tid))
+
+    db_path = Path(__file__).resolve().parent / "_stmt_line_match_dbl_none.db"
+    if db_path.exists():
+        db_path.unlink()
+    db = BankDatabase(str(db_path))
+    try:
+        reg = _Reg()
+        panel = StatementLineMatchPanel(db, register_tab=reg)
+        panel.populate(
+            [
+                {
+                    "status": STATUS_MATCHED,
+                    "stmt_date": "2024-01-01",
+                    "stmt_amount": -1.0,
+                    "stmt_description": "A",
+                    "register_id": 7,
+                    "reg_date": "2024-01-01",
+                    "reg_amount": -1.0,
+                    "reg_description": "A",
+                }
+            ]
+        )
+        with patch(
+            "desktop_app.statement_line_match_panel.business.get_bank_match",
+            return_value=None,
+        ):
+            panel._on_line_match_cell_double_clicked(0, 3)
+        assert reg.tids == [7]
+    finally:
+        db.close()
+        if db_path.exists():
+            db_path.unlink()
+
+
+def test_statement_line_match_panel_double_click_with_match_delegates() -> None:
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from probooksai.bank_import import BankDatabase
+    from desktop_app.statement_line_match_panel import StatementLineMatchPanel
+
+    class _Reg:
+        def __init__(self) -> None:
+            self.tids: list[int] = []
+
+        def open_linked_business_record_for_transaction_id(self, tid: int) -> None:
+            self.tids.append(int(tid))
+
+    db_path = Path(__file__).resolve().parent / "_stmt_line_match_dbl_ok.db"
+    if db_path.exists():
+        db_path.unlink()
+    db = BankDatabase(str(db_path))
+    try:
+        reg = _Reg()
+        panel = StatementLineMatchPanel(db, register_tab=reg)
+        panel.populate(
+            [
+                {
+                    "status": STATUS_MATCHED,
+                    "stmt_date": "2024-01-01",
+                    "stmt_amount": -1.0,
+                    "stmt_description": "A",
+                    "register_id": 42,
+                    "reg_date": "2024-01-01",
+                    "reg_amount": -1.0,
+                    "reg_description": "A",
+                }
+            ]
+        )
+        fake_bm = {"link_type": "ap_payment", "link_id": 3}
+        with patch(
+            "desktop_app.statement_line_match_panel.business.get_bank_match",
+            return_value=fake_bm,
+        ):
+            panel._on_line_match_cell_double_clicked(0, 1)
+        assert reg.tids == [42]
     finally:
         db.close()
         if db_path.exists():

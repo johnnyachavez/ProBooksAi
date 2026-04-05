@@ -621,6 +621,34 @@ def list_payroll_run_choices(conn: sqlite3.Connection) -> list:
     ).fetchall()
 
 
+def list_ar_invoice_link_choices(conn: sqlite3.Connection) -> list:
+    """Open invoices (balance due) for manual bank link suggestions."""
+    return conn.execute(
+        """
+        SELECT i.id, i.invoice_number, i.invoice_date, i.balance_due, c.name AS party_name
+        FROM invoices i
+        JOIN customers c ON c.id = i.customer_id
+        WHERE i.balance_due > 0.005
+        ORDER BY i.invoice_date DESC, i.id DESC
+        LIMIT 150
+        """
+    ).fetchall()
+
+
+def list_ap_bill_link_choices(conn: sqlite3.Connection) -> list:
+    """Open bills (balance due) for manual bank link suggestions."""
+    return conn.execute(
+        """
+        SELECT b.id, b.vendor_invoice_number, b.bill_date, b.balance_due, v.name AS party_name
+        FROM bills b
+        JOIN vendors v ON v.id = b.vendor_id
+        WHERE b.balance_due > 0.005
+        ORDER BY b.bill_date DESC, b.id DESC
+        LIMIT 150
+        """
+    ).fetchall()
+
+
 def record_ar_payment(
     conn: sqlite3.Connection,
     customer_id: int,
@@ -1226,6 +1254,11 @@ def link_bank_transaction(
     link_type: str,
     link_id: int,
 ) -> None:
+    prev = get_bank_match(conn, bank_transaction_id)
+    old_s = ""
+    if prev is not None:
+        old_s = f"{prev['link_type']}:{int(prev['link_id'])}"
+    new_s = f"{link_type}:{int(link_id)}"
     conn.execute(
         """
         INSERT INTO bank_match_links (bank_transaction_id, link_type, link_id, created_at)
@@ -1238,6 +1271,20 @@ def link_bank_transaction(
         (bank_transaction_id, link_type, link_id, _now()),
     )
     conn.commit()
+    if old_s != new_s:
+        try:
+            from probooksai.audit_log import append_audit
+
+            append_audit(
+                conn,
+                "bank_transaction",
+                bank_transaction_id,
+                "bank_match_link",
+                old_s if old_s else None,
+                new_s,
+            )
+        except Exception:
+            pass
 
 
 def get_bank_match(conn: sqlite3.Connection, bank_transaction_id: int) -> Optional[sqlite3.Row]:
@@ -1247,12 +1294,83 @@ def get_bank_match(conn: sqlite3.Connection, bank_transaction_id: int) -> Option
     ).fetchone()
 
 
+def bank_match_link_tuple_from_row(bm: Optional[sqlite3.Row]) -> Optional[tuple[str, int]]:
+    """
+    Parse a ``bank_match_links`` row from :func:`get_bank_match`.
+
+    Returns ``(link_type, link_id)`` when both are usable for Business hub navigation,
+    else ``None``. Does not touch the database.
+    """
+    if bm is None:
+        return None
+    try:
+        lt_raw = bm["link_type"]
+    except (TypeError, KeyError, IndexError):
+        return None
+    lt = (str(lt_raw) if lt_raw is not None else "").strip()
+    if not lt:
+        return None
+    try:
+        lid = int(bm["link_id"])
+    except (TypeError, ValueError, KeyError):
+        return None
+    return (lt, lid)
+
+
+def bank_match_link_for_navigation(
+    conn: sqlite3.Connection, bank_transaction_id: int
+) -> Optional[tuple[str, int]]:
+    """
+    When *bank_transaction_id* has a ``bank_match_links`` row with a non-empty ``link_type``
+    and numeric ``link_id``, return ``(link_type, link_id)`` for Business hub navigation.
+
+    Returns ``None`` when there is no row or the link is incomplete.
+    May raise ``sqlite3.OperationalError`` if the table is missing (callers show a DB message).
+
+    For context menus that should hide **Open linked Business** without an error dialog, use
+    :func:`bank_match_is_navigable` instead.
+    """
+    return bank_match_link_tuple_from_row(get_bank_match(conn, bank_transaction_id))
+
+
+def bank_match_is_navigable(conn: sqlite3.Connection, bank_transaction_id: int) -> bool:
+    """
+    True when :func:`bank_match_link_for_navigation` would return a tuple.
+
+    Returns ``False`` when navigation would return ``None``, or when ``bank_match_link_for_navigation``
+    raises ``sqlite3.OperationalError`` (e.g. missing table)—typical for hiding **Open linked Business**
+    in context menus without surfacing an error dialog.
+    """
+    try:
+        return bank_match_link_for_navigation(conn, bank_transaction_id) is not None
+    except sqlite3.OperationalError:
+        return False
+
+
 def unlink_bank_transaction(conn: sqlite3.Connection, bank_transaction_id: int) -> None:
+    prev = get_bank_match(conn, bank_transaction_id)
+    old_s = ""
+    if prev is not None:
+        old_s = f"{prev['link_type']}:{int(prev['link_id'])}"
     conn.execute(
         "DELETE FROM bank_match_links WHERE bank_transaction_id = ?",
         (bank_transaction_id,),
     )
     conn.commit()
+    if old_s:
+        try:
+            from probooksai.audit_log import append_audit
+
+            append_audit(
+                conn,
+                "bank_transaction",
+                bank_transaction_id,
+                "bank_match_link",
+                old_s,
+                "",
+            )
+        except Exception:
+            pass
 
 
 def _linked_ids_for_type(conn: sqlite3.Connection, link_type: str) -> set[int]:
@@ -1263,6 +1381,24 @@ def _linked_ids_for_type(conn: sqlite3.Connection, link_type: str) -> set[int]:
     return {int(r["link_id"]) for r in rows}
 
 
+# When the bank txn has a parseable date, only consider payments/runs within this window
+# so older matches are not dropped by ORDER BY pay_date DESC LIMIT 200.
+_BANK_MATCH_DATE_WINDOW_DAYS = 730
+# Subtracted from score when customer/vendor/employee name appears in description or ref (lower score ranks higher).
+_BANK_MATCH_NAME_IN_TEXT_BONUS = 25.0
+
+
+def _bank_match_party_name_bonus(haystack: str, party_name: Optional[str]) -> float:
+    """Bonus to subtract from match score when *party_name* appears in bank text (lower is better)."""
+    if not party_name:
+        return 0.0
+    pn = str(party_name).strip().lower()
+    if len(pn) < 4:
+        return 0.0
+    h = " ".join(str(haystack).lower().split())
+    return _BANK_MATCH_NAME_IN_TEXT_BONUS if pn in h else 0.0
+
+
 def suggest_bank_match_candidates(
     conn: sqlite3.Connection,
     bank_transaction_id: int,
@@ -1270,29 +1406,51 @@ def suggest_bank_match_candidates(
     max_results: int = 15,
 ) -> list[dict]:
     """
-    Phase 17 – score AR/AP payments and payroll runs by amount and pay date vs bank txn.
-    Excludes payments/runs already linked to *some* bank transaction.
+    Phase 17 – score AR/AP payments, payroll runs, and open AR invoices / AP bills by amount and date vs bank txn.
+    Excludes records already linked to *some* bank transaction.
+    When the bank row's description or ref contains the party name (4+ chars), score improves.
+    Deposits (positive amount) also consider open invoices; withdrawals (negative) consider open bills.
     """
     txn = conn.execute(
-        "SELECT id, txn_date, amount FROM bank_transactions WHERE id = ?",
+        """
+        SELECT id, txn_date, amount, description, ref_number
+        FROM bank_transactions WHERE id = ?
+        """,
         (bank_transaction_id,),
     ).fetchone()
     if txn is None:
         return []
-    abs_amt = abs(round(float(txn["amount"]), 2))
+    raw_amt = round(float(txn["amount"]), 2)
+    abs_amt = abs(raw_amt)
     txn_date = (txn["txn_date"] or "")[:10]
     try:
         tdt = date.fromisoformat(txn_date)
     except ValueError:
         tdt = None
 
+    date_window_center = txn_date if tdt is not None else None
+    win_lo = f"-{_BANK_MATCH_DATE_WINDOW_DAYS} days"
+    win_hi = f"+{_BANK_MATCH_DATE_WINDOW_DAYS} days"
+
     linked_ar = _linked_ids_for_type(conn, "ar_payment")
     linked_ap = _linked_ids_for_type(conn, "ap_payment")
     linked_pr = _linked_ids_for_type(conn, "payroll_run")
+    linked_ar_inv = _linked_ids_for_type(conn, "ar_invoice")
+    linked_ap_bill = _linked_ids_for_type(conn, "ap_bill")
 
     candidates: list[dict] = []
 
-    def push(link_type: str, link_id: int, label: str, pay_date: str, pay_amount: float) -> None:
+    _hay = f"{txn['description'] or ''} {txn['ref_number'] or ''}"
+
+    def push(
+        link_type: str,
+        link_id: int,
+        label: str,
+        pay_date: str,
+        pay_amount: float,
+        *,
+        party_name: str = "",
+    ) -> None:
         pay_amount = abs(round(float(pay_amount), 2))
         amt_diff = abs(pay_amount - abs_amt)
         amt_pen = 0.0 if amt_diff < 0.02 else amt_diff * 50.0
@@ -1304,7 +1462,7 @@ def suggest_bank_match_candidates(
                 day_pen = 60.0
         else:
             day_pen = 30.0
-        score = amt_pen + day_pen
+        score = amt_pen + day_pen - _bank_match_party_name_bonus(_hay, party_name)
         candidates.append(
             {
                 "link_type": link_type,
@@ -1314,15 +1472,28 @@ def suggest_bank_match_candidates(
             }
         )
 
-    for r in conn.execute(
+    if date_window_center:
+        ar_sql = """
+        SELECT p.id, p.payment_date, p.amount, c.name AS party_name
+        FROM ar_payments p
+        JOIN customers c ON c.id = p.customer_id
+        WHERE date(p.payment_date) >= date(?, ?)
+          AND date(p.payment_date) <= date(?, ?)
+        ORDER BY p.payment_date DESC
+        LIMIT 500
         """
+        ar_params = (date_window_center, win_lo, date_window_center, win_hi)
+    else:
+        ar_sql = """
         SELECT p.id, p.payment_date, p.amount, c.name AS party_name
         FROM ar_payments p
         JOIN customers c ON c.id = p.customer_id
         ORDER BY p.payment_date DESC
         LIMIT 200
         """
-    ):
+        ar_params = ()
+
+    for r in conn.execute(ar_sql, ar_params):
         if int(r["id"]) in linked_ar:
             continue
         amt = float(r["amount"])
@@ -1332,17 +1503,31 @@ def suggest_bank_match_candidates(
             f"AR pay #{r['id']} {r['payment_date']} ${amt:.2f} — {r['party_name']}",
             r["payment_date"],
             amt,
+            party_name=r["party_name"],
         )
 
-    for r in conn.execute(
+    if date_window_center:
+        ap_sql = """
+        SELECT p.id, p.payment_date, p.amount, v.name AS party_name
+        FROM ap_payments p
+        JOIN vendors v ON v.id = p.vendor_id
+        WHERE date(p.payment_date) >= date(?, ?)
+          AND date(p.payment_date) <= date(?, ?)
+        ORDER BY p.payment_date DESC
+        LIMIT 500
         """
+        ap_params = (date_window_center, win_lo, date_window_center, win_hi)
+    else:
+        ap_sql = """
         SELECT p.id, p.payment_date, p.amount, v.name AS party_name
         FROM ap_payments p
         JOIN vendors v ON v.id = p.vendor_id
         ORDER BY p.payment_date DESC
         LIMIT 200
         """
-    ):
+        ap_params = ()
+
+    for r in conn.execute(ap_sql, ap_params):
         if int(r["id"]) in linked_ap:
             continue
         amt = float(r["amount"])
@@ -1352,17 +1537,31 @@ def suggest_bank_match_candidates(
             f"AP pay #{r['id']} {r['payment_date']} ${amt:.2f} — {r['party_name']}",
             r["payment_date"],
             amt,
+            party_name=r["party_name"],
         )
 
-    for r in conn.execute(
+    if date_window_center:
+        pr_sql = """
+        SELECT p.id, p.pay_date, p.net_pay, e.name AS party_name
+        FROM payroll_runs p
+        JOIN employees e ON e.id = p.employee_id
+        WHERE date(p.pay_date) >= date(?, ?)
+          AND date(p.pay_date) <= date(?, ?)
+        ORDER BY p.pay_date DESC
+        LIMIT 500
         """
+        pr_params = (date_window_center, win_lo, date_window_center, win_hi)
+    else:
+        pr_sql = """
         SELECT p.id, p.pay_date, p.net_pay, e.name AS party_name
         FROM payroll_runs p
         JOIN employees e ON e.id = p.employee_id
         ORDER BY p.pay_date DESC
         LIMIT 200
         """
-    ):
+        pr_params = ()
+
+    for r in conn.execute(pr_sql, pr_params):
         if int(r["id"]) in linked_pr:
             continue
         net = float(r["net_pay"])
@@ -1372,7 +1571,83 @@ def suggest_bank_match_candidates(
             f"Payroll #{r['id']} {r['pay_date']} net ${net:.2f} — {r['party_name']}",
             r["pay_date"],
             net,
+            party_name=r["party_name"],
         )
+
+    if raw_amt > 0.005:
+        if date_window_center:
+            inv_sql = """
+            SELECT i.id, i.invoice_number, i.invoice_date, i.balance_due, c.name AS party_name
+            FROM invoices i
+            JOIN customers c ON c.id = i.customer_id
+            WHERE i.balance_due > 0.005
+              AND date(i.invoice_date) >= date(?, ?)
+              AND date(i.invoice_date) <= date(?, ?)
+            ORDER BY i.invoice_date DESC
+            LIMIT 500
+            """
+            inv_params = (date_window_center, win_lo, date_window_center, win_hi)
+        else:
+            inv_sql = """
+            SELECT i.id, i.invoice_number, i.invoice_date, i.balance_due, c.name AS party_name
+            FROM invoices i
+            JOIN customers c ON c.id = i.customer_id
+            WHERE i.balance_due > 0.005
+            ORDER BY i.invoice_date DESC
+            LIMIT 200
+            """
+            inv_params = ()
+        for r in conn.execute(inv_sql, inv_params):
+            if int(r["id"]) in linked_ar_inv:
+                continue
+            bal = float(r["balance_due"])
+            inv_no = (r["invoice_number"] or "").strip() or str(r["id"])
+            push(
+                "ar_invoice",
+                r["id"],
+                f"AR invoice {inv_no} #{r['id']} {r['invoice_date']} ${bal:.2f} open — {r['party_name']}",
+                r["invoice_date"],
+                bal,
+                party_name=r["party_name"],
+            )
+
+    if raw_amt < -0.005:
+        if date_window_center:
+            bill_sql = """
+            SELECT b.id, b.vendor_invoice_number, b.bill_date, b.balance_due, v.name AS party_name
+            FROM bills b
+            JOIN vendors v ON v.id = b.vendor_id
+            WHERE b.balance_due > 0.005
+              AND date(b.bill_date) >= date(?, ?)
+              AND date(b.bill_date) <= date(?, ?)
+            ORDER BY b.bill_date DESC
+            LIMIT 500
+            """
+            bill_params = (date_window_center, win_lo, date_window_center, win_hi)
+        else:
+            bill_sql = """
+            SELECT b.id, b.vendor_invoice_number, b.bill_date, b.balance_due, v.name AS party_name
+            FROM bills b
+            JOIN vendors v ON v.id = b.vendor_id
+            WHERE b.balance_due > 0.005
+            ORDER BY b.bill_date DESC
+            LIMIT 200
+            """
+            bill_params = ()
+        for r in conn.execute(bill_sql, bill_params):
+            if int(r["id"]) in linked_ap_bill:
+                continue
+            bal = float(r["balance_due"])
+            vin = (r["vendor_invoice_number"] or "").strip()
+            vin_bit = f" ({vin})" if vin else ""
+            push(
+                "ap_bill",
+                r["id"],
+                f"AP bill #{r['id']}{vin_bit} {r['bill_date']} ${bal:.2f} open — {r['party_name']}",
+                r["bill_date"],
+                bal,
+                party_name=r["party_name"],
+            )
 
     candidates.sort(key=lambda x: (x["score"], x["link_type"], x["link_id"]))
     return candidates[:max_results]

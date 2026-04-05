@@ -857,6 +857,28 @@ class ARTab(QWidget):
         self.persist_header_state()
         super().hideEvent(event)
 
+    def open_invoice_by_id(self, invoice_id: int) -> bool:
+        """Clear the invoice filter, select the row, and open Edit invoice (returns False if not listed)."""
+        iid = int(invoice_id)
+        self._inv_filter.blockSignals(True)
+        self._inv_filter.clear()
+        self._inv_filter.blockSignals(False)
+        QSettings().setValue(_AR_INVOICE_GRID_FILTER_KEY, "")
+        self._refresh()
+        for row in range(self._tbl.rowCount()):
+            if _table_row_entity_id(self._tbl, row) == iid:
+                self._tbl.selectRow(row)
+                self._tbl.setFocus()
+                self._edit_inv()
+                return True
+        message_box_information_ok(
+            self,
+            "Invoice",
+            f"Invoice #{iid} is not in the list (removed or different company).",
+            ok_tip="Close; check Business → Invoices or the bank link.",
+        )
+        return False
+
     def _persist_ar_invoice_filter_and_refresh(self) -> None:
         QSettings().setValue(_AR_INVOICE_GRID_FILTER_KEY, self._inv_filter.text())
         self._refresh()
@@ -1953,6 +1975,28 @@ class APTab(QWidget):
         self.persist_header_state()
         super().hideEvent(event)
 
+    def open_bill_by_id(self, bill_id: int) -> bool:
+        """Clear the bill filter, select the row, and open Edit bill (returns False if not listed)."""
+        bid = int(bill_id)
+        self._bill_filter.blockSignals(True)
+        self._bill_filter.clear()
+        self._bill_filter.blockSignals(False)
+        QSettings().setValue(_AP_BILL_GRID_FILTER_KEY, "")
+        self._refresh()
+        for row in range(self._tbl.rowCount()):
+            if _table_row_entity_id(self._tbl, row) == bid:
+                self._tbl.selectRow(row)
+                self._tbl.setFocus()
+                self._edit_b()
+                return True
+        message_box_information_ok(
+            self,
+            "Bill",
+            f"Bill #{bid} is not in the list (removed or different company).",
+            ok_tip="Close; check Business → Bills or the bank link.",
+        )
+        return False
+
     def _persist_ap_bill_filter_and_refresh(self) -> None:
         QSettings().setValue(_AP_BILL_GRID_FILTER_KEY, self._bill_filter.text())
         self._refresh()
@@ -2903,6 +2947,24 @@ class PayrollTaxTab(QWidget):
         self.persist_header_state()
         super().hideEvent(event)
 
+    def open_payroll_run_by_id(self, run_id: int) -> bool:
+        """Select a pay run by id and open **Tax lines for run** (returns False if not found)."""
+        rid = int(run_id)
+        self._refresh()
+        for row in range(self._tbl.rowCount()):
+            if _payroll_run_id_at_row(self._tbl, row) == rid:
+                self._tbl.selectRow(row)
+                self._tbl.setFocus()
+                self._edit_run_taxes()
+                return True
+        message_box_information_ok(
+            self,
+            "Payroll",
+            f"Pay run #{rid} is not in the list (removed or different company).",
+            ok_tip="Close; check Business → Payroll or the bank link.",
+        )
+        return False
+
     def _tax_codes(self):
         try:
             items = business.list_payroll_tax_items(self._conn, active_only=False)
@@ -3688,7 +3750,8 @@ def _business_keyboard_shortcuts_help_text() -> str:
         "Other tabs:\n"
         "Help → Bank import shortcuts…\n"
         "Help → Bank register keyboard shortcuts…\n"
-        "Register bulk actions (add transaction, post, export, cleared, …): main **Recon** menu.\n"
+        "Register bulk actions (add transaction, post, export, cleared, **Link payment…**, **Open linked Business** when the bank link is complete, …): "
+        "main **Recon** menu.\n"
     )
 
 
@@ -3710,6 +3773,7 @@ class BusinessHub(QWidget):
 
     def __init__(self, conn: sqlite3.Connection, parent=None):
         super().__init__(parent)
+        self._conn = conn
         self.setToolTip(
             "Business hub: Rules, AR invoices, AP bills, Payroll, and default Tax % (F5 refreshes the active list sub-tab). "
             "CSV exports use UTF-8 BOM for Excel. "
@@ -3779,6 +3843,116 @@ class BusinessHub(QWidget):
         idx = 1
         if 0 <= idx < self._business_subtabs.count():
             self._business_subtabs.setCurrentIndex(idx)
+
+    def focus_bills_ap_subtab(self) -> None:
+        """Select the **Bills (AP)** sub-tab (index 2)."""
+        idx = 2
+        if 0 <= idx < self._business_subtabs.count():
+            self._business_subtabs.setCurrentIndex(idx)
+
+    def focus_payroll_subtab(self) -> None:
+        """Select the **Payroll** sub-tab (index 3)."""
+        idx = 3
+        if 0 <= idx < self._business_subtabs.count():
+            self._business_subtabs.setCurrentIndex(idx)
+
+    def navigate_bank_match_link(self, parent: QWidget, link_type: str, link_id: int) -> None:
+        """Open the linked AR/AP/payroll record from a bank register Match link."""
+        lt = (link_type or "").strip()
+        try:
+            lid = int(link_id)
+        except (TypeError, ValueError):
+            message_box_information_ok(
+                parent,
+                "Business link",
+                "Invalid link id.",
+                ok_tip="Close; clear the bank link and set it again if needed.",
+            )
+            return
+        if lt == "ar_invoice":
+            self.focus_invoices_ar_subtab()
+            w = self._business_subtabs.widget(1)
+            if isinstance(w, ARTab):
+                w.open_invoice_by_id(lid)
+            return
+        if lt == "ap_bill":
+            self.focus_bills_ap_subtab()
+            w = self._business_subtabs.widget(2)
+            if isinstance(w, APTab):
+                w.open_bill_by_id(lid)
+            return
+        if lt == "payroll_run":
+            self.focus_payroll_subtab()
+            w = self._business_subtabs.widget(3)
+            if isinstance(w, PayrollTaxTab):
+                w.open_payroll_run_by_id(lid)
+            return
+        if lt == "ar_payment":
+            self.focus_invoices_ar_subtab()
+            row = self._conn.execute(
+                """
+                SELECT p.payment_date, p.amount, p.reference, c.name AS party_name
+                FROM ar_payments p
+                JOIN customers c ON c.id = p.customer_id
+                WHERE p.id = ?
+                """,
+                (lid,),
+            ).fetchone()
+            if row is None:
+                message_box_information_ok(
+                    parent,
+                    "AR payment",
+                    f"No AR payment #{lid} in this company file.",
+                    ok_tip="Close; the link may point at removed data.",
+                )
+                return
+            r = dict(row)
+            ref = (r.get("reference") or "").strip() or "—"
+            message_box_information_ok(
+                parent,
+                "AR payment",
+                f"AR payment #{lid}: {r['payment_date']}  ${float(r['amount']):.2f}  — {r['party_name']}\n"
+                f"Reference: {ref}\n\n"
+                "Export AR payments CSV from this tab for a full list; use Record customer payment… for new entries.",
+                ok_tip="Close; you are on Business → Invoices (AR).",
+            )
+            return
+        if lt == "ap_payment":
+            self.focus_bills_ap_subtab()
+            row = self._conn.execute(
+                """
+                SELECT p.payment_date, p.amount, p.reference, v.name AS party_name
+                FROM ap_payments p
+                JOIN vendors v ON v.id = p.vendor_id
+                WHERE p.id = ?
+                """,
+                (lid,),
+            ).fetchone()
+            if row is None:
+                message_box_information_ok(
+                    parent,
+                    "AP payment",
+                    f"No AP payment #{lid} in this company file.",
+                    ok_tip="Close; the link may point at removed data.",
+                )
+                return
+            r = dict(row)
+            ref = (r.get("reference") or "").strip() or "—"
+            message_box_information_ok(
+                parent,
+                "AP payment",
+                f"AP payment #{lid}: {r['payment_date']}  ${float(r['amount']):.2f}  — {r['party_name']}\n"
+                f"Reference: {ref}\n\n"
+                "Export AP payments CSV from this tab for a full list; use Record vendor payment… for new entries.",
+                ok_tip="Close; you are on Business → Bills (AP).",
+            )
+            return
+        message_box_information_ok(
+            parent,
+            "Business link",
+            f"Unsupported link type: {lt or '(empty)'}",
+            ok_tip="Close; clear the link or pick a supported AR/AP/payroll target.",
+        )
 
     def _refresh_current_subtab(self) -> None:
         w = self._business_subtabs.currentWidget()

@@ -126,9 +126,9 @@ def _document_intake_keyboard_shortcuts_help_text() -> str:
         "Ctrl+1 Document Intake, Ctrl+2 Bank Import, Ctrl+3 Register, Ctrl+4 Chart of Accounts, "
         "Ctrl+5 Reports, Ctrl+6 Journal, Ctrl+7 Business, Ctrl+8 Audit log — all tabs share the open "
         "company SQLite file (File → Backup / Restore, probooks.backup). "
-        "Hover Bank Import and Register in View for status tips on AI line reconciliation and Stmt match.\n\n"
+        "Hover Bank Import and Register in View for status tips on AI line reconciliation and Register Match overlay.\n\n"
         "**Recon** menu — **Bank register** bulk row actions (add transaction, post to GL, export CSV, cleared, "
-        "attachments, splits, transfer, link payment, receipt flags) when you use Register (Ctrl+3). "
+        "attachments, splits, transfer, link payment, open linked Business record, receipt flags) when you use Register (Ctrl+3). "
         "**Tools** menu — open **Invoice…** (Ctrl+Shift+I; Business tab, Invoices AR).\n\n"
         "CSV exports on Bank Import (reconciliation report and line-compare), Register, Reports, Journal, Business, "
         "and Audit use UTF-8 with BOM for Excel.\n"
@@ -152,7 +152,7 @@ def show_document_intake_keyboard_shortcuts_dialog(parent: QWidget) -> None:
         _document_intake_keyboard_shortcuts_help_text(),
         ok_tip="Close; shortcuts apply when Document Intake has focus. "
         "Bank CSV/PDF and AI line reconciliation: Ctrl+2 Bank Import; "
-        "Stmt match overlay: Ctrl+3 Register; register bulk actions: Recon menu. "
+        "Register Match overlay: Ctrl+3 Register; register bulk actions: Recon menu. "
         "Company .db: File → Backup / Restore (probooks.backup).",
     )
 
@@ -170,7 +170,7 @@ _BANK_IMPORT_VIEW_POINTER = (
     "Bank CSV/PDF and AI line reconciliation: View → Bank Import (Ctrl+2). "
 )
 
-# Temporary status bar duration after Bank Import → Register **Stmt match** sync.
+# Temporary status bar duration after Bank Import → Register **Match overlay** sync.
 _STMT_MATCH_SYNC_STATUS_MS = 8000
 
 COMPANY_NAME = "CHAVAN TRUCKING CORPORATION"  # placeholder – replace with real company/file name
@@ -765,7 +765,7 @@ class AppHeaderWidget(QFrame):
         self.setToolTip(
             "App banner; company name is the open SQLite file (File → Open company database; "
             "File → Backup saves a copy via probooks.backup). "
-            "Bank Import and Register host statement reconciliation, AI line reconciliation, and Stmt match."
+            "Bank Import and Register host statement reconciliation, AI line reconciliation, and Register Match overlay."
         )
 
         layout = QHBoxLayout(self)
@@ -787,7 +787,7 @@ class AppHeaderWidget(QFrame):
         _ver = application_version()
         lbl_app.setToolTip(
             "ProBooks+ai — document intake, bank workflows (Bank Import: AI line reconciliation, "
-            "Stmt match sync to Register), ledger, and business tools. "
+            "Match overlay sync to Register), ledger, and business tools. "
             f"Version {_ver} (window title and Help → About). "
             "File → Backup copies the open company .db (probooks.backup / probooks backup)."
         )
@@ -853,7 +853,7 @@ class MainWindow(QMainWindow):
         container = QWidget()
         container.setToolTip(
             "Main workspace: company banner and tabbed areas (Document Intake through Audit log). "
-            "Bank Import includes AI line reconciliation and Stmt match sync to Register. "
+            "Bank Import includes AI line reconciliation and Match overlay sync to Register. "
             "All tabs share the open SQLite company file (File → Backup / Restore, probooks.backup)."
         )
         container_layout = QVBoxLayout(container)
@@ -868,7 +868,7 @@ class MainWindow(QMainWindow):
         self._tabs.setToolTip(
             "Main workspace: switch between Document Intake, Bank Import, Register, "
             "Chart of Accounts, Reports, Journal, Business, and Audit log (hover each tab for a short summary; "
-            "Bank Import includes AI line reconciliation and Stmt match sync to Register when you run compare). "
+            "Bank Import includes AI line reconciliation and Match overlay sync to Register when you run compare). "
             "File → Backup / Restore applies to the whole company database (CLI: probooks backup / restore)."
         )
 
@@ -942,7 +942,7 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(intake_widget, "📄  Document Intake")
 
         # ── Tab 2: Bank Import ───────────────────────────────────────────────
-        # Register is constructed first so Import can hold a reference for Stmt match sync.
+        # Register is constructed first so Import can hold a reference for Match overlay sync.
         self._register_tab = RegisterTab(self._bank_db, self._coa_db, self._gl_db)
         self._bank_tab = BankImportTab(
             self._bank_db,
@@ -979,15 +979,15 @@ class MainWindow(QMainWindow):
         main_tab_bar.setTabToolTip(
             1,
             "Bank CSV/PDF import, batches, transactions, statement reconciliation, "
-            "and AI line reconciliation (row field copies; Stmt match sync when you run compare)."
+            "and AI line reconciliation (row field copies; Match overlay sync when you run compare)."
             + _tab_bar_csv_excel_hint
             + _main_tab_bar_db_hint,
         )
         main_tab_bar.setTabToolTip(
             2,
             "Check-register grid for one bank account; inline edits where allowed; F5 refresh. "
-            "Reconciliation mode + Stmt match (Bank Import AI line reconciliation can populate it). "
-            "Bulk actions (add transaction, post to GL, export CSV, splits, transfer, link, cleared, attachments, receipt flags): Recon menu."
+            "Reconciliation mode + Match overlay (Bank Import AI line reconciliation can populate it). "
+            "Bulk actions (add transaction, post to GL, export CSV, splits, transfer, link, open linked Business, cleared, attachments, receipt flags): Recon menu."
             + _tab_bar_csv_excel_hint
             + _main_tab_bar_db_hint,
         )
@@ -1027,6 +1027,7 @@ class MainWindow(QMainWindow):
         self._sync_bank_workflow_tabs_for_reconciliation_mode(
             self._register_tab.is_reconciliation_mode()
         )
+        self._wire_register_bank_match_navigation()
 
         container_layout.addWidget(self._tabs)
         self.setCentralWidget(container)
@@ -1147,8 +1148,8 @@ class MainWindow(QMainWindow):
         )
         _view_tab_tip_extra = {
             0: " Document Intake; bank CSV/PDF and line reconciliation on Ctrl+2.",
-            1: " Bank Import: AI line reconciliation and Stmt match sync.",
-            2: " Register: Stmt match overlay (Bank Import can populate).",
+            1: " Bank Import: AI line reconciliation and Match overlay sync.",
+            2: " Register: Match overlay (Bank Import can populate).",
         }
         for idx, (sc, label) in enumerate(
             [
@@ -1314,12 +1315,25 @@ class MainWindow(QMainWindow):
         act_reg_link = QAction("&Link Payment\u2026", self)
         _menu_action_tip(
             act_reg_link,
-            "Link one selected row to an AR payment, AP payment, or payroll run (or clear an existing link).",
+            "Link one selected row to an AR payment, AP payment, payroll run, or open invoice/bill (or clear an existing link). "
+            "When the stored link is complete, the dialog includes Open linked Business record…. ",
         )
         act_reg_link.triggered.connect(
             lambda: self._register_tab.tools_register_link_payment_dialog()
         )
         m_reg_txn.addAction(act_reg_link)
+        act_reg_open_biz = QAction("Open &linked Business record", self)
+        _menu_action_tip(
+            act_reg_open_biz,
+            "Switch to the Business tab for the current row’s match: edit invoice or bill, payroll tax lines, "
+            "or a short AR/AP payment summary. Shortcut: Ctrl+Shift+B when Register has focus. "
+            "Same as right-click → Open linked Business record… (when shown) or double-click the Match column; "
+            "opens Business when the link is complete, else the usual Business link message.",
+        )
+        act_reg_open_biz.triggered.connect(
+            lambda: self._register_tab.tools_register_open_linked_business_record()
+        )
+        m_reg_txn.addAction(act_reg_open_biz)
 
         m_reg_flags = recon_menu.addMenu("&Flags")
         act_reg_flag_rcpt = QAction("&Flag Needs Receipt", self)
@@ -1357,7 +1371,7 @@ class MainWindow(QMainWindow):
             "the dialog summarizes UTF-8 BOM CSV exports on Bank Import (batch preview + AI line reconciliation), "
             "Register, Reports, Journal, Business, and Audit; "
             "Bank Import Import CSV… reads UTF-8 optional BOM; links to other Help topics. "
-            "View → Bank Import and Register status tips mention AI line reconciliation and Stmt match.",
+            "View → Bank Import and Register status tips mention AI line reconciliation and Match overlay.",
         )
         act_intake_keys.triggered.connect(
             lambda: show_document_intake_keyboard_shortcuts_dialog(self)
@@ -1366,8 +1380,9 @@ class MainWindow(QMainWindow):
         act_bank_import_keys = QAction("Bank &import shortcuts…", self)
         _menu_action_tip(
             act_bank_import_keys,
-            "F5 refresh and context-menu shortcuts for Bank Import (batch preview: copy row, txn id, date, amount, payee, memo, ref, COA; "
-            "line-reconciliation grid: statement/register date, amount, description, register txn id); "
+            "F5 refresh and context-menu shortcuts for Bank Import (batch preview: copy row, txn id, date, amount, payee, memo, ref, COA, open linked Business when the row has a complete bank link, double-click for the same Business link prompts as Register; "
+            "line-reconciliation grid: statement/register date, amount, description, register txn id, open linked Business when Reg # has a complete bank link, double-click when Reg # is set for the same prompts; "
+            "Ctrl+Shift+B on preview or line grid when focused); "
             "Import CSV reads UTF-8 with optional BOM; reconciliation / line-compare CSV uses UTF-8 BOM for Excel. "
             "Document intake help lists File backup/restore.",
         )
@@ -1378,9 +1393,10 @@ class MainWindow(QMainWindow):
         act_register_keys = QAction("Bank &register keyboard shortcuts…", self)
         _menu_action_tip(
             act_register_keys,
-            "F5, Ctrl+Shift+G/E/C/U, and register grid shortcuts (row menu: copy row, txn id, date, amount, payee, memo, ref, COA); "
+            "F5, Ctrl+Shift+G/E/B/C/U, and register grid shortcuts (row menu: copy row, txn id, date, amount, payee, memo, ref, COA, open linked Business); "
             "Ctrl+Shift+E export CSV uses UTF-8 BOM for Excel. "
             "Recon menu lists Register Actions, Reconciliation, Attachments, Transaction Tools, and Flags (same handlers as the old register buttons). "
+            "Link payment dialog includes Open linked Business when the stored link is complete. "
             "Help dialog links to Bank import for AI line-reconciliation field copies. "
             "Document intake help lists File backup/restore.",
         )
@@ -1481,7 +1497,7 @@ class MainWindow(QMainWindow):
             f"Keyboard shortcuts are summarized under <b>Help</b>.<br><br>"
             f"\u00a9 2026 ProBooks+ai",
             ok_tip="Close; Help lists shortcuts (including UTF-8 BOM CSV for Excel); "
-            "Bank Import covers AI line reconciliation and Stmt match sync; "
+            "Bank Import covers AI line reconciliation and Match overlay sync; "
             "status bar lists ProBooks+ai with the package version (banner name tooltip matches); "
             "File → Backup/Restore uses probooks.backup (same as CLI).",
         )
@@ -1696,7 +1712,7 @@ class MainWindow(QMainWindow):
         tb.setTabVisible(i_bank, show)
 
     def _focus_bank_register_tab(self) -> None:
-        """Focus **Bank register** after Bank Import syncs line-match results to Stmt match.
+        """Focus **Bank register** after Bank Import syncs line-match results to the Match overlay.
 
         Shows a temporary **status bar** message, then schedules :meth:`_update_company_status`
         so the default company line returns when the message clears.
@@ -1708,7 +1724,7 @@ class MainWindow(QMainWindow):
             self._tabs.setCurrentIndex(idx)
             if hasattr(self, "_status_bar"):
                 self._status_bar.showMessage(
-                    "Stmt match updated on Bank register. Reconciliation mode is on. "
+                    "Match overlay updated on Bank register. Reconciliation mode is on. "
                     "Row field copies: Bank Import line-reconciliation grid (Help → Bank import shortcuts…).",
                     _STMT_MATCH_SYNC_STATUS_MS,
                 )
@@ -1716,6 +1732,21 @@ class MainWindow(QMainWindow):
                     _STMT_MATCH_SYNC_STATUS_MS,
                     self._update_company_status,
                 )
+
+    def _navigate_register_bank_match_link(self, link_type: str, link_id: int) -> None:
+        if not hasattr(self, "_business_hub"):
+            return
+        idx = self._tabs.indexOf(self._business_hub)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+        self._business_hub.navigate_bank_match_link(self, link_type, link_id)
+
+    def _wire_register_bank_match_navigation(self) -> None:
+        if not hasattr(self, "_register_tab"):
+            return
+        self._register_tab.openBankMatchNavigationRequested.connect(
+            self._navigate_register_bank_match_link
+        )
 
     def _sync_window_title(self) -> None:
         ver = application_version()
@@ -1774,6 +1805,7 @@ class MainWindow(QMainWindow):
             self._register_tab.is_reconciliation_mode()
         )
         self._coa_tab.coaChanged.connect(self._on_coa_changed)
+        self._wire_register_bank_match_navigation()
 
     def _load_company_at_path(self, resolved: str) -> None:
         """Open SQLite at *resolved* and rebuild bank-side tabs + intake COA."""

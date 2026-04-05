@@ -12,13 +12,14 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication
 
+from desktop_app.register_band_delegate import REGISTER_LINK_LOWER_PLAIN
 from desktop_app.register_tab import (
     RegisterTab,
     _COL_CLR,
     _COL_DATE,
     _COL_LINK,
     _COL_MEMO,
-    _COL_RECON_STATUS,
+    _COL_SPACER,
     _REGISTER_MIN_VISIBLE_ROWS,
     _coerce_register_account_id,
     _register_account_ids_equal,
@@ -290,7 +291,8 @@ def test_register_reconciliation_mode_keeps_rows_visible(qapp) -> None:
         tab._chk_recon.setChecked(True)
         assert tab._reconciliation_mode
         assert not tab._recon_banner.isHidden()
-        assert not tab._table.horizontalHeader().isSectionHidden(_COL_RECON_STATUS)
+        assert not tab._table.horizontalHeader().isSectionHidden(_COL_LINK)
+        assert not tab._table.horizontalHeader().isSectionHidden(_COL_SPACER)
         assert tab._table.rowCount() == _REGISTER_MIN_VISIBLE_ROWS
     finally:
         db.close()
@@ -315,8 +317,8 @@ def test_register_info_footer_totals_and_help_only_when_reconciliation_on(qapp) 
         db.close()
 
 
-def test_register_checkbook_mode_hides_memo_clr_match_stmt_columns(qapp) -> None:
-    """Non-reconciliation mode hides Memo, Clr, Match, and Stmt match (no gaps)."""
+def test_register_checkbook_mode_hides_memo_clr_match_keeps_spacer(qapp) -> None:
+    """Memo stays hidden; unnamed spacer stays visible; Clr and Match toggle with reconciliation mode."""
     p = Path(tempfile.mkdtemp()) / "reg_checkbook_cols.db"
     db = BankDatabase(str(p))
     try:
@@ -327,17 +329,17 @@ def test_register_checkbook_mode_hides_memo_clr_match_stmt_columns(qapp) -> None
         assert hdr.isSectionHidden(_COL_MEMO)
         assert hdr.isSectionHidden(_COL_CLR)
         assert hdr.isSectionHidden(_COL_LINK)
-        assert hdr.isSectionHidden(_COL_RECON_STATUS)
+        assert not hdr.isSectionHidden(_COL_SPACER)
         tab._chk_recon.setChecked(True)
-        assert not hdr.isSectionHidden(_COL_MEMO)
+        assert hdr.isSectionHidden(_COL_MEMO)
         assert not hdr.isSectionHidden(_COL_CLR)
         assert not hdr.isSectionHidden(_COL_LINK)
-        assert not hdr.isSectionHidden(_COL_RECON_STATUS)
+        assert not hdr.isSectionHidden(_COL_SPACER)
         tab._chk_recon.setChecked(False)
         assert hdr.isSectionHidden(_COL_MEMO)
         assert hdr.isSectionHidden(_COL_CLR)
         assert hdr.isSectionHidden(_COL_LINK)
-        assert hdr.isSectionHidden(_COL_RECON_STATUS)
+        assert not hdr.isSectionHidden(_COL_SPACER)
     finally:
         db.close()
 
@@ -370,7 +372,7 @@ def test_register_apply_line_match_from_import_sets_overlay(qapp) -> None:
         assert ok is True
         assert tab._reconciliation_mode
         assert tab._recon_overlay_bank_import_mode
-        assert tab._table.horizontalHeader().isSectionHidden(_COL_RECON_STATUS) is False
+        assert tab._table.horizontalHeader().isSectionHidden(_COL_LINK) is False
         found = False
         for r in range(tab._table.rowCount()):
             it = tab._table.item(r, _COL_DATE)
@@ -378,9 +380,9 @@ def test_register_apply_line_match_from_import_sets_overlay(qapp) -> None:
                 continue
             if it.data(Qt.ItemDataRole.UserRole) != tid:
                 continue
-            rc = tab._table.item(r, _COL_RECON_STATUS)
-            assert rc is not None
-            assert rc.text() == STATUS_MATCHED
+            link_it = tab._table.item(r, _COL_LINK)
+            assert link_it is not None
+            assert link_it.data(REGISTER_LINK_LOWER_PLAIN) == STATUS_MATCHED
             found = True
             break
         assert found
@@ -481,7 +483,7 @@ def test_bank_import_forward_line_match_warns_and_skips_focus_when_register_reje
 
 
 def test_bank_import_forward_line_match_coerces_string_account_id(qapp) -> None:
-    """Stmt match forwarder coerces account id (e.g. string) before calling Register."""
+    """Match overlay forwarder coerces account id (e.g. string) before calling Register."""
     from desktop_app.bank_import_tab import BankImportTab
 
     p = Path(tempfile.mkdtemp()) / "bi_stmt_forward_coerce.db"

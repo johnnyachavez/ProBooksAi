@@ -21,6 +21,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from probooksai.statement_line_match import STATUS_EXTRA, STATUS_MATCHED, STATUS_MISSING
+
 from desktop_app.theme import (
     DISABLED_FG,
     FG_PRIMARY,
@@ -40,6 +42,9 @@ REGISTER_PAYEE_UPPER_PLAIN = Qt.ItemDataRole.UserRole + 51
 REGISTER_PAYEE_LOWER_PLAIN = Qt.ItemDataRole.UserRole + 52
 REGISTER_REF_UPPER_PLAIN = Qt.ItemDataRole.UserRole + 53
 REGISTER_REF_LOWER_PLAIN = Qt.ItemDataRole.UserRole + 54
+REGISTER_LINK_UPPER_PLAIN = Qt.ItemDataRole.UserRole + 55
+REGISTER_LINK_LOWER_PLAIN = Qt.ItemDataRole.UserRole + 56
+REGISTER_LINK_BASE_TOOLTIP = Qt.ItemDataRole.UserRole + 57
 
 _DEFAULT_REGISTER_RIGHT_COLS = frozenset({4, 5, 7})
 
@@ -55,6 +60,7 @@ class RegisterBandDelegate(QStyledItemDelegate):
         missing_flag_date_col: int = 0,
         ref_col: int | None = 1,
         payee_col: int | None = 2,
+        link_col: int | None = None,
         center_col: int | None = 6,
         right_aligned_cols: frozenset[int] | None = None,
     ):
@@ -63,6 +69,7 @@ class RegisterBandDelegate(QStyledItemDelegate):
         self._missing_date_col = missing_flag_date_col
         self._ref_col = ref_col
         self._payee_col = payee_col
+        self._link_col = link_col
         self._center_col = center_col
         self._right_cols = (
             right_aligned_cols
@@ -196,6 +203,63 @@ class RegisterBandDelegate(QStyledItemDelegate):
             t = fm.elidedText(combined.strip(), Qt.TextElideMode.ElideRight, elide_w)
             flags = int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
             painter.drawText(top_r.adjusted(6, 0, -6, 0), flags, t)
+        elif not self._simple and self._link_col is not None and col == self._link_col:
+            l1 = index.data(REGISTER_LINK_UPPER_PLAIN)
+            l2 = index.data(REGISTER_LINK_LOWER_PLAIN)
+            if not isinstance(l1, str):
+                l1 = (opt.text or "").split("\n", 1)[0]
+            if not isinstance(l2, str):
+                parts = (opt.text or "").split("\n", 1)
+                l2 = parts[1] if len(parts) > 1 else ""
+            l2s = (l2 or "").strip()
+            painter.setFont(font)
+            if not l2s:
+                if not enabled:
+                    pen = QColor(DISABLED_FG)
+                else:
+                    pen = QColor(
+                        SELECTION_FG if sel else opt.palette.color(QPalette.ColorRole.Text)
+                    )
+                painter.setPen(pen)
+                full_r = option.rect
+                t = fm.elidedText(
+                    (l1 or "").strip(),
+                    Qt.TextElideMode.ElideRight,
+                    full_r.width() - 12,
+                )
+                flags = int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+                painter.drawText(full_r.adjusted(6, 0, -6, 0), flags, t)
+            else:
+                if not enabled:
+                    painter.setPen(QColor(DISABLED_FG))
+                elif sel:
+                    painter.setPen(QColor(SELECTION_FG))
+                else:
+                    painter.setPen(QColor(FG_PRIMARY))
+                t1 = fm.elidedText(l1, Qt.TextElideMode.ElideRight, top_r.width() - 10)
+                painter.drawText(
+                    top_r.adjusted(6, 3, -6, 0),
+                    int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop),
+                    t1,
+                )
+                if not enabled:
+                    painter.setPen(QColor(DISABLED_FG))
+                elif sel:
+                    painter.setPen(QColor(SELECTION_FG))
+                elif l2s == STATUS_MATCHED:
+                    painter.setPen(QColor("#6ecf8a"))
+                elif l2s == STATUS_MISSING:
+                    painter.setPen(QColor("#e8b060"))
+                elif l2s == STATUS_EXTRA:
+                    painter.setPen(QColor("#7eb3e8"))
+                else:
+                    painter.setPen(QColor(FG_SECONDARY))
+                t2 = fm.elidedText(l2, Qt.TextElideMode.ElideRight, bot_r.width() - 10)
+                painter.drawText(
+                    bot_r.adjusted(6, 2, -6, 0),
+                    int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop),
+                    t2,
+                )
         else:
             painter.setFont(font)
             if not enabled:

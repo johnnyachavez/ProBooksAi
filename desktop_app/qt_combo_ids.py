@@ -3,10 +3,10 @@ Helpers for ``QComboBox`` rows that store integer entity ids in ``itemData`` / `
 
 Used by **Bank register** (account, transfer counterparty, manual **Link payment** record id,
 selected row / context-menu **transaction ids** from table ``UserRole``, suggestion **link_id**;
-**Stmt match** overlay from Bank Import coerces **register_id** / **bank_account_id** payloads),
+**Match overlay** from Bank Import coerces **register_id** / **bank_account_id** payloads;
 **Bank Import** (account combo; **Manage Accounts** / **batch** / import **txn** table ``UserRole``;
 F5 batch re-select; reconciliation tolerance slider re-finds the current batch by id;
-**Stmt match** forward to Register coerces the signal account id; **StatementLineMatchPanel** run uses
+**Match overlay** forward to Register coerces the signal account id; **StatementLineMatchPanel** run uses
 coerced batch ``bank_account_id`` for ``list_transactions`` / emit), **Chart of Accounts**
 and **Journal** list ``UserRole``, **Audit** entity id filter field + log grid column, **Document Intake**
 inbox doc id, **Business** table helpers

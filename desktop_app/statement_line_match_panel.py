@@ -8,11 +8,12 @@ the save dialog suggests a
 basename from the import batch filename (or batch id) and re-opens in the last folder used
 for Bank Import CSV exports (``bank_import/last_csv_export_dir``; legacy
 ``bank_import/line_compare_csv_export_dir`` is still read if unset).
-**Right-click** the grid for **Keyboard shortcuts…** (when wired from Bank Import), **Copy row** (TSV), **Copy statement date** / amount / description when the mock statement side is filled (**Matched** / **Missing**), **Copy register date** / amount / description when the register side is filled (**Matched** / **Extra**), and **Copy register transaction id** when **Reg #** is set.
+**Right-click** the grid for **Keyboard shortcuts…** (when wired from Bank Import), **Copy row** (TSV), **Copy statement date** / amount / description when the mock statement side is filled (**Matched** / **Missing**), **Copy register date** / amount / description when the register side is filled (**Matched** / **Extra**), **Copy register transaction id** when **Reg #** is set, and **Open linked Business record…** when Bank Import wires the register tab and that transaction has a **complete bank link**. **Double-click** a row when **Reg #** is set uses the same **Business link** prompts as **Bank register** (opens **Business** when the link is complete; otherwise an explanatory message).
 """
 
 from __future__ import annotations
 
+import sqlite3
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional
@@ -50,6 +51,7 @@ from desktop_app.table_clipboard import (
     VIEW_BANK_REGISTER_KEYS_TOOLTIP,
     copy_table_row_as_tsv,
 )
+from probooksai import business
 from probooksai.statement_line_match import (
     STATUS_EXTRA,
     STATUS_MATCHED,
@@ -104,7 +106,7 @@ def _suggested_line_compare_csv_filename(batch: Optional[dict]) -> str:
 class StatementLineMatchPanel(QGroupBox):
     """Table + controls for mock statement extract vs register classification."""
 
-    #: Emitted after a successful compare: ``(bank_account_id, results)`` for Register **Stmt match** sync.
+    #: Emitted after a successful compare: ``(bank_account_id, results)`` for Register **Match overlay** sync.
     line_match_results_ready = Signal(int, list)
 
     def __init__(
@@ -113,24 +115,62 @@ class StatementLineMatchPanel(QGroupBox):
         parent=None,
         *,
         bank_import_shortcuts_help: Optional[Callable[[], None]] = None,
+        register_tab=None,
     ):
         super().__init__("AI-assisted line reconciliation (mock extract)", parent)
         self._db = db
         self._rows: list[dict] = []
         self._populating = False
         self._bank_import_shortcuts_help = bank_import_shortcuts_help
+        self._register_tab = register_tab
         self.setToolTip(
             "Compare mock ‘statement’ lines to register transactions for the selected batch period. "
             "Matched / Missing / Extra use amount, date ±2 days, and description similarity. "
             "Reconciled checkboxes are UI-only (no register or import changes). "
             "Real PDF OCR is not used yet—this exercises matching + workflow. "
-            "Run also updates **Bank register → Stmt match** when that tab is wired (same account), "
+            "Run also updates **Bank register → Match overlay** when that tab is wired (same account), "
             "focuses that tab, and shows a short **status bar** message (company line returns after). "
-            "Right-click the table for Copy row and statement/register field copies "
+            "Right-click the table for Copy row and statement/register field copies, "
+            "and Open linked Business when **Reg #** has a **complete bank link** (register tab wired). "
             "(Help → Bank import shortcuts…). "
             "View → Bank Import (Ctrl+2), Register (Ctrl+3)."
         )
         self._build_ui()
+
+    def line_reconciliation_table(self) -> QTableWidget:
+        return self._table
+
+    def try_ctrl_shift_b_open_linked_business(self) -> None:
+        """Same **Business link** flow as row context **Open linked Business record…** when **Reg #** resolves to a transaction id."""
+        if self._register_tab is None:
+            message_box_information_ok(
+                self,
+                "Business link",
+                "Open linked Business is not available here (register tab not wired).",
+                ok_tip="Close; open the company in the main window.",
+            )
+            return
+        row = self._table.currentRow()
+        if row < 0:
+            message_box_information_ok(
+                self,
+                "Business link",
+                "Click a line-reconciliation row first.",
+                ok_tip="Close; pick a row in the Matched / Missing / Extra grid.",
+            )
+            return
+        if row >= len(self._rows):
+            return
+        tid = coerce_combo_int_id(self._rows[row].get("register_id"))
+        if tid is None:
+            message_box_information_ok(
+                self,
+                "Business link",
+                "This row has no Reg # (register transaction id).",
+                ok_tip="Close; pick a Matched or Extra row with a linked register line.",
+            )
+            return
+        self._register_tab.open_linked_business_record_for_transaction_id(tid)
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -150,7 +190,7 @@ class StatementLineMatchPanel(QGroupBox):
         self._btn_run.setToolTip(
             "Build mock statement lines from the register (same period as the batch), "
             "classify Matched / Missing / Extra, and fill the table below. "
-            "Also syncs **Stmt match** on **Bank register** for this account, switches there, "
+            "Also syncs the **Match overlay** on **Bank register** for this account, switches there, "
             "and shows a brief status message (company line returns afterward)."
         )
         self._btn_run.clicked.connect(self._on_run_clicked)
@@ -212,11 +252,15 @@ class StatementLineMatchPanel(QGroupBox):
             "Right-click: Export comparison CSV when the table has rows; Copy row (TSV) on a data row; "
             "Copy statement or register date, amount, or description when that side of the row has data; "
             "Copy register transaction id when **Reg #** is set; "
+            "Open linked Business record when that id has a **complete bank link** (register tab wired); "
+            "**Ctrl+Shift+B** when this grid has focus does the same when **Reg #** is set; "
+            "**double-click** with **Reg #** set: same **Business link** messages as **Bank register**. "
             "Keyboard shortcuts when this panel is embedded in Bank Import. "
             "View → Bank Import (Ctrl+2), Register (Ctrl+3)."
         )
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._on_table_context_menu)
+        self._table.cellDoubleClicked.connect(self._on_line_match_cell_double_clicked)
         self._table.itemChanged.connect(self._on_item_changed)
         self._table.selectionModel().selectionChanged.connect(
             lambda *_: self._refresh_reconciled_action_states()
@@ -457,6 +501,18 @@ class StatementLineMatchPanel(QGroupBox):
     def _copy_line_match_reg_description(self, row: int) -> None:
         QGuiApplication.clipboard().setText(self._line_match_reg_description_plain(row))
 
+    def _on_line_match_cell_double_clicked(self, row: int, col: int) -> None:
+        """Double-click: same **Business link** behavior as register **Match** when **Reg #** is set."""
+        del col
+        if self._register_tab is None:
+            return
+        if row < 0 or row >= len(self._rows):
+            return
+        tid = coerce_combo_int_id(self._rows[row].get("register_id"))
+        if tid is None:
+            return
+        self._register_tab.open_linked_business_record_for_transaction_id(tid)
+
     def _on_table_context_menu(self, pos) -> None:
         menu = QMenu(self)
         if self._bank_import_shortcuts_help is not None:
@@ -556,9 +612,28 @@ class StatementLineMatchPanel(QGroupBox):
                     partial(self._copy_line_match_register_id, row),
                 )
                 act_rid.setToolTip(
-                    "Copy the linked bank_transactions id (same as **Reg #** and **Stmt match** on Bank register). "
+                    "Copy the linked bank_transactions id (same as **Reg #** and **Match** overlay on Bank register). "
                     + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
                 )
+            tid = (
+                coerce_combo_int_id(self._rows[row].get("register_id"))
+                if 0 <= row < len(self._rows)
+                else None
+            )
+            if tid is not None and self._register_tab is not None:
+                nav_ok = business.bank_match_is_navigable(self._db._conn, tid)
+                if nav_ok:
+                    act_open_biz = menu.addAction(
+                        "Open linked Business record…",
+                        partial(
+                            self._register_tab.open_linked_business_record_for_transaction_id,
+                            tid,
+                        ),
+                    )
+                    act_open_biz.setToolTip(
+                        "Switch to the Business tab: open the invoice or bill editor, payroll tax lines, "
+                        "or a short summary for AR/AP payments."
+                    )
         if menu.actions():
             menu.exec(self._table.viewport().mapToGlobal(pos))
 

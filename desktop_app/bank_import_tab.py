@@ -18,10 +18,10 @@ re-selects the same batch when it still exists, refreshing transactions and reco
 (``bank_import/last_import_dir``), with fallback to the last CSV export folder when unset.
 
 **Help** → **Bank import shortcuts…** shows the same **F5** summary and points at Register shortcuts.
-**Right-click** the **Import Batches** table, **register preview** grid, **AI-assisted line reconciliation** table,
+**Right-click** the **Import Batches** table, **register preview** grid, **AI-assisted line reconciliation** table (including **Open linked Business record…** when **Reg #** has a **complete bank link** and the register tab is wired),
 or **Manage Bank Accounts** tables
 (including empty area) for **Keyboard shortcuts…** and row actions; each **QAction** has **setToolTip** where shown.
-Imported transaction rows on the preview offer **Copy row** (TSV), **Copy transaction id**, **Copy date**, **Copy amount**, **Copy payee / description**, **Copy memo**, **Copy number / ref**, and **Copy category (COA)** (plain text from the database, aligned with **Bank register** context menus).
+Imported transaction rows on the preview offer **Copy row** (TSV), **Copy transaction id**, **Copy date**, **Copy amount**, **Copy payee / description**, **Copy memo**, **Copy number / ref**, and **Copy category (COA)** (plain text from the database, aligned with **Bank register** context menus). When the main window wires **register preview** to the **Bank register** tab and the row has a **complete bank link**, **Open linked Business record…** also appears (same as register Recon). **Double-click** an imported row uses the same **Business link** prompts as the register (opens **Business** when the link is complete; otherwise an explanatory message).
 Those tables have hover **tooltips** summarizing the same; **Import Batches** column headers have **setToolTip** per section. The right-pane **BlankBankRegisterTable** uses the same stylesheet as the Register tab grid, the same two-band row delegate (simple mode: one text line per cell in the upper band), and **setToolTip** on each column header.
 
 Tabs / widgets
@@ -32,7 +32,7 @@ Tabs / widgets
   ColumnMappingDialog    – map CSV headers (window + combo + OK/Cancel via ``tip_qdialog_button_box``)
   BlankBankRegisterTable – **QTableWidget** (Date…Balance; blank editable rows, or read-only import rows + padded blanks when a batch is selected; populated rows set hover tooltips like the Bank register for elided text)
   ReconciliationPanel    – statement vs import summary (**QGroupBox** + value labels + status **tooltips**)
-  StatementLineMatchPanel – mock statement extract vs register (**Matched** / **Missing** / **Extra**; review checkboxes, UI-only); **Run mock extract & compare** also pushes **Stmt match** onto the **Bank register** tab when a ``register_tab`` is wired (optional **after_stmt_match_sync** focuses that tab).
+  StatementLineMatchPanel – mock statement extract vs register (**Matched** / **Missing** / **Extra**; review checkboxes, UI-only); **Run mock extract & compare** also pushes the **Match overlay** onto the **Bank register** tab when a ``register_tab`` is wired (optional **after_stmt_match_sync** focuses that tab).
 """
 
 from __future__ import annotations
@@ -69,6 +69,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from probooksai import business
 from probooksai.bank_import import ACCOUNT_TYPES, BANK_CSV_READ_ENCODING, BankDatabase
 from probooksai.coa_db import COADatabase
 
@@ -137,7 +138,9 @@ def _bank_import_keyboard_shortcuts_help_text() -> str:
         "re-opened when it still exists (register preview and reconciliation update). "
         "The batch register preview uses the same banded-row styling as **Bank register**; "
         "arrow keys move the cell focus on the preview grid. "
-        "Right-click a loaded transaction row for **Copy row**, **Copy transaction id**, **Copy date**, **Copy amount**, **Copy payee / description**, **Copy memo**, **Copy number / ref**, or **Copy category (COA)** (saved fields from the database). "
+        "Right-click a loaded transaction row for **Copy row**, **Copy transaction id**, **Copy date**, **Copy amount**, **Copy payee / description**, **Copy memo**, **Copy number / ref**, or **Copy category (COA)** (saved fields from the database); "
+        "**Open linked Business record…** when that row has a **complete bank link** (same as the register); "
+        "**double-click** an imported row: same **Business link** messages as **Bank register** (jump when navigable). "
         "**Export reconciliation report (CSV)** suggests a filename from the import file (or batch id), "
         "writes UTF-8 with a BOM for Excel, and shares a remembered save folder with "
         "**Export comparison CSV\u2026** (line reconciliation). "
@@ -147,21 +150,26 @@ def _bank_import_keyboard_shortcuts_help_text() -> str:
         "or the last CSV export folder if you have not imported yet. "
         "**Import CSV\u2026** reads UTF-8 with optional BOM (typical Excel bank exports).\n\n"
         "AI-assisted line reconciliation (right-hand panel): **Run mock extract & compare** "
-        "fills the **Bank register** **Stmt match** column for the same bank account and "
+        "fills the **Bank register** **Match** column statement overlay for the same bank account and "
         "switches the main window to that tab (reconciliation mode turns on there). "
-        "If that account cannot be opened on the register, a warning explains that **Stmt match** was not updated. "
+        "If that account cannot be opened on the register, a warning explains that the **Match overlay** was not updated. "
         "On success the main **status bar** also shows a short confirmation, then restores the company line. "
         "Right-click the **Matched / Missing / Extra** line-reconciliation grid for **Copy row** "
         "(tab-separated text) on a row; **Copy statement date** / amount / description when the statement side is filled; "
         "**Copy register date** / amount / description when the register side is filled; "
         "**Copy register transaction id** when **Reg #** is present; "
+        "**Open linked Business record…** when **Reg #** has a **complete bank link**; "
+        "**double-click** when **Reg #** is set uses the same **Business link** prompts as the register; "
         "**Export comparison CSV\u2026** or **Keyboard shortcuts…** "
         "when the table has results (empty viewport still offers export + shortcuts). "
         "Export saves UTF-8 CSV with a BOM for Excel (numeric amounts; **Reconciled** yes/no matches the checkboxes). "
         "The save dialog suggests a filename from the batch and re-opens in the last folder you used "
         "when possible: last CSV export folder, else last import folder, else your profile folder "
         "(same as reconciliation export).\n\n"
+        "**Ctrl+Shift+B** when the **batch preview** or **line-reconciliation** grid has keyboard focus "
+        "runs the **Business link** flow (**Business** when the **complete bank link** allows it; same as right-click **Open linked Business record…**).\n\n"
         "View menu tab focus: Ctrl+1 Document Intake, Ctrl+2 Bank Import, Ctrl+3 Register.\n\n"
+        "Tools menu: Ctrl+Shift+I — Invoice… (Business tab, Invoices AR).\n\n"
         "Manage Bank Accounts (dialog): right-click the accounts table (including empty area) "
         "for Keyboard shortcuts… (same as this dialog).\n\n"
         "Document Intake:\n"
@@ -169,7 +177,11 @@ def _bank_import_keyboard_shortcuts_help_text() -> str:
         "COA, Journal, Reports, Audit:\n"
         "Help → More tab shortcuts (F5)…\n\n"
         "Register tab: **F5** / **Ctrl+Shift+** shortcuts and **Help → Bank register keyboard shortcuts…**; "
-        "add/post/export and other row actions are on **Recon** (Register Actions, Reconciliation, …).\n\n"
+        "add/post/export and other row actions are on **Recon** (Register Actions, Reconciliation, …). "
+        "When the **complete bank link** allows it, **Ctrl+Shift+B** or **Recon → Transaction Tools → Open linked Business record** "
+        "switches to **Business** (same as right-click **Open linked Business record…** or double-click **Match** in reconciliation mode; "
+        "otherwise the **Business link** message). "
+        "**Link payment…** includes **Open linked Business record…** when the stored link is complete (can open in Business).\n\n"
         "Business tab (rules, invoices, bills, payroll):\n"
         "Help → Business shortcuts…"
     )
@@ -181,8 +193,9 @@ def show_bank_import_keyboard_shortcuts_dialog(parent: QWidget) -> None:
         "Bank import shortcuts",
         _bank_import_keyboard_shortcuts_help_text(),
         ok_tip="Close; shortcuts apply when Bank Import has focus. "
-        "View → Register (Ctrl+3) for Stmt match after Run mock extract & compare; "
-        "register bulk actions live under Recon. "
+        "View → Register (Ctrl+3) for the Match overlay after Run mock extract & compare; "
+        "register bulk actions live under Recon; **Ctrl+Shift+B** on the **batch preview** or **line-reconciliation** grid "
+        "runs the **Business link** flow (**Business** when the row has a **complete bank link**; same chord as **Bank register**). "
         "Company .db: File → Backup / Restore (probooks.backup).",
     )
 
@@ -797,7 +810,9 @@ class BlankBankRegisterTable(QTableWidget):
             "Register-style preview: select an import batch to load its rows (debit/credit split); "
             "running balance fills when the batch has a beginning balance. "
             "Padding rows stay editable scratch space. Right-click for Keyboard shortcuts… "
-            "(including on empty area); on imported rows also **Copy row**, **Copy transaction id**, **Copy date**, **Copy amount**, **Copy payee / description**, **Copy memo**, **Copy number / ref**, or **Copy category (COA)**. "
+            "(including on empty area); on imported rows also **Copy row**, **Copy transaction id**, **Copy date**, **Copy amount**, **Copy payee / description**, **Copy memo**, **Copy number / ref**, or **Copy category (COA)**; "
+            "**Ctrl+Shift+B** runs the **Business link** flow (**Business** when the row has a **complete bank link**; same as the row menu); "
+            "**double-click** uses the same **Business link** prompts as **Bank register** (including when there is no navigable link). "
             "CSV exports in reconciliation below use UTF-8 BOM for Excel. "
             + VIEW_BANK_REGISTER_KEYS_TOOLTIP
         )
@@ -1126,15 +1141,15 @@ class BankImportTab(QWidget):
         self._refresh_accounts()
 
     def _forward_line_match_to_register(self, bank_account_id: object, results: list) -> None:
-        """Sync AI line reconciliation table to **Bank register → Stmt match** overlay."""
+        """Sync AI line reconciliation table to **Bank register → Match overlay**."""
         if self._register_tab is None:
             return
         aid = coerce_combo_int_id(bank_account_id)
         if aid is None:
             message_box_warning_ok(
                 self,
-                "Stmt match sync",
-                "Invalid bank account id for Stmt match sync.",
+                "Match overlay sync",
+                "Invalid bank account id for Match overlay sync.",
                 ok_tip="Close; select a bank account on Bank Import, then run compare again.",
             )
             return
@@ -1144,10 +1159,10 @@ class BankImportTab(QWidget):
         if not applied:
             message_box_warning_ok(
                 self,
-                "Stmt match sync",
+                "Match overlay sync",
                 "Could not select that bank account on Bank register. "
                 "It may have been removed or the lists are out of date. "
-                "Stmt match was not updated.",
+                "Match overlay was not updated.",
                 ok_tip="Close; try F5 on Bank Import and Register, or Manage Accounts….",
             )
         fn = self._after_stmt_match_sync
@@ -1158,10 +1173,10 @@ class BankImportTab(QWidget):
         self.setToolTip(
             "Bank CSV/PDF import and reconciliation: choose an account, import batches, transactions, "
             "and match statement balances. "
-            "AI-assisted line reconciliation (Matched / Missing / Extra) can update Bank register Stmt match "
+            "AI-assisted line reconciliation (Matched / Missing / Extra) can update Bank register Match overlay "
             "when you run compare (Help → Bank import shortcuts…); exported CSV uses UTF-8 BOM for Excel "
             "(F5 refreshes when this tab has focus). "
-            "View → Register (Ctrl+3) shows Stmt match after compare. "
+            "View → Register (Ctrl+3) shows the Match overlay after compare. "
             "Same company SQLite database as other main tabs; File → Backup / Restore (probooks.backup)."
         )
         outer = QVBoxLayout(self)
@@ -1306,6 +1321,14 @@ class BankImportTab(QWidget):
         self._txn_table.customContextMenuRequested.connect(
             self._on_import_txn_context_menu
         )
+        sc_prev_open_biz = QShortcut(QKeySequence("Ctrl+Shift+B"), self._txn_table)
+        sc_prev_open_biz.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        sc_prev_open_biz.activated.connect(
+            self._import_preview_ctrl_shift_b_open_linked_business
+        )
+        self._txn_table.cellDoubleClicked.connect(
+            self._on_import_preview_cell_double_clicked
+        )
         txn_col_layout.addWidget(self._txn_table, stretch=1)
         right_splitter.addWidget(txn_col)
 
@@ -1354,7 +1377,8 @@ class BankImportTab(QWidget):
         lbl_ai_line.setToolTip(
             "Mock PDF extract vs register (Matched / Missing / Extra). "
             "Reconciled checkboxes are UI-only; register data is unchanged. "
-            "Right-click the grid for Copy row and statement/register field copies "
+            "Right-click the grid for Copy row and statement/register field copies; "
+            "when **Reg #** is set and that transaction has a **complete bank link**, **Open linked Business record…** "
             "(Help → Bank import shortcuts… summarizes menus)."
         )
         recon_col_layout.addWidget(lbl_ai_line)
@@ -1362,6 +1386,7 @@ class BankImportTab(QWidget):
             self._db,
             parent=self,
             bank_import_shortcuts_help=self._show_bank_import_keyboard_shortcuts_help,
+            register_tab=self._register_tab,
         )
         recon_col_layout.addWidget(self._line_match_panel)
         self._line_match_panel.set_context(None, None)
@@ -1369,6 +1394,14 @@ class BankImportTab(QWidget):
             self._line_match_panel.line_match_results_ready.connect(
                 self._forward_line_match_to_register
             )
+        sc_line_open_biz = QShortcut(
+            QKeySequence("Ctrl+Shift+B"),
+            self._line_match_panel.line_reconciliation_table(),
+        )
+        sc_line_open_biz.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        sc_line_open_biz.activated.connect(
+            self._line_match_panel.try_ctrl_shift_b_open_linked_business
+        )
 
         right_splitter.addWidget(recon_col)
 
@@ -1394,7 +1427,7 @@ class BankImportTab(QWidget):
             "AI line-reconciliation grid (empty area where supported) for Keyboard shortcuts…; "
             "preview rows and that grid also offer Copy row and field copies. "
             "Help → Bank import shortcuts…; Register tab: Help → Bank register keyboard shortcuts…. "
-            "View: Ctrl+2 this tab, Ctrl+3 Register (Stmt match overlay). "
+            "View: Ctrl+2 this tab, Ctrl+3 Register (Match overlay). "
             "Company SQLite: File → Backup / Restore (probooks.backup, CLI probooks backup/restore)."
         )
         tip.setWordWrap(True)
@@ -1535,6 +1568,52 @@ class BankImportTab(QWidget):
         self._batch_table.setSortingEnabled(True)
         self._sync_right_pane_placeholder_visibility()
 
+    def _on_import_preview_cell_double_clicked(self, row: int, col: int) -> None:
+        """Double-click imported row: same **Business link** behavior as register **Match** (messages when not navigable)."""
+        del col  # any column on the row
+        if self._register_tab is None:
+            return
+        it = self._txn_table.item(row, 0)
+        tid = (
+            coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole)) if it is not None else None
+        )
+        if tid is None:
+            return
+        self._register_tab.open_linked_business_record_for_transaction_id(tid)
+
+    def _import_preview_ctrl_shift_b_open_linked_business(self) -> None:
+        """**Ctrl+Shift+B** on batch preview: same **Business link** flow as **Open linked Business record…**."""
+        if self._register_tab is None:
+            message_box_information_ok(
+                self,
+                "Business link",
+                "Open linked Business is not available here (register tab not wired).",
+                ok_tip="Close; open the company in the main window.",
+            )
+            return
+        row = self._txn_table.currentRow()
+        if row < 0:
+            message_box_information_ok(
+                self,
+                "Business link",
+                "Click a transaction row in the batch preview first.",
+                ok_tip="Close; select a saved import line, then press Ctrl+Shift+B or use the row menu.",
+            )
+            return
+        it = self._txn_table.item(row, 0)
+        tid = (
+            coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole)) if it is not None else None
+        )
+        if tid is None:
+            message_box_information_ok(
+                self,
+                "Business link",
+                "This line is not a saved transaction (no row id).",
+                ok_tip="Close; pick a real imported row, not a blank practice line.",
+            )
+            return
+        self._register_tab.open_linked_business_record_for_transaction_id(tid)
+
     def _on_import_txn_context_menu(self, pos):
         idx = self._txn_table.indexAt(pos)
         menu = QMenu(self)
@@ -1558,7 +1637,20 @@ class BankImportTab(QWidget):
         if tid is None:
             menu.exec(self._txn_table.viewport().mapToGlobal(pos))
             return
+        nav_ok = business.bank_match_is_navigable(self._db._conn, tid)
         menu.addSeparator()
+        if self._register_tab is not None and nav_ok:
+            act_open_biz = menu.addAction(
+                "Open linked Business record…",
+                partial(
+                    self._register_tab.open_linked_business_record_for_transaction_id,
+                    tid,
+                ),
+            )
+            act_open_biz.setToolTip(
+                "Switch to the Business tab: open the invoice or bill editor, payroll tax lines, "
+                "or a short summary for AR/AP payments."
+            )
         act_att = menu.addAction(
             "Open attachment…",
             partial(self._open_import_txn_attachment, tid),

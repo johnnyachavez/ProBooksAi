@@ -4,7 +4,18 @@ from __future__ import annotations
 
 import csv
 
-from probooksai.audit_log import write_audit_csv
+from probooksai.audit_log import audit_field_display_label, write_audit_csv
+
+
+def test_audit_field_display_label_maps_bank_match_link():
+    assert audit_field_display_label("bank_match_link") == "Payment / document link"
+    assert audit_field_display_label("memo") == "Memo"
+    assert audit_field_display_label("coa_account") == "Category (COA)"
+    assert audit_field_display_label("is_reconciled") == "Batch reconciled"
+    assert audit_field_display_label("account_name") == "Account name"
+    assert audit_field_display_label("unknown_custom_field") == "unknown_custom_field"
+    assert audit_field_display_label("") == ""
+    assert audit_field_display_label(None) == ""
 
 
 def test_write_audit_csv_roundtrip(tmp_path):

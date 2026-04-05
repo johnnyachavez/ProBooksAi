@@ -630,7 +630,7 @@ def test_main_window_tab_bar_has_tab_tooltips() -> None:
     assert text.count("_main_tab_bar_db_hint") == 8
     assert "Bank CSV/PDF import" in text
     assert "AI line reconciliation (row field copies" in text
-    assert "Stmt match (Bank Import AI line reconciliation can populate it)" in text
+    assert "Match overlay (Bank Import AI line reconciliation can populate it)" in text
     assert "Business hub:" in text
     assert "self._tabs.setToolTip(" in text
     assert "Main workspace:" in text
@@ -647,7 +647,7 @@ def test_main_window_tab_bar_has_tab_tooltips() -> None:
     assert "Document inbox column:" in text
     assert "container.setToolTip(" in text
     assert "company banner and tabbed areas" in text
-    assert "Bank Import includes AI line reconciliation and Stmt match sync to Register" in text
+    assert "Bank Import includes AI line reconciliation and Match overlay sync to Register" in text
 
 
 def test_main_tab_widgets_have_root_hover_tooltips() -> None:
@@ -685,7 +685,7 @@ def test_main_tab_widgets_have_root_hover_tooltips() -> None:
 
     reg = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
     assert "Bank register for one account:" in reg
-    assert "Reconciliation mode + Stmt match can be updated from Bank Import AI line reconciliation" in reg
+    assert "Reconciliation mode + Match overlay can be updated from Bank Import AI line reconciliation" in reg
     assert "View → Bank Import (Ctrl+2), Register (Ctrl+3)" in reg
     assert "and export CSV (UTF-8 BOM for Excel)" in reg
 
@@ -846,7 +846,7 @@ def test_file_exit_menu_tip_suggests_backup() -> None:
 
 
 def test_main_window_no_toolbar_menu_bar_qaction_counts() -> None:
-    """``_build_ui`` has no main ``QToolBar``; menu bar defines 33 ``QAction``s."""
+    """``_build_ui`` has no main ``QToolBar``; menu bar defines 34 ``QAction``s."""
     text = _MAIN.read_text(encoding="utf-8")
     bu_s = text.index("def _build_ui(self):")
     bu_e = text.index("    def _build_menu_bar(self):", bu_s)
@@ -856,7 +856,7 @@ def test_main_window_no_toolbar_menu_bar_qaction_counts() -> None:
     assert "# Toolbar" not in bu_chunk
     mb_s = text.index("def _build_menu_bar")
     mb_e = text.index("def dragEnterEvent", mb_s)
-    assert text[mb_s:mb_e].count("QAction(") == 33
+    assert text[mb_s:mb_e].count("QAction(") == 34
 
 
 def test_file_menu_import_wires_on_import_and_mentions_ctrl_o() -> None:
@@ -2418,7 +2418,7 @@ def test_main_window_build_ui_wires_stmt_match_sync_focus_register() -> None:
     text = _MAIN.read_text(encoding="utf-8")
     assert "def _focus_bank_register_tab(self)" in text
     assert text.count("after_stmt_match_sync=self._focus_bank_register_tab") == 2
-    assert "Stmt match updated on Bank register" in text
+    assert "Match overlay updated on Bank register" in text
     assert "line-reconciliation grid" in text
     assert "_STMT_MATCH_SYNC_STATUS_MS = 8000" in text
     focus_body = text.split("def _focus_bank_register_tab", 1)[1].split(
@@ -2430,13 +2430,13 @@ def test_main_window_build_ui_wires_stmt_match_sync_focus_register() -> None:
 
 
 def test_main_window_build_menu_bar_wires_all_action_triggers() -> None:
-    """Every enabled menu ``QAction`` wires ``triggered.connect`` (28 wired; 5 disabled stubs)."""
+    """Every enabled menu ``QAction`` wires ``triggered.connect`` (29 wired; 5 disabled stubs)."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _build_menu_bar(self):")
     end = text.index("    # -- drag & drop on window", start)
     chunk = text[start:end]
-    assert chunk.count("QAction(") == 33
-    assert chunk.count(".triggered.connect(") == 28
+    assert chunk.count("QAction(") == 34
+    assert chunk.count(".triggered.connect(") == 29
     assert (
         chunk.count(
             "lambda checked=False, i=idx: self._set_main_tab_index(i)"
@@ -2868,7 +2868,7 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
     )
     assert per_menu_add == (9, 1, 3, 1, 7), (
         f"expected top-level addAction counts (File,View,Edit,Tools,Help)=(9,1,3,1,7); "
-        f"Recon register actions use 12 submenu addAction (counted separately); "
+        f"Recon register actions use 13 submenu addAction (counted separately); "
         f"got {per_menu_add}"
     )
     n_reg_sub_add = (
@@ -2878,10 +2878,10 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
         + chunk.count("m_reg_txn.addAction(")
         + chunk.count("m_reg_flags.addAction(")
     )
-    assert n_reg_sub_add == 12
+    assert n_reg_sub_add == 13
     n_add = sum(per_menu_add) + n_reg_sub_add
-    assert n_qa == n_tip == n_add == 33, (
-        f"expected 33 menu QActions, _menu_action_tip calls, and *.addAction( calls "
+    assert n_qa == n_tip == n_add == 34, (
+        f"expected 34 menu QActions, _menu_action_tip calls, and *.addAction( calls "
         f"(QAction={n_qa}, _menu_action_tip={n_tip}, addAction={n_add})"
     )
     n_dis = chunk.count("setEnabled(False)")
@@ -2922,7 +2922,7 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
     assert chunk.count("_view_tab_tip_suffix") == 2
     assert "_view_tab_tip_extra" in chunk
     assert "Document Intake; bank CSV/PDF and line reconciliation on Ctrl+2" in chunk
-    assert "AI line reconciliation and Stmt match sync" in chunk
+    assert "AI line reconciliation and Match overlay sync" in chunk
     assert 'f"Show this main tab ({sc}).{extra}{_view_tab_tip_suffix}"' in chunk
 
 
@@ -3572,15 +3572,22 @@ def test_main_help_menu_status_tips_mention_utf8_bom_csv_exports() -> None:
     assert "Import CSV reads UTF-8 with optional BOM" in bi
     assert "line-compare CSV uses UTF-8 BOM for Excel" in bi
     assert "batch preview: copy row, txn id, date, amount, payee, memo, ref, COA" in bi
+    assert "open linked Business when the row has a complete bank link" in bi
+    assert "double-click for the same Business link prompts as Register" in bi
     assert (
-        "line-reconciliation grid: statement/register date, amount, description, register txn id"
+        "line-reconciliation grid: statement/register date, amount, description, register txn id, open linked Business when Reg # has a complete bank link"
         in bi
     )
+    assert "Ctrl+Shift+B on preview or line grid when focused" in bi
     reg = chunk.split("act_register_keys = QAction", 1)[1].split(
         "act_business_keys = QAction", 1
     )[0]
-    assert "register grid shortcuts (row menu: copy row, txn id, date, amount, payee, memo, ref, COA)" in reg
+    assert (
+        "register grid shortcuts (row menu: copy row, txn id, date, amount, payee, memo, ref, COA, open linked Business)"
+        in reg
+    )
     assert "Ctrl+Shift+E export CSV uses UTF-8 BOM for Excel" in reg
+    assert "Link payment dialog includes Open linked Business" in reg
     assert "AI line-reconciliation field copies" in reg
     bus = chunk.split("act_business_keys = QAction", 1)[1].split(
         "act_more_tab_keys = QAction", 1
@@ -3612,6 +3619,11 @@ def test_more_main_tabs_shortcuts_module_exposes_help_dialog() -> None:
     assert "Ctrl+2 Bank Import" in text
     assert "Help → Document intake shortcuts" in text
     assert "Register bulk actions" in text and "main **Recon** menu" in text
+    assert "Ctrl+Shift+B" in text
+    assert "Open linked Business record" in text
+    assert "Bank Import** batch preview" in text
+    assert "Ctrl+Shift+I" in text and "Invoice…" in text
+    assert "File, View, Edit, Tools, Recon, Help" in text
     assert "status bar" in text
     assert "per-item hover tooltips" in text
     assert "probooks.backup" in text
@@ -3629,6 +3641,8 @@ def test_more_main_tabs_shortcuts_module_exposes_help_dialog() -> None:
     assert "line-reconciliation grid" in text
     assert "Matched / Missing / Extra" in text
     assert "Copy register transaction id" in text
+    assert "**Reg #** has a **complete bank link**" in text
+    assert "**Link payment…** also offers" in text
 
 
 def test_main_tab_root_tooltips_mention_shared_company_backup() -> None:
@@ -3652,6 +3666,7 @@ def test_main_tab_root_tooltips_mention_shared_company_backup() -> None:
 def test_audit_dialog_change_history_context_menu_includes_shortcuts_help() -> None:
     path = _DESKTOP_APP_DIR / "audit_dialog.py"
     text = path.read_text(encoding="utf-8")
+    assert "audit_field_display_label" in text
     assert "def _audit_history_shortcuts_help" in text
     assert "Keyboard shortcuts…" in text
     assert "_audit_history_table_context_menu" in text
@@ -3666,7 +3681,10 @@ def test_register_link_payment_suggestion_list_opens_register_shortcuts_help() -
     rtab = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
     assert rtab.count("show_register_keyboard_shortcuts_dialog(self)") >= 2
     assert "on_sug_context_menu" in rtab
-    assert "Link payment… (Recon → Transaction Tools) — suggested-matches list" in rtab
+    assert (
+        "Link payment… (Recon → Transaction Tools) — when the **current link** can open in Business"
+        in rtab
+    )
     assert "sug_list.setToolTip(" in rtab
 
 
@@ -3694,6 +3712,7 @@ def test_bank_import_tab_exposes_shortcuts_dialog_for_help_menu() -> None:
     bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
     assert "def show_bank_import_keyboard_shortcuts_dialog" in bit
     assert "def _bank_import_keyboard_shortcuts_help_text" in bit
+    assert "runs the **Business link** flow" in bit
     assert "Help → Business shortcuts" in bit
     assert "Help → Document intake shortcuts" in bit
     assert "If that account cannot be opened on the register" in bit
@@ -3717,6 +3736,8 @@ def test_bank_import_tab_exposes_shortcuts_dialog_for_help_menu() -> None:
     assert "writes UTF-8 with a BOM for Excel" in bit
     assert "last CSV export folder if you have not imported yet" in bit
     assert "empty viewport" in bit
+    assert "Open linked Business record…** when **Reg #** has a **complete bank link**" in bit
+    assert "**double-click** when **Reg #** is set uses the same **Business link** prompts" in bit
 
 
 def test_register_tab_exposes_shared_shortcuts_dialog_for_help_menu() -> None:
@@ -4089,6 +4110,7 @@ def test_audit_tab_f5_refresh_shortcut_wired() -> None:
 
 def test_audit_tab_entity_id_uses_coerce_combo_int_id() -> None:
     at = (_DESKTOP_APP_DIR / "audit_tab.py").read_text(encoding="utf-8")
+    assert "audit_field_display_label" in at
     assert "from desktop_app.qt_combo_ids import coerce_combo_int_id" in at
     assert at.count("coerce_combo_int_id(id_txt)") == 2
     ref = at.split("def _refresh(self):", 1)[1].split("def _on_audit_context_menu", 1)[0]
@@ -5125,7 +5147,7 @@ def test_main_window_banner_tabs_status_bar_and_worker_counts() -> None:
     chunk = text[start:end]
     assert chunk.count("self._header.") == 2
     assert chunk.count("self._status_bar.showMessage(") == 12
-    assert chunk.count("self._tabs.") == 31
+    assert chunk.count("self._tabs.") == 33
     assert chunk.count("self._worker") == 13
 
 
@@ -5231,11 +5253,12 @@ def test_help_keyboard_shortcuts_dialog_ok_tips_mention_company_db_backup() -> N
     b = bi[bidx : bi.index("\n\n# =====", bidx)]
     assert needle in b
     assert "register bulk actions" in b and "Recon" in b
-    assert "Ctrl+3" in b and "Stmt match" in b
+    assert "Ctrl+3" in b and "Match overlay" in b
     reg = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
     ridx = reg.index("def show_register_keyboard_shortcuts_dialog")
     r = reg[ridx : reg.index("\n\nclass RegisterTab", ridx)]
     assert needle in r
+    assert "Link payment…** also shows" in r
     assert "Recon menu" in r and "Register Actions" in r
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
     bidx = et.index("def show_business_keyboard_shortcuts_dialog")
@@ -5351,6 +5374,8 @@ def test_extra_tabs_exposes_business_shortcuts_dialog_for_help_menu() -> None:
         in bus_help
     )
     assert "Register bulk actions" in bus_help and "main **Recon** menu" in bus_help
+    assert "**Link payment…**" in bus_help and "**Open linked Business**" in bus_help
+    assert "when the bank link is complete" in bus_help
     assert "Ctrl+Shift+I" in bus_help and "Invoice…" in bus_help
     assert (
         et.count("lambda: show_business_keyboard_shortcuts_dialog(self)") == 4
@@ -5466,6 +5491,9 @@ def test_bank_import_tab_batch_and_txn_tables_coerce_user_role_ids() -> None:
     assert "_copy_import_txn_memo" in txn_ctx
     assert "_copy_import_txn_ref_number" in txn_ctx
     assert "_copy_import_txn_coa" in txn_ctx
+    assert "Open linked Business record" in txn_ctx
+    assert "open_linked_business_record_for_transaction_id" in txn_ctx
+    assert "bank_match_is_navigable" in txn_ctx
     tol_chunk = bit.split("def _on_reconciliation_tolerance_changed", 1)[1].split(
         "def _load_batch", 1
     )[0]
@@ -5521,6 +5549,11 @@ def test_bank_import_keyboard_shortcuts_help_text_lists_view_chords() -> None:
         in chunk
     )
     assert "Recon" in chunk and "Register Actions" in chunk
+    assert "Ctrl+Shift+I" in chunk and "Invoice…" in chunk
+    assert "Ctrl+Shift+B" in chunk and "Open linked Business record" in chunk
+    assert "Business link" in chunk and "complete bank link" in chunk
+    assert "batch preview" in chunk and "line-reconciliation" in chunk
+    assert "Link payment…" in chunk and "stored link is complete" in chunk
 
 
 def test_bank_import_tab_f5_reload_shortcut_wired() -> None:
@@ -5646,6 +5679,8 @@ def test_bank_import_blank_register_table_columns_empty_rows_and_pdf_dialog() ->
     assert init_body.index("self.setItemDelegate(") < init_body.index("self.reset_blank()")
     assert "setDefaultSectionSize(REGISTER_ROW_HEIGHT_MIN_PREVIEW)" in init_body
     assert 'setObjectName("bankRegisterTable")' in chunk
+    assert "**Ctrl+Shift+B** runs the **Business link** flow" in init_body
+    assert "**double-click**" in init_body
     assert "EditTrigger.DoubleClicked" in chunk
     assert "NoEditTriggers" not in chunk
     assert "def reset_blank(self)" in chunk
@@ -5693,13 +5728,13 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
     assert "line_match_results_ready.connect" in bit
     assert "_forward_line_match_to_register" in bit
     assert "if applied and fn is not None:" in bit
-    assert "Stmt match sync" in bit
-    assert "Stmt match was not updated" in bit
+    assert "Match overlay sync" in bit
+    assert "Match overlay was not updated" in bit
     fwd = bit.split("    def _forward_line_match_to_register", 1)[1].split(
         "    def _build_ui(self):", 1
     )[0]
     assert "coerce_combo_int_id(bank_account_id)" in fwd
-    assert "Invalid bank account id for Stmt match sync." in fwd
+    assert "Invalid bank account id for Match overlay sync." in fwd
     assert "after_stmt_match_sync" in bit
     assert "_after_stmt_match_sync" in bit
     sm = (_DESKTOP_APP_DIR / "statement_line_match_panel.py").read_text(encoding="utf-8")
@@ -5707,6 +5742,8 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
     assert "suggested_bank_import_batch_csv_filename" in sm
     assert "from desktop_app.qt_combo_ids import coerce_combo_int_id" in sm
     assert "customContextMenuRequested" in sm
+    assert "cellDoubleClicked.connect" in sm
+    assert "_on_line_match_cell_double_clicked" in sm
     assert "copy_table_row_as_tsv" in sm
     assert "Copy register transaction id" in sm
     assert "Copy statement date" in sm
@@ -5729,11 +5766,20 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
     assert "_copy_line_match_reg_description" in sm
     assert "_copy_line_match_register_id" in sm
     assert "_line_match_register_id_plain" in sm
+    assert "business.bank_match_is_navigable" in sm
+    assert "open_linked_business_record_for_transaction_id" in sm
+    assert "act_open_biz.setToolTip" in sm
+    assert "def line_reconciliation_table" in sm
+    assert "def try_ctrl_shift_b_open_linked_business" in sm
     assert "bank_import_shortcuts_help" in sm
     assert "Right-click the table for Copy row and statement/register field copies" in sm
     assert "View → Bank Import (Ctrl+2), Register (Ctrl+3)" in sm
     assert "+ VIEW_BANK_REGISTER_KEYS_TOOLTIP" in sm
     assert "StatementLineMatchPanel(" in bit and "bank_import_shortcuts_help=" in bit
+    assert "register_tab=self._register_tab" in bit
+    assert "_import_preview_ctrl_shift_b_open_linked_business" in bit
+    assert "_on_import_preview_cell_double_clicked" in bit
+    assert bit.count('QKeySequence("Ctrl+Shift+B")') == 2
     run_sm = sm.split("def _on_run_clicked", 1)[1].split("def _mark_reviewed_selected", 1)[0]
     assert "coerce_combo_int_id(b.get(\"bank_account_id\"))" in run_sm
     assert "line_match_results_ready = Signal(int, list)" in sm
@@ -5846,6 +5892,7 @@ def test_grids_context_menus_use_qaction_hover_tooltips() -> None:
     txn_chunk = bit[txn_s:txn_e]
     assert "act_keys.setToolTip" in txn_chunk
     assert txn_chunk.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
+    assert "act_open_biz.setToolTip" in txn_chunk
     assert "act_att.setToolTip" in txn_chunk
     assert "act_history.setToolTip" in txn_chunk
     acc_s = bit.index("def _on_accounts_table_context_menu")
@@ -5948,7 +5995,7 @@ def test_register_tab_persists_header_state_via_qsettings() -> None:
     """Register saves/restores horizontal header state like other desktop grids."""
     text = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
     assert "saveState()" in text and "restoreState" in text
-    assert "register/table_header_state_" in text
+    assert "register/table_header_state_v4_" in text
 
 
 def test_register_and_bank_import_module_docstrings_document_tab_architecture() -> None:
@@ -5989,23 +6036,23 @@ def test_register_tab_transfer_and_manual_link_coerce_combo_int_ids() -> None:
 
 
 def test_register_tab_min_visible_rows_and_reconciliation_mode() -> None:
-    """Register always pads visible rows; reconciliation mode adds banner + Stmt match column."""
+    """Register always pads visible rows; reconciliation mode adds banner + Match overlay on Match column."""
     import re
 
     text = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
     m = re.search(r"_REGISTER_MIN_VISIBLE_ROWS = (\d+)", text)
     assert m is not None
     assert 15 <= int(m.group(1)) <= 25
-    assert "Bank Import Run mock extract & compare can populate Stmt match" in text
+    assert "Bank Import **Run mock extract & compare** can populate that overlay" in text
     assert "Reconciliation Mode Active" in text
-    assert "_COL_RECON_STATUS" in text
+    assert "_COL_SPACER" in text
     assert "n_vis = max(n_data, _REGISTER_MIN_VISIBLE_ROWS)" in text
     assert "def _fill_pad_row(self, row: int)" in text
     assert "def _on_reconciliation_mode_toggled(self" in text
-    assert "horizontalHeader().setSectionHidden" in text
+    assert "setSectionHidden" in text
     for needle in (
         "Reconciliation mode",
-        "Stmt match",
+        "REGISTER_LINK_LOWER_PLAIN",
         "_REGISTER_HEADERS_FULL",
         "_maybe_fill_demo_reconciliation_overlay",
         "apply_line_match_results_from_import",
@@ -6017,6 +6064,25 @@ def test_register_tab_min_visible_rows_and_reconciliation_mode() -> None:
         "tools_register_add_transaction",
     ):
         assert needle in text, needle
+
+
+def test_register_bank_match_opens_business_navigation_wiring() -> None:
+    """Match column / context menu emit navigation; MainWindow switches to Business hub."""
+    reg = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
+    assert "openBankMatchNavigationRequested = Signal(str, int)" in reg
+    assert "Open linked Business record" in reg
+    assert "open_linked_business_record_for_transaction_id(tid)" in reg
+    assert "business.get_bank_match" in reg
+    assert "bank_match_link_tuple_from_row" in reg
+    assert "business.bank_match_is_navigable" in reg
+    main = (_DESKTOP_APP_DIR / "main.py").read_text(encoding="utf-8")
+    assert "_wire_register_bank_match_navigation" in main
+    assert "_navigate_register_bank_match_link" in main
+    et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
+    assert "def navigate_bank_match_link" in et
+    assert "def open_invoice_by_id" in et
+    assert "def open_bill_by_id" in et
+    assert "def open_payroll_run_by_id" in et
 
 
 def test_register_tab_manual_entry_dialog_and_insert_wiring() -> None:
@@ -6073,7 +6139,7 @@ def test_register_tab_manual_entry_dialog_and_insert_wiring() -> None:
     assert "Running balance:" in load_chunk and "bal_item.setToolTip" in load_chunk
     assert "Debit:" in load_chunk and "debit_item.setToolTip" in load_chunk
     assert "Credit:" in load_chunk and "credit_item.setToolTip" in load_chunk
-    assert "link_lbl" in load_chunk and "Linked AR, AP, or payroll:" in load_chunk
+    assert "link_lbl" in load_chunk and "Linked AR/AP/payroll or open invoice/bill:" in load_chunk
     assert "_register_coa_combo_tooltip" in load_chunk
     assert "setSortingEnabled(True)" in load_chunk
     assert "Posted to GL — category is read-only" in text
@@ -6133,6 +6199,10 @@ def test_probooksai_tab_csv_writers_use_utf8_sig_for_excel() -> None:
 
     bu = (REPO_ROOT / "probooksai" / "business.py").read_text(encoding="utf-8")
     assert bu.count('with open(path, "w", newline="", encoding="utf-8-sig") as f:') == 8
+    assert "def bank_match_link_tuple_from_row" in bu
+    assert "def bank_match_link_for_navigation" in bu
+    assert "def bank_match_is_navigable" in bu
+    assert bu.index("def bank_match_link_for_navigation") < bu.index("def bank_match_is_navigable")
 
 
 def test_register_tab_cleared_actions_document_shortcuts_in_tooltips() -> None:
@@ -6141,7 +6211,9 @@ def test_register_tab_cleared_actions_document_shortcuts_in_tooltips() -> None:
     assert "setToolTip" in text
     assert "Ctrl+Shift+C" in text and "Ctrl+Shift+U" in text
     assert "Ctrl+Shift+E" in text and "Ctrl+Shift+G" in text
+    assert "Ctrl+Shift+B" in text
     assert 'QKeySequence("F5")' in text
+    assert "activated.connect(self.tools_register_open_linked_business_record)" in text
     assert "activated.connect(self._export_csv)" in text
     assert "activated.connect(self._reload_current)" in text
     assert "activated.connect(self._post_selected)" in text
@@ -6154,9 +6226,12 @@ def test_register_tab_recon_menu_entrypoints_and_link_dialog_tooltips() -> None:
     assert "def tools_register_add_transaction" in reg
     assert "def tools_register_export_csv" in reg
     assert "def tools_register_link_payment_dialog" in reg
+    assert "def open_linked_business_record_for_transaction_id" in reg
+    assert "def tools_register_open_linked_business_record" in reg
     for needle in (
         "reg_link_suggestion.setToolTip",
         "reg_link_btn_clear.setToolTip",
+        "reg_link_btn_open.setToolTip",
         "_acct_combo.setToolTip",
         "_filter_combo.setToolTip",
         "self._table.setToolTip(",
@@ -6176,7 +6251,7 @@ def test_register_tab_recon_menu_entrypoints_and_link_dialog_tooltips() -> None:
     assert reg.count("tip_qdialog_button_box(\n            bb,") >= 3
     assert "Set or clear a transfer link" in reg
     assert "Split one unposted bank transaction" in reg
-    assert "Link this bank row to AR" in reg
+    assert "open the linked Business record" in reg
     assert reg.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 4
 
 
@@ -6198,6 +6273,9 @@ def test_main_recon_menu_register_action_submenus_and_slots() -> None:
     assert text.count("self._register_tab.tools_register_splits_dialog()") == 1
     assert text.count("self._register_tab.tools_register_transfer_dialog()") == 1
     assert text.count("self._register_tab.tools_register_link_payment_dialog()") == 1
+    link_tip = text.split("act_reg_link = QAction", 1)[1].split("act_reg_open_biz", 1)[0]
+    assert "open invoice/bill" in link_tip and "Open linked Business record" in link_tip
+    assert text.count("self._register_tab.tools_register_open_linked_business_record()") == 1
     assert text.count("self._register_tab.tools_register_flag_needs_receipt()") == 1
     assert text.count("self._register_tab.tools_register_clear_needs_receipt()") == 1
 
@@ -6217,9 +6295,13 @@ def test_register_keyboard_shortcuts_help_text_matches_wired_chords() -> None:
         "two-band rows",
         "arrow keys",
         "Link payment…",
+        "closes it first",
         "F5 — Refresh",
         "Ctrl+Shift+G",
         "Ctrl+Shift+E",
+        "Ctrl+Shift+B",
+        "same chord on **Bank Import**",
+        "Open linked Business",
         "BOM",
         "Ctrl+Shift+C",
         "Ctrl+Shift+U",

@@ -45,7 +45,7 @@ from desktop_app.table_clipboard import (
     copy_table_row_as_tsv,
     plain_display_table_item,
 )
-from probooksai.audit_log import list_filtered, write_audit_csv
+from probooksai.audit_log import audit_field_display_label, list_filtered, write_audit_csv
 
 
 class AuditTab(QWidget):
@@ -248,7 +248,9 @@ class AuditTab(QWidget):
             self._tbl.setItem(i, 1, plain_display_table_item(r["entity_type"]))
             row_eid = coerce_combo_int_id(r["entity_id"]) or 0
             self._tbl.setItem(i, 2, IntSortTableItem(str(row_eid), row_eid))
-            self._tbl.setItem(i, 3, plain_display_table_item(r["field"]))
+            self._tbl.setItem(
+                i, 3, plain_display_table_item(audit_field_display_label(r["field"]))
+            )
             self._tbl.setItem(i, 4, plain_display_table_item(r["old_value"] or ""))
             self._tbl.setItem(i, 5, plain_display_table_item(r["new_value"] or ""))
         self._tbl.setSortingEnabled(True)

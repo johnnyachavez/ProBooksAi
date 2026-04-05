@@ -102,6 +102,36 @@ def list_filtered(
     return list_recent(conn, limit=limit)
 
 
+# UI labels for audit ``field`` keys (CSV export and DB keep raw names).
+_AUDIT_FIELD_LABELS: dict[str, str] = {
+    "bank_match_link": "Payment / document link",
+    "memo": "Memo",
+    "ref_number": "Number / ref",
+    "coa_account": "Category (COA)",
+    "attachment_path": "Attachment path",
+    "needs_receipt": "Needs receipt",
+    "transfer_to_bank_account_id": "Transfer to bank account",
+    "cleared": "Cleared (register)",
+    "is_reconciled": "Batch reconciled",
+    "account_number": "Account #",
+    "account_name": "Account name",
+    "account_type": "Account type",
+    "sub_type": "Sub-type",
+    "normal_balance": "Normal balance",
+    "description": "Description",
+    "parent_id": "Parent account id",
+    "is_active": "Active",
+    "created": "Created",
+    "deleted": "Deleted",
+}
+
+
+def audit_field_display_label(field: str | None) -> str:
+    """User-facing label for audit *field* names (DB and CSV export keep raw keys)."""
+    f = (field or "").strip()
+    return _AUDIT_FIELD_LABELS.get(f, f)
+
+
 def write_audit_csv(path: str, rows: list) -> int:
     """
     Write *rows* (sqlite3.Row or dict-like audit_log columns) to UTF-8 CSV with BOM for Excel.

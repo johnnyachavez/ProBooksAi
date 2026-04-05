@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import csv
 import os
+import sqlite3
 import subprocess
 import sys
+from unittest.mock import patch
 
 import pytest
 
@@ -145,6 +147,420 @@ def test_suggest_bank_match_and_unlink(db):
     assert business.get_bank_match(db._conn, tid) is None
 
 
+def test_bank_match_link_for_navigation_none_when_unlinked(db):
+    aid = db.add_bank_account("NavNone")
+    bid = db.create_batch(aid)
+    db.import_transactions(
+        bid,
+        aid,
+        [
+            {
+                "txn_date": "2024-06-01",
+                "description": "X",
+                "amount": 10.0,
+                "ref_number": "",
+            }
+        ],
+    )
+    tid = db.list_transactions(aid)[0]["id"]
+    assert business.bank_match_link_for_navigation(db._conn, tid) is None
+
+
+def test_bank_match_link_for_navigation_returns_type_and_id(db):
+    cid = business.add_customer(db._conn, "NavCo")
+    inv = business.create_invoice(
+        db._conn,
+        cid,
+        "NAV-1",
+        "2024-06-01",
+        lines=[{"description": "Work", "qty": 1, "rate": 25.0}],
+    )
+    pid = business.record_ar_payment(
+        db._conn,
+        cid,
+        "2024-06-02",
+        25.0,
+        [(inv, 25.0)],
+    )
+    aid = db.add_bank_account("NavChk")
+    bid = db.create_batch(aid)
+    db.import_transactions(
+        bid,
+        aid,
+        [
+            {
+                "txn_date": "2024-06-02",
+                "description": "Pay",
+                "amount": 25.0,
+                "ref_number": "",
+            }
+        ],
+    )
+    tid = db.list_transactions(aid)[0]["id"]
+    business.link_bank_transaction(db._conn, tid, "ar_payment", pid)
+    assert business.bank_match_link_for_navigation(db._conn, tid) == ("ar_payment", pid)
+
+
+def test_bank_match_link_for_navigation_none_when_link_type_blank_or_whitespace(db):
+    cid = business.add_customer(db._conn, "NavBlank")
+    inv = business.create_invoice(
+        db._conn,
+        cid,
+        "NB-1",
+        "2024-06-01",
+        lines=[{"description": "Work", "qty": 1, "rate": 10.0}],
+    )
+    pid = business.record_ar_payment(
+        db._conn,
+        cid,
+        "2024-06-02",
+        10.0,
+        [(inv, 10.0)],
+    )
+    aid = db.add_bank_account("NavBlankChk")
+    bid = db.create_batch(aid)
+    db.import_transactions(
+        bid,
+        aid,
+        [
+            {
+                "txn_date": "2024-06-02",
+                "description": "Pay",
+                "amount": 10.0,
+                "ref_number": "",
+            }
+        ],
+    )
+    tid = db.list_transactions(aid)[0]["id"]
+    business.link_bank_transaction(db._conn, tid, "ar_payment", pid)
+    assert business.bank_match_link_for_navigation(db._conn, tid) == ("ar_payment", pid)
+    db._conn.execute(
+        "UPDATE bank_match_links SET link_type = '' WHERE bank_transaction_id = ?",
+        (tid,),
+    )
+    db._conn.commit()
+    assert business.bank_match_link_for_navigation(db._conn, tid) is None
+    db._conn.execute(
+        "UPDATE bank_match_links SET link_type = ? WHERE bank_transaction_id = ?",
+        ("  \t  ", tid),
+    )
+    db._conn.commit()
+    assert business.bank_match_link_for_navigation(db._conn, tid) is None
+
+
+def test_bank_match_link_tuple_from_row_aligns_with_navigation(db):
+    assert business.bank_match_link_tuple_from_row(None) is None
+    cid = business.add_customer(db._conn, "TupleRow")
+    inv = business.create_invoice(
+        db._conn,
+        cid,
+        "TR-1",
+        "2024-06-01",
+        lines=[{"description": "Work", "qty": 1, "rate": 15.0}],
+    )
+    pid = business.record_ar_payment(
+        db._conn,
+        cid,
+        "2024-06-02",
+        15.0,
+        [(inv, 15.0)],
+    )
+    aid = db.add_bank_account("TupleChk")
+    bid = db.create_batch(aid)
+    db.import_transactions(
+        bid,
+        aid,
+        [
+            {
+                "txn_date": "2024-06-02",
+                "description": "Pay",
+                "amount": 15.0,
+                "ref_number": "",
+            }
+        ],
+    )
+    tid = db.list_transactions(aid)[0]["id"]
+    business.link_bank_transaction(db._conn, tid, "ar_payment", pid)
+    bm = business.get_bank_match(db._conn, tid)
+    assert business.bank_match_link_tuple_from_row(bm) == ("ar_payment", pid)
+    assert business.bank_match_link_tuple_from_row(bm) == business.bank_match_link_for_navigation(
+        db._conn, tid
+    )
+
+
+def test_bank_match_is_navigable_tracks_tuple_and_blank_link_type(db):
+    cid = business.add_customer(db._conn, "NavBool")
+    inv = business.create_invoice(
+        db._conn,
+        cid,
+        "NB-1",
+        "2024-06-01",
+        lines=[{"description": "Work", "qty": 1, "rate": 11.0}],
+    )
+    pid = business.record_ar_payment(
+        db._conn,
+        cid,
+        "2024-06-02",
+        11.0,
+        [(inv, 11.0)],
+    )
+    aid = db.add_bank_account("NavBoolChk")
+    bid = db.create_batch(aid)
+    db.import_transactions(
+        bid,
+        aid,
+        [
+            {
+                "txn_date": "2024-06-02",
+                "description": "Pay",
+                "amount": 11.0,
+                "ref_number": "",
+            }
+        ],
+    )
+    tid = db.list_transactions(aid)[0]["id"]
+    assert not business.bank_match_is_navigable(db._conn, tid)
+    business.link_bank_transaction(db._conn, tid, "ar_payment", pid)
+    assert business.bank_match_is_navigable(db._conn, tid)
+    db._conn.execute(
+        "UPDATE bank_match_links SET link_type = '' WHERE bank_transaction_id = ?",
+        (tid,),
+    )
+    db._conn.commit()
+    assert not business.bank_match_is_navigable(db._conn, tid)
+
+
+def test_bank_match_is_navigable_false_on_operational_error(db):
+    with patch(
+        "probooksai.business.get_bank_match",
+        side_effect=sqlite3.OperationalError("no such table: bank_match_links"),
+    ):
+        assert not business.bank_match_is_navigable(db._conn, 1)
+
+
+def test_bank_match_link_tuple_from_row_accepts_mapping_like_rows():
+    """``sqlite3.Row`` is mapping-like; accept plain dicts for the same key shape."""
+    assert business.bank_match_link_tuple_from_row(
+        {"link_type": "ar_payment", "link_id": 9}
+    ) == ("ar_payment", 9)
+    assert business.bank_match_link_tuple_from_row(
+        {"link_type": "ar_payment", "link_id": "12"}
+    ) == ("ar_payment", 12)
+    assert business.bank_match_link_tuple_from_row(
+        {"link_type": "ar_payment", "link_id": None}
+    ) is None
+    assert business.bank_match_link_tuple_from_row(
+        {"link_type": "ar_payment", "link_id": "nope"}
+    ) is None
+    assert business.bank_match_link_tuple_from_row({"link_type": "", "link_id": 1}) is None
+
+
+def test_suggest_bank_match_includes_old_payment_when_many_recent_exist(db):
+    """Date-window query must not drop a correct AR payment outside the newest 200 rows."""
+    cid = business.add_customer(db._conn, "Acme")
+    inv_match = business.create_invoice(
+        db._conn,
+        cid,
+        "INV-OLD",
+        "2020-01-01",
+        lines=[{"description": "Work", "qty": 1, "rate": 50.0}],
+    )
+    pid_match = business.record_ar_payment(
+        db._conn,
+        cid,
+        "2020-01-05",
+        50.0,
+        [(inv_match, 50.0)],
+    )
+    for i in range(210):
+        inv = business.create_invoice(
+            db._conn,
+            cid,
+            f"F{i}",
+            "2024-06-01",
+            lines=[{"description": "x", "qty": 1, "rate": 99.99}],
+        )
+        business.record_ar_payment(
+            db._conn,
+            cid,
+            "2024-06-15",
+            99.99,
+            [(inv, 99.99)],
+        )
+    aid = db.add_bank_account("Chk")
+    bid = db.create_batch(aid)
+    db.import_transactions(
+        bid,
+        aid,
+        [
+            {
+                "txn_date": "2020-01-06",
+                "description": "Deposit",
+                "amount": 50.0,
+                "ref_number": "",
+            }
+        ],
+    )
+    tid = db.list_transactions(aid)[0]["id"]
+    sug = business.suggest_bank_match_candidates(db._conn, tid)
+    assert any(
+        s["link_type"] == "ar_payment" and s["link_id"] == pid_match for s in sug
+    )
+
+
+def test_suggest_bank_match_prefers_party_name_in_bank_text(db):
+    """When amount and pay date tie, a customer name in description ranks that AR payment higher."""
+    c_nw = business.add_customer(db._conn, "Northwind Traders")
+    c_ot = business.add_customer(db._conn, "Otherco Vendor")
+    inv_nw = business.create_invoice(
+        db._conn,
+        c_nw,
+        "N1",
+        "2024-05-01",
+        lines=[{"description": "w", "qty": 1, "rate": 100.0}],
+    )
+    inv_ot = business.create_invoice(
+        db._conn,
+        c_ot,
+        "O1",
+        "2024-05-01",
+        lines=[{"description": "w", "qty": 1, "rate": 100.0}],
+    )
+    pid_nw = business.record_ar_payment(
+        db._conn,
+        c_nw,
+        "2024-06-01",
+        100.0,
+        [(inv_nw, 100.0)],
+    )
+    pid_ot = business.record_ar_payment(
+        db._conn,
+        c_ot,
+        "2024-06-01",
+        100.0,
+        [(inv_ot, 100.0)],
+    )
+    aid = db.add_bank_account("Chk")
+    bid = db.create_batch(aid)
+    db.import_transactions(
+        bid,
+        aid,
+        [
+            {
+                "txn_date": "2024-06-01",
+                "description": "ACH credit NORTHWIND TRADERS",
+                "amount": 100.0,
+                "ref_number": "",
+            }
+        ],
+    )
+    tid = db.list_transactions(aid)[0]["id"]
+    sug = business.suggest_bank_match_candidates(db._conn, tid)
+    ar = [s for s in sug if s["link_type"] == "ar_payment"]
+    by_id = {s["link_id"]: s for s in ar}
+    assert pid_nw in by_id and pid_ot in by_id
+    assert by_id[pid_nw]["score"] < by_id[pid_ot]["score"]
+
+
+def test_suggest_bank_match_includes_open_ar_invoice(db):
+    cid = business.add_customer(db._conn, "Acme")
+    inv_id = business.create_invoice(
+        db._conn,
+        cid,
+        "INV-OPEN",
+        "2024-06-01",
+        lines=[{"description": "Svc", "qty": 1, "rate": 75.5}],
+    )
+    aid = db.add_bank_account("Chk")
+    bid = db.create_batch(aid)
+    db.import_transactions(
+        bid,
+        aid,
+        [
+            {
+                "txn_date": "2024-06-10",
+                "description": "Deposit",
+                "amount": 75.5,
+                "ref_number": "",
+            }
+        ],
+    )
+    tid = db.list_transactions(aid)[0]["id"]
+    sug = business.suggest_bank_match_candidates(db._conn, tid)
+    assert any(
+        s["link_type"] == "ar_invoice" and s["link_id"] == inv_id for s in sug
+    )
+
+
+def test_suggest_bank_match_includes_open_ap_bill(db):
+    vid = business.add_vendor(db._conn, "VendCo")
+    bill_id = business.create_bill(
+        db._conn,
+        vid,
+        "2024-06-01",
+        120.0,
+        vendor_invoice_number="V-9",
+    )
+    aid = db.add_bank_account("Chk")
+    bid = db.create_batch(aid)
+    db.import_transactions(
+        bid,
+        aid,
+        [
+            {
+                "txn_date": "2024-06-10",
+                "description": "ACH bill pay",
+                "amount": -120.0,
+                "ref_number": "",
+            }
+        ],
+    )
+    tid = db.list_transactions(aid)[0]["id"]
+    sug = business.suggest_bank_match_candidates(db._conn, tid)
+    assert any(
+        s["link_type"] == "ap_bill" and s["link_id"] == bill_id for s in sug
+    )
+
+
+def test_suggest_bank_match_excludes_invoice_linked_elsewhere(db):
+    cid = business.add_customer(db._conn, "Acme")
+    inv_id = business.create_invoice(
+        db._conn,
+        cid,
+        "INV-L",
+        "2024-06-01",
+        lines=[{"description": "Svc", "qty": 1, "rate": 40.0}],
+    )
+    aid = db.add_bank_account("Chk")
+    bid = db.create_batch(aid)
+    db.import_transactions(
+        bid,
+        aid,
+        [
+            {
+                "txn_date": "2024-06-10",
+                "description": "A",
+                "amount": 40.0,
+                "ref_number": "",
+            },
+            {
+                "txn_date": "2024-06-11",
+                "description": "B",
+                "amount": 40.0,
+                "ref_number": "",
+            },
+        ],
+    )
+    rows = db.list_transactions(aid)
+    tid_a = rows[0]["id"]
+    tid_b = rows[1]["id"]
+    business.link_bank_transaction(db._conn, tid_a, "ar_invoice", inv_id)
+    sug_b = business.suggest_bank_match_candidates(db._conn, tid_b)
+    assert not any(
+        s["link_type"] == "ar_invoice" and s["link_id"] == inv_id for s in sug_b
+    )
+
+
 def test_register_filter_bank_match(db):
     cid = business.add_customer(db._conn, "Acme")
     inv_id = business.create_invoice(
@@ -187,6 +603,90 @@ def test_register_filter_bank_match(db):
     assert len(db.list_transactions(aid, register_filter="has_bank_match")) == 1
     assert len(db.list_transactions(aid, register_filter="no_bank_match")) == 1
     assert len(db.list_transactions(aid)) == 2
+
+
+def test_bank_match_link_writes_audit(db):
+    from probooksai.audit_log import list_for_entity
+
+    cid = business.add_customer(db._conn, "Acme")
+    inv_paid = business.create_invoice(
+        db._conn,
+        cid,
+        "I1",
+        "2024-05-01",
+        lines=[{"description": "Work", "qty": 1, "rate": 100.0}],
+    )
+    pid = business.record_ar_payment(
+        db._conn,
+        cid,
+        "2024-06-01",
+        100.0,
+        [(inv_paid, 100.0)],
+    )
+    inv_open = business.create_invoice(
+        db._conn,
+        cid,
+        "I2",
+        "2024-05-15",
+        lines=[{"description": "More", "qty": 1, "rate": 40.0}],
+    )
+    aid = db.add_bank_account("Chk")
+    bid = db.create_batch(aid)
+    db.import_transactions(
+        bid,
+        aid,
+        [
+            {
+                "txn_date": "2024-06-05",
+                "description": "Deposit",
+                "amount": 100.0,
+                "ref_number": "",
+            }
+        ],
+    )
+    tid = db.list_transactions(aid)[0]["id"]
+    business.link_bank_transaction(db._conn, tid, "ar_payment", pid)
+    ent = list_for_entity(db._conn, "bank_transaction", tid, limit=30)
+    assert any(
+        x["field"] == "bank_match_link"
+        and (x["new_value"] or "") == f"ar_payment:{pid}"
+        for x in ent
+    )
+    business.link_bank_transaction(db._conn, tid, "ar_invoice", inv_open)
+    ent2 = list_for_entity(db._conn, "bank_transaction", tid, limit=50)
+    assert any(
+        x["field"] == "bank_match_link"
+        and (x["old_value"] or "") == f"ar_payment:{pid}"
+        and (x["new_value"] or "") == f"ar_invoice:{inv_open}"
+        for x in ent2
+    )
+    business.unlink_bank_transaction(db._conn, tid)
+    ent3 = list_for_entity(db._conn, "bank_transaction", tid, limit=80)
+    assert any(
+        x["field"] == "bank_match_link"
+        and (x["old_value"] or "") == f"ar_invoice:{inv_open}"
+        and (x["new_value"] or "") == ""
+        for x in ent3
+    )
+
+
+def test_list_ar_invoice_and_ap_bill_link_choices(db):
+    cid = business.add_customer(db._conn, "Cust")
+    business.create_invoice(
+        db._conn,
+        cid,
+        "Z1",
+        "2024-01-01",
+        lines=[{"description": "a", "qty": 1, "rate": 10.0}],
+    )
+    inv_rows = business.list_ar_invoice_link_choices(db._conn)
+    assert len(inv_rows) == 1
+    assert float(inv_rows[0]["balance_due"]) == pytest.approx(10.0)
+    vid = business.add_vendor(db._conn, "Vend")
+    business.create_bill(db._conn, vid, "2024-02-01", 20.0)
+    bill_rows = business.list_ap_bill_link_choices(db._conn)
+    assert len(bill_rows) == 1
+    assert float(bill_rows[0]["balance_due"]) == pytest.approx(20.0)
 
 
 def test_audit_list_filtered_by_entity(db):

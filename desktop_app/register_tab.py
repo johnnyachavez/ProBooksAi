@@ -12,14 +12,14 @@ A **separate** general register detached from imports would be new product scope
 later splits those views.
 
 Phase 3 – Bank register: chronological transactions for one bank account with
-debit/credit columns, running balance, memo and COA inline edits
+debit/credit columns, running balance, COA inline edits, and memo via the row menu
 (txn id on Date ``UserRole``; balance stays chronological). Footer totals and the long help paragraph appear only when **Reconciliation mode** is on.
 **Add transaction…** persists new lines via a per-account sentinel import batch (``(Manual entry)``); same ``bank_transactions`` rows as CSV imports, with an optional **Category (COA)** picker in the dialog (last non-empty choice per bank account is remembered for the next add, scoped by company file). **Date** defaults to the latest register transaction on that account when any exist, else today. **Amount** receives initial keyboard focus when the dialog opens.
 The grid always shows at least **20** rows (practice lines when short on data; UI-only, not saved).
-**Reconciliation mode** shows a banner and **Stmt match** overlay column (Matched / Missing / Extra demo from mock extract); register stays the base layer.
-Bank Import Run mock extract & compare can populate Stmt match for the same account.
+**Reconciliation mode** shows a banner; statement line-match status (**Matched** / **Missing** / **Extra**) appears on the second line of the **Match** column (demo from mock extract). Bank Import **Run mock extract & compare** can populate that overlay for the same account.
 Payee column uses a two-band row: description on the lighter upper panel, COA account on the darker lower panel (full row width uses the same upper/lower band colors; other columns show values in the upper band).
-Hover **tooltips** on Payee, Number, Memo, Date, Debit/Credit, Balance, and Match show full values or helpful detail when the grid elides text.
+**Memo** is not shown as a grid column (edit via row context menu). Hover **tooltips** on Payee, Number, Date, Debit/Credit, Balance, and Match show full values or helpful detail when the grid elides text.
+**Match** (reconciliation mode): double-click **Match** or use row context **Open linked Business record…** (when the menu shows it) to open **Business** when the **complete bank link** allows; otherwise the same **Business link** message as **Ctrl+Shift+B** (invoice/bill editor, payroll tax lines, or AR/AP payment summary).
 The **COA Account** combo tooltip states the saved category and whether the row is posted (read-only).
 Number column keeps reference plus type tag (DEP / PMT / XFER / TXN) in the cell data for copy/edit;
 on screen they appear on one line in the upper band. **Clr** shows **C** when the row is marked cleared on the register, else **R** when the
@@ -27,12 +27,12 @@ CSV import batch is marked reconciled in Bank Import. Rows without a COA categor
 The filter choice, last selected bank account, and register table **column header widths**
 persist in ``QSettings``, scoped by company SQLite path (same app profile as the main window).
 **Ctrl+Shift+C** / **Ctrl+Shift+U** mark cleared / clear cleared; **Ctrl+Shift+E** runs **Export CSV…**;
-**Ctrl+Shift+G** runs **Post selected to GL**; **F5** refreshes the grid when the Register tab (or its
+**Ctrl+Shift+G** runs **Post selected to GL**; **Ctrl+Shift+B** runs the same **Business link** flow as double-click **Match** (opens **Business** when the row has a **complete bank link**); **F5** refreshes the grid when the Register tab (or its
 controls) has keyboard focus. The same actions are on **Recon** → **Register Actions** / **Reconciliation** / **Attachments** / **Transaction Tools** / **Flags**. **Help** → **Bank register keyboard shortcuts…** (dialog also points at **Bank import shortcuts…**) or
 **right-click** the grid (including empty area) for **Keyboard shortcuts…** and row actions with **QAction** **setToolTip**
 (**Copy row** as TSV; **Copy transaction id**; **Copy date**; **Copy amount**; **Copy payee / description**; **Copy memo**; **Copy number / ref**; **Copy category (COA)** as plain saved COA); the register grid has a hover **tooltip**
-(shortcuts summary). **Link payment…** dialog: **Current link** (when present), **Suggested matches** / **Manual link**
-headings, and the suggestions list have hover **tooltips**. **Right-click** the list (empty area OK) for
+(shortcuts summary). **Link payment…** dialog: **Current link** (when present) with **Clear link** and **Open linked Business record…**,
+**Suggested matches** / **Manual link** headings, and the suggestions list have hover **tooltips**. **Right-click** the list (empty area OK) for
 **Keyboard shortcuts…** (same **Help** dialog as the register grid).
 Modal **Transfer** / **Splits** / **Link payment** dialogs and their buttons use **setToolTip** for hover hints; register actions on the main **Recon** menu use **QAction** tips there.
 In reconciliation mode, footer **debit** / **credit** / **net** totals and the gray **help** paragraph have tooltips; that block is hidden in normal register.
@@ -82,6 +82,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -133,6 +134,9 @@ from desktop_app.table_clipboard import (
     plain_display_table_item,
 )
 from desktop_app.register_band_delegate import (
+    REGISTER_LINK_BASE_TOOLTIP,
+    REGISTER_LINK_LOWER_PLAIN,
+    REGISTER_LINK_UPPER_PLAIN,
     REGISTER_MISSING_COA_ROLE,
     REGISTER_PAYEE_LOWER_PLAIN,
     REGISTER_PAYEE_UPPER_PLAIN,
@@ -160,6 +164,7 @@ _COL_CLR = 6
 _COL_BAL = 7
 _COL_COA = 8
 _COL_LINK = 9
+_COL_SPACER = 10
 
 _HEADERS = [
     "Date",
@@ -176,8 +181,12 @@ _HEADERS = [
 
 # Visible grid rows when there are fewer saved transactions (editable practice rows, UI-only).
 _REGISTER_MIN_VISIBLE_ROWS = 20
-_COL_RECON_STATUS = 10
-_REGISTER_HEADERS_FULL = _HEADERS + ["Stmt match"]
+_REGISTER_HEADERS_FULL = _HEADERS + [""]
+
+# Payee and COA each use this fraction of the viewport slack left after other visible columns
+# (excluding Payee, COA, and the unnamed spacer); the spacer column is Stretch and absorbs the rest.
+_REGISTER_PAYEE_COA_SLACK_FRACTION_EACH = 0.25
+_REGISTER_PAYEE_COLUMN_MIN_WIDTH_PX = 96
 
 _MISSING_COA_BG = QColor("#3D3319")
 
@@ -220,6 +229,10 @@ def _bank_match_label(m) -> str:
         return f"AP #{lid}"
     if lt == "payroll_run":
         return f"PR #{lid}"
+    if lt == "ar_invoice":
+        return f"INV #{lid}"
+    if lt == "ap_bill":
+        return f"BILL #{lid}"
     return f"{lt}:{lid}"
 
 
@@ -233,7 +246,7 @@ def _payee_line1_plain(txn: dict) -> str:
 
 
 def _payee_line2_account_plain(txn: dict) -> str:
-    """Second line of Payee / Description: linked GL / COA account (memo stays in Memo column)."""
+    """Second line of Payee / Description: linked GL / COA account (memo is edited from the row menu)."""
     coa = (txn.get("coa_account") or "").strip()
     return coa if coa else "— Assign COA —"
 
@@ -552,26 +565,33 @@ def _register_keyboard_shortcuts_help_text() -> str:
         "remembered per bank account until you choose Uncategorized; date defaults to the latest "
         "saved row on that account when present). In that dialog: focus starts in **Amount**; "
         "Ctrl+Enter or Ctrl+Return accepts when the amount is valid (same as OK).\n\n"
-        "Reconciliation mode — checkbox next to Filter: banner + Stmt match overlay (demo); "
+        "Reconciliation mode — checkbox next to Filter: banner + statement line-match status on the **Match** column (demo); "
         "register grid stays visible underneath. "
-        "Bank Import **Run mock extract & compare** can populate Stmt match for the same account "
+        "Bank Import **Run mock extract & compare** can populate that overlay for the same account "
         "and switch the main window here; the main **status bar** may show a short confirmation, "
         "then restore the usual company line.\n\n"
         "View menu tab focus: Ctrl+1 Document Intake, Ctrl+2 Bank Import, Ctrl+3 Register.\n\n"
         "Tools menu: Ctrl+Shift+I — Invoice… (Business tab, Invoices AR).\n\n"
         "Practice rows — blank rows pad the grid to ~20 lines; editable for layout only (not saved).\n\n"
         "Register grid — checkbook-style two-band rows; arrow keys move the cell focus. "
-        "Double-click or type to edit Memo or Number when the row allows it; COA uses the category dropdown. "
+        "Double-click or type to edit Number when the row allows it; memo: right-click the row → **Edit memo…**; COA uses the category dropdown. "
         "Right-click a row: Copy row (TSV); Copy transaction id (bank_transactions.id, same as line-reconciliation **Reg #**); "
         "Copy date (YYYY-MM-DD); Copy amount (signed, two decimals, same convention as CSV import); "
         "Copy payee / description; Copy memo; Copy number / ref; Copy category (COA) (plain saved category). "
         "Bank Import batch preview rows offer the same field copies from the database; "
         "its **Matched / Missing / Extra** line-reconciliation grid adds statement/register copies—see **Help → Bank import shortcuts….**\n\n"
-        "Link payment… (Recon → Transaction Tools) — suggested-matches list: right-click (including empty area) for "
-        "Keyboard shortcuts… (same as this dialog).\n\n"
+        "Link payment… (Recon → Transaction Tools) — when the **current link** can open in Business, use **Open linked Business record…** "
+        "in that dialog (closes it first); suggested-matches list: right-click (including empty area) for "
+        "Keyboard shortcuts… (same as this dialog).\n"
+        "Open linked Business record… — Recon → Transaction Tools, right-click when that action is in the menu, or double-click **Match**: "
+        "opens **Business** when the **complete bank link** allows; otherwise the same **Business link** message as **Ctrl+Shift+B** "
+        "(invoice, bill, payroll tax lines, or AR/AP payment summary).\n\n"
         "F5 — Refresh\n"
         "Ctrl+Shift+G — Post selected to GL\n"
         "Ctrl+Shift+E — Export CSV… (UTF-8 with BOM for Excel)\n"
+        "Ctrl+Shift+B — same **Business link** flow as **Open linked Business** / double-click **Match** "
+        "(**Business** when the link is complete; message otherwise). "
+        "The same chord on **Bank Import** batch preview or line-reconciliation grid applies when that table has focus.\n"
         "Ctrl+Shift+C — Mark cleared (selected rows)\n"
         "Ctrl+Shift+U — Clear cleared (selected rows)\n"
         "\n"
@@ -596,8 +616,9 @@ def show_register_keyboard_shortcuts_dialog(parent: QWidget) -> None:
         "Register keyboard shortcuts",
         _register_keyboard_shortcuts_help_text(),
         ok_tip="Close; shortcuts apply when Bank register has focus. "
-        "Recon menu — Register Actions and related groups for add/post/export, attachments, splits, transfer, link, and receipt flags. "
-        "View → Bank Import (Ctrl+2) for AI line reconciliation / Stmt match sync. "
+        "Recon menu — Register Actions and related groups for add/post/export, attachments, splits, transfer, link, open linked Business, and receipt flags. "
+        "**Link payment…** also shows **Open linked Business record…** when the stored link is complete (can open in Business). "
+        "View → Bank Import (Ctrl+2) for AI line reconciliation / Match-column overlay sync. "
         "Company .db: File → Backup / Restore (probooks.backup).",
     )
 
@@ -606,6 +627,7 @@ class RegisterTab(QWidget):
     """Check-register for one bank account; emits :attr:`reconciliationModeChanged` when reconciliation UI toggles."""
 
     reconciliationModeChanged = Signal(bool)
+    openBankMatchNavigationRequested = Signal(str, int)
 
     def __init__(
         self,
@@ -631,8 +653,8 @@ class RegisterTab(QWidget):
         self.setToolTip(
             "Bank register for one account: bank account picker, filter, reconciliation mode, and the transaction grid. "
             "F5 refreshes when Register has focus. "
-            "Bulk row actions (add transaction, post to GL, and export CSV (UTF-8 BOM for Excel), cleared, attachments, splits, transfer, link payment, receipt flags): Recon menu. "
-            "Reconciliation mode + Stmt match can be updated from Bank Import AI line reconciliation "
+            "Bulk row actions (add transaction, post to GL, and export CSV (UTF-8 BOM for Excel), cleared, attachments, splits, transfer, link payment, open linked Business, receipt flags): Recon menu. "
+            "Reconciliation mode + Match overlay can be updated from Bank Import AI line reconciliation "
             "(Help → Bank import shortcuts…). "
             "View → Bank Import (Ctrl+2), Register (Ctrl+3). "
             "Same company SQLite database as other main tabs; File → Backup / Restore (probooks.backup)."
@@ -666,14 +688,14 @@ class RegisterTab(QWidget):
         self._filter_combo.addItem("Flagged: needs receipt", "needs_receipt")
         self._filter_combo.addItem("Has attachment", "has_attachment")
         self._filter_combo.addItem("Needs receipt, no file", "missing_attachment")
-        self._filter_combo.addItem("Has payment / payroll link", "has_bank_match")
-        self._filter_combo.addItem("No payment link", "no_bank_match")
+        self._filter_combo.addItem("Has payment / document link", "has_bank_match")
+        self._filter_combo.addItem("No payment or document link", "no_bank_match")
         self._filter_combo.addItem("Cleared (register)", "cleared")
         self._filter_combo.addItem("Not cleared", "not_cleared")
         self._filter_combo.addItem("Batch reconciled (import)", "batch_reconciled")
         self._filter_combo.addItem("Batch not reconciled", "batch_not_reconciled")
         self._filter_combo.setToolTip(
-            "Narrow rows by receipt flag, attachment, payment link, cleared state, "
+            "Narrow rows by receipt flag, attachment, payment or open invoice/bill link, cleared state, "
             "or CSV batch reconciliation."
         )
         self._restore_register_filter_from_settings()
@@ -681,11 +703,12 @@ class RegisterTab(QWidget):
         controls.addWidget(self._filter_combo)
         self._chk_recon = QCheckBox("Reconciliation mode")
         self._chk_recon.setToolTip(
-            "Reconciliation workflow: Stmt match (Matched / Missing / Extra), Memo, Clr, and Match columns, "
-            "full column layout, and Document Intake + Bank Import tabs. "
+            "Reconciliation workflow: statement line-match status (Matched / Missing / Extra) on the second line of **Match**, Clr, "
+            "full column layout, and Document Intake + Bank Import tabs. Memo is edited from the row menu, not the grid. "
             "Off: checkbook-style register (Date, Number, Payee, amounts, Balance, COA) and those tabs hidden. "
             "F5 refreshes; bulk actions: Recon → Register Actions / Reconciliation / … "
-            "Bank Import compare can populate Stmt match. View → Bank Import (Ctrl+2), Register (Ctrl+3)."
+            "(includes open linked Business record). Bank Import compare can populate the Match overlay. "
+            "View → Bank Import (Ctrl+2), Register (Ctrl+3)."
         )
         self._chk_recon.toggled.connect(self._on_reconciliation_mode_toggled)
         controls.addWidget(self._chk_recon)
@@ -699,7 +722,7 @@ class RegisterTab(QWidget):
             "font-weight: bold; border-radius: 4px;"
         )
         self._recon_banner.setToolTip(
-            "Statement line-match overlay is on: see Stmt match column (demo Matched / Missing / Extra). "
+            "Statement line-match overlay is on: second line of **Match** shows Matched / Missing / Extra (demo). "
             "Register layout is unchanged. "
             "View → Register (Ctrl+3); run/compare from Bank Import (Ctrl+2)."
         )
@@ -724,7 +747,9 @@ class RegisterTab(QWidget):
             | QAbstractItemView.EditTrigger.SelectedClicked
         )
         self._table.setAlternatingRowColors(False)
-        self._table.setItemDelegate(RegisterBandDelegate(self._table))
+        self._table.setItemDelegate(
+            RegisterBandDelegate(self._table, link_col=_COL_LINK)
+        )
         self._table.verticalHeader().setDefaultSectionSize(REGISTER_ROW_HEIGHT_MIN_FULL)
         self._table.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
@@ -733,29 +758,32 @@ class RegisterTab(QWidget):
         self._table.setShowGrid(False)
         self._table.setWordWrap(True)
         self._table.verticalHeader().setVisible(False)
-        self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self._table.horizontalHeader().setSectionResizeMode(_COL_COA, QHeaderView.ResizeMode.Stretch)
+        self._table.horizontalHeader().setSectionResizeMode(
+            _COL_PAYEE, QHeaderView.ResizeMode.Interactive
+        )
+        self._table.horizontalHeader().setSectionResizeMode(
+            _COL_COA, QHeaderView.ResizeMode.Interactive
+        )
+        self._table.horizontalHeader().setSectionResizeMode(
+            _COL_SPACER, QHeaderView.ResizeMode.Stretch
+        )
         self._table.horizontalHeader().setSectionResizeMode(_COL_CLR, QHeaderView.ResizeMode.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(_COL_LINK, QHeaderView.ResizeMode.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(
-            _COL_RECON_STATUS, QHeaderView.ResizeMode.ResizeToContents
-        )
-        self._table.horizontalHeader().setSectionHidden(_COL_RECON_STATUS, True)
         self._table.setSortingEnabled(False)
         self._table.itemChanged.connect(self._on_item_changed)
         self._table.cellDoubleClicked.connect(self._on_register_cell_double_clicked)
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._on_register_context_menu)
         self._table.setToolTip(
-            "Transactions for the selected bank account and filter; edit memo/COA inline where allowed. "
+            "Transactions for the selected bank account and filter; edit COA inline where allowed; memo via row menu. "
             "The grid keeps ~20 visible rows (practice lines when you have fewer saved transactions). "
             "Use Recon → Register Actions for add transaction, post, and export; "
             "other groups under Recon for attachments, splits, cleared, and flags. "
             "Right-click for Keyboard shortcuts… (empty area OK); on a saved row, also "
-            "**Copy row**, **Copy transaction id**, **Copy date**, **Copy amount**, **Copy payee / description**, **Copy memo**, **Copy number / ref**, or **Copy category (COA)**. "
+            "**Copy row**, **Copy transaction id**, **Copy date**, **Copy amount**, **Copy payee / description**, **Copy memo** (stored text), **Copy number / ref**, or **Copy category (COA)**. "
             "Statement vs register field copies for AI line reconciliation live on Bank Import (Help → Bank import shortcuts…). "
-            "F5 refresh; Ctrl+Shift+G post; Ctrl+Shift+C / Ctrl+Shift+U cleared; "
-            "Ctrl+Shift+E export (UTF-8 BOM for Excel). "
+            "F5 refresh; Ctrl+Shift+G post; Ctrl+Shift+B same **Business link** flow as double-click **Match**; "
+            "Ctrl+Shift+C / Ctrl+Shift+U cleared; Ctrl+Shift+E export (UTF-8 BOM for Excel). "
             "Same company .db as other tabs (File → Backup / Restore, probooks.backup)."
         )
         layout.addWidget(self._table, stretch=1)
@@ -775,6 +803,9 @@ class RegisterTab(QWidget):
         sc_post = QShortcut(QKeySequence("Ctrl+Shift+G"), self)
         sc_post.setContext(Qt.WidgetWithChildrenShortcut)
         sc_post.activated.connect(self._post_selected)
+        sc_open_biz = QShortcut(QKeySequence("Ctrl+Shift+B"), self)
+        sc_open_biz.setContext(Qt.WidgetWithChildrenShortcut)
+        sc_open_biz.activated.connect(self.tools_register_open_linked_business_record)
 
         self._register_info_footer = QWidget()
         footer_column = QVBoxLayout(self._register_info_footer)
@@ -816,10 +847,10 @@ class RegisterTab(QWidget):
             "Balance is the running total in date order for loaded rows. "
             "Recon → Register Actions → Add Transaction… saves new lines (manual-entry batch). "
             "Extra visible rows pad the grid (practice typing; not saved). "
-            "Reconciliation mode adds Stmt match (Matched / Missing / Extra) without hiding the register. "
+            "Reconciliation mode adds statement line-match status on **Match** (Matched / Missing / Extra) without hiding the register. "
             "Filter, last bank account, last Add-transaction COA per bank account, and column widths are remembered per company file for the next session. "
-            "With focus on this tab: F5 refreshes, Ctrl+Shift+G posts selected to GL, Ctrl+Shift+C marks cleared, "
-            "Ctrl+Shift+U clears cleared, Ctrl+Shift+E exports CSV (UTF-8 BOM for Excel). "
+            "With focus on this tab: F5 refreshes, Ctrl+Shift+G posts selected to GL, Ctrl+Shift+B runs the **Business link** flow (opens **Business** when the row has a **complete bank link**), "
+            "Ctrl+Shift+C marks cleared, Ctrl+Shift+U clears cleared, Ctrl+Shift+E exports CSV (UTF-8 BOM for Excel). "
             "Help → Bank register keyboard shortcuts… (includes Bank import shortcuts pointer), "
             "Help → Bank import shortcuts…, or right-click the grid (even on empty area)."
         )
@@ -845,6 +876,11 @@ class RegisterTab(QWidget):
         if raw:
             self._table.horizontalHeader().restoreState(raw)
         self._apply_register_column_layout()
+        self._sync_payee_coa_spacer_widths()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._sync_payee_coa_spacer_widths()
 
     def hideEvent(self, event: QHideEvent) -> None:
         self._persist_register_table_header_state()
@@ -886,6 +922,75 @@ class RegisterTab(QWidget):
     def tools_register_link_payment_dialog(self) -> None:
         self._link_payment_dialog()
 
+    def open_linked_business_record_for_transaction_id(self, txn_id: int) -> None:
+        """Open the Business hub target for *txn_id*'s **complete bank link**, or show the same prompts as Recon / Ctrl+Shift+B."""
+        tid = coerce_combo_int_id(txn_id)
+        if tid is None:
+            message_box_information_ok(
+                self,
+                "Business link",
+                "Invalid transaction id.",
+                ok_tip="Close; pick a saved import or register row.",
+            )
+            return
+        try:
+            bm = business.get_bank_match(self._db._conn, tid)
+        except sqlite3.OperationalError:
+            message_box_information_ok(
+                self,
+                "Business link",
+                "Bank match data is not available in this database.",
+                ok_tip="Close; open a company file with Business extensions enabled.",
+            )
+            return
+        nav = business.bank_match_link_tuple_from_row(bm)
+        if nav is None:
+            msg = (
+                "This row has no payment or open invoice/bill link. Use Link payment… first."
+            )
+            ok_tip = "Close; Recon → Transaction Tools → Link payment…"
+            if bm is not None:
+                msg = (
+                    "This row has a bank link row, but type or id is incomplete so Business cannot open it. "
+                    "Use Link payment… to clear or re-link."
+                )
+            message_box_information_ok(
+                self,
+                "Business link",
+                msg,
+                ok_tip=ok_tip,
+            )
+            return
+        lt, lid = nav
+        self.openBankMatchNavigationRequested.emit(lt, int(lid))
+
+    def tools_register_open_linked_business_record(self) -> None:
+        """Recon menu / Ctrl+Shift+B: same **Business link** flow as double-click **Match** for the current row."""
+        row = self._table.currentRow()
+        if row < 0:
+            message_box_information_ok(
+                self,
+                "Business link",
+                "Select a register row first.",
+                ok_tip="Close; click a row, then Recon → Transaction Tools → Open linked Business record or Ctrl+Shift+B.",
+            )
+            return
+        id_item = self._table.item(row, _COL_DATE)
+        tid = (
+            coerce_combo_int_id(id_item.data(Qt.ItemDataRole.UserRole))
+            if id_item is not None
+            else None
+        )
+        if tid is None:
+            message_box_information_ok(
+                self,
+                "Business link",
+                "This row is a practice line (not a saved transaction).",
+                ok_tip="Close; pick a saved register line (not a practice row).",
+            )
+            return
+        self.open_linked_business_record_for_transaction_id(tid)
+
     def tools_register_flag_needs_receipt(self) -> None:
         self._mark_needs_receipt()
 
@@ -907,7 +1012,8 @@ class RegisterTab(QWidget):
         return f"register/last_bank_account_id_{self._register_prefs_id()}"
 
     def _register_table_header_state_key(self) -> str:
-        return f"register/table_header_state_{self._register_prefs_id()}"
+        # v3: Payee uses a fixed fraction of Payee+COA slack (narrower than dual-Stretch 50/50).
+        return f"register/table_header_state_v4_{self._register_prefs_id()}"
 
     def _register_manual_entry_last_coa_key(self, bank_account_id: int) -> str:
         return (
@@ -1003,42 +1109,67 @@ class RegisterTab(QWidget):
         """Show debit/credit/net totals and help text only when reconciliation mode is on."""
         self._register_info_footer.setVisible(self._reconciliation_mode)
 
+    def _ensure_payee_column_resize_policy(self) -> None:
+        """Payee + COA are fixed-width (synced from slack); unnamed spacer column stretches."""
+        hdr = self._table.horizontalHeader()
+        if not hdr.isSectionHidden(_COL_PAYEE):
+            hdr.setSectionResizeMode(_COL_PAYEE, QHeaderView.ResizeMode.Interactive)
+        if not hdr.isSectionHidden(_COL_COA):
+            hdr.setSectionResizeMode(_COL_COA, QHeaderView.ResizeMode.Interactive)
+        if not hdr.isSectionHidden(_COL_SPACER):
+            hdr.setSectionResizeMode(_COL_SPACER, QHeaderView.ResizeMode.Stretch)
+
+    def _sync_payee_coa_spacer_widths(self) -> None:
+        """Give Payee and COA equal widths (~25% of viewport slack each); spacer absorbs the remainder."""
+        hdr = self._table.horizontalHeader()
+        if hdr.isSectionHidden(_COL_PAYEE) or hdr.isSectionHidden(_COL_COA):
+            return
+        if hdr.sectionResizeMode(_COL_PAYEE) != QHeaderView.ResizeMode.Interactive:
+            return
+        if hdr.sectionResizeMode(_COL_COA) != QHeaderView.ResizeMode.Interactive:
+            return
+        vp_w = int(self._table.viewport().width())
+        if vp_w < 120:
+            return
+        s_other = 0
+        for c in range(self._table.columnCount()):
+            if c in (_COL_PAYEE, _COL_COA, _COL_SPACER):
+                continue
+            if hdr.isSectionHidden(c):
+                continue
+            s_other += hdr.sectionSize(c)
+        flex = vp_w - s_other
+        min_pair = 2 * _REGISTER_PAYEE_COLUMN_MIN_WIDTH_PX + 32
+        if flex < min_pair:
+            return
+        each = max(
+            _REGISTER_PAYEE_COLUMN_MIN_WIDTH_PX,
+            int(flex * _REGISTER_PAYEE_COA_SLACK_FRACTION_EACH),
+        )
+        hdr.blockSignals(True)
+        try:
+            hdr.resizeSection(_COL_PAYEE, each)
+            hdr.resizeSection(_COL_COA, each)
+        finally:
+            hdr.blockSignals(False)
+
     def _restore_default_reconciliation_header_geometry(self) -> None:
         hdr = self._table.horizontalHeader()
         hdr.setSectionResizeMode(_COL_DATE, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(_COL_REF, QHeaderView.ResizeMode.Interactive)
-        hdr.setSectionResizeMode(_COL_PAYEE, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(_COL_PAYEE, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(_COL_MEMO, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(_COL_DEBIT, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(_COL_CREDIT, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(_COL_CLR, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(_COL_BAL, QHeaderView.ResizeMode.Interactive)
-        hdr.setSectionResizeMode(_COL_COA, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(_COL_COA, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(_COL_LINK, QHeaderView.ResizeMode.ResizeToContents)
-        hdr.setSectionResizeMode(
-            _COL_RECON_STATUS, QHeaderView.ResizeMode.ResizeToContents
-        )
+        hdr.setSectionResizeMode(_COL_SPACER, QHeaderView.ResizeMode.Stretch)
 
-    def _apply_checkbook_header_geometry(self) -> None:
-        """Narrow Payee / COA ~30%; give freed space to Balance, Date, and Number (normal mode)."""
-        t = self._table
-        hdr = t.horizontalHeader()
-        w_payee = max(t.columnWidth(_COL_PAYEE), 100)
-        w_coa = max(t.columnWidth(_COL_COA), 120)
-        w_bal = max(t.columnWidth(_COL_BAL), 88)
-        w_date = max(t.columnWidth(_COL_DATE), 72)
-        w_ref = max(t.columnWidth(_COL_REF), 72)
-        w_memo = max(t.columnWidth(_COL_MEMO), 0)
-        w_clr = max(t.columnWidth(_COL_CLR), 0)
-        w_link = max(t.columnWidth(_COL_LINK), 0)
-
-        new_payee = max(100, int(w_payee * 0.7))
-        new_coa = max(100, int(w_coa * 0.7))
-        freed = (w_payee - new_payee) + (w_coa - new_coa) + w_memo + w_clr + w_link
-        add_bal = int(freed * 0.5)
-        add_date = int(freed * 0.25)
-        add_ref = max(0, freed - add_bal - add_date)
-
+    def _apply_normal_register_header_resize_modes(self) -> None:
+        """Non-reconciliation: Interactive Payee + COA; spacer Stretch (widths synced via _sync_payee_coa_spacer_widths)."""
+        hdr = self._table.horizontalHeader()
         hdr.setSectionResizeMode(_COL_DATE, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(_COL_REF, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(_COL_PAYEE, QHeaderView.ResizeMode.Interactive)
@@ -1046,15 +1177,10 @@ class RegisterTab(QWidget):
         hdr.setSectionResizeMode(_COL_CREDIT, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(_COL_BAL, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(_COL_COA, QHeaderView.ResizeMode.Interactive)
-
-        hdr.resizeSection(_COL_DATE, w_date + add_date)
-        hdr.resizeSection(_COL_REF, w_ref + add_ref)
-        hdr.resizeSection(_COL_PAYEE, new_payee)
-        hdr.resizeSection(_COL_BAL, w_bal + add_bal)
-        hdr.resizeSection(_COL_COA, new_coa)
+        hdr.setSectionResizeMode(_COL_SPACER, QHeaderView.ResizeMode.Stretch)
 
     def _apply_register_column_layout(self) -> None:
-        """Show full register columns in reconciliation mode; checkbook layout when off (UI only)."""
+        """Show full register columns in reconciliation mode; slim visible columns when off (UI only)."""
         hdr = self._table.horizontalHeader()
         hdr.blockSignals(True)
         try:
@@ -1065,18 +1191,20 @@ class RegisterTab(QWidget):
                     hdr.restoreState(snap)
                 else:
                     self._restore_default_reconciliation_header_geometry()
-                hdr.setSectionHidden(_COL_MEMO, False)
+                hdr.setSectionHidden(_COL_MEMO, True)
                 hdr.setSectionHidden(_COL_CLR, False)
                 hdr.setSectionHidden(_COL_LINK, False)
-                hdr.setSectionHidden(_COL_RECON_STATUS, False)
+                hdr.setSectionHidden(_COL_SPACER, False)
             else:
                 hdr.setSectionHidden(_COL_MEMO, True)
                 hdr.setSectionHidden(_COL_CLR, True)
                 hdr.setSectionHidden(_COL_LINK, True)
-                hdr.setSectionHidden(_COL_RECON_STATUS, True)
-                self._apply_checkbook_header_geometry()
+                hdr.setSectionHidden(_COL_SPACER, False)
+                self._apply_normal_register_header_resize_modes()
         finally:
             hdr.blockSignals(False)
+        self._ensure_payee_column_resize_policy()
+        self._sync_payee_coa_spacer_widths()
 
     def _clear_table(self):
         self._recon_txn_status.clear()
@@ -1110,7 +1238,7 @@ class RegisterTab(QWidget):
         self, bank_account_id: int, results: list[dict]
     ) -> bool:
         """
-        Apply Bank Import **Run mock extract & compare** results to **Stmt match** overlay.
+        Apply Bank Import **Run mock extract & compare** results to the **Match** column statement overlay.
 
         Enables reconciliation mode, selects the same bank account when possible, and preserves
         statuses across F5 / filter reloads until the user turns reconciliation off or switches account.
@@ -1183,45 +1311,74 @@ class RegisterTab(QWidget):
 
     def _refresh_all_recon_cells(self) -> None:
         ro_flags = Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
+        recon = self._reconciliation_mode
+        src = (
+            "Bank Import line match"
+            if self._recon_overlay_bank_import_mode
+            else "Mock statement line"
+        )
         for r in range(self._table.rowCount()):
             id_it = self._table.item(r, _COL_DATE)
             tid = None
             if id_it is not None:
                 tid = coerce_combo_int_id(id_it.data(Qt.ItemDataRole.UserRole))
-            cell = self._table.item(r, _COL_RECON_STATUS)
-            if cell is None:
-                cell = plain_display_table_item("")
-                cell.setFlags(ro_flags)
-                self._table.setItem(r, _COL_RECON_STATUS, cell)
-            cell.setFlags(ro_flags)
-            cell.setBackground(QBrush())
+            link_it = self._table.item(r, _COL_LINK)
+            if link_it is None:
+                continue
+            link_it.setFlags(ro_flags)
+            link_it.setBackground(QBrush())
+            memo_plain = ""
+            memo_it = self._table.item(r, _COL_MEMO)
+            if memo_it is not None:
+                raw_m = memo_it.data(QTABLE_PLAIN_TEXT_ROLE)
+                if isinstance(raw_m, str):
+                    memo_plain = raw_m.strip()
+                else:
+                    memo_plain = (memo_it.text() or "").strip()
+            base_tip = link_it.data(REGISTER_LINK_BASE_TOOLTIP)
+            if not isinstance(base_tip, str):
+                base_tip = link_it.toolTip() or ""
+            up = link_it.data(REGISTER_LINK_UPPER_PLAIN)
+            if not isinstance(up, str):
+                up = (link_it.text() or "").split("\n", 1)[0]
+            up = (up or "").strip()
             if tid is None:
-                cell.setText("")
-                cell.setToolTip(
-                    "Practice row — not in the database. Stmt match is blank."
+                link_it.setData(REGISTER_LINK_UPPER_PLAIN, "")
+                link_it.setData(REGISTER_LINK_LOWER_PLAIN, "")
+                link_it.setText("")
+                link_it.setData(QTABLE_PLAIN_TEXT_ROLE, "")
+                link_it.setToolTip(
+                    "Practice row — not in the database. Statement line-match status is blank."
                 )
                 continue
-            st = self._recon_txn_status.get(tid, "")
-            cell.setText(st)
-            src = (
-                "Bank Import line match"
-                if self._recon_overlay_bank_import_mode
-                else "Mock statement line"
-            )
-            if st == STATUS_MATCHED:
-                cell.setForeground(QColor("#6ecf8a"))
-                cell.setToolTip(f"{src}: matched this register transaction.")
-            elif st == STATUS_MISSING:
-                cell.setForeground(QColor("#e8b060"))
-                cell.setToolTip(f"{src}: no register match (demo).")
-            elif st == STATUS_EXTRA:
-                cell.setForeground(QColor("#7eb3e8"))
-                cell.setToolTip(f"{src}: register line with no statement counterpart (demo).")
+            st = ""
+            stmt_tip = ""
+            if recon:
+                st = (self._recon_txn_status.get(tid, "") or "").strip()
+                if st == STATUS_MATCHED:
+                    stmt_tip = f"{src}: matched this register transaction."
+                elif st == STATUS_MISSING:
+                    stmt_tip = f"{src}: no register match (demo)."
+                elif st == STATUS_EXTRA:
+                    stmt_tip = (
+                        f"{src}: register line with no statement counterpart (demo)."
+                    )
+            link_it.setData(REGISTER_LINK_UPPER_PLAIN, up)
+            link_it.setData(REGISTER_LINK_LOWER_PLAIN, st if recon else "")
+            if recon and st:
+                combined_raw = f"{up}\n{st}" if up else st
             else:
-                cell.setForeground(QColor())
-                cell.setToolTip(
-                    "Stmt match overlay (Reconciliation mode). Empty when not classified."
-                )
+                combined_raw = up
+            link_it.setText(escape_ampersand_for_qt(combined_raw))
+            link_it.setData(QTABLE_PLAIN_TEXT_ROLE, combined_raw)
+            blocks: list[str] = []
+            if base_tip.strip():
+                blocks.append(base_tip.strip())
+            if memo_plain:
+                blocks.append(escape_ampersand_for_qt(f"Memo: {memo_plain}"))
+            if stmt_tip:
+                blocks.append(stmt_tip)
+            link_it.setToolTip("\n\n".join(blocks) if blocks else "")
 
     def _apply_payee_two_line_to_item(self, it: QTableWidgetItem, txn: dict) -> None:
         raw = _register_payee_two_line_plain(txn)
@@ -1270,8 +1427,8 @@ class RegisterTab(QWidget):
         pay_it.setData(REGISTER_PAYEE_LOWER_PLAIN, "")
         self._table.setItem(row, _COL_PAYEE, pay_it)
 
-        memo_it = QTableWidgetItem("")
-        memo_it.setFlags(edit_flags)
+        memo_it = plain_display_table_item("")
+        memo_it.setFlags(ro_flags)
         memo_it.setTextAlignment(top_left)
         memo_it.setToolTip("Practice row: not saved to the database.")
         self._table.setItem(row, _COL_MEMO, memo_it)
@@ -1312,6 +1469,9 @@ class RegisterTab(QWidget):
         link_it.setFlags(ro_flags)
         link_it.setTextAlignment(top_left)
         link_it.setToolTip("Practice row: Match applies to saved rows.")
+        link_it.setData(REGISTER_LINK_UPPER_PLAIN, "")
+        link_it.setData(REGISTER_LINK_LOWER_PLAIN, "")
+        link_it.setData(REGISTER_LINK_BASE_TOOLTIP, link_it.toolTip() or "")
         self._table.setItem(row, _COL_LINK, link_it)
 
         self._resize_register_row(row)
@@ -1385,7 +1545,16 @@ class RegisterTab(QWidget):
         return ids
 
     def _on_register_cell_double_clicked(self, row: int, col: int) -> None:
-        """Toggle per-row *cleared* when the user double-clicks the Clr column."""
+        """Double-click **Clr** toggles cleared; double-click **Match** opens the linked Business record."""
+        if col == _COL_LINK:
+            id_item = self._table.item(row, _COL_DATE)
+            if id_item is None:
+                return
+            tid = coerce_combo_int_id(id_item.data(Qt.ItemDataRole.UserRole))
+            if tid is None:
+                return
+            self.open_linked_business_record_for_transaction_id(tid)
+            return
         if col != _COL_CLR:
             return
         id_item = self._table.item(row, _COL_DATE)
@@ -1437,7 +1606,17 @@ class RegisterTab(QWidget):
         if tid is None:
             menu.exec(self._table.viewport().mapToGlobal(pos))
             return
+        nav_ok = business.bank_match_is_navigable(self._db._conn, tid)
         menu.addSeparator()
+        if nav_ok:
+            act_open_biz = menu.addAction(
+                "Open linked Business record…",
+                partial(self.open_linked_business_record_for_transaction_id, tid),
+            )
+            act_open_biz.setToolTip(
+                "Switch to the Business tab: open the invoice or bill editor, payroll tax lines, "
+                "or a short summary for AR/AP payments."
+            )
         act_att = menu.addAction(
             "Open attachment…",
             partial(self._open_register_attachment, tid),
@@ -1482,9 +1661,16 @@ class RegisterTab(QWidget):
             "Copy the payee or description text stored on this transaction (same field as the Payee column’s upper line). "
             + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
+        act_edit_memo = menu.addAction(
+            "Edit memo…", partial(self._edit_register_memo, tid)
+        )
+        act_edit_memo.setToolTip(
+            "Edit the memo stored on this transaction (the Memo grid column is hidden). "
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+        )
         act_copy_memo = menu.addAction("Copy memo", partial(self._copy_register_row_memo, row))
         act_copy_memo.setToolTip(
-            "Copy the memo text stored on this transaction (Memo column). "
+            "Copy the memo text stored on this transaction. "
             + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         act_copy_ref = menu.addAction(
@@ -1540,6 +1726,32 @@ class RegisterTab(QWidget):
 
     def _copy_register_row_payee_description(self, row: int) -> None:
         self._register_clip_txn_string_field(row, "description")
+
+    def _edit_register_memo(self, txn_id: int) -> None:
+        rec = self._db.get_transaction(txn_id)
+        if rec is None:
+            return
+        cur = dict(rec).get("memo")
+        cur_s = cur if isinstance(cur, str) else ""
+        text, ok = QInputDialog.getMultiLineText(
+            self,
+            "Memo",
+            "Memo for this register row:",
+            text=cur_s,
+        )
+        if not ok:
+            return
+        try:
+            self._db.update_transaction(txn_id, memo=text)
+        except ValueError as exc:
+            message_box_warning_ok(
+                self,
+                "Cannot save",
+                escape_ampersand_for_qt(str(exc)),
+                ok_tip="Close; fix the value and try again.",
+            )
+            return
+        self._reload_current()
 
     def _copy_register_row_memo(self, row: int) -> None:
         self._register_clip_txn_string_field(row, "memo")
@@ -1649,12 +1861,8 @@ class RegisterTab(QWidget):
             payee_item.setToolTip(escape_ampersand_for_qt(payee_plain))
 
             memo_raw = txn.get("memo") or ""
-            if posted:
-                memo_item = plain_display_table_item(memo_raw)
-                memo_item.setFlags(memo_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            else:
-                memo_item = QTableWidgetItem(memo_raw)
-                memo_item.setFlags(memo_item.flags() | Qt.ItemFlag.ItemIsEditable)
+            memo_item = plain_display_table_item(memo_raw)
+            memo_item.setFlags(memo_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             memo_item.setTextAlignment(
                 Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
             )
@@ -1791,20 +1999,34 @@ class RegisterTab(QWidget):
                     bm = business.get_bank_match(self._db._conn, tid)
                 except sqlite3.OperationalError:
                     bm = None
+            link_nav = business.bank_match_link_tuple_from_row(bm)
             link_lbl = _bank_match_label(bm)
             link_item = plain_display_table_item(link_lbl)
             link_item.setFlags(link_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            if (link_lbl or "").strip():
-                link_item.setToolTip(
-                    escape_ampersand_for_qt(
-                        f"Linked AR, AP, or payroll: {link_lbl}. "
-                        "Use Link payment… to set or clear."
-                    )
+            if link_nav is not None and (link_lbl or "").strip():
+                tip = escape_ampersand_for_qt(
+                    f"Linked AR/AP/payroll or open invoice/bill: {link_lbl}. "
+                    "Double-click here or right-click the row → Open linked Business record…. "
+                    "Use Link payment… to set or clear."
                 )
+                link_item.setToolTip(tip)
+                link_item.setData(REGISTER_LINK_BASE_TOOLTIP, tip)
+            elif (link_lbl or "").strip():
+                tip = escape_ampersand_for_qt(
+                    f"Link row present ({link_lbl}) but Business navigation is unavailable "
+                    "(incomplete type or id). Use Link payment… to clear or re-link."
+                )
+                link_item.setToolTip(tip)
+                link_item.setData(REGISTER_LINK_BASE_TOOLTIP, tip)
             else:
-                link_item.setToolTip(
-                    "Linked AR, AP, or payroll record. Use Link payment… to set or clear."
+                tip = (
+                    "No payment or open invoice/bill link on this row. "
+                    "Use Link payment… to add or change one."
                 )
+                link_item.setToolTip(tip)
+                link_item.setData(REGISTER_LINK_BASE_TOOLTIP, tip)
+            link_item.setData(REGISTER_LINK_UPPER_PLAIN, link_lbl or "")
+            link_item.setData(REGISTER_LINK_LOWER_PLAIN, "")
             link_item.setTextAlignment(
                 Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
             )
@@ -1833,7 +2055,7 @@ class RegisterTab(QWidget):
         if self._populating:
             return
         col = item.column()
-        if col not in (_COL_MEMO, _COL_REF):
+        if col != _COL_REF:
             return
         row = item.row()
         id_item = self._table.item(row, _COL_DATE)
@@ -1843,33 +2065,20 @@ class RegisterTab(QWidget):
         if txn_id is None:
             return
         try:
-            if col == _COL_MEMO:
-                self._db.update_transaction(txn_id, memo=item.text())
-                fresh = self._db.get_transaction(txn_id)
-                if fresh is not None:
-                    pay_it = self._table.item(row, _COL_PAYEE)
-                    if pay_it is not None:
-                        self._apply_payee_two_line_to_item(pay_it, dict(fresh))
-                memo_txt = (item.text() or "").strip()
-                item.setToolTip(
-                    escape_ampersand_for_qt(memo_txt) if memo_txt else ""
-                )
-                self._resize_register_row(row)
-            else:
-                ref_first = item.text().split("\n", 1)[0].strip()
-                self._db.update_transaction(txn_id, ref_number=ref_first)
-                self._populating = True
-                fresh = self._db.get_transaction(txn_id)
-                if fresh is not None:
-                    fd = dict(fresh)
-                    num_plain = _register_number_two_line_plain(fd)
-                    item.setText(escape_ampersand_for_qt(num_plain))
-                    item.setData(QTABLE_PLAIN_TEXT_ROLE, num_plain)
-                    item.setData(REGISTER_REF_UPPER_PLAIN, _register_num_upper_plain(fd))
-                    item.setData(REGISTER_REF_LOWER_PLAIN, _register_num_lower_plain(fd))
-                    item.setToolTip(escape_ampersand_for_qt(num_plain))
-                self._populating = False
-                self._resize_register_row(row)
+            ref_first = item.text().split("\n", 1)[0].strip()
+            self._db.update_transaction(txn_id, ref_number=ref_first)
+            self._populating = True
+            fresh = self._db.get_transaction(txn_id)
+            if fresh is not None:
+                fd = dict(fresh)
+                num_plain = _register_number_two_line_plain(fd)
+                item.setText(escape_ampersand_for_qt(num_plain))
+                item.setData(QTABLE_PLAIN_TEXT_ROLE, num_plain)
+                item.setData(REGISTER_REF_UPPER_PLAIN, _register_num_upper_plain(fd))
+                item.setData(REGISTER_REF_LOWER_PLAIN, _register_num_lower_plain(fd))
+                item.setToolTip(escape_ampersand_for_qt(num_plain))
+            self._populating = False
+            self._resize_register_row(row)
         except ValueError as exc:
             message_box_warning_ok(
                 self,
@@ -2359,7 +2568,8 @@ class RegisterTab(QWidget):
         d = QDialog(self)
         d.setWindowTitle("Link bank transaction")
         d.setToolTip(
-            "Link this bank row to AR, AP, or payroll; clear an existing link or pick from suggestions."
+            "Link this bank row to AR/AP/payroll or an open invoice/bill; clear an existing link, open the linked Business record, "
+            "or pick from suggestions / manual type."
         )
         d.setMinimumWidth(520)
         outer = QVBoxLayout(d)
@@ -2368,6 +2578,7 @@ class RegisterTab(QWidget):
             existing = business.get_bank_match(self._db._conn, tid)
         except sqlite3.OperationalError:
             existing = None
+        existing_nav = business.bank_match_link_tuple_from_row(existing)
         state = {"handled": False}
 
         if existing:
@@ -2375,15 +2586,31 @@ class RegisterTab(QWidget):
                 "Current link: "
                 f"{escape_ampersand_for_qt(_bank_match_label(existing))}"
             )
-            lbl_current_link.setToolTip(
-                "AR, AP, or payroll record already linked to this bank transaction; use Clear link to remove."
-            )
+            if existing_nav is not None:
+                lbl_current_link.setToolTip(
+                    "AR/AP/payroll or open invoice/bill already linked; use Clear link to remove."
+                )
+            else:
+                lbl_current_link.setToolTip(
+                    "A bank link row exists but type/id are incomplete—Business cannot open it. "
+                    "Clear link and choose a suggestion or manual link, or fix data in the database."
+                )
             outer.addWidget(lbl_current_link)
             reg_link_btn_clear = QPushButton("Clear link")
             reg_link_btn_clear.setToolTip(
-                "Remove the existing AR/AP/payroll link for this bank transaction."
+                "Remove the existing payment / document link for this bank transaction."
             )
-            outer.addWidget(reg_link_btn_clear)
+            row_cur_link = QHBoxLayout()
+            row_cur_link.addWidget(reg_link_btn_clear)
+            if existing_nav is not None:
+                reg_link_btn_open = QPushButton("Open linked Business record…")
+                reg_link_btn_open.setToolTip(
+                    "Switch to the Business tab for this **complete** link (same as Recon → Transaction Tools, "
+                    "Ctrl+Shift+B, or double-click **Match**). Closes this dialog first."
+                )
+                row_cur_link.addWidget(reg_link_btn_open)
+
+            outer.addLayout(row_cur_link)
 
             def clear_link():
                 business.unlink_bank_transaction(self._db._conn, tid)
@@ -2394,20 +2621,29 @@ class RegisterTab(QWidget):
                     self,
                     "Link",
                     "Link cleared.",
-                    ok_tip="Close; the bank row no longer points at AR/AP/payroll.",
+                    ok_tip="Close; the bank row no longer points at a linked business record.",
                 )
 
             reg_link_btn_clear.clicked.connect(clear_link)
+            if existing_nav is not None:
+
+                def open_linked_from_link_dialog():
+                    state["handled"] = True
+                    d.accept()
+                    self._reload_current()
+                    self.open_linked_business_record_for_transaction_id(tid)
+
+                reg_link_btn_open.clicked.connect(open_linked_from_link_dialog)
 
         lbl_link_suggestions = QLabel("Suggested matches (by amount and date):")
         lbl_link_suggestions.setToolTip(
-            "Auto-suggested AR/AP/payroll records by amount and date; pick one or use Manual link below."
+            "Auto-suggested AR/AP/payroll records and open invoices (deposits) or bills (withdrawals) by amount and date; pick one or use Manual link below."
         )
         outer.addWidget(lbl_link_suggestions)
         sug_list = QListWidget()
         sug_list.setMinimumHeight(140)
         sug_list.setToolTip(
-            "Candidates by amount and near-date; double-click a row or use Link selected suggestion. "
+            "Candidates by amount and near-date (including open invoices/bills when relevant); double-click a row or use Link selected suggestion. "
             "Right-click for Keyboard shortcuts… (empty area OK)."
         )
         suggestions: list = []
@@ -2481,7 +2717,8 @@ class RegisterTab(QWidget):
                 self,
                 "Link",
                 "Link saved.",
-                ok_tip="Close; this bank line now matches the chosen record.",
+                ok_tip="Close; this bank line now matches the chosen record. "
+                "Recon → Open linked Business, Ctrl+Shift+B, or double-click **Match** opens **Business** when the link is complete.",
             )
 
         sug_list.itemDoubleClicked.connect(lambda _item: apply_suggestion())
@@ -2504,12 +2741,14 @@ class RegisterTab(QWidget):
         kind.addItem("AR payment", "ar_payment")
         kind.addItem("AP payment", "ap_payment")
         kind.addItem("Payroll run", "payroll_run")
+        kind.addItem("AR invoice (open balance)", "ar_invoice")
+        kind.addItem("AP bill (open balance)", "ap_bill")
         kind.setToolTip(
-            "Kind of business record to link: customer payment, vendor payment, or payroll run."
+            "Kind of record to link: payment, payroll run, or open invoice/bill with balance due."
         )
         pay = QComboBox()
         pay.setMinimumWidth(360)
-        pay.setToolTip("Specific payment or payroll run to link this bank transaction to.")
+        pay.setToolTip("Specific payment, payroll run, or open invoice/bill to link this bank transaction to.")
         f.addRow("Type", kind)
         f.addRow("Record", pay)
         outer.addLayout(f)
@@ -2539,6 +2778,31 @@ class RegisterTab(QWidget):
                         f"— {r['party_name']}"
                     )
                     pay.addItem(escape_ampersand_for_qt(line), pid)
+            elif k == "ar_invoice":
+                rows = business.list_ar_invoice_link_choices(self._db._conn)
+                for r in rows:
+                    iid = coerce_combo_int_id(r["id"])
+                    if iid is None:
+                        continue
+                    inv_no = (r["invoice_number"] or "").strip() or str(iid)
+                    line = (
+                        f"{inv_no} #{iid} {r['invoice_date']} ${float(r['balance_due']):.2f} open "
+                        f"— {r['party_name']}"
+                    )
+                    pay.addItem(escape_ampersand_for_qt(line), iid)
+            elif k == "ap_bill":
+                rows = business.list_ap_bill_link_choices(self._db._conn)
+                for r in rows:
+                    bid = coerce_combo_int_id(r["id"])
+                    if bid is None:
+                        continue
+                    vin = (r["vendor_invoice_number"] or "").strip()
+                    vin_bit = f" ({vin})" if vin else ""
+                    line = (
+                        f"#{bid}{vin_bit} {r['bill_date']} ${float(r['balance_due']):.2f} open "
+                        f"— {r['party_name']}"
+                    )
+                    pay.addItem(escape_ampersand_for_qt(line), bid)
             else:
                 rows = business.list_payroll_run_choices(self._db._conn)
                 for r in rows:
@@ -2578,6 +2842,7 @@ class RegisterTab(QWidget):
             self,
             "Link",
             "Link saved.",
-            ok_tip="Close; manual link is stored on this bank transaction.",
+            ok_tip="Close; manual link is stored on this bank transaction. "
+            "Recon → Open linked Business, Ctrl+Shift+B, or double-click **Match** opens **Business** when the link is complete.",
         )
         self._reload_current()

@@ -37,7 +37,7 @@ from desktop_app.table_clipboard import (
     copy_table_row_as_tsv,
     plain_display_table_item,
 )
-from probooksai.audit_log import list_for_entity
+from probooksai.audit_log import audit_field_display_label, list_for_entity
 
 
 def _audit_history_shortcuts_help(parent: QWidget) -> None:
@@ -124,7 +124,13 @@ def show_entity_audit_history(
                 0,
                 plain_display_table_item((d.get("changed_at") or "")[:19]),
             )
-            tbl.setItem(i, 1, plain_display_table_item(d.get("field") or ""))
+            tbl.setItem(
+                i,
+                1,
+                plain_display_table_item(
+                    audit_field_display_label(d.get("field"))
+                ),
+            )
             tbl.setItem(i, 2, plain_display_table_item(d.get("old_value") or ""))
             tbl.setItem(i, 3, plain_display_table_item(d.get("new_value") or ""))
         tbl.setSortingEnabled(True)

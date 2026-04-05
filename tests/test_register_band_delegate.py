@@ -17,6 +17,9 @@ from PySide6.QtWidgets import (
 )
 
 from desktop_app.register_band_delegate import (
+    REGISTER_LINK_BASE_TOOLTIP,
+    REGISTER_LINK_LOWER_PLAIN,
+    REGISTER_LINK_UPPER_PLAIN,
     REGISTER_MISSING_COA_ROLE,
     REGISTER_PAYEE_LOWER_PLAIN,
     REGISTER_PAYEE_UPPER_PLAIN,
@@ -42,6 +45,9 @@ def test_register_item_data_roles_are_distinct() -> None:
         REGISTER_PAYEE_LOWER_PLAIN,
         REGISTER_REF_UPPER_PLAIN,
         REGISTER_REF_LOWER_PLAIN,
+        REGISTER_LINK_UPPER_PLAIN,
+        REGISTER_LINK_LOWER_PLAIN,
+        REGISTER_LINK_BASE_TOOLTIP,
     ]
     assert len(roles) == len(set(roles))
 
