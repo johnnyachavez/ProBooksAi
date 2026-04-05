@@ -936,6 +936,7 @@ class MainWindow(QMainWindow):
         sc_intake_f5.setContext(Qt.WidgetWithChildrenShortcut)
         sc_intake_f5.activated.connect(self._refresh_inbox)
 
+        self._intake_widget = intake_widget
         self._tabs.addTab(intake_widget, "📄  Document Intake")
 
         # ── Tab 2: Bank Import ───────────────────────────────────────────────
@@ -1015,6 +1016,13 @@ class MainWindow(QMainWindow):
             "Audit trail: recent field-level changes (filter by entity type and id)."
             + _tab_bar_csv_excel_hint
             + _main_tab_bar_db_hint,
+        )
+
+        self._register_tab.reconciliationModeChanged.connect(
+            self._sync_bank_workflow_tabs_for_reconciliation_mode
+        )
+        self._sync_bank_workflow_tabs_for_reconciliation_mode(
+            self._register_tab.is_reconciliation_mode()
         )
 
         container_layout.addWidget(self._tabs)
@@ -1635,7 +1643,32 @@ class MainWindow(QMainWindow):
             return
         if index < 0 or index >= self._tabs.count():
             return
+        tb = self._tabs.tabBar()
+        if hasattr(tb, "isTabVisible") and not tb.isTabVisible(index):
+            if index in (0, 1) and hasattr(self, "_register_tab"):
+                idx_reg = self._tabs.indexOf(self._register_tab)
+                if idx_reg >= 0 and tb.isTabVisible(idx_reg):
+                    self._tabs.setCurrentIndex(idx_reg)
+            return
         self._tabs.setCurrentIndex(index)
+
+    def _sync_bank_workflow_tabs_for_reconciliation_mode(self, recon_on: bool) -> None:
+        """Hide Document Intake + Bank Import when the register is in checkbook (non-reconciliation) mode."""
+        if not hasattr(self, "_tabs") or not hasattr(self, "_intake_widget"):
+            return
+        if not hasattr(self, "_bank_tab") or not hasattr(self, "_register_tab"):
+            return
+        tb = self._tabs.tabBar()
+        i_in = self._tabs.indexOf(self._intake_widget)
+        i_bank = self._tabs.indexOf(self._bank_tab)
+        i_reg = self._tabs.indexOf(self._register_tab)
+        if i_in < 0 or i_bank < 0 or i_reg < 0:
+            return
+        show = bool(recon_on)
+        if not show and self._tabs.currentIndex() in (i_in, i_bank):
+            self._tabs.setCurrentIndex(i_reg)
+        tb.setTabVisible(i_in, show)
+        tb.setTabVisible(i_bank, show)
 
     def _focus_bank_register_tab(self) -> None:
         """Focus **Bank register** after Bank Import syncs line-match results to Stmt match.
@@ -1707,6 +1740,12 @@ class MainWindow(QMainWindow):
         self._bank_tab = self._tabs.widget(1)
         self._register_tab = self._tabs.widget(2)
         self._coa_tab = self._tabs.widget(3)
+        self._register_tab.reconciliationModeChanged.connect(
+            self._sync_bank_workflow_tabs_for_reconciliation_mode
+        )
+        self._sync_bank_workflow_tabs_for_reconciliation_mode(
+            self._register_tab.is_reconciliation_mode()
+        )
         self._coa_tab.coaChanged.connect(self._on_coa_changed)
 
     def _load_company_at_path(self, resolved: str) -> None:

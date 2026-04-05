@@ -14,7 +14,10 @@ from PySide6.QtWidgets import QApplication
 
 from desktop_app.register_tab import (
     RegisterTab,
+    _COL_CLR,
     _COL_DATE,
+    _COL_LINK,
+    _COL_MEMO,
     _COL_RECON_STATUS,
     _REGISTER_MIN_VISIBLE_ROWS,
     _coerce_register_account_id,
@@ -289,6 +292,33 @@ def test_register_reconciliation_mode_keeps_rows_visible(qapp) -> None:
         assert not tab._recon_banner.isHidden()
         assert not tab._table.horizontalHeader().isSectionHidden(_COL_RECON_STATUS)
         assert tab._table.rowCount() == _REGISTER_MIN_VISIBLE_ROWS
+    finally:
+        db.close()
+
+
+def test_register_checkbook_mode_hides_memo_clr_match_stmt_columns(qapp) -> None:
+    """Non-reconciliation mode hides Memo, Clr, Match, and Stmt match (no gaps)."""
+    p = Path(tempfile.mkdtemp()) / "reg_checkbook_cols.db"
+    db = BankDatabase(str(p))
+    try:
+        coa = COADatabase(db._conn)
+        tab = RegisterTab(db, coa, None)
+        hdr = tab._table.horizontalHeader()
+        assert tab._reconciliation_mode is False
+        assert hdr.isSectionHidden(_COL_MEMO)
+        assert hdr.isSectionHidden(_COL_CLR)
+        assert hdr.isSectionHidden(_COL_LINK)
+        assert hdr.isSectionHidden(_COL_RECON_STATUS)
+        tab._chk_recon.setChecked(True)
+        assert not hdr.isSectionHidden(_COL_MEMO)
+        assert not hdr.isSectionHidden(_COL_CLR)
+        assert not hdr.isSectionHidden(_COL_LINK)
+        assert not hdr.isSectionHidden(_COL_RECON_STATUS)
+        tab._chk_recon.setChecked(False)
+        assert hdr.isSectionHidden(_COL_MEMO)
+        assert hdr.isSectionHidden(_COL_CLR)
+        assert hdr.isSectionHidden(_COL_LINK)
+        assert hdr.isSectionHidden(_COL_RECON_STATUS)
     finally:
         db.close()
 

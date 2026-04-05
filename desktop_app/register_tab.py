@@ -17,6 +17,7 @@ debit/credit columns, running balance, memo and COA inline edits
 **Add transaction…** persists new lines via a per-account sentinel import batch (``(Manual entry)``); same ``bank_transactions`` rows as CSV imports, with an optional **Category (COA)** picker in the dialog (last non-empty choice per bank account is remembered for the next add, scoped by company file). **Date** defaults to the latest register transaction on that account when any exist, else today. **Amount** receives initial keyboard focus when the dialog opens.
 The grid always shows at least **20** rows (practice lines when short on data; UI-only, not saved).
 **Reconciliation mode** shows a banner and **Stmt match** overlay column (Matched / Missing / Extra demo from mock extract); register stays the base layer.
+Bank Import Run mock extract & compare can populate Stmt match for the same account.
 Payee column uses a two-band row: description on the lighter upper panel, COA account on the darker lower panel (full row width uses the same upper/lower band colors; other columns show values in the upper band).
 Hover **tooltips** on Payee, Number, Memo, Date, Debit/Credit, Balance, and Match show full values or helpful detail when the grid elides text.
 The **COA Account** combo tooltip states the saved category and whether the row is posted (read-only).
@@ -47,7 +48,16 @@ from functools import partial
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QDate, QPoint, QRect, Qt, QSettings, QTimer
+from PySide6.QtCore import (
+    QByteArray,
+    QDate,
+    QPoint,
+    QRect,
+    Qt,
+    QSettings,
+    QTimer,
+    Signal,
+)
 from PySide6.QtGui import (
     QBrush,
     QColor,
@@ -592,10 +602,9 @@ def show_register_keyboard_shortcuts_dialog(parent: QWidget) -> None:
 
 
 class RegisterTab(QWidget):
-    """
-    Check-register style view for all transactions on a selected bank account,
-    with **Add transaction…** (**Tools** → **Register Actions**) for persisted manual lines (sentinel import batch).
-    """
+    """Check-register for one bank account; emits :attr:`reconciliationModeChanged` when reconciliation UI toggles."""
+
+    reconciliationModeChanged = Signal(bool)
 
     def __init__(
         self,
@@ -614,6 +623,7 @@ class RegisterTab(QWidget):
         self._reconciliation_mode = False
         self._recon_txn_status: dict[int, str] = {}
         self._recon_overlay_bank_import_mode = False
+        self._recon_header_snapshot: QByteArray | None = None
         self._build_ui()
 
     def _build_ui(self):
@@ -670,11 +680,11 @@ class RegisterTab(QWidget):
         controls.addWidget(self._filter_combo)
         self._chk_recon = QCheckBox("Reconciliation mode")
         self._chk_recon.setToolTip(
-            "Show the Stmt match overlay (Matched / Missing / Extra) on the register. "
-            "F5 refreshes the register; other actions (add transaction, post, export, attachments, splits, cleared, flags) "
-            "are on the main menu: Tools → Register Actions / Reconciliation / Attachments / Transaction Tools / Flags. "
-            "Bank Import Run mock extract & compare can populate Stmt match for the same account. "
-            "View → Bank Import (Ctrl+2), Register (Ctrl+3)."
+            "Reconciliation workflow: Stmt match (Matched / Missing / Extra), Memo, Clr, and Match columns, "
+            "full column layout, and Document Intake + Bank Import tabs. "
+            "Off: checkbook-style register (Date, Number, Payee, amounts, Balance, COA) and those tabs hidden. "
+            "F5 refreshes; bulk actions: Tools → Register Actions / Reconciliation / … "
+            "Bank Import compare can populate Stmt match. View → Bank Import (Ctrl+2), Register (Ctrl+3)."
         )
         self._chk_recon.toggled.connect(self._on_reconciliation_mode_toggled)
         controls.addWidget(self._chk_recon)
@@ -817,6 +827,7 @@ class RegisterTab(QWidget):
         layout.addWidget(tip)
 
         self._clear_table()
+        self._apply_register_column_layout()
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -824,6 +835,7 @@ class RegisterTab(QWidget):
         raw = QSettings().value(self._register_table_header_state_key())
         if raw:
             self._table.horizontalHeader().restoreState(raw)
+        self._apply_register_column_layout()
 
     def hideEvent(self, event: QHideEvent) -> None:
         self._persist_register_table_header_state()
@@ -975,6 +987,84 @@ class RegisterTab(QWidget):
         else:
             self._clear_table()
 
+    def is_reconciliation_mode(self) -> bool:
+        return self._reconciliation_mode
+
+    def _restore_default_reconciliation_header_geometry(self) -> None:
+        hdr = self._table.horizontalHeader()
+        hdr.setSectionResizeMode(_COL_DATE, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(_COL_REF, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(_COL_PAYEE, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(_COL_MEMO, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(_COL_DEBIT, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(_COL_CREDIT, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(_COL_CLR, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(_COL_BAL, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(_COL_COA, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(_COL_LINK, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(
+            _COL_RECON_STATUS, QHeaderView.ResizeMode.ResizeToContents
+        )
+
+    def _apply_checkbook_header_geometry(self) -> None:
+        """Narrow Payee / COA ~30%; give freed space to Balance, Date, and Number (normal mode)."""
+        t = self._table
+        hdr = t.horizontalHeader()
+        w_payee = max(t.columnWidth(_COL_PAYEE), 100)
+        w_coa = max(t.columnWidth(_COL_COA), 120)
+        w_bal = max(t.columnWidth(_COL_BAL), 88)
+        w_date = max(t.columnWidth(_COL_DATE), 72)
+        w_ref = max(t.columnWidth(_COL_REF), 72)
+        w_memo = max(t.columnWidth(_COL_MEMO), 0)
+        w_clr = max(t.columnWidth(_COL_CLR), 0)
+        w_link = max(t.columnWidth(_COL_LINK), 0)
+
+        new_payee = max(100, int(w_payee * 0.7))
+        new_coa = max(100, int(w_coa * 0.7))
+        freed = (w_payee - new_payee) + (w_coa - new_coa) + w_memo + w_clr + w_link
+        add_bal = int(freed * 0.5)
+        add_date = int(freed * 0.25)
+        add_ref = max(0, freed - add_bal - add_date)
+
+        hdr.setSectionResizeMode(_COL_DATE, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(_COL_REF, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(_COL_PAYEE, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(_COL_DEBIT, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(_COL_CREDIT, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(_COL_BAL, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(_COL_COA, QHeaderView.ResizeMode.Interactive)
+
+        hdr.resizeSection(_COL_DATE, w_date + add_date)
+        hdr.resizeSection(_COL_REF, w_ref + add_ref)
+        hdr.resizeSection(_COL_PAYEE, new_payee)
+        hdr.resizeSection(_COL_BAL, w_bal + add_bal)
+        hdr.resizeSection(_COL_COA, new_coa)
+
+    def _apply_register_column_layout(self) -> None:
+        """Show full register columns in reconciliation mode; checkbook layout when off (UI only)."""
+        hdr = self._table.horizontalHeader()
+        hdr.blockSignals(True)
+        try:
+            if self._reconciliation_mode:
+                if self._recon_header_snapshot is not None:
+                    snap = self._recon_header_snapshot
+                    self._recon_header_snapshot = None
+                    hdr.restoreState(snap)
+                else:
+                    self._restore_default_reconciliation_header_geometry()
+                hdr.setSectionHidden(_COL_MEMO, False)
+                hdr.setSectionHidden(_COL_CLR, False)
+                hdr.setSectionHidden(_COL_LINK, False)
+                hdr.setSectionHidden(_COL_RECON_STATUS, False)
+            else:
+                hdr.setSectionHidden(_COL_MEMO, True)
+                hdr.setSectionHidden(_COL_CLR, True)
+                hdr.setSectionHidden(_COL_LINK, True)
+                hdr.setSectionHidden(_COL_RECON_STATUS, True)
+                self._apply_checkbook_header_geometry()
+        finally:
+            hdr.blockSignals(False)
+
     def _clear_table(self):
         self._recon_txn_status.clear()
         self._recon_overlay_bank_import_mode = False
@@ -990,15 +1080,17 @@ class RegisterTab(QWidget):
         self._refresh_all_recon_cells()
 
     def _on_reconciliation_mode_toggled(self, checked: bool) -> None:
+        was_recon = self._reconciliation_mode
         self._reconciliation_mode = bool(checked)
         self._recon_banner.setVisible(self._reconciliation_mode)
-        self._table.horizontalHeader().setSectionHidden(
-            _COL_RECON_STATUS, not self._reconciliation_mode
-        )
+        if was_recon and not self._reconciliation_mode:
+            self._recon_header_snapshot = self._table.horizontalHeader().saveState()
+        self._apply_register_column_layout()
         if not self._reconciliation_mode:
             self._recon_txn_status.clear()
             self._recon_overlay_bank_import_mode = False
         self._reload_current()
+        self.reconciliationModeChanged.emit(self._reconciliation_mode)
 
     def apply_line_match_results_from_import(
         self, bank_account_id: int, results: list[dict]
@@ -1026,7 +1118,7 @@ class RegisterTab(QWidget):
         self._chk_recon.blockSignals(False)
         self._reconciliation_mode = True
         self._recon_banner.setVisible(True)
-        self._table.horizontalHeader().setSectionHidden(_COL_RECON_STATUS, False)
+        self._apply_register_column_layout()
         want_acct = coerce_combo_int_id(bank_account_id)
         if want_acct is None or not self._select_bank_account_for_overlay(want_acct):
             self._chk_recon.blockSignals(True)
@@ -1034,6 +1126,7 @@ class RegisterTab(QWidget):
             self._chk_recon.blockSignals(False)
             self._on_reconciliation_mode_toggled(False)
             return False
+        self.reconciliationModeChanged.emit(True)
         return True
 
     def _select_bank_account_for_overlay(self, bank_account_id: int) -> bool:
