@@ -31,6 +31,7 @@ python -m PyInstaller `
     "--add-data=probooksai;probooksai" `
     "--add-data=desktop_app;desktop_app" `
     "--add-data=docs;docs" `
+    "--add-data=pyproject.toml;." `
     --copy-metadata probooks-ai `
     desktop_app/main.py
 

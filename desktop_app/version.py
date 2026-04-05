@@ -12,7 +12,7 @@ _VERSION_RE = re.compile(r'^version\s*=\s*["\']([^"\']+)["\']')
 
 
 def _version_from_pyproject_toml() -> str | None:
-    """When the distribution is not installed (e.g. ``python desktop_app/main.py``), read repo ``pyproject.toml``."""
+    """Read ``[project].version`` from a repo-layout or PyInstaller extract tree (``pyproject.toml`` beside ``desktop_app/``)."""
     path = Path(__file__).resolve().parent.parent / "pyproject.toml"
     if not path.is_file():
         return None
