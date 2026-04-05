@@ -290,6 +290,8 @@ _FILE_MENU_QACTION_NAMES: tuple[str, ...] = (
     "act_exit",
 )
 
+# Edit → Tools (Invoice) → Recon (12 register QActions) → Help; all use ``_menu_action_tip`` only
+# (chunk is ``# Edit menu`` through ``# -- drag & drop`` in ``_build_menu_bar``).
 _EDIT_TOOLS_HELP_QACTION_NAMES: tuple[str, ...] = (
     "act_undo",
     "act_redo",
