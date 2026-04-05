@@ -1,7 +1,7 @@
 # scripts/build_desktop.ps1
 # Build a standalone ProBooks+ai desktop executable on Windows (output: ProBooksPlusAi.exe).
 # Bundles ai/ (Document Intake Run AI), probooks/, probooksai/, desktop_app/, docs/ (ROADMAP.md),
-# pyproject.toml, and hidden-import generate_workbook (COA seed via probooksai.coa_db.seed_from_workbook).
+# pyproject.toml; hidden-imports: generate_workbook (COA seed), OpenAI + pypdf SDKs (ai.extractor loads lazily).
 #
 # Usage (PowerShell):
 #   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
@@ -14,7 +14,8 @@ $RepoRoot  = Split-Path -Parent $ScriptDir
 
 Set-Location $RepoRoot
 
-# 1. Ensure PyInstaller is installed (install editable + desktop extra first: pip install -e ".[desktop]")
+# 1. Ensure PyInstaller is installed; have openai + pypdf on PYTHONPATH (e.g. pip install -r requirements.txt or .[ci])
+#    so PyInstaller can resolve those hidden imports. Editable desktop: pip install -e ".[desktop]"
 python -m pip install --quiet pyinstaller
 
 # 1b. Resolved app version (same helper as the desktop UI / --version; pyproject.toml when not installed)
@@ -37,6 +38,8 @@ python -m PyInstaller `
     "--add-data=pyproject.toml;." `
     --copy-metadata probooks-ai `
     --hidden-import generate_workbook `
+    --hidden-import openai `
+    --hidden-import pypdf `
     desktop_app/main.py
 
 Write-Host ""

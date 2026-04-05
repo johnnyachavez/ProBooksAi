@@ -71,6 +71,10 @@ def test_build_desktop_scripts_echo_application_version_before_pyinstaller() -> 
     assert sh.count("--copy-metadata probooks-ai") == 1
     assert ps1.count("--hidden-import generate_workbook") == 1
     assert sh.count("--hidden-import generate_workbook") == 1
+    assert ps1.count("--hidden-import openai") == 1
+    assert sh.count("--hidden-import openai") == 1
+    assert ps1.count("--hidden-import pypdf") == 1
+    assert sh.count("--hidden-import pypdf") == 1
     needle = "python -m PyInstaller"
     assert ps1.index("application_version") < ps1.index(needle)
     assert sh.index("application_version") < sh.index(needle)
