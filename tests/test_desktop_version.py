@@ -13,7 +13,12 @@ import desktop_app.version as desktop_version_mod
 from desktop_app import version as version_mod
 from desktop_app.version import application_version
 
-from tests.repo_paths import PYPROJECT_TOML, SCRIPTS_BUILD_DESKTOP_PS1, SCRIPTS_BUILD_DESKTOP_SH
+from tests.repo_paths import (
+    PYPROJECT_TOML,
+    SCRIPTS_BUILD_DESKTOP_PS1,
+    SCRIPTS_BUILD_DESKTOP_SH,
+    SCRIPTS_DIR,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -143,6 +148,13 @@ def test_build_desktop_script_files_exist() -> None:
     assert SCRIPTS_BUILD_DESKTOP_SH.is_file()
 
 
+def test_build_desktop_script_paths_under_scripts_dir() -> None:
+    assert SCRIPTS_BUILD_DESKTOP_PS1.parent == SCRIPTS_DIR
+    assert SCRIPTS_BUILD_DESKTOP_SH.parent == SCRIPTS_DIR
+    assert SCRIPTS_BUILD_DESKTOP_PS1.name == "build_desktop.ps1"
+    assert SCRIPTS_BUILD_DESKTOP_SH.name == "build_desktop.sh"
+
+
 def test_build_desktop_sh_env_bash_shebang() -> None:
     _, sh = _build_desktop_script_texts()
     assert sh.splitlines()[0] == "#!/usr/bin/env bash"
@@ -236,6 +248,12 @@ def test_build_desktop_scripts_pyinstaller_core_options_match() -> None:
         assert "--name ProBooksPlusAi" in b
     assert '"--paths=$RepoRoot"' in b_ps1
     assert '--paths "$REPO_ROOT"' in b_sh
+
+
+def test_build_desktop_pyinstaller_argv_single_python_dash_m() -> None:
+    ps1, sh = _build_desktop_script_texts()
+    for b in (_pyinstaller_argv_block(ps1), _pyinstaller_argv_block(sh)):
+        assert b.count("python -m") == 1
 
 
 def test_build_desktop_scripts_add_data_pairs_match() -> None:
