@@ -15,6 +15,10 @@ from tests.repo_paths import SCRIPTS_BUILD_DESKTOP_PS1, SCRIPTS_BUILD_DESKTOP_SH
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
+_VERSION_PY_SNIPPET = (
+    "from desktop_app.version import application_version; print(application_version())"
+)
+
 _PYINSTALLER_BLOCK_END = "desktop_app/main.py"
 _COLLECT_SUBMODULES_RE = re.compile(r"--collect-submodules\s+(\S+)")
 _HIDDEN_IMPORT_RE = re.compile(r"--hidden-import\s+(\S+)")
@@ -100,6 +104,16 @@ def test_build_desktop_scripts_echo_application_version_before_pyinstaller() -> 
     needle = "python -m PyInstaller"
     assert ps1.index("application_version") < ps1.index(needle)
     assert sh.index("application_version") < sh.index(needle)
+
+
+def test_build_desktop_scripts_packaging_echo_and_version_snippet_match() -> None:
+    ps1 = SCRIPTS_BUILD_DESKTOP_PS1.read_text(encoding="utf-8")
+    sh = SCRIPTS_BUILD_DESKTOP_SH.read_text(encoding="utf-8")
+    label = "Packaging ProBooks+ai version"
+    assert ps1.count(label) == sh.count(label) == 1
+    assert ps1.count(_VERSION_PY_SNIPPET) == sh.count(_VERSION_PY_SNIPPET) == 1
+    done = "Build complete. Executable is in:"
+    assert ps1.count(done) == sh.count(done) == 1
 
 
 def test_build_desktop_scripts_pip_and_pyinstaller_entry_match() -> None:
