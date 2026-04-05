@@ -2,7 +2,7 @@
 # scripts/build_desktop.sh
 # Build a standalone ProBooks+ai desktop executable on macOS / Linux (output: ProBooksPlusAi).
 # Bundles ai/ (Document Intake Run AI), probooks/, probooksai/, desktop_app/, docs/ (ROADMAP.md),
-# pyproject.toml; hidden-imports: generate_workbook (COA seed), OpenAI + pypdf SDKs (ai.extractor loads lazily).
+# pyproject.toml; hidden-import generate_workbook (COA seed); full OpenAI SDK subtree + hidden-import pypdf (ai.extractor).
 #
 # Usage:
 #   chmod +x scripts/build_desktop.sh
@@ -15,8 +15,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$REPO_ROOT"
 
-# 1. Ensure PyInstaller is installed; have openai + pypdf importable (e.g. pip install -r requirements.txt or .[ci])
-#    so PyInstaller can resolve those hidden imports. Editable desktop: pip install -e ".[desktop]"
+# 1. Ensure PyInstaller is installed; have openai + pypdf installed (e.g. pip install -r requirements.txt or .[ci])
+#    so analysis can bundle them. Editable desktop: pip install -e ".[desktop]"
 python -m pip install --quiet pyinstaller
 
 # 1b. Resolved app version (same helper as the desktop UI / --version; pyproject.toml when not installed)
@@ -38,7 +38,7 @@ python -m PyInstaller \
     --add-data "pyproject.toml:." \
     --copy-metadata probooks-ai \
     --hidden-import generate_workbook \
-    --hidden-import openai \
+    --collect-submodules openai \
     --hidden-import pypdf \
     desktop_app/main.py
 
