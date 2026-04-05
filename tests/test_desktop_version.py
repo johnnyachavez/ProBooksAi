@@ -102,6 +102,23 @@ def test_build_desktop_scripts_echo_application_version_before_pyinstaller() -> 
     assert sh.index("application_version") < sh.index(needle)
 
 
+def test_build_desktop_scripts_pip_and_pyinstaller_entry_match() -> None:
+    ps1 = SCRIPTS_BUILD_DESKTOP_PS1.read_text(encoding="utf-8")
+    sh = SCRIPTS_BUILD_DESKTOP_SH.read_text(encoding="utf-8")
+    pip_line = "python -m pip install --quiet pyinstaller"
+    assert ps1.count(pip_line) == sh.count(pip_line) == 1
+    inv = "python -m PyInstaller"
+    assert ps1.count(inv) == sh.count(inv) == 1
+    assert re.search(
+        r"--hidden-import pypdf `\s*\r?\n\s*desktop_app/main\.py",
+        ps1,
+    )
+    assert re.search(
+        r"--hidden-import pypdf \\\s*\r?\n\s*desktop_app/main\.py",
+        sh,
+    )
+
+
 def test_build_desktop_scripts_pyinstaller_core_options_match() -> None:
     ps1 = SCRIPTS_BUILD_DESKTOP_PS1.read_text(encoding="utf-8")
     sh = SCRIPTS_BUILD_DESKTOP_SH.read_text(encoding="utf-8")
