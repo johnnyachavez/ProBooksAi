@@ -294,6 +294,7 @@ _EDIT_TOOLS_HELP_QACTION_NAMES: tuple[str, ...] = (
     "act_undo",
     "act_redo",
     "act_prefs",
+    "act_tools_invoice",
     "act_reg_add",
     "act_reg_post",
     "act_reg_export",
@@ -476,7 +477,7 @@ def test_main_window_view_menu_ctrl_1_through_8_tuple_source_order() -> None:
 
 
 def test_edit_tools_help_qactions_use_menu_action_tip_only() -> None:
-    """**Edit**, **Tools**, and **Help** menu actions set hover + status via ``_menu_action_tip`` only."""
+    """**Edit**, **Tools** (Invoice), **Recon** (register), and **Help** actions use ``_menu_action_tip`` only."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("# Edit menu")
     end = text.index("    # -- drag & drop on window", start)
