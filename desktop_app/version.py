@@ -1,4 +1,4 @@
-"""Application version: ``importlib.metadata`` when the wheel is installed, else ``pyproject.toml`` in the repo tree."""
+"""Application version: wheel metadata via ``importlib.metadata``, else ``pyproject.toml`` (dev tree or PyInstaller extract)."""
 
 from __future__ import annotations
 

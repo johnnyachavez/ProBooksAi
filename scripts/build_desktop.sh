@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/build_desktop.sh
 # Build a standalone ProBooks+ai desktop executable on macOS / Linux (output: ProBooksPlusAi).
-# Bundles the docs/ tree (Help uses docs/ROADMAP.md); CI requires docs/ROADMAP.md to exist.
+# Bundles probooks/, probooksai/, desktop_app/, docs/ (Help uses docs/ROADMAP.md), and pyproject.toml.
 #
 # Usage:
 #   chmod +x scripts/build_desktop.sh
@@ -28,6 +28,7 @@ python -m PyInstaller \
     --onefile \
     --windowed \
     --paths "$REPO_ROOT" \
+    --add-data "probooks:probooks" \
     --add-data "probooksai:probooksai" \
     --add-data "desktop_app:desktop_app" \
     --add-data "docs:docs" \

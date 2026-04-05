@@ -1,6 +1,6 @@
 # scripts/build_desktop.ps1
 # Build a standalone ProBooks+ai desktop executable on Windows (output: ProBooksPlusAi.exe).
-# Bundles the docs/ tree (Help uses docs/ROADMAP.md); CI requires docs/ROADMAP.md to exist.
+# Bundles probooks/, probooksai/, desktop_app/, docs/ (Help uses docs/ROADMAP.md), and pyproject.toml.
 #
 # Usage (PowerShell):
 #   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
@@ -28,6 +28,7 @@ python -m PyInstaller `
     --onefile `
     --windowed `
     "--paths=$RepoRoot" `
+    "--add-data=probooks;probooks" `
     "--add-data=probooksai;probooksai" `
     "--add-data=desktop_app;desktop_app" `
     "--add-data=docs;docs" `
