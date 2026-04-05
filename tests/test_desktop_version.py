@@ -143,6 +143,16 @@ def test_build_desktop_scripts_header_comment_paths() -> None:
     assert sh.splitlines()[1] == "# scripts/build_desktop.sh"
 
 
+def test_build_desktop_scripts_usage_comment_examples() -> None:
+    ps1, sh = _build_desktop_script_texts()
+    assert ps1.count("# Usage (PowerShell):") == 1
+    assert ps1.count("#   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass") == 1
+    assert ps1.count("#   .\\scripts\\build_desktop.ps1") == 1
+    assert sh.count("# Usage:") == 1
+    assert sh.count("#   chmod +x scripts/build_desktop.sh") == 1
+    assert sh.count("#   ./scripts/build_desktop.sh") == 1
+
+
 def test_build_desktop_script_files_exist() -> None:
     assert SCRIPTS_BUILD_DESKTOP_PS1.is_file()
     assert SCRIPTS_BUILD_DESKTOP_SH.is_file()
