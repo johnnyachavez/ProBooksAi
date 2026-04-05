@@ -7,7 +7,7 @@ or :class:`FloatSortTableItem`. Lists with escaped labels set ``QLIST_PLAIN_TEXT
 Inline-editable cells stay plain ``QTableWidgetItem`` unless editing is delegated.
 ``CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX`` is the shared **File → Backup** line for copy QActions.
 ``VIEW_BANK_REGISTER_KEYS_TOOLTIP`` is the shared **View → Bank Import / Register** line plus a
-**Tools** menu pointer for register row actions, for **Keyboard shortcuts…** QActions on non-bank tabs.
+**Recon** menu pointer for register row actions, for **Keyboard shortcuts…** QActions on non-bank tabs.
 """
 
 from __future__ import annotations
