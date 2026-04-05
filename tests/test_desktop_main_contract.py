@@ -419,6 +419,17 @@ def test_file_menu_wires_triggered_slots_for_core_company_actions() -> None:
     )
 
 
+def test_tools_menu_invoice_uses_ctrl_shift_i_application_shortcut() -> None:
+    """**Tools** → **Invoice…** uses a global **Ctrl+Shift+I** chord (any focus)."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("# Tools menu")
+    end = text.index("# Recon menu", start)
+    chunk = text[start:end]
+    assert 'act_tools_invoice.setShortcut("Ctrl+Shift+I")' in chunk
+    assert "act_tools_invoice.setShortcutContext(Qt.ApplicationShortcut)" in chunk
+    assert "(Ctrl+Shift+I)" in chunk
+
+
 def test_edit_menu_keyboard_shortcuts_undo_redo() -> None:
     """**Edit** menu wires standard undo/redo shortcuts (both disabled stubs in this shell)."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -2891,12 +2902,13 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
         "expected six top-level menus (File, View, Edit, Tools, Recon, Help)"
     )
     n_scut = chunk.count(".setShortcut(")
-    assert n_scut == 8, (
-        f"expected 8 menu bar .setShortcut( (5 File + View loop + Undo/Redo); got {n_scut}"
+    assert n_scut == 9, (
+        f"expected 9 menu bar .setShortcut( (5 File + View loop + Undo/Redo + Tools Invoice); "
+        f"got {n_scut}"
     )
     n_sctx = chunk.count(".setShortcutContext(")
-    assert n_sctx == 2, (
-        f"expected 2 .setShortcutContext(Qt.ApplicationShortcut) (copy path, View tabs); "
+    assert n_sctx == 3, (
+        f"expected 3 .setShortcutContext(Qt.ApplicationShortcut) (copy path, View tabs, Invoice); "
         f"got {n_sctx}"
     )
     assert "\n            act_import_docs,\n" in chunk
@@ -2937,6 +2949,7 @@ def test_main_help_menu_wires_document_intake_shortcuts_dialog() -> None:
     assert "status bar" in text
     assert "each menu item" in text
     assert "File, View, Edit, Tools, Recon, Help" in text
+    assert "Ctrl+Shift+I" in text and "Invoice…" in text
     assert "Detail pane:" in text
 
 
@@ -3735,7 +3748,7 @@ def test_desktop_main_cli_and_qt_app_strings_use_probooks_plus_ai() -> None:
     assert "Main window **menu bar**" in mod_doc
     assert "Top-level menus:" in mod_doc
     assert "**Recon** (bank register bulk actions" in mod_doc
-    assert "**Tools** (e.g. **Invoice…**" in mod_doc
+    assert "**Tools** (e.g. **Invoice…** Ctrl+Shift+I" in mod_doc
     assert "``setStatusTip``" in mod_doc
     assert "``setToolTip``" in mod_doc
     assert "``message_box_information_ok``" in mod_doc
@@ -5338,6 +5351,7 @@ def test_extra_tabs_exposes_business_shortcuts_dialog_for_help_menu() -> None:
         in bus_help
     )
     assert "Register bulk actions" in bus_help and "main **Recon** menu" in bus_help
+    assert "Ctrl+Shift+I" in bus_help and "Invoice…" in bus_help
     assert (
         et.count("lambda: show_business_keyboard_shortcuts_dialog(self)") == 4
     ), "Rules, AR, AP, Payroll grids should open Business shortcuts from context menu"
@@ -6216,6 +6230,8 @@ def test_register_keyboard_shortcuts_help_text_matches_wired_chords() -> None:
         "statement/register copies",
         "Ctrl+2 Bank Import",
         "Ctrl+3 Register",
+        "Ctrl+Shift+I",
+        "Invoice…",
         "status bar",
         "company line",
     ):

@@ -3676,6 +3676,7 @@ def _business_keyboard_shortcuts_help_text() -> str:
         "Ctrl+S — Save default tax name and rate (standard Save shortcut)\n\n"
         "View menu tab focus: Ctrl+1 Document Intake, Ctrl+2 Bank Import, Ctrl+3 Register, "
         "Ctrl+4 Chart of Accounts, Ctrl+5 Reports, Ctrl+6 Journal, Ctrl+7 Business, Ctrl+8 Audit log.\n\n"
+        "Tools menu: Ctrl+Shift+I — Invoice… (jumps to this tab on Invoices AR).\n\n"
         "Right-click the Rules, Invoices, Bills, or Payroll grid (including empty area) "
         "for Keyboard shortcuts… (same as this dialog).\n\n"
         "Business modal dialogs with a copyable grid (payment apply tables, tax lines, etc.): "

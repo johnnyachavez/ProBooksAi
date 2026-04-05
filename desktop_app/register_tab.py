@@ -558,6 +558,7 @@ def _register_keyboard_shortcuts_help_text() -> str:
         "and switch the main window here; the main **status bar** may show a short confirmation, "
         "then restore the usual company line.\n\n"
         "View menu tab focus: Ctrl+1 Document Intake, Ctrl+2 Bank Import, Ctrl+3 Register.\n\n"
+        "Tools menu: Ctrl+Shift+I — Invoice… (Business tab, Invoices AR).\n\n"
         "Practice rows — blank rows pad the grid to ~20 lines; editable for layout only (not saved).\n\n"
         "Register grid — checkbook-style two-band rows; arrow keys move the cell focus. "
         "Double-click or type to edit Memo or Number when the row allows it; COA uses the category dropdown. "

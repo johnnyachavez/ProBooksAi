@@ -22,7 +22,7 @@ also have hover hints. The banner **AppHeaderWidget** (**QFrame**) right-aligns 
 Destructive **Yes**/**No** prompts (new company file exists, database restore) use **tip_message_box_buttons** for button hover hints and **QMessageBox.setToolTip** for the dialog window.
 
 Main window **menu bar**: each ``QAction`` uses ``setStatusTip`` for the **status bar** and the same text via ``setToolTip`` for hover (``_menu_action_tip`` helper).
-Top-level menus: **File**, **View**, **Edit**, **Tools** (e.g. **Invoice…** to Business → Invoices AR), **Recon** (bank register bulk actions in submenus), **Help**.
+Top-level menus: **File**, **View**, **Edit**, **Tools** (e.g. **Invoice…** Ctrl+Shift+I to Business → Invoices AR), **Recon** (bank register bulk actions in submenus), **Help**.
 """
 
 from __future__ import annotations
@@ -129,7 +129,7 @@ def _document_intake_keyboard_shortcuts_help_text() -> str:
         "Hover Bank Import and Register in View for status tips on AI line reconciliation and Stmt match.\n\n"
         "**Recon** menu — **Bank register** bulk row actions (add transaction, post to GL, export CSV, cleared, "
         "attachments, splits, transfer, link payment, receipt flags) when you use Register (Ctrl+3). "
-        "**Tools** menu — open **Invoice…** (Business tab, Invoices AR).\n\n"
+        "**Tools** menu — open **Invoice…** (Ctrl+Shift+I; Business tab, Invoices AR).\n\n"
         "CSV exports on Bank Import (reconciliation report and line-compare), Register, Reports, Journal, Business, "
         "and Audit use UTF-8 with BOM for Excel.\n"
         "Bank Import Import CSV… reads bank statement CSV as UTF-8 with optional BOM.\n\n"
@@ -1205,9 +1205,11 @@ class MainWindow(QMainWindow):
         # Tools menu — general utilities (invoice access to Business → Invoices AR)
         tools_menu = mb.addMenu("&Tools")
         act_tools_invoice = QAction("&Invoice\u2026", self)
+        act_tools_invoice.setShortcut("Ctrl+Shift+I")
+        act_tools_invoice.setShortcutContext(Qt.ApplicationShortcut)
         _menu_action_tip(
             act_tools_invoice,
-            "Open the Business tab on **Invoices (AR)** — customers, new/edit invoice, payments, PDF export. "
+            "Open the Business tab on **Invoices (AR)** (Ctrl+Shift+I) — customers, new/edit invoice, payments, PDF export. "
             "Same company .db (File → Backup / Restore, probooks.backup).",
         )
         act_tools_invoice.triggered.connect(self._on_tools_invoice)
