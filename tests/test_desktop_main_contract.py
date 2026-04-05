@@ -292,7 +292,7 @@ _FILE_MENU_QACTION_NAMES: tuple[str, ...] = (
 
 # Edit → Tools (Invoice) → Recon (12 register QActions) → Help; all use ``_menu_action_tip`` only
 # (chunk is ``# Edit menu`` through ``# -- drag & drop`` in ``_build_menu_bar``).
-_EDIT_TOOLS_HELP_QACTION_NAMES: tuple[str, ...] = (
+_EDIT_TOOLS_RECON_HELP_QACTION_NAMES: tuple[str, ...] = (
     "act_undo",
     "act_redo",
     "act_prefs",
@@ -478,13 +478,13 @@ def test_main_window_view_menu_ctrl_1_through_8_tuple_source_order() -> None:
     assert positions == sorted(positions)
 
 
-def test_edit_tools_help_qactions_use_menu_action_tip_only() -> None:
+def test_edit_tools_recon_help_qactions_use_menu_action_tip_only() -> None:
     """**Edit**, **Tools** (Invoice), **Recon** (register), and **Help** actions use ``_menu_action_tip`` only."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("# Edit menu")
     end = text.index("    # -- drag & drop on window", start)
     chunk = text[start:end]
-    for name in _EDIT_TOOLS_HELP_QACTION_NAMES:
+    for name in _EDIT_TOOLS_RECON_HELP_QACTION_NAMES:
         assert chunk.count(f"{name} = QAction(") == 1, name
         tip_hdr = f"_menu_action_tip(\n            {name},"
         assert chunk.count(tip_hdr) == 1, f"{name} should use _menu_action_tip once"
