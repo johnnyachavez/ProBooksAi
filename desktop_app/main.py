@@ -18,7 +18,7 @@ The **central** **QWidget** (banner + tab widget) has a margin hover hint. Docum
 **COA Account**, **AI confidence** / **rationale** labels, and action buttons use **tooltips**.
 **Preview** / **Extracted Fields** / **Categorisation** group boxes and the **filename** / **status** labels
 also have hover hints. The banner **AppHeaderWidget** (**QFrame**) right-aligns **ProBooks+ai** and the company **QLabel**s with tooltips; the **ProBooks+ai** label tooltip includes the installed package **version** (matches the window title and **Help → About**).
-**Help → About** uses ``message_box_about_ok`` (rich text + **Ok** hover hint). The main **QTabWidget** sets a **setToolTip** on the tab strip area; its tab bar sets **setTabToolTip** on each top-level tab (Intake through Audit log). **Document Intake**’s root **QWidget** has a hover hint for the whole tab; the inbox **column** **QWidget** (left splitter pane) has a short margin hint.
+**Help → About** uses ``message_box_about_ok`` (rich text + **Ok** hover hint). The **status bar** opens with a **Ready** line (drag/drop, Bank Import pointer, **File → Backup**) plus **ProBooks+ai** and the installed package **version**; **Company:** updates replace that line when a database path exists. The main **QTabWidget** sets a **setToolTip** on the tab strip area; its tab bar sets **setTabToolTip** on each top-level tab (Intake through Audit log). **Document Intake**’s root **QWidget** has a hover hint for the whole tab; the inbox **column** **QWidget** (left splitter pane) has a short margin hint.
 Destructive **Yes**/**No** prompts (new company file exists, database restore) use **tip_message_box_buttons** for button hover hints and **QMessageBox.setToolTip** for the dialog window.
 
 Main window **menu bar**: each ``QAction`` uses ``setStatusTip`` for the **status bar** and the same text via ``setToolTip`` for hover (``_menu_action_tip`` helper).
@@ -1023,11 +1023,13 @@ class MainWindow(QMainWindow):
         # Status bar
         self._status_bar = QStatusBar()
         self.setStatusBar(self._status_bar)
+        _boot_ver = application_version()
         self._status_bar.showMessage(
             escape_ampersand_for_qt(
                 "Ready \u2013 drag & drop documents or use Import; bank CSV/PDF and AI line reconciliation: "
                 "View → Bank Import (Ctrl+2); File → Backup saves the company .db."
             )
+            + f" ProBooks+ai v{_boot_ver}."
         )
 
         # Drag & drop on the main window itself
@@ -1668,11 +1670,13 @@ class MainWindow(QMainWindow):
 
     def _update_company_status(self) -> None:
         p = getattr(self._bank_db, "_db_path", None) or self._db_path or ""
+        _sv = application_version()
         self._status_bar.showMessage(
             escape_ampersand_for_qt(
                 f"Company: {p}  \u2013  drag & drop or Import; bank CSV/PDF and AI line reconciliation: "
                 f"Bank Import (Ctrl+2); File → Backup copies this .db."
             )
+            + f" ProBooks+ai v{_sv}."
         )
         if p:
             self._header.set_company_name(Path(p).name)

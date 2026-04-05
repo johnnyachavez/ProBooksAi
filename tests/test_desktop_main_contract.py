@@ -1057,6 +1057,8 @@ def test_main_window_build_ui_status_bar_ready_message_and_qstatusbar() -> None:
     assert chunk.count("self._status_bar = QStatusBar()") == 1
     assert chunk.count("self.setStatusBar(self._status_bar)") == 1
     assert chunk.count("self._status_bar.showMessage(") == 1
+    assert "application_version()" in chunk
+    assert "ProBooks+ai v" in chunk
     assert "AI line reconciliation" in chunk
     assert "Bank Import" in chunk
     assert "File → Backup saves the company .db." in chunk
@@ -2252,6 +2254,8 @@ def test_main_window_update_company_status_status_message_before_header_sync_tit
     p = chunk.index(
         'p = getattr(self._bank_db, "_db_path", None) or self._db_path or ""'
     )
+    assert "application_version()" in chunk
+    assert "ProBooks+ai v" in chunk
     msg = chunk.index("self._status_bar.showMessage(")
     br = chunk.index("        if p:")
     syn = chunk.index("        self._sync_window_title()")
@@ -2498,7 +2502,7 @@ def test_main_window_set_tab_sync_title_and_company_status_helpers() -> None:
     assert chunk.count("if index < 0 or index >= self._tabs.count():") == 1
     assert chunk.count("self._tabs.setCurrentIndex(index)") == 1
     assert chunk.count("self._tabs.count()") == 1
-    assert chunk.count("application_version()") == 1
+    assert chunk.count("application_version()") == 2
     assert chunk.count("self.setWindowTitle(") == 2
     assert chunk.count("ProBooks+ai –") == 2
     assert chunk.count("self._sync_window_title()") == 1
@@ -3730,6 +3734,7 @@ def test_desktop_main_cli_and_qt_app_strings_use_probooks_plus_ai() -> None:
     assert "grid has a hover **tooltip**" in mod_doc
     assert "**AppHeaderWidget**" in mod_doc
     assert "installed package **version**" in mod_doc
+    assert "**Ready** line" in mod_doc
     assert "**QSplitter**" in mod_doc
     assert "**QScrollArea**" in mod_doc
     assert "drag-and-drop" in mod_doc
@@ -5150,7 +5155,7 @@ def test_main_window_document_database_call_counts_for_intake_and_workflow() -> 
     assert chunk.count("self._db.save_extraction(did, result)") == 1
     assert chunk.count("self._db.save_approved(did, values)") == 1
     assert chunk.count("self._db.set_status(did,") == 6
-    assert chunk.count("application_version()") == 2
+    assert chunk.count("application_version()") == 4
 
 
 def test_main_window_custom_qmessagebox_yes_no_defaults_to_no() -> None:
