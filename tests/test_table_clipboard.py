@@ -22,8 +22,10 @@ from PySide6.QtWidgets import (
 
 from desktop_app.qt_mnemonic import escape_ampersand_for_qt
 from desktop_app.table_clipboard import (
+    CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
     QLIST_PLAIN_TEXT_ROLE,
     QTABLE_PLAIN_TEXT_ROLE,
+    VIEW_BANK_REGISTER_KEYS_TOOLTIP,
     FloatSortTableItem,
     IntSortTableItem,
     NumericAmountTableItem,
@@ -33,6 +35,14 @@ from desktop_app.table_clipboard import (
     plain_display_table_item,
     table_cell_clipboard_text,
 )
+
+
+def test_view_bank_register_keys_tooltip_strings() -> None:
+    assert "Bank Import (Ctrl+2)" in VIEW_BANK_REGISTER_KEYS_TOOLTIP
+    assert "Register (Ctrl+3)" in VIEW_BANK_REGISTER_KEYS_TOOLTIP
+    assert "Tools menu" in VIEW_BANK_REGISTER_KEYS_TOOLTIP
+    assert VIEW_BANK_REGISTER_KEYS_TOOLTIP.endswith(" ")
+    assert CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX not in VIEW_BANK_REGISTER_KEYS_TOOLTIP
 
 
 @pytest.fixture

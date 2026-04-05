@@ -29,8 +29,19 @@ ACCENT         = "#533483"   # accent / highlight colour
 ACCENT_HOVER   = "#6A45A0"
 BORDER         = "#2A2A4A"   # subtle gridlines and borders
 # Bank register: global QTableWidget styles often hide the native grid; draw per-cell borders instead.
-REGISTER_GRID_LINE = "#5A6E80"  # brighter than BORDER so columns read like a paper register
+REGISTER_GRID_LINE = "#6B8299"  # visible column/row rules (classic register; works on band fills)
 REGISTER_ALT_STRIPE = "#15282A"   # subtle green-grey zebra (dark theme; evokes classic register tint)
+# Two-band row panels (checkbook-style upper lighter / lower darker); painted by RegisterBandDelegate.
+REGISTER_BAND_UPPER_EVEN = "#252542"
+REGISTER_BAND_LOWER_EVEN = "#151528"
+REGISTER_BAND_UPPER_ODD = "#1E3438"
+REGISTER_BAND_LOWER_ODD = "#131E22"
+REGISTER_BAND_UPPER_MISSING = "#4A4024"
+REGISTER_BAND_LOWER_MISSING = "#342C18"
+REGISTER_BAND_DIVIDER = "#5A6E90"
+# Minimum row heights (px); keep in sync with :class:`desktop_app.register_band_delegate.RegisterBandDelegate`.
+REGISTER_ROW_HEIGHT_MIN_FULL = 46
+REGISTER_ROW_HEIGHT_MIN_PREVIEW = 38
 SELECTION_BG   = "#0F3460"
 SELECTION_FG   = "#FFFFFF"
 INPUT_BG       = "#1E1E3A"
@@ -55,22 +66,32 @@ FONT_SIZE_SMALL  = "11px"
 FONT_SIZE_LARGE  = "15px"
 
 
-def register_table_style_sheet() -> str:
-    """Styles for :class:`desktop_app.register_tab.RegisterTab` table (object name ``bankRegisterTable``).
+def register_row_band_colors_hex(alternate_row: bool, missing_coa: bool) -> tuple[str, str]:
+    """Return ``(upper_hex, lower_hex)`` for register row panels (even/odd zebra; missing-COA tint)."""
+    if missing_coa:
+        return REGISTER_BAND_UPPER_MISSING, REGISTER_BAND_LOWER_MISSING
+    if alternate_row:
+        return REGISTER_BAND_UPPER_ODD, REGISTER_BAND_LOWER_ODD
+    return REGISTER_BAND_UPPER_EVEN, REGISTER_BAND_LOWER_EVEN
 
-    Qt frequently does not paint native grid lines when the app stylesheet targets
-    ``QTableWidget``; explicit ``::item`` borders reproduce a checkbook-style grid.
+
+def register_table_style_sheet() -> str:
+    """Styles for register-style tables (object name ``bankRegisterTable``): Register tab and Bank Import preview.
+
+    Row bands and cell border lines are painted by
+    :class:`desktop_app.register_band_delegate.RegisterBandDelegate` (using ``REGISTER_GRID_LINE``).
+    ``::item`` uses ``border: none`` so those lines are not doubled.
     """
     return f"""
 QTableWidget#bankRegisterTable {{
     background-color: {BG_PRIMARY};
-    alternate-background-color: {REGISTER_ALT_STRIPE};
+    alternate-background-color: {BG_PRIMARY};
     gridline-color: {REGISTER_GRID_LINE};
     outline: none;
 }}
 QTableWidget#bankRegisterTable::item {{
-    border-right: 1px solid {REGISTER_GRID_LINE};
-    border-bottom: 1px solid {REGISTER_GRID_LINE};
+    background: transparent;
+    border: none;
     padding: 3px 6px;
 }}
 QTableWidget#bankRegisterTable::item:selected {{

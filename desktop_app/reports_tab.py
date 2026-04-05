@@ -41,6 +41,7 @@ from desktop_app.qt_mnemonic import (
 )
 from desktop_app.table_clipboard import (
     CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
+    VIEW_BANK_REGISTER_KEYS_TOOLTIP,
     FloatSortTableItem,
     copy_table_row_as_tsv,
     plain_display_table_item,
@@ -167,6 +168,7 @@ class ReportsTab(QWidget):
         )
         act_keys.setToolTip(
             "Same summary as Help → More tab shortcuts (F5)… (Reports, F5 re-run last report). "
+            + VIEW_BANK_REGISTER_KEYS_TOOLTIP
             + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():

@@ -42,6 +42,7 @@ from desktop_app.qt_mnemonic import (
 from desktop_app.table_clipboard import (
     CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
     QLIST_PLAIN_TEXT_ROLE,
+    VIEW_BANK_REGISTER_KEYS_TOOLTIP,
     NumericAmountTableItem,
     copy_qlistwidget_row_text,
     copy_table_row_as_tsv,
@@ -167,6 +168,7 @@ class JournalTab(QWidget):
         )
         act_keys.setToolTip(
             "Same summary as Help → More tab shortcuts (F5)… (Journal, COA, Reports, Audit chords). "
+            + VIEW_BANK_REGISTER_KEYS_TOOLTIP
             + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
@@ -193,6 +195,7 @@ class JournalTab(QWidget):
         )
         act_keys.setToolTip(
             "Same summary as Help → More tab shortcuts (F5)… (Journal lines pane, F5 refresh). "
+            + VIEW_BANK_REGISTER_KEYS_TOOLTIP
             + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():

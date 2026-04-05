@@ -59,3 +59,29 @@ def test_probooks_cli_backup_restore_argparse_help_and_flags() -> None:
     assert 'rp.add_argument(\n        "--input",' in cli
     assert '        "-i",' in cli
     assert 'rp.add_argument("--yes", action="store_true", help="Confirm overwrite")' in cli
+
+
+def test_probooks_cli_import_csv_stderr_tip_when_skips_without_errors_out() -> None:
+    """When rows are skipped without --errors-out, stderr should suggest re-running with it."""
+    cli = PROBOOKS_CLI.read_text(encoding="utf-8")
+    assert "re-run with --errors-out" in cli
+    assert "every skipped row" in cli
+
+
+def test_probooks_cli_import_csv_errors_out_help_mentions_full_export_and_stderr_sample() -> None:
+    cli = PROBOOKS_CLI.read_text(encoding="utf-8")
+    assert "Write every skipped row to this CSV" in cli
+    assert "row_index, reason" in cli
+    assert "stderr lists a short sample" in cli
+
+
+def test_probooks_cli_import_csv_skip_summary_helper_wired() -> None:
+    cli = PROBOOKS_CLI.read_text(encoding="utf-8")
+    assert "def _import_csv_skip_summary_bits(" in cli
+    assert "Skip summary:" in cli
+
+
+def test_probooks_cli_import_csv_handles_oserror_from_missing_file() -> None:
+    cli = PROBOOKS_CLI.read_text(encoding="utf-8")
+    assert "Could not read CSV file" in cli
+    assert "except OSError" in cli

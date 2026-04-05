@@ -8,7 +8,7 @@ the save dialog suggests a
 basename from the import batch filename (or batch id) and re-opens in the last folder used
 for Bank Import CSV exports (``bank_import/last_csv_export_dir``; legacy
 ``bank_import/line_compare_csv_export_dir`` is still read if unset).
-**Right-click** the grid for **Keyboard shortcuts…** (when wired from Bank Import) and **Copy row** (TSV).
+**Right-click** the grid for **Keyboard shortcuts…** (when wired from Bank Import), **Copy row** (TSV), **Copy statement date** / amount / description when the mock statement side is filled (**Matched** / **Missing**), **Copy register date** / amount / description when the register side is filled (**Matched** / **Extra**), and **Copy register transaction id** when **Reg #** is set.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QBrush
+from PySide6.QtGui import QColor, QBrush, QGuiApplication
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QGroupBox,
@@ -47,6 +47,7 @@ from desktop_app.qt_mnemonic import (
 )
 from desktop_app.table_clipboard import (
     CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
+    VIEW_BANK_REGISTER_KEYS_TOOLTIP,
     copy_table_row_as_tsv,
 )
 from probooksai.statement_line_match import (
@@ -124,7 +125,10 @@ class StatementLineMatchPanel(QGroupBox):
             "Reconciled checkboxes are UI-only (no register or import changes). "
             "Real PDF OCR is not used yet—this exercises matching + workflow. "
             "Run also updates **Bank register → Stmt match** when that tab is wired (same account), "
-            "focuses that tab, and shows a short **status bar** message (company line returns after)."
+            "focuses that tab, and shows a short **status bar** message (company line returns after). "
+            "Right-click the table for Copy row and statement/register field copies "
+            "(Help → Bank import shortcuts…). "
+            "View → Bank Import (Ctrl+2), Register (Ctrl+3)."
         )
         self._build_ui()
 
@@ -206,7 +210,10 @@ class StatementLineMatchPanel(QGroupBox):
             "Extra register-side (blue). Reconciled checkboxes are local UI state only. "
             "Export comparison CSV uses UTF-8 with BOM for Excel. "
             "Right-click: Export comparison CSV when the table has rows; Copy row (TSV) on a data row; "
-            "Keyboard shortcuts when this panel is embedded in Bank Import."
+            "Copy statement or register date, amount, or description when that side of the row has data; "
+            "Copy register transaction id when **Reg #** is set; "
+            "Keyboard shortcuts when this panel is embedded in Bank Import. "
+            "View → Bank Import (Ctrl+2), Register (Ctrl+3)."
         )
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._on_table_context_menu)
@@ -360,6 +367,96 @@ class StatementLineMatchPanel(QGroupBox):
             return
         self._sync_summary_after_review_edit()
 
+    def _line_match_register_id_plain(self, row: int) -> str:
+        if row < 0 or row >= len(self._rows):
+            return ""
+        rid = self._rows[row].get("register_id")
+        if rid is None:
+            return ""
+        coerced = coerce_combo_int_id(rid)
+        return "" if coerced is None else str(coerced)
+
+    def _copy_line_match_register_id(self, row: int) -> None:
+        QGuiApplication.clipboard().setText(self._line_match_register_id_plain(row))
+
+    def _line_match_stmt_date_plain(self, row: int) -> str:
+        if row < 0 or row >= len(self._rows):
+            return ""
+        r = self._rows[row]
+        if (r.get("status") or "") == STATUS_EXTRA:
+            return ""
+        return str(r.get("stmt_date") or "").strip()
+
+    def _line_match_stmt_amount_plain(self, row: int) -> str:
+        if row < 0 or row >= len(self._rows):
+            return ""
+        r = self._rows[row]
+        if (r.get("status") or "") == STATUS_EXTRA:
+            return ""
+        sa = r.get("stmt_amount")
+        if sa is None:
+            return ""
+        try:
+            return f"{float(sa):.2f}"
+        except (TypeError, ValueError):
+            return ""
+
+    def _line_match_reg_date_plain(self, row: int) -> str:
+        if row < 0 or row >= len(self._rows):
+            return ""
+        r = self._rows[row]
+        if (r.get("status") or "") == STATUS_MISSING:
+            return ""
+        return str(r.get("reg_date") or "").strip()
+
+    def _line_match_reg_amount_plain(self, row: int) -> str:
+        if row < 0 or row >= len(self._rows):
+            return ""
+        r = self._rows[row]
+        if (r.get("status") or "") == STATUS_MISSING:
+            return ""
+        ra = r.get("reg_amount")
+        if ra is None:
+            return ""
+        try:
+            return f"{float(ra):.2f}"
+        except (TypeError, ValueError):
+            return ""
+
+    def _line_match_stmt_description_plain(self, row: int) -> str:
+        if row < 0 or row >= len(self._rows):
+            return ""
+        r = self._rows[row]
+        if (r.get("status") or "") == STATUS_EXTRA:
+            return ""
+        return str(r.get("stmt_description") or "").strip()
+
+    def _line_match_reg_description_plain(self, row: int) -> str:
+        if row < 0 or row >= len(self._rows):
+            return ""
+        r = self._rows[row]
+        if (r.get("status") or "") == STATUS_MISSING:
+            return ""
+        return str(r.get("reg_description") or "").strip()
+
+    def _copy_line_match_stmt_date(self, row: int) -> None:
+        QGuiApplication.clipboard().setText(self._line_match_stmt_date_plain(row))
+
+    def _copy_line_match_stmt_amount(self, row: int) -> None:
+        QGuiApplication.clipboard().setText(self._line_match_stmt_amount_plain(row))
+
+    def _copy_line_match_reg_date(self, row: int) -> None:
+        QGuiApplication.clipboard().setText(self._line_match_reg_date_plain(row))
+
+    def _copy_line_match_reg_amount(self, row: int) -> None:
+        QGuiApplication.clipboard().setText(self._line_match_reg_amount_plain(row))
+
+    def _copy_line_match_stmt_description(self, row: int) -> None:
+        QGuiApplication.clipboard().setText(self._line_match_stmt_description_plain(row))
+
+    def _copy_line_match_reg_description(self, row: int) -> None:
+        QGuiApplication.clipboard().setText(self._line_match_reg_description_plain(row))
+
     def _on_table_context_menu(self, pos) -> None:
         menu = QMenu(self)
         if self._bank_import_shortcuts_help is not None:
@@ -368,7 +465,8 @@ class StatementLineMatchPanel(QGroupBox):
             )
             act_keys.setToolTip(
                 "Same summary as Help → Bank import shortcuts… "
-                "(F5, batches, register preview, reconciliation). "
+                "(F5, batches, register preview, AI line reconciliation, row field copies). "
+                + VIEW_BANK_REGISTER_KEYS_TOOLTIP
                 + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
             )
         if self._rows:
@@ -395,6 +493,72 @@ class StatementLineMatchPanel(QGroupBox):
                 "Copy this reconciliation row as tab-separated text for pasting into a spreadsheet or editor. "
                 + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
             )
+            sd = self._line_match_stmt_date_plain(row)
+            if sd:
+                act_sd = menu.addAction(
+                    "Copy statement date", partial(self._copy_line_match_stmt_date, row)
+                )
+                act_sd.setToolTip(
+                    "Copy the statement-side date for this row (mock extract; **Stmt date** column). "
+                    + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+                )
+            sa = self._line_match_stmt_amount_plain(row)
+            if sa:
+                act_sa = menu.addAction(
+                    "Copy statement amount", partial(self._copy_line_match_stmt_amount, row)
+                )
+                act_sa.setToolTip(
+                    "Copy the statement-side amount (two decimals; **Stmt $** column). "
+                    + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+                )
+            sdesc = self._line_match_stmt_description_plain(row)
+            if sdesc:
+                act_sdesc = menu.addAction(
+                    "Copy statement description",
+                    partial(self._copy_line_match_stmt_description, row),
+                )
+                act_sdesc.setToolTip(
+                    "Copy the statement-side description (**Stmt description** column). "
+                    + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+                )
+            rd = self._line_match_reg_date_plain(row)
+            if rd:
+                act_rd = menu.addAction(
+                    "Copy register date", partial(self._copy_line_match_reg_date, row)
+                )
+                act_rd.setToolTip(
+                    "Copy the register-side date for this row (**Register date** column). "
+                    + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+                )
+            ra = self._line_match_reg_amount_plain(row)
+            if ra:
+                act_ra = menu.addAction(
+                    "Copy register amount", partial(self._copy_line_match_reg_amount, row)
+                )
+                act_ra.setToolTip(
+                    "Copy the register-side amount (two decimals; **Register $** column). "
+                    + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+                )
+            rdesc = self._line_match_reg_description_plain(row)
+            if rdesc:
+                act_rdesc = menu.addAction(
+                    "Copy register description",
+                    partial(self._copy_line_match_reg_description, row),
+                )
+                act_rdesc.setToolTip(
+                    "Copy the register-side description (**Register description** column). "
+                    + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+                )
+            reg_plain = self._line_match_register_id_plain(row)
+            if reg_plain:
+                act_rid = menu.addAction(
+                    "Copy register transaction id",
+                    partial(self._copy_line_match_register_id, row),
+                )
+                act_rid.setToolTip(
+                    "Copy the linked bank_transactions id (same as **Reg #** and **Stmt match** on Bank register). "
+                    + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+                )
         if menu.actions():
             menu.exec(self._table.viewport().mapToGlobal(pos))
 

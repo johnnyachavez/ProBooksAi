@@ -73,6 +73,7 @@ def test_desktop_main_imports_backup_data_layers_and_tab_widgets() -> None:
     assert "from desktop_app.qt_combo_ids import coerce_combo_int_id" in head
     assert "from desktop_app.table_clipboard import" in head
     assert "CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX" in head
+    assert "VIEW_BANK_REGISTER_KEYS_TOOLTIP" in head
     assert "IntSortTableItem" in head
     assert "copy_table_row_as_tsv" in head
     assert "plain_display_table_item" in head
@@ -100,7 +101,7 @@ def test_desktop_main_imports_pyside6_core_widgets() -> None:
     assert "QFileDialog" in head and "QMessageBox" in head
     assert "QTableWidget" in head and "QTabWidget" in head
     assert "QSplitter" in head and "QScrollArea" in head
-    assert "QMenu" in head and "QToolBar" in head and "QStatusBar" in head
+    assert "QMenu" in head and "QStatusBar" in head
     assert "QWidget" in head
     assert "QFrame" in head and "QLabel" in head
     assert "QVBoxLayout" in head and "QHBoxLayout" in head
@@ -293,7 +294,18 @@ _EDIT_TOOLS_HELP_QACTION_NAMES: tuple[str, ...] = (
     "act_undo",
     "act_redo",
     "act_prefs",
-    "act_tools",
+    "act_reg_add",
+    "act_reg_post",
+    "act_reg_export",
+    "act_reg_mark_clr",
+    "act_reg_clear_clr",
+    "act_reg_attach",
+    "act_reg_clear_att",
+    "act_reg_splits",
+    "act_reg_transfer",
+    "act_reg_link",
+    "act_reg_flag_rcpt",
+    "act_reg_clear_rcpt",
     "act_roadmap",
     "act_intake_keys",
     "act_bank_import_keys",
@@ -444,7 +456,8 @@ def test_view_menu_tab_actions_use_menu_action_tip_only() -> None:
     chunk = text[start:end]
     assert chunk.count('("Ctrl+') == 8
     assert chunk.count("act = QAction(") == 1
-    assert chunk.count("_menu_action_tip(act, ") == 1
+    assert chunk.count("_menu_action_tip(") == 1
+    assert "view_menu.addAction(act)" in chunk
     assert "act.setToolTip(" not in chunk
     assert "act.setStatusTip(" not in chunk
 
@@ -538,16 +551,18 @@ def test_desktop_main_app_header_banner_branding_and_set_company_name() -> None:
         start,
     )
     chunk = text[start:end]
-    assert "Top banner showing the app name and current company/file name." in chunk
+    assert "right-aligned" in chunk and "ProBooks+ai" in chunk
     assert chunk.count("super().__init__(parent)") == 1
     assert chunk.count('QLabel("ProBooks+ai")') == 1
     assert "INBOX_HEADER_COLOR" in chunk
-    assert chunk.count("setFixedHeight(44)") == 1
+    assert chunk.count("setFixedHeight(52)") == 1
     assert chunk.count("QHBoxLayout(self)") == 1
-    assert chunk.count("layout.setContentsMargins(14, 0, 14, 0)") == 1
-    assert chunk.count("layout.addStretch()") == 1
+    assert chunk.count("layout.setContentsMargins(14, 6, 14, 6)") == 1
+    assert chunk.count("layout.addStretch(1)") == 1
+    assert "QVBoxLayout()" in chunk
     assert chunk.count("border-bottom: 2px solid #4a6fa8") == 1
     assert chunk.count(".setToolTip(") == 3
+    assert "AI line reconciliation" in chunk
     assert chunk.count("escape_ampersand_for_qt(company_name)") == 1
     assert chunk.count("def set_company_name(self, name: str):") == 1
     assert chunk.count("self._lbl_company.setText(escape_ampersand_for_qt(name))") == 1
@@ -555,24 +570,37 @@ def test_desktop_main_app_header_banner_branding_and_set_company_name() -> None:
 
 
 def test_desktop_main_app_header_widget_ctor_banner_layout_company_order() -> None:
-    """``AppHeaderWidget.__init__`` styles the frame, builds the row, app label, stretch, then company label."""
+    """``AppHeaderWidget.__init__`` styles the frame, stretch, right column with app then company labels."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def __init__(self, company_name: str = COMPANY_NAME, parent=None):")
     end = text.index("    def set_company_name(self, name: str):", start)
     chunk = text[start:end]
     su = chunk.index("super().__init__(parent)")
     sty = chunk.index("self.setStyleSheet(")
-    fh = chunk.index("self.setFixedHeight(44)")
+    fh = chunk.index("self.setFixedHeight(52)")
     ban = chunk.index("App banner; company name is the open SQLite file")
     lay = chunk.index("layout = QHBoxLayout(self)")
+    st = chunk.index("layout.addStretch(1)")
+    rv = chunk.index("right = QVBoxLayout()")
     app = chunk.index('lbl_app = QLabel("ProBooks+ai")')
-    wa = chunk.index("layout.addWidget(lbl_app)")
-    st = chunk.index("layout.addStretch()")
+    wa = chunk.index(
+        "right.addWidget(lbl_app, alignment=Qt.AlignmentFlag.AlignRight)"
+    )
     co = chunk.index(
         "self._lbl_company = QLabel(escape_ampersand_for_qt(company_name))"
     )
-    wc = chunk.index("layout.addWidget(self._lbl_company)")
-    assert su < sty < fh < ban < lay < app < wa < st < co < wc
+    wc = chunk.index(
+        "right.addWidget(self._lbl_company, alignment=Qt.AlignmentFlag.AlignRight)"
+    )
+    al = chunk.index("layout.addLayout(right)")
+    assert su < sty < fh < ban < lay < st < rv < app < wa < co < wc < al
+
+
+def test_main_window_defines_bank_import_view_pointer_for_intake_tooltips() -> None:
+    text = _MAIN.read_text(encoding="utf-8")
+    assert "_BANK_IMPORT_VIEW_POINTER = (" in text
+    assert text.count("+ _BANK_IMPORT_VIEW_POINTER") >= 3
+    assert "View → Bank Import (Ctrl+2). " in text
 
 
 def test_main_window_tab_bar_has_tab_tooltips() -> None:
@@ -582,17 +610,29 @@ def test_main_window_tab_bar_has_tab_tooltips() -> None:
     assert '_tab_bar_csv_excel_hint = " CSV: UTF-8 with BOM for Excel."' in text
     assert text.count("_tab_bar_csv_excel_hint") == 7
     z = text.index("main_tab_bar.setTabToolTip(\n            0,")
-    assert "File → Backup" in text[z : z + 320]
+    assert "Bank Import (Ctrl+2)" in text[z : z + 420]
+    assert "File → Backup" in text[z : z + 420]
     assert text.count("_main_tab_bar_db_hint") == 8
     assert "Bank CSV/PDF import" in text
+    assert "AI line reconciliation (row field copies" in text
+    assert "Stmt match (Bank Import AI line reconciliation can populate it)" in text
     assert "Business hub:" in text
     assert "self._tabs.setToolTip(" in text
     assert "Main workspace:" in text
+    assert "Bank Import includes AI line reconciliation" in text
     assert "intake_widget.setToolTip(" in text
+    assert "AI line reconciliation are on Bank Import (View menu)" in text
+    iw = text.split("class InboxWidget(QTableWidget):", 1)[1].split(
+        "    def _on_context_menu(self, pos):", 1
+    )[0]
+    assert "+ _BANK_IMPORT_VIEW_POINTER" in iw
+    left_tip = text.split("left.setToolTip(", 1)[1][:320]
+    assert "+ _BANK_IMPORT_VIEW_POINTER" in left_tip
     assert "left.setToolTip(" in text
     assert "Document inbox column:" in text
     assert "container.setToolTip(" in text
     assert "company banner and tabbed areas" in text
+    assert "Bank Import includes AI line reconciliation and Stmt match sync to Register" in text
 
 
 def test_main_tab_widgets_have_root_hover_tooltips() -> None:
@@ -605,9 +645,12 @@ def test_main_tab_widgets_have_root_hover_tooltips() -> None:
     assert "def _build_ui(self):" in bchunk
     assert "self.setToolTip(" in bchunk
     assert "Bank CSV/PDF import and reconciliation" in bchunk
+    assert "AI-assisted line reconciliation" in bchunk
     assert "exported CSV uses UTF-8 BOM for Excel" in bchunk
     assert "left.setToolTip(" in bchunk
     assert "Import batches column" in bchunk
+    assert "statement reconciliation, and AI line reconciliation on the right" in bchunk
+    assert "View → Register (Ctrl+3)" in bchunk
 
     rep = (_DESKTOP_APP_DIR / "reports_tab.py").read_text(encoding="utf-8")
     assert "Financial reports: trial balance" in rep
@@ -627,6 +670,8 @@ def test_main_tab_widgets_have_root_hover_tooltips() -> None:
 
     reg = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
     assert "Bank register for one account:" in reg
+    assert "Reconciliation mode + Stmt match can be updated from Bank Import AI line reconciliation" in reg
+    assert "View → Bank Import (Ctrl+2), Register (Ctrl+3)" in reg
     assert "and export CSV (UTF-8 BOM for Excel)" in reg
 
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
@@ -785,52 +830,40 @@ def test_file_exit_menu_tip_suggests_backup() -> None:
     assert "File → Backup" in chunk
 
 
-def test_main_window_toolbar_and_menu_bar_qaction_counts() -> None:
-    """Toolbar: Main bar, non-movable, separator, two ``QAction``s wired; menu bar: 21 ``QAction``s."""
+def test_main_window_no_toolbar_menu_bar_qaction_counts() -> None:
+    """``_build_ui`` has no main ``QToolBar``; menu bar still defines 21 ``QAction``s."""
     text = _MAIN.read_text(encoding="utf-8")
-    tb_s = text.index("# Toolbar")
-    tb_e = text.index("# Container: header banner + tab widget", tb_s)
-    tb_chunk = text[tb_s:tb_e]
-    assert tb_chunk.count('toolbar = QToolBar("Main")') == 1
-    assert tb_chunk.count("toolbar.setMovable(False)") == 1
-    assert tb_chunk.count("toolbar.setToolTip(") == 1
-    assert tb_chunk.count("toolbar.addSeparator()") == 1
-    assert tb_chunk.count("self.addToolBar(toolbar)") == 1
-    assert tb_chunk.count("QAction(") == 2
-    assert tb_chunk.count(".triggered.connect(") == 2
-    assert tb_chunk.count("toolbar.addAction(") == 2
+    bu_s = text.index("def _build_ui(self):")
+    bu_e = text.index("    def _build_menu_bar(self):", bu_s)
+    bu_chunk = text[bu_s:bu_e]
+    assert "QToolBar(" not in bu_chunk
+    assert "addToolBar(" not in bu_chunk
+    assert "# Toolbar" not in bu_chunk
     mb_s = text.index("def _build_menu_bar")
     mb_e = text.index("def dragEnterEvent", mb_s)
-    assert text[mb_s:mb_e].count("QAction(") == 21
+    assert text[mb_s:mb_e].count("QAction(") == 32
 
 
-def test_main_window_toolbar_emoji_labels_and_import_refresh_slots() -> None:
-    """Toolbar **Import** / **Refresh** use emoji-prefixed titles, tooltips, and the same slots as File/F5."""
+def test_file_menu_import_wires_on_import_and_mentions_ctrl_o() -> None:
+    """File → Import documents… still connects to ``_on_import`` with Ctrl+O shortcut."""
     text = _MAIN.read_text(encoding="utf-8")
-    tb_s = text.index("# Toolbar")
-    tb_e = text.index("# Container: header banner + tab widget", tb_s)
-    chunk = text[tb_s:tb_e]
-    import_ln = next(ln for ln in chunk.splitlines() if "act_import = QAction(" in ln)
-    refresh_ln = next(ln for ln in chunk.splitlines() if "act_refresh = QAction(" in ln)
-    assert "\U0001f4c2" in import_ln or "\\U0001f4c2" in import_ln
-    assert "Import Documents" in import_ln
-    assert "\\u2026" in import_ln or "\u2026" in import_ln or "…" in import_ln
-    assert "\U0001f504" in refresh_ln or "\\U0001f504" in refresh_ln
-    assert "Refresh" in refresh_ln
-    assert chunk.count("act_import.triggered.connect(self._on_import)") == 1
-    assert chunk.count("act_refresh.triggered.connect(self._refresh_inbox)") == 1
-    assert "same as File → Import documents" in chunk
-    assert "F5 when Document Intake has focus" in chunk
+    mb_s = text.index("def _build_menu_bar")
+    mb_e = text.index("def dragEnterEvent", mb_s)
+    chunk = text[mb_s:mb_e]
+    assert chunk.count("act_import_docs = QAction(") == 1
+    assert chunk.count("act_import_docs.triggered.connect(self._on_import)") == 1
+    assert "Ctrl+O" in chunk
+    assert "Import documents" in chunk
 
 
-def test_main_window_build_ui_instantiates_one_toolbar() -> None:
-    """``_build_ui`` creates one ``QToolBar`` and calls ``addToolBar`` once (before ``_build_menu_bar``)."""
+def test_main_window_build_ui_has_no_toolbar() -> None:
+    """``_build_ui`` does not construct a main-window import/refresh toolbar."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("def _build_ui(self):")
     end = text.index("def _build_menu_bar", start)
     chunk = text[start:end]
-    assert chunk.count("QToolBar(") == 1
-    assert chunk.count("self.addToolBar(") == 1
+    assert chunk.count("QToolBar(") == 0
+    assert chunk.count("self.addToolBar(") == 0
 
 
 def test_main_window_build_ui_sets_central_status_and_eight_main_tabs() -> None:
@@ -884,13 +917,12 @@ def test_main_window_build_ui_tab_section_banner_comments_order() -> None:
 
 
 def test_main_window_build_ui_structural_inline_comments_order() -> None:
-    """``_build_ui`` orders menu call, toolbar, container, tabs, Intake splitter panes, status bar, window DnD."""
+    """``_build_ui`` orders menu call, container, tabs, Intake splitter panes, status bar, window DnD."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("def _build_ui(self):")
     end = text.index("    def _build_menu_bar(self):", start)
     chunk = text[start:end]
-    assert chunk.index("        self._build_menu_bar()") < chunk.index("        # Toolbar")
-    assert chunk.index("        # Toolbar") < chunk.index(
+    assert chunk.index("        self._build_menu_bar()") < chunk.index(
         "        # Container: header banner + tab widget"
     )
     assert chunk.index("        # Container: header banner + tab widget") < chunk.index(
@@ -1024,6 +1056,8 @@ def test_main_window_build_ui_status_bar_ready_message_and_qstatusbar() -> None:
     assert chunk.count("self._status_bar = QStatusBar()") == 1
     assert chunk.count("self.setStatusBar(self._status_bar)") == 1
     assert chunk.count("self._status_bar.showMessage(") == 1
+    assert "AI line reconciliation" in chunk
+    assert "Bank Import" in chunk
     assert "File → Backup saves the company .db." in chunk
     assert "drag & drop documents" in chunk
     assert "\\u2013" in chunk
@@ -2039,7 +2073,7 @@ def test_desktop_main_detail_pane_clear_view_resets_id_first_disables_actions_la
 
 
 def test_main_window_on_import_and_files_dropped_delegate_to_import_files() -> None:
-    """Menu/toolbar import and inbox drops both funnel into ``_import_files``."""
+    """File → Import and inbox drops both funnel into ``_import_files``."""
     text = _MAIN.read_text(encoding="utf-8")
     imp_s = text.index("    def _on_import(self):")
     imp_e = text.index("    def _on_files_dropped(self, paths: list[str]):", imp_s)
@@ -2306,6 +2340,9 @@ def test_main_window_file_menu_qaction_definitions_order() -> None:
     )
     positions = [chunk.index(n) for n in names]
     assert positions == sorted(positions)
+    im = chunk.index("act_import_docs = QAction")
+    op = chunk.index("act_open_company = QAction")
+    assert "+ _BANK_IMPORT_VIEW_POINTER" in chunk[im:op]
 
 
 def test_main_window_edit_menu_qaction_definitions_order() -> None:
@@ -2321,16 +2358,15 @@ def test_main_window_edit_menu_qaction_definitions_order() -> None:
     assert u < r < sep < p
 
 
-def test_main_window_tools_menu_defines_single_coming_soon_stub() -> None:
-    """**Tools** menu is a single disabled **(Coming soon)** placeholder."""
+def test_main_window_tools_menu_has_bank_register_submenus() -> None:
+    """**Tools** menu groups bank register actions under submenus (no top-level stub)."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("        # Tools menu")
     end = text.index("        # Help menu", start)
     chunk = text[start:end]
     assert chunk.count("tools_menu = mb.addMenu(\"&Tools\")") == 1
-    assert chunk.count("act_tools = QAction(\"(Coming soon)\", self)") == 1
-    assert chunk.count("act_tools.setEnabled(False)") == 1
-    assert chunk.count("tools_menu.addAction(act_tools)") == 1
+    assert chunk.count("tools_menu.addMenu(") == 5
+    assert "act_tools = QAction" not in chunk
 
 
 def test_main_window_rebuild_bank_tab_specs_title_order() -> None:
@@ -2359,6 +2395,7 @@ def test_main_window_build_ui_wires_stmt_match_sync_focus_register() -> None:
     assert "def _focus_bank_register_tab(self)" in text
     assert text.count("after_stmt_match_sync=self._focus_bank_register_tab") == 2
     assert "Stmt match updated on Bank register" in text
+    assert "line-reconciliation grid" in text
     assert "_STMT_MATCH_SYNC_STATUS_MS = 8000" in text
     focus_body = text.split("def _focus_bank_register_tab", 1)[1].split(
         "def _sync_window_title", 1
@@ -2369,13 +2406,13 @@ def test_main_window_build_ui_wires_stmt_match_sync_focus_register() -> None:
 
 
 def test_main_window_build_menu_bar_wires_all_action_triggers() -> None:
-    """Every menu ``QAction`` that should fire a slot has a ``triggered.connect`` (15 wired, 6 disabled stubs)."""
+    """Every enabled menu ``QAction`` wires ``triggered.connect`` (28 wired; 5 disabled stubs)."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _build_menu_bar(self):")
     end = text.index("    # -- drag & drop on window", start)
     chunk = text[start:end]
-    assert chunk.count("QAction(") == 21
-    assert chunk.count(".triggered.connect(") == 15
+    assert chunk.count("QAction(") == 32
+    assert chunk.count(".triggered.connect(") == 27
     assert (
         chunk.count(
             "lambda checked=False, i=idx: self._set_main_tab_index(i)"
@@ -2445,6 +2482,7 @@ def test_main_window_on_about_shows_branded_version_dialog() -> None:
     assert (
         'ok_tip="Close; Help lists shortcuts (including UTF-8 BOM CSV for Excel); "'
         in chunk
+        and "Bank Import covers AI line reconciliation" in chunk
         and 'File → Backup/Restore uses probooks.backup (same as CLI)."' in chunk
     )
 
@@ -2471,6 +2509,7 @@ def test_main_window_set_tab_sync_title_and_company_status_helpers() -> None:
     assert chunk.count("escape_ampersand_for_qt(Path(p).name)") == 1
     assert chunk.count("self._header.set_company_name(Path(p).name)") == 1
     assert 'f"Company: {p}  \\u2013  drag & drop or Import;' in chunk
+    assert "Bank Import (Ctrl+2)" in chunk
 
 
 def test_main_window_sync_window_title_includes_company_name_or_desktop_only() -> None:
@@ -2633,68 +2672,6 @@ def test_main_window_build_ui_detail_pane_signal_connect_run_approve_post_reject
     assert r < a < p < j
 
 
-def test_main_toolbar_import_and_refresh_tooltips_echo_file_menu_and_backup() -> None:
-    """Main toolbar **Import** / **Refresh** mirror File backup hints; no ad-hoc ``setStatusTip``."""
-    text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("# Toolbar")
-    end = text.index("# Container: header banner + tab widget", start)
-    chunk = text[start:end]
-    assert chunk.count("act_import = QAction(") == 1
-    assert chunk.count("act_refresh = QAction(") == 1
-    assert chunk.count("act_import.setToolTip(") == 1
-    assert chunk.count("act_refresh.setToolTip(") == 1
-    assert "act_import.setStatusTip(" not in chunk
-    assert "act_refresh.setStatusTip(" not in chunk
-    ii = chunk.index("act_import.setToolTip(")
-    ir = chunk.index("act_refresh.setToolTip(")
-    imp = chunk[ii : ii + 520]
-    ref = chunk[ir : ir + 520]
-    assert "Ctrl+O" in imp
-    assert "Import documents" in imp
-    assert "File → Backup" in imp or "probooks backup" in imp.lower()
-    assert "F5" in ref
-    assert "File → Backup" in ref or "probooks backup" in ref.lower()
-
-
-def test_main_toolbar_import_refresh_trigger_same_handlers_as_shortcuts_help() -> None:
-    """Toolbar **Import** / **Refresh** call the same slots as File → Import and F5 refresh."""
-    text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("# Toolbar")
-    end = text.index("# Container: header banner + tab widget", start)
-    chunk = text[start:end]
-    assert chunk.count("act_import.triggered.connect(self._on_import)") == 1
-    assert chunk.count("act_refresh.triggered.connect(self._refresh_inbox)") == 1
-
-
-def test_main_window_build_ui_toolbar_import_refresh_tooltip_connect_before_add_action_order() -> None:
-    """Toolbar **Import** / **Refresh** actions set tooltips, wire slots, then ``addAction`` (per button)."""
-    text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("# Toolbar")
-    end = text.index("# Container: header banner + tab widget", start)
-    chunk = text[start:end]
-    ti = chunk.index("act_import.setToolTip(")
-    ci = chunk.index("act_import.triggered.connect(self._on_import)")
-    ai = chunk.index("toolbar.addAction(act_import)")
-    tr = chunk.index("act_refresh.setToolTip(")
-    cr = chunk.index("act_refresh.triggered.connect(self._refresh_inbox)")
-    ar = chunk.index("toolbar.addAction(act_refresh)")
-    assert ti < ci < ai < tr < cr < ar
-
-
-def test_main_window_toolbar_import_separator_refresh_wire_order() -> None:
-    """Toolbar wires **Import**, separator, then **Refresh** (define → add → sep → define → add)."""
-    text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("# Toolbar")
-    end = text.index("# Container: header banner + tab widget", start)
-    chunk = text[start:end]
-    d_imp = chunk.index("act_import = QAction(")
-    add_imp = chunk.index("toolbar.addAction(act_import)")
-    sep = chunk.index("toolbar.addSeparator()")
-    d_ref = chunk.index("act_refresh = QAction(")
-    add_ref = chunk.index("toolbar.addAction(act_refresh)")
-    assert d_imp < add_imp < sep < d_ref < add_ref
-
-
 def test_desktop_main_detail_pane_extracted_fields_form_row_order() -> None:
     """``DetailPane`` **Extracted Fields** ``QFormLayout`` rows follow vendor → … → notes."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -2786,6 +2763,7 @@ def test_inbox_widget_context_menu_keyboard_shortcuts_before_copy_row() -> None:
     end = text.index("    # -- drag & drop ---------------------------------------------------------", start)
     chunk = text[start:end]
     assert chunk.index('"Keyboard shortcuts…"') < chunk.index('"Copy row"')
+    assert "Bank import pointers" in chunk
 
 
 def test_menu_action_tip_helper_sets_matching_status_and_hover_text() -> None:
@@ -2805,16 +2783,14 @@ def test_menu_action_tip_helper_docstring_mentions_status_bar() -> None:
     assert "hover tooltip" in chunk
 
 
-def test_tools_menu_has_disabled_coming_soon_stub() -> None:
-    """**Tools** menu ships a disabled placeholder until additional tools land."""
+def test_tools_menu_has_no_disabled_placeholder_action() -> None:
+    """**Tools** menu uses register submenus instead of a disabled **(Coming soon)** stub."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("# Tools menu")
     end = text.index("# Help menu", start)
     chunk = text[start:end]
-    assert 'act_tools = QAction("(Coming soon)", self)' in chunk
-    assert chunk.count("act_tools.setEnabled(False)") == 1
-    assert chunk.count("tools_menu.addAction(act_tools)") == 1
-    assert "Additional tools are not available yet." in chunk
+    assert 'act_tools = QAction("(Coming soon)", self)' not in chunk
+    assert "tools_register_add_transaction" in chunk
 
 
 def test_help_menu_roadmap_about_seven_actions_and_separator() -> None:
@@ -2866,18 +2842,26 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
         chunk.count("tools_menu.addAction("),
         chunk.count("help_menu.addAction("),
     )
-    assert per_menu_add == (9, 1, 3, 1, 7), (
-        f"expected per-menu addAction (File,View,Edit,Tools,Help)=(9,1,3,1,7); "
+    assert per_menu_add == (9, 1, 3, 0, 7), (
+        f"expected per-menu addAction (File,View,Edit,Tools,Help)=(9,1,3,0,7); "
         f"got {per_menu_add}"
     )
-    n_add = sum(per_menu_add)
-    assert n_qa == n_tip == n_add == 21, (
-        f"expected 21 menu QActions, _menu_action_tip calls, and *.addAction( calls "
+    n_reg_sub_add = (
+        chunk.count("m_reg_actions.addAction(")
+        + chunk.count("m_reg_recon.addAction(")
+        + chunk.count("m_reg_attach.addAction(")
+        + chunk.count("m_reg_txn.addAction(")
+        + chunk.count("m_reg_flags.addAction(")
+    )
+    assert n_reg_sub_add == 12
+    n_add = sum(per_menu_add) + n_reg_sub_add
+    assert n_qa == n_tip == n_add == 32, (
+        f"expected 32 menu QActions, _menu_action_tip calls, and *.addAction( calls "
         f"(QAction={n_qa}, _menu_action_tip={n_tip}, addAction={n_add})"
     )
     n_dis = chunk.count("setEnabled(False)")
-    assert n_dis == 6, (
-        f"expected 6 disabled menu actions (Save, Save As, Undo, Redo, Prefs, Tools); "
+    assert n_dis == 5, (
+        f"expected 5 disabled menu actions (Save, Save As, Undo, Redo, Prefs); "
         f"got {n_dis}"
     )
     n_trig = chunk.count(".triggered.connect(")
@@ -2904,13 +2888,16 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
     assert "\n            act_import_docs,\n" in chunk
     assert "\n            act_open_company,\n" in chunk
     assert "\n            act_copy_db_path,\n" in chunk
-    assert "_menu_action_tip(act, f" in chunk
+    assert "_menu_action_tip(\n                act, f" in chunk
     ex = chunk.index("act_exit = QAction")
     assert "_menu_action_tip(" in chunk[ex : ex + 400]
     assert "\n            act_intake_keys,\n" in chunk
     assert "\n            act_more_tab_keys,\n" in chunk
     assert chunk.count("_view_tab_tip_suffix") == 2
-    assert 'f"Show this main tab ({sc}).{_view_tab_tip_suffix}"' in chunk
+    assert "_view_tab_tip_extra" in chunk
+    assert "Document Intake; bank CSV/PDF and line reconciliation on Ctrl+2" in chunk
+    assert "AI line reconciliation and Stmt match sync" in chunk
+    assert 'f"Show this main tab ({sc}).{extra}{_view_tab_tip_suffix}"' in chunk
 
 
 def test_main_window_build_menu_bar_menu_bar_before_file_menu_order() -> None:
@@ -2932,7 +2919,7 @@ def test_main_help_menu_wires_document_intake_shortcuts_dialog() -> None:
     assert "Ctrl+7 Business" in text and "Ctrl+8 Audit log" in text
     assert "all tabs share the open" in text
     assert "Help → Business shortcuts" in text
-    assert "toolbar Import Documents is the same command" in text
+    assert "Import documents" in text and "Ctrl+O" in text
     assert "status bar" in text
     assert "each menu item" in text
     assert "File, View, Edit, Help, or Tools" in text
@@ -2988,6 +2975,7 @@ def test_inbox_widget_context_menu_includes_keyboard_shortcuts_help() -> None:
     chunk = text[start:end]
     assert "act_keys.setToolTip" in chunk
     assert "act_copy.setToolTip" in chunk
+    assert "+ VIEW_BANK_REGISTER_KEYS_TOOLTIP" in chunk
     assert chunk.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
 
 
@@ -3052,6 +3040,8 @@ def test_desktop_main_show_intake_shortcuts_dialog_delegates_to_message_box() ->
     assert (
         'ok_tip="Close; shortcuts apply when Document Intake has focus. "' in chunk
     )
+    assert "Ctrl+2 Bank Import" in chunk
+    assert "Ctrl+3 Register" in chunk
     assert "Company .db: File → Backup / Restore (probooks.backup)." in chunk
 
 
@@ -3089,6 +3079,9 @@ def test_desktop_main_document_intake_shortcuts_help_text_sections() -> None:
     assert "UTF-8 with BOM for Excel" in chunk
     assert "reconciliation report and line-compare" in chunk
     assert "Bank Import Import CSV" in chunk and "optional BOM" in chunk
+    assert "batch preview, AI line reconciliation" in chunk
+    assert "Hover Bank Import and Register in View for status tips" in chunk
+    assert "Tools menu" in chunk and "Bank register" in chunk
 
 
 def test_desktop_main_document_intake_help_text_file_view_bank_section_order() -> None:
@@ -3541,20 +3534,26 @@ def test_main_help_menu_status_tips_mention_utf8_bom_csv_exports() -> None:
     intake = chunk.split("act_intake_keys = QAction", 1)[1].split(
         "act_bank_import_keys = QAction", 1
     )[0]
-    assert (
-        "UTF-8 BOM CSV exports on Bank Import, Register, Reports, Journal, Business, and Audit"
-        in intake
-    )
+    assert "UTF-8 BOM CSV exports on Bank Import (batch preview + AI line reconciliation)" in intake
+    assert "Register, Reports, Journal, Business, and Audit" in intake
     assert "Bank Import Import CSV" in intake and "reads UTF-8 optional BOM" in intake
+    assert "View → Bank Import and Register status tips" in intake
     bi = chunk.split("act_bank_import_keys = QAction", 1)[1].split(
         "act_register_keys = QAction", 1
     )[0]
     assert "Import CSV reads UTF-8 with optional BOM" in bi
     assert "line-compare CSV uses UTF-8 BOM for Excel" in bi
+    assert "batch preview: copy row, txn id, date, amount, payee, memo, ref, COA" in bi
+    assert (
+        "line-reconciliation grid: statement/register date, amount, description, register txn id"
+        in bi
+    )
     reg = chunk.split("act_register_keys = QAction", 1)[1].split(
         "act_business_keys = QAction", 1
     )[0]
+    assert "register grid shortcuts (row menu: copy row, txn id, date, amount, payee, memo, ref, COA)" in reg
     assert "Ctrl+Shift+E export CSV uses UTF-8 BOM for Excel" in reg
+    assert "AI line-reconciliation field copies" in reg
     bus = chunk.split("act_business_keys = QAction", 1)[1].split(
         "act_more_tab_keys = QAction", 1
     )[0]
@@ -3562,7 +3561,9 @@ def test_main_help_menu_status_tips_mention_utf8_bom_csv_exports() -> None:
     more = chunk.split("act_more_tab_keys = QAction", 1)[1].split(
         "help_menu.addSeparator()", 1
     )[0]
-    assert "UTF-8 BOM CSV exports and cross-links Register, Business, and Bank Import" in more
+    assert "line-reconciliation grid" in more
+    assert "UTF-8 BOM CSV exports" in more
+    assert "cross-links Register, Business, and Bank Import" in more
     about = chunk.split("act_about = QAction", 1)[1].split(
         "help_menu.addAction(act_about)", 1
     )[0]
@@ -3580,10 +3581,24 @@ def test_more_main_tabs_shortcuts_module_exposes_help_dialog() -> None:
     assert "Ctrl+7 Business" in text
     assert "Ctrl+2 Bank Import" in text
     assert "Help → Document intake shortcuts" in text
+    assert "Register bulk actions" in text and "main **Tools** menu" in text
     assert "status bar" in text
     assert "per-item hover tooltips" in text
     assert "probooks.backup" in text
     assert "ok_tip=" in text
+    assert "from desktop_app.table_clipboard import VIEW_BANK_REGISTER_KEYS_TOOLTIP" in text
+    assert "+ VIEW_BANK_REGISTER_KEYS_TOOLTIP" in text
+    assert "Copy payee / description" in text
+    assert "**Copy memo**" in text
+    assert "**Copy number / ref**" in text
+    assert "**Copy date**" in text
+    assert "**Copy amount**" in text
+    assert "**Copy transaction id**" in text
+    assert "Copy category (COA)" in text
+    assert "**Bank Import** batch preview" in text
+    assert "line-reconciliation grid" in text
+    assert "Matched / Missing / Extra" in text
+    assert "Copy register transaction id" in text
 
 
 def test_main_tab_root_tooltips_mention_shared_company_backup() -> None:
@@ -3621,7 +3636,7 @@ def test_register_link_payment_suggestion_list_opens_register_shortcuts_help() -
     rtab = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
     assert rtab.count("show_register_keyboard_shortcuts_dialog(self)") >= 2
     assert "on_sug_context_menu" in rtab
-    assert "Link payment… — suggested-matches list" in rtab
+    assert "Link payment… (Tools → Transaction Tools) — suggested-matches list" in rtab
     assert "sug_list.setToolTip(" in rtab
 
 
@@ -3654,6 +3669,9 @@ def test_bank_import_tab_exposes_shortcuts_dialog_for_help_menu() -> None:
     assert "If that account cannot be opened on the register" in bit
     assert "status bar" in bit.lower()
     assert "restores the company line" in bit
+    assert "AI line-reconciliation panel below" in bit
+    assert "Line-by-line Matched / Missing / Extra is in AI-assisted line" in bit
+    assert "The same dialog summarizes the main Bank Import tab" in bit
     assert "line-reconciliation grid" in bit
     assert "Export comparison CSV" in bit
     assert "last folder you used" in bit
@@ -3663,6 +3681,8 @@ def test_bank_import_tab_exposes_shortcuts_dialog_for_help_menu() -> None:
     assert "last CSV export folder" in bit
     assert "last folder you picked a bank file" in bit
     assert "reads UTF-8 with optional BOM" in bit
+    assert "banded-row styling" in bit
+    assert "arrow keys move the cell focus" in bit
     assert "UTF-8 CSV with a BOM for Excel" in bit
     assert "writes UTF-8 with a BOM for Excel" in bit
     assert "last CSV export folder if you have not imported yet" in bit
@@ -3689,7 +3709,7 @@ def test_desktop_main_cli_and_qt_app_strings_use_probooks_plus_ai() -> None:
     assert "**Help → Document intake shortcuts…**" in mod_doc
     assert "**Help → About**" in mod_doc
     assert "rich text + **Ok** hover hint" in mod_doc
-    assert "Document Intake import/refresh" in mod_doc
+    assert "Import documents" in mod_doc and "F5" in mod_doc
     assert "window-level hover hint" in mod_doc
     assert "content-area hint" in mod_doc
     assert "resize hint on hover" in mod_doc
@@ -3707,7 +3727,7 @@ def test_desktop_main_cli_and_qt_app_strings_use_probooks_plus_ai() -> None:
     assert "Categorisation" in mod_doc
     assert "**InboxWidget**" in mod_doc
     assert "grid has a hover **tooltip**" in mod_doc
-    assert "**QToolBar**" in mod_doc
+    assert "**AppHeaderWidget**" in mod_doc
     assert "**QSplitter**" in mod_doc
     assert "**QScrollArea**" in mod_doc
     assert "drag-and-drop" in mod_doc
@@ -4075,6 +4095,7 @@ def test_coa_tab_toolbar_buttons_have_tooltips() -> None:
     assert "hidden from COA pickers" in text
     assert "act_keys.setToolTip" in text
     assert "act_copy.setToolTip" in text
+    assert "+ VIEW_BANK_REGISTER_KEYS_TOOLTIP" in text
     assert text.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
 
 
@@ -4092,6 +4113,7 @@ def test_reports_tab_run_and_export_buttons_have_tooltips() -> None:
     assert "self._table.setToolTip(" in text
     assert "act_keys.setToolTip" in text
     assert "act_copy.setToolTip" in text
+    assert "+ VIEW_BANK_REGISTER_KEYS_TOOLTIP" in text
     assert text.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
 
 
@@ -4141,6 +4163,7 @@ def test_journal_tab_export_csv_button_has_tooltip() -> None:
     assert "self._lines.setToolTip(" in jt
     assert "act_keys.setToolTip" in jt
     assert "act_copy.setToolTip" in jt
+    assert "+ VIEW_BANK_REGISTER_KEYS_TOOLTIP" in jt
     assert jt.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 4
 
 
@@ -4157,6 +4180,7 @@ def test_audit_tab_export_and_apply_filter_buttons_have_tooltips() -> None:
     assert "self._tbl.setToolTip(" in at
     assert "act_keys.setToolTip" in at
     assert "act_copy.setToolTip" in at
+    assert "+ VIEW_BANK_REGISTER_KEYS_TOOLTIP" in at
     assert at.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
 
 
@@ -4167,6 +4191,7 @@ def test_bank_import_manage_accounts_and_reconciliation_buttons_have_tooltips() 
     assert "_btn_export_csv.setToolTip" in bit
     rec_chunk = bit.split("class ReconciliationPanel", 1)[1].split("class BankImportTab", 1)[0]
     assert "Compares statement dates and balances" in rec_chunk
+    assert "AI-assisted line reconciliation below" in rec_chunk
     assert "_lbl_status.setToolTip" in rec_chunk
     assert "UTF-8 with BOM for Excel" in rec_chunk
     assert "Export comparison CSV" in rec_chunk
@@ -4203,19 +4228,24 @@ def test_bank_import_manage_and_account_edit_dialogs_have_window_tooltips() -> N
     assert "Bank account label, institution, type" in bit
 
 
-def test_detail_pane_scroll_and_main_toolbar_have_hover_tooltips() -> None:
+def test_detail_pane_scroll_and_app_header_have_hover_tooltips() -> None:
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("class DetailPane")
     end = text.index("class AppHeaderWidget", start)
     chunk = text[start:end]
     assert "self.setToolTip(" in chunk
     assert "Scroll the detail pane" in chunk
+    assert "Bank statement CSV/PDF import is on Bank Import" in chunk
     assert "inner.setToolTip(" in chunk
+    inn = chunk.split("inner.setToolTip(", 1)[1].split("self.setWidget(inner)", 1)[0]
+    assert "Bank statement CSV/PDF import is on Bank Import" in inn
     assert "Preview, extracted fields, categorization" in chunk
     assert "File → Backup" in chunk
-    assert "toolbar.setToolTip" in text
-    assert "Document Intake toolbar" in text
-    assert "probooks backup" in text.split("toolbar.setToolTip", 1)[1][:400]
+    assert "toolbar.setToolTip" not in text
+    hdr = text.split("class AppHeaderWidget", 1)[1].split("class MainWindow", 1)[0]
+    assert "self.setToolTip(" in hdr
+    assert "ProBooks+ai" in hdr
+    assert "AlignRight" in hdr
 
 
 def test_desktop_main_detail_pane_wires_actions_load_ai_and_clear() -> None:
@@ -5158,21 +5188,27 @@ def test_help_keyboard_shortcuts_dialog_ok_tips_mention_company_db_backup() -> N
     midx = main_t.index("def show_document_intake_keyboard_shortcuts_dialog")
     inc = main_t[midx : main_t.index("\n\n# Accepted MIME", midx)]
     assert needle in inc
+    assert "register bulk actions: Tools menu" in inc
     bi = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
     bidx = bi.index("def show_bank_import_keyboard_shortcuts_dialog")
     b = bi[bidx : bi.index("\n\n# =====", bidx)]
     assert needle in b
+    assert "register bulk actions" in b and "Tools" in b
+    assert "Ctrl+3" in b and "Stmt match" in b
     reg = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
     ridx = reg.index("def show_register_keyboard_shortcuts_dialog")
     r = reg[ridx : reg.index("\n\nclass RegisterTab", ridx)]
     assert needle in r
+    assert "Tools menu" in r and "Register Actions" in r
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
     bidx = et.index("def show_business_keyboard_shortcuts_dialog")
     e = et[bidx : et.index("\n\nclass BusinessHub", bidx)]
     assert needle in e
+    assert "+ VIEW_BANK_REGISTER_KEYS_TOOLTIP" in e
     mm = (_DESKTOP_APP_DIR / "more_main_tabs_shortcuts.py").read_text(encoding="utf-8")
     m = mm.split("show_more_main_tabs_keyboard_shortcuts_dialog", 1)[1].split("def ", 1)[0]
     assert needle in m
+    assert "+ VIEW_BANK_REGISTER_KEYS_TOOLTIP" in m
 
 
 def test_help_menu_keyboard_shortcuts_dialogs_use_information_ok_helper() -> None:
@@ -5198,7 +5234,8 @@ def test_intake_and_bank_import_splitters_have_resize_tooltips() -> None:
     assert "splitter.setToolTip" in main_t
     assert "document inbox" in main_t
     sp = main_t.index("Drag the handle to resize the document inbox")
-    assert "File → Backup" in main_t[sp : sp + 220]
+    assert "File → Backup" in main_t[sp : sp + 400]
+    assert "View → Bank Import" in main_t[sp : sp + 400]
     bi = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
     assert "splitter.setToolTip" in bi
     assert "right_splitter.setToolTip" in bi
@@ -5271,6 +5308,12 @@ def test_extra_tabs_exposes_business_shortcuts_dialog_for_help_menu() -> None:
     )[0]
     assert "UTF-8 with BOM for Excel" in bus_help
     assert "Rules Import CSV" in bus_help and "optional BOM" in bus_help
+    assert "View menu tab focus: Ctrl+1 Document Intake, Ctrl+2 Bank Import, Ctrl+3 Register, " in bus_help
+    assert (
+        "Ctrl+4 Chart of Accounts, Ctrl+5 Reports, Ctrl+6 Journal, Ctrl+7 Business, Ctrl+8 Audit log."
+        in bus_help
+    )
+    assert "Register bulk actions" in bus_help and "main **Tools** menu" in bus_help
     assert (
         et.count("lambda: show_business_keyboard_shortcuts_dialog(self)") == 4
     ), "Rules, AR, AP, Payroll grids should open Business shortcuts from context menu"
@@ -5371,10 +5414,33 @@ def test_bank_import_tab_batch_and_txn_tables_coerce_user_role_ids() -> None:
         "def _open_import_txn_attachment", 1
     )[0]
     assert "tid = (\n            coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole))" in txn_ctx
+    assert "Copy payee / description" in txn_ctx
+    assert "Copy date" in txn_ctx
+    assert "Copy transaction id" in txn_ctx
+    assert "_copy_import_txn_id" in txn_ctx
+    assert "_copy_import_txn_date" in txn_ctx
+    assert "Copy amount" in txn_ctx
+    assert "_copy_import_txn_amount" in txn_ctx
+    assert "Copy memo" in txn_ctx
+    assert "Copy number / ref" in txn_ctx
+    assert "Copy category (COA)" in txn_ctx
+    assert "_copy_import_txn_description" in txn_ctx
+    assert "_copy_import_txn_memo" in txn_ctx
+    assert "_copy_import_txn_ref_number" in txn_ctx
+    assert "_copy_import_txn_coa" in txn_ctx
     tol_chunk = bit.split("def _on_reconciliation_tolerance_changed", 1)[1].split(
         "def _load_batch", 1
     )[0]
     assert "combo_int_ids_equal(b[\"id\"], self._current_batch_id)" in tol_chunk
+    assert "_clip_import_txn_string_field" in bit
+    assert (
+        bit.count("(F5, batches, register preview, AI line reconciliation, row field copies)")
+        == 2
+    )
+    assert (
+        "(F5, batches, Manage accounts, register preview, AI line reconciliation, row field copies)"
+        in bit
+    )
 
 
 def test_extra_tabs_rules_edit_matches_rule_row_by_int_safe_id() -> None:
@@ -5407,6 +5473,18 @@ def test_extra_tabs_edit_invoice_and_bill_coerce_customer_vendor_ids() -> None:
     assert "bill_vid = coerce_combo_int_id(b[\"vendor_id\"])" in bill
 
 
+def test_bank_import_keyboard_shortcuts_help_text_lists_view_chords() -> None:
+    bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
+    start = bit.index("def _bank_import_keyboard_shortcuts_help_text")
+    end = bit.index("\n\n\ndef show_bank_import_keyboard_shortcuts_dialog", start)
+    chunk = bit[start:end]
+    assert (
+        "View menu tab focus: Ctrl+1 Document Intake, Ctrl+2 Bank Import, Ctrl+3 Register."
+        in chunk
+    )
+    assert "Tools" in chunk and "Register Actions" in chunk
+
+
 def test_bank_import_tab_f5_reload_shortcut_wired() -> None:
     path = _DESKTOP_APP_DIR / "bank_import_tab.py"
     text = path.read_text(encoding="utf-8")
@@ -5417,6 +5495,8 @@ def test_bank_import_tab_f5_reload_shortcut_wired() -> None:
     _f5_tail = text.split("F5 refreshes accounts and import batches", 1)[1][:900]
     assert "UTF-8 BOM for Excel" in _f5_tail
     assert "probooks.backup" in _f5_tail
+    assert "AI line-reconciliation grid" in _f5_tail
+    assert "preview rows and that grid also offer Copy row" in _f5_tail
     assert "Manage Bank Accounts table" in text
     assert "Bank import shortcuts" in text
     assert "Keyboard shortcuts…" in text
@@ -5458,7 +5538,7 @@ def test_bank_import_csv_export_paths_wires_bidirectional_folder_fallbacks() -> 
 
 def test_csv_import_worker_module_documents_decoded_utf8_sig_content() -> None:
     text = (_DESKTOP_APP_DIR / "csv_import_worker.py").read_text(encoding="utf-8")
-    assert "utf-8-sig" in text
+    assert "BANK_CSV_READ_ENCODING" in text
     assert "csv_content" in text
 
 
@@ -5521,18 +5601,28 @@ def test_bank_import_blank_register_table_columns_empty_rows_and_pdf_dialog() ->
     assert "setRowCount(self.DEFAULT_ROW_COUNT)" in chunk
     assert 'QTableWidgetItem("")' in chunk
     assert "register_table_style_sheet()" in chunk
+    assert "RegisterBandDelegate(" in chunk and "simple_band_rows=True" in chunk
+    init_body = chunk.split("def __init__(self, parent=None):", 1)[1].split(
+        "\n    def reset_blank", 1
+    )[0]
+    assert init_body.index("self.setItemDelegate(") < init_body.index("self.reset_blank()")
+    assert "setDefaultSectionSize(REGISTER_ROW_HEIGHT_MIN_PREVIEW)" in init_body
     assert 'setObjectName("bankRegisterTable")' in chunk
     assert "EditTrigger.DoubleClicked" in chunk
     assert "NoEditTriggers" not in chunk
     assert "def reset_blank(self)" in chunk
     assert "def populate_import_batch(" in chunk
     assert "beginning_balance: Optional[float]" in chunk
+    assert "date_it.setToolTip" in chunk and "desc_it.setToolTip" in chunk
+    assert "debit_it.setToolTip" in chunk and "credit_it.setToolTip" in chunk
+    assert "bal_it.setToolTip" in chunk and "Running balance:" in chunk
     assert "running + amt" in chunk or "running = round(running + amt" in chunk
     assert "amt > 0" in chunk and "amt < 0" in chunk
     assert "_HEADER_TIPS" in chunk
     assert "horizontalHeaderItem(col)" in chunk
     assert "Running total after each row when the batch has a beginning balance " in chunk
     assert "CSV exports in reconciliation below use UTF-8 BOM for Excel" in chunk
+    assert "+ VIEW_BANK_REGISTER_KEYS_TOOLTIP" in init_body
     assert "AMOUNT_NEGATIVE" in chunk
     assert "bal_it.setForeground" in chunk
     assert chunk.count("setData(QTABLE_PLAIN_TEXT_ROLE,") >= 3
@@ -5580,7 +5670,31 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
     assert "from desktop_app.qt_combo_ids import coerce_combo_int_id" in sm
     assert "customContextMenuRequested" in sm
     assert "copy_table_row_as_tsv" in sm
+    assert "Copy register transaction id" in sm
+    assert "Copy statement date" in sm
+    assert "Copy statement amount" in sm
+    assert "Copy statement description" in sm
+    assert "Copy register date" in sm
+    assert "Copy register amount" in sm
+    assert "Copy register description" in sm
+    assert "_line_match_stmt_date_plain" in sm
+    assert "_line_match_stmt_amount_plain" in sm
+    assert "_line_match_stmt_description_plain" in sm
+    assert "_line_match_reg_date_plain" in sm
+    assert "_line_match_reg_amount_plain" in sm
+    assert "_line_match_reg_description_plain" in sm
+    assert "_copy_line_match_stmt_date" in sm
+    assert "_copy_line_match_stmt_amount" in sm
+    assert "_copy_line_match_stmt_description" in sm
+    assert "_copy_line_match_reg_date" in sm
+    assert "_copy_line_match_reg_amount" in sm
+    assert "_copy_line_match_reg_description" in sm
+    assert "_copy_line_match_register_id" in sm
+    assert "_line_match_register_id_plain" in sm
     assert "bank_import_shortcuts_help" in sm
+    assert "Right-click the table for Copy row and statement/register field copies" in sm
+    assert "View → Bank Import (Ctrl+2), Register (Ctrl+3)" in sm
+    assert "+ VIEW_BANK_REGISTER_KEYS_TOOLTIP" in sm
     assert "StatementLineMatchPanel(" in bit and "bank_import_shortcuts_help=" in bit
     run_sm = sm.split("def _on_run_clicked", 1)[1].split("def _mark_reviewed_selected", 1)[0]
     assert "coerce_combo_int_id(b.get(\"bank_account_id\"))" in run_sm
@@ -5594,6 +5708,7 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
     )[0]
     assert 'encoding="utf-8-sig"' in wcsv
     assert "UTF-8 CSV with BOM" in sm
+    assert "AI line reconciliation, row field copies" in sm
     assert "Export comparison CSV uses UTF-8 with BOM for Excel" in sm
     assert "Export comparison CSV" in sm
     assert "Export report CSV" in sm
@@ -5681,7 +5796,8 @@ def test_manage_accounts_dialog_accounts_table_opens_bank_import_shortcuts_help(
     assert "Permanently removes this bank account" in bit
     ak = bit.index("def _on_accounts_table_context_menu")
     ak2 = bit.index("act_keys.setToolTip(", ak)
-    assert "+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX" in bit[ak2 : ak2 + 220]
+    assert "+ VIEW_BANK_REGISTER_KEYS_TOOLTIP" in bit[ak2 : ak2 + 400]
+    assert "+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX" in bit[ak2 : ak2 + 400]
 
 
 def test_grids_context_menus_use_qaction_hover_tooltips() -> None:
@@ -5714,16 +5830,19 @@ def test_grids_context_menus_use_qaction_hover_tooltips() -> None:
     js = jt.index("def _on_journal_list_context_menu")
     je = jt.index("def _on_lines_context_menu", js)
     assert "act_keys.setToolTip" in jt[js:je]
+    assert "+ VIEW_BANK_REGISTER_KEYS_TOOLTIP" in jt[js:je]
     assert "+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX" in jt[js:je]
     ls = jt.index("def _on_lines_context_menu")
     le = jt.index("def _refresh_list", ls)
     assert "act_copy.setToolTip" in jt[ls:le]
+    assert "+ VIEW_BANK_REGISTER_KEYS_TOOLTIP" in jt[ls:le]
     assert "+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX" in jt[ls:le]
 
     rep = (_DESKTOP_APP_DIR / "reports_tab.py").read_text(encoding="utf-8")
     rps = rep.index("def _on_report_context_menu")
     rpe = rep.index("def _fill_table", rps)
     assert "act_keys.setToolTip" in rep[rps:rpe]
+    assert "+ VIEW_BANK_REGISTER_KEYS_TOOLTIP" in rep[rps:rpe]
     assert "+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX" in rep[rps:rpe]
 
     at = (_DESKTOP_APP_DIR / "audit_tab.py").read_text(encoding="utf-8")
@@ -5737,15 +5856,18 @@ def test_grids_context_menus_use_qaction_hover_tooltips() -> None:
     ad_ce = ad.index("def show_entity_audit_history", ad_cm)
     ad_ctx = ad[ad_cm:ad_ce]
     assert "act_keys.setToolTip" in ad_ctx
+    assert "+ VIEW_BANK_REGISTER_KEYS_TOOLTIP" in ad_ctx
     assert ad_ctx.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
 
     coa = (_DESKTOP_APP_DIR / "coa_tab.py").read_text(encoding="utf-8")
     cs = coa.index("def _on_coa_context_menu")
     ce = coa.index("def _on_selection", cs)
     assert "act_history.setToolTip" in coa[cs:ce]
+    assert "+ VIEW_BANK_REGISTER_KEYS_TOOLTIP" in coa[cs:ce]
     assert coa[cs:ce].count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
 
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
+    assert et.count("+ VIEW_BANK_REGISTER_KEYS_TOOLTIP") >= 5
     acs = et.index("def _attach_table_copy_row_menu")
     ace = et.index("def _wire_find_focuses_line_edit", acs)
     assert "act_copy.setToolTip" in et[acs:ace]
@@ -5836,6 +5958,7 @@ def test_register_tab_min_visible_rows_and_reconciliation_mode() -> None:
     m = re.search(r"_REGISTER_MIN_VISIBLE_ROWS = (\d+)", text)
     assert m is not None
     assert 15 <= int(m.group(1)) <= 25
+    assert "Bank Import Run mock extract & compare can populate Stmt match" in text
     assert "Reconciliation Mode Active" in text
     assert "_COL_RECON_STATUS" in text
     assert "n_vis = max(n_data, _REGISTER_MIN_VISIBLE_ROWS)" in text
@@ -5853,6 +5976,7 @@ def test_register_tab_min_visible_rows_and_reconciliation_mode() -> None:
         "_register_account_ids_equal",
         "combo_index_for_int_user_data",
         "_recon_overlay_bank_import_mode",
+        "tools_register_add_transaction",
     ):
         assert needle in text, needle
 
@@ -5862,6 +5986,40 @@ def test_register_tab_manual_entry_dialog_and_insert_wiring() -> None:
     text = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
     assert "Add transaction…" in text
     assert "class ManualTransactionDialog(QDialog):" in text
+    assert "Category (COA)" in text
+    assert "_COA_COMBO_TIP_BODY" in text
+    assert "_manual_add_coa_combo_tooltip" in text
+    assert "_sync_coa_combo_tooltip" in text
+    assert "Category to save with this line:" in text
+    assert "Copy category (COA)" in text
+    assert "Copy payee / description" in text
+    assert "Copy memo" in text
+    assert "Copy number / ref" in text
+    assert "Copy date" in text
+    assert "Copy amount" in text
+    assert "Copy transaction id" in text
+    assert "_copy_register_txn_id" in text
+    assert "_copy_register_row_txn_date" in text
+    assert "_copy_register_row_amount" in text
+    assert "_register_row_coa_user_data" in text
+    assert "_register_clip_txn_string_field" in text
+    assert "Statement vs register field copies for AI line reconciliation" in text
+    assert "Bank Import AI line-reconciliation row copies" in text
+    assert "_copy_register_row_coa" in text
+    assert "_copy_register_row_payee_description" in text
+    assert "_copy_register_row_memo" in text
+    assert "_copy_register_row_ref_number" in text
+    assert "coa_choices=self._coa_choices" in text
+    assert "conn=self._db._conn" in text
+    assert "initial_coa=saved_coa" in text
+    assert "initial_txn_date=latest_date" in text
+    assert "latest_txn_date_for_account" in text
+    assert "Ctrl+Return" in text
+    assert "QShortcut(QKeySequence" in text
+    assert "ok_default=True" in text
+    assert "QTimer.singleShot(0, self._amount.setFocus)" in text
+    assert "register/manual_entry_last_coa_" in text
+    assert "coa_account=v.get" in text or "coa_account=v[" in text
     assert "insert_manual_transaction" in text
     assert "_on_add_manual_transaction" in text
     assert "parse_amount" in text
@@ -5870,7 +6028,18 @@ def test_register_tab_manual_entry_dialog_and_insert_wiring() -> None:
     load_end = text.index("def _set_footer(self, debits: float", load)
     load_chunk = text[load:load_end]
     assert "n_vis = max(n_data, _REGISTER_MIN_VISIBLE_ROWS)" in load_chunk
+    assert "payee_item.setToolTip(escape_ampersand_for_qt(payee_plain))" in load_chunk
+    assert "ref_item.setToolTip(escape_ampersand_for_qt(num_plain))" in load_chunk
+    assert "memo_stripped" in load_chunk and "memo_item.setToolTip" in load_chunk
+    assert "d_item.setToolTip" in load_chunk and "d_date_raw" in load_chunk
+    assert "Running balance:" in load_chunk and "bal_item.setToolTip" in load_chunk
+    assert "Debit:" in load_chunk and "debit_item.setToolTip" in load_chunk
+    assert "Credit:" in load_chunk and "credit_item.setToolTip" in load_chunk
+    assert "link_lbl" in load_chunk and "Linked AR, AP, or payroll:" in load_chunk
+    assert "_register_coa_combo_tooltip" in load_chunk
     assert "setSortingEnabled(True)" in load_chunk
+    assert "Posted to GL — category is read-only" in text
+    assert "Saved category:" in text
     assert "EditTrigger.SelectedClicked" in text
     assert "SelectionBehavior.SelectItems" in text
 
@@ -5940,11 +6109,14 @@ def test_register_tab_cleared_actions_document_shortcuts_in_tooltips() -> None:
     assert "activated.connect(self._post_selected)" in text
 
 
-def test_register_tab_tools_row_and_link_dialog_buttons_have_tooltips() -> None:
-    text = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
+def test_register_tab_tools_menu_entrypoints_and_link_dialog_tooltips() -> None:
+    """Register control row has no action buttons; Tools menu calls ``tools_register_*`` handlers."""
+    reg = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
+    assert "btn_refresh = QPushButton" not in reg
+    assert "def tools_register_add_transaction" in reg
+    assert "def tools_register_export_csv" in reg
+    assert "def tools_register_link_payment_dialog" in reg
     for needle in (
-        "reg_flag_rcpt.setToolTip",
-        "reg_link_pay.setToolTip",
         "reg_link_suggestion.setToolTip",
         "reg_link_btn_clear.setToolTip",
         "_acct_combo.setToolTip",
@@ -5962,12 +6134,34 @@ def test_register_tab_tools_row_and_link_dialog_buttons_have_tooltips() -> None:
         "_lbl_debits.setToolTip",
         "tip.setToolTip",
     ):
-        assert needle in text, f"register_tab should set tooltip on {needle!r}"
-    assert text.count("tip_qdialog_button_box(\n            bb,") >= 3
-    assert "Set or clear a transfer link" in text
-    assert "Split one unposted bank transaction" in text
-    assert "Link this bank row to AR" in text
-    assert text.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 4
+        assert needle in reg, f"register_tab should set tooltip on {needle!r}"
+    assert reg.count("tip_qdialog_button_box(\n            bb,") >= 3
+    assert "Set or clear a transfer link" in reg
+    assert "Split one unposted bank transaction" in reg
+    assert "Link this bank row to AR" in reg
+    assert reg.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 4
+
+
+def test_main_tools_menu_register_action_submenus_and_slots() -> None:
+    """Tools → Register Actions / Reconciliation / … wires to ``RegisterTab.tools_register_*``."""
+    text = _MAIN.read_text(encoding="utf-8")
+    assert 'm_reg_actions = tools_menu.addMenu("Register &Actions")' in text
+    assert 'm_reg_recon = tools_menu.addMenu("&Reconciliation")' in text
+    assert 'm_reg_attach = tools_menu.addMenu("&Attachments")' in text
+    assert 'm_reg_txn = tools_menu.addMenu("&Transaction Tools")' in text
+    assert 'm_reg_flags = tools_menu.addMenu("&Flags")' in text
+    assert text.count("self._register_tab.tools_register_add_transaction()") == 1
+    assert text.count("self._register_tab.tools_register_post_selected()") == 1
+    assert text.count("self._register_tab.tools_register_export_csv()") == 1
+    assert text.count("self._register_tab.tools_register_mark_cleared()") == 1
+    assert text.count("self._register_tab.tools_register_clear_cleared()") == 1
+    assert text.count("self._register_tab.tools_register_attach_file()") == 1
+    assert text.count("self._register_tab.tools_register_clear_attachment()") == 1
+    assert text.count("self._register_tab.tools_register_splits_dialog()") == 1
+    assert text.count("self._register_tab.tools_register_transfer_dialog()") == 1
+    assert text.count("self._register_tab.tools_register_link_payment_dialog()") == 1
+    assert text.count("self._register_tab.tools_register_flag_needs_receipt()") == 1
+    assert text.count("self._register_tab.tools_register_clear_needs_receipt()") == 1
 
 
 def test_register_keyboard_shortcuts_help_text_matches_wired_chords() -> None:
@@ -5977,10 +6171,13 @@ def test_register_keyboard_shortcuts_help_text_matches_wired_chords() -> None:
     end = text.index("\n\nclass RegisterTab", start)
     chunk = text[start:end]
     for needle in (
+        "Tools menu",
         "Add transaction…",
         "manual-entry batch",
         "Reconciliation mode",
         "Practice rows",
+        "two-band rows",
+        "arrow keys",
         "Link payment…",
         "F5 — Refresh",
         "Ctrl+Shift+G",
@@ -5992,6 +6189,9 @@ def test_register_keyboard_shortcuts_help_text_matches_wired_chords() -> None:
         "More tab shortcuts (F5)",
         "Business shortcuts",
         "Bank import shortcuts",
+        "statement/register copies",
+        "Ctrl+2 Bank Import",
+        "Ctrl+3 Register",
         "status bar",
         "company line",
     ):
@@ -6002,6 +6202,10 @@ def test_register_context_menu_includes_keyboard_shortcuts_action() -> None:
     text = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
     assert "Keyboard shortcuts…" in text
     assert "_show_register_keyboard_shortcuts_help" in text
+    grid_ctx = text.split("def _on_register_context_menu", 1)[1].split("\n    def ", 1)[0]
+    assert "AI line-reconciliation field copies" in grid_ctx
+    assert "+ VIEW_BANK_REGISTER_KEYS_TOOLTIP" in grid_ctx
+    assert text.count("+ VIEW_BANK_REGISTER_KEYS_TOOLTIP") == 2
 
 
 def test_register_tab_clr_header_tooltip_documents_batch_reconciled() -> None:
@@ -6012,13 +6216,25 @@ def test_register_tab_clr_header_tooltip_documents_batch_reconciled() -> None:
 
 
 def test_register_table_stylesheet_defines_cell_grid() -> None:
-    """Bank register uses per-item borders; native QTable grid is often invisible under QSS."""
+    """Register grid lines: ``::item`` has no border (avoids double lines); delegate draws rules."""
     from desktop_app.theme import register_table_style_sheet
 
     qss = register_table_style_sheet()
     assert "bankRegisterTable" in qss
     assert "QTableWidget#bankRegisterTable::item" in qss
-    assert "border-right" in qss and "border-bottom" in qss
+    assert "border: none" in qss
+    assert "gridline-color:" in qss
+    rbd = (_DESKTOP_APP_DIR / "register_band_delegate.py").read_text(encoding="utf-8")
+    assert "REGISTER_GRID_LINE" in rbd
+
+
+def test_theme_register_row_height_constants_track_delegate_mins() -> None:
+    """Row height mins are shared by theme, RegisterBandDelegate, and register/preview tables."""
+    theme = (_DESKTOP_APP_DIR / "theme.py").read_text(encoding="utf-8")
+    assert "REGISTER_ROW_HEIGHT_MIN_FULL = 46" in theme
+    assert "REGISTER_ROW_HEIGHT_MIN_PREVIEW = 38" in theme
+    reg = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
+    assert "setDefaultSectionSize(REGISTER_ROW_HEIGHT_MIN_FULL)" in reg
 
 
 def test_theme_normalizes_default_font_before_stylesheet() -> None:

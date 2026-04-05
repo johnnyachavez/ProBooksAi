@@ -206,6 +206,7 @@ def _connect(db_path: str) -> sqlite3.Connection:
 
 _DATE_FORMATS = [
     "%Y-%m-%d",
+    "%Y/%m/%d",
     "%m/%d/%Y",
     "%m/%d/%y",
     "%d/%m/%Y",
@@ -217,9 +218,27 @@ _DATE_FORMATS = [
 ]
 
 
+def strip_csv_cell_paste_noise(s: str) -> str:
+    """
+    Strip ends and remove characters that often appear in copied spreadsheet/PDF cells.
+
+    Removes CR/LF, zero-width space (``U+200B``), BOM (``U+FEFF``), and soft hyphen (``U+00AD``).
+    """
+    t = str(s).strip().replace("\r", "").replace("\n", "")
+    return (
+        t.replace("\u200b", "")
+        .replace("\ufeff", "")
+        .replace("\u00ad", "")
+    )
+
+
 def parse_date(raw: str) -> Optional[str]:
-    """Parse a raw date string → ISO-8601 'YYYY-MM-DD', or None on failure."""
-    raw = raw.strip()
+    """
+    Parse a raw date string → ISO-8601 'YYYY-MM-DD', or None on failure.
+
+    Applies :func:`strip_csv_cell_paste_noise` before trying *_DATE_FORMATS*.
+    """
+    raw = strip_csv_cell_paste_noise(raw)
     for fmt in _DATE_FORMATS:
         try:
             return datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
@@ -233,17 +252,18 @@ def parse_amount(raw: str) -> Optional[float]:
     Parse a monetary string to a float.
 
     Handles:
-      - Leading/trailing whitespace
+      - Same paste-noise cleanup as :func:`parse_date` via :func:`strip_csv_cell_paste_noise`
+      - Unicode minus (``U+2212``) normalized to ASCII ``-``
       - Currency symbols ($, £, €)
       - Parentheses for negatives: (1,234.56) → -1234.56
       - Comma thousands separators
     """
-    raw = raw.strip()
-    negative = raw.startswith("(") and raw.endswith(")")
-    raw = raw.strip("()")
-    raw = re.sub(r"[£$€\s,]", "", raw)
+    s = strip_csv_cell_paste_noise(raw).replace("\u2212", "-")
+    negative = s.startswith("(") and s.endswith(")")
+    body = s.strip("()")
+    body = re.sub(r"[£$€\s,]", "", body)
     try:
-        value = float(raw)
+        value = float(body)
     except ValueError:
         return None
     return -abs(value) if negative else value
@@ -595,11 +615,13 @@ class BankDatabase:
         description: str = "",
         ref_number: str = "",
         memo: str = "",
+        coa_account: str = "",
     ) -> int:
         """
         Insert one bank transaction tied to the account's manual-entry sentinel batch.
 
         ``amount`` follows the usual sign convention (deposits positive, payments negative).
+        ``coa_account`` is the chart-of-accounts display label (same string as the register COA combo).
         """
         batch_id = self.get_or_create_manual_entry_batch_id(bank_account_id)
         fp = make_manual_entry_fingerprint()
@@ -620,11 +642,32 @@ class BankDatabase:
                 ref_number,
                 fp,
                 memo,
-                "",
+                (coa_account or "").strip(),
             ),
         )
         self._conn.commit()
         return int(cur.lastrowid)
+
+    def latest_txn_date_for_account(self, bank_account_id: int) -> Optional[str]:
+        """
+        Latest ``txn_date`` (ISO ``YYYY-MM-DD``) for *bank_account_id*, or ``None`` if there are no rows.
+
+        Uses ``MAX(txn_date)``, which matches chronological order for ISO date strings.
+        """
+        row = self._conn.execute(
+            """
+            SELECT MAX(txn_date) AS d
+            FROM bank_transactions
+            WHERE bank_account_id = ?
+            """,
+            (int(bank_account_id),),
+        ).fetchone()
+        if row is None:
+            return None
+        d = row["d"]
+        if d is None or str(d).strip() == "":
+            return None
+        return str(d).strip()
 
     def get_batch(self, batch_id: int) -> Optional[sqlite3.Row]:
         return self._conn.execute(

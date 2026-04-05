@@ -6,6 +6,8 @@ sortable numeric columns use :class:`NumericAmountTableItem`, :class:`IntSortTab
 or :class:`FloatSortTableItem`. Lists with escaped labels set ``QLIST_PLAIN_TEXT_ROLE``.
 Inline-editable cells stay plain ``QTableWidgetItem`` unless editing is delegated.
 ``CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX`` is the shared **File → Backup** line for copy QActions.
+``VIEW_BANK_REGISTER_KEYS_TOOLTIP`` is the shared **View → Bank Import / Register** line plus a
+**Tools** menu pointer for register row actions, for **Keyboard shortcuts…** QActions on non-bank tabs.
 """
 
 from __future__ import annotations
@@ -36,6 +38,13 @@ QTABLE_PLAIN_TEXT_ROLE = Qt.ItemDataRole.UserRole + 33
 # Suffix for QActions (and similar tips) that copy company SQLite–backed data; keep in sync with File → Backup.
 CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX = (
     "Company .db safety: File → Backup / Restore (probooks.backup)."
+)
+
+# Mid-sentence fragment for **Keyboard shortcuts…** on tabs that open **Help → More / Business / Intake** dialogs.
+VIEW_BANK_REGISTER_KEYS_TOOLTIP = (
+    "Bank CSV/PDF and AI line reconciliation: View → Bank Import (Ctrl+2); "
+    "Stmt match overlay: Register (Ctrl+3). "
+    "Register bulk actions: Tools menu. "
 )
 
 

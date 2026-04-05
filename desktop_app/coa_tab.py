@@ -65,6 +65,7 @@ from desktop_app.qt_mnemonic import (
 from desktop_app.table_clipboard import (
     CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
     QTABLE_PLAIN_TEXT_ROLE,
+    VIEW_BANK_REGISTER_KEYS_TOOLTIP,
     copy_table_row_as_tsv,
     plain_display_table_item,
 )
@@ -435,6 +436,7 @@ class COATab(QWidget):
         act_keys.setToolTip(
             "Same summary as Help → More tab shortcuts (F5)… "
             "(COA, Journal, Reports, Audit chords). "
+            + VIEW_BANK_REGISTER_KEYS_TOOLTIP
             + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():

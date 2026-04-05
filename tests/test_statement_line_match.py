@@ -685,6 +685,306 @@ def test_statement_line_match_panel_reconciled_buttons_follow_content_and_select
             db_path.unlink()
 
 
+def test_statement_line_match_panel_stmt_and_register_field_plain_helpers() -> None:
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from probooksai.bank_import import BankDatabase
+    from desktop_app.statement_line_match_panel import StatementLineMatchPanel
+
+    db_path = Path(__file__).resolve().parent / "_stmt_line_match_field_plain.db"
+    if db_path.exists():
+        db_path.unlink()
+    db = BankDatabase(str(db_path))
+    try:
+        panel = StatementLineMatchPanel(db)
+        panel.populate(
+            [
+                {
+                    "status": STATUS_MATCHED,
+                    "stmt_date": "2024-01-01",
+                    "stmt_amount": -1.0,
+                    "stmt_description": "A",
+                    "register_id": 1,
+                    "reg_date": "2024-01-01",
+                    "reg_amount": -1.0,
+                    "reg_description": "A",
+                },
+                {
+                    "status": STATUS_MISSING,
+                    "stmt_date": "2024-02-02",
+                    "stmt_amount": -2.5,
+                    "stmt_description": "B",
+                    "register_id": None,
+                    "reg_date": "",
+                    "reg_amount": 0.0,
+                    "reg_description": "",
+                },
+                {
+                    "status": STATUS_EXTRA,
+                    "stmt_date": "",
+                    "stmt_amount": 0.0,
+                    "stmt_description": "",
+                    "register_id": 9,
+                    "reg_date": "2024-03-03",
+                    "reg_amount": 100.0,
+                    "reg_description": "C",
+                },
+            ]
+        )
+        assert panel._line_match_stmt_date_plain(0) == "2024-01-01"
+        assert panel._line_match_stmt_amount_plain(0) == "-1.00"
+        assert panel._line_match_stmt_description_plain(0) == "A"
+        assert panel._line_match_reg_date_plain(0) == "2024-01-01"
+        assert panel._line_match_reg_amount_plain(0) == "-1.00"
+        assert panel._line_match_reg_description_plain(0) == "A"
+
+        assert panel._line_match_stmt_date_plain(1) == "2024-02-02"
+        assert panel._line_match_stmt_amount_plain(1) == "-2.50"
+        assert panel._line_match_stmt_description_plain(1) == "B"
+        assert panel._line_match_reg_date_plain(1) == ""
+        assert panel._line_match_reg_amount_plain(1) == ""
+        assert panel._line_match_reg_description_plain(1) == ""
+
+        assert panel._line_match_stmt_date_plain(2) == ""
+        assert panel._line_match_stmt_amount_plain(2) == ""
+        assert panel._line_match_stmt_description_plain(2) == ""
+        assert panel._line_match_reg_date_plain(2) == "2024-03-03"
+        assert panel._line_match_reg_amount_plain(2) == "100.00"
+        assert panel._line_match_reg_description_plain(2) == "C"
+    finally:
+        db.close()
+        if db_path.exists():
+            db_path.unlink()
+
+
+def test_statement_line_match_panel_copy_register_transaction_id() -> None:
+    from PySide6.QtGui import QGuiApplication
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from probooksai.bank_import import BankDatabase
+    from desktop_app.statement_line_match_panel import StatementLineMatchPanel
+
+    db_path = Path(__file__).resolve().parent / "_stmt_line_match_copy_rid.db"
+    if db_path.exists():
+        db_path.unlink()
+    db = BankDatabase(str(db_path))
+    try:
+        panel = StatementLineMatchPanel(db)
+        panel.populate(
+            [
+                {
+                    "status": STATUS_MATCHED,
+                    "stmt_date": "2024-01-01",
+                    "stmt_amount": -1.0,
+                    "stmt_description": "A",
+                    "register_id": 42,
+                    "reg_date": "2024-01-01",
+                    "reg_amount": -1.0,
+                    "reg_description": "A",
+                },
+                {
+                    "status": STATUS_MISSING,
+                    "stmt_date": "2024-01-02",
+                    "stmt_amount": -2.0,
+                    "stmt_description": "B",
+                    "register_id": None,
+                    "reg_date": "",
+                    "reg_amount": 0.0,
+                    "reg_description": "",
+                },
+            ]
+        )
+        assert panel._line_match_register_id_plain(0) == "42"
+        assert panel._line_match_register_id_plain(1) == ""
+        panel._copy_line_match_register_id(0)
+        assert QGuiApplication.clipboard().text() == "42"
+        panel._copy_line_match_register_id(1)
+        assert QGuiApplication.clipboard().text() == ""
+    finally:
+        db.close()
+        if db_path.exists():
+            db_path.unlink()
+
+
+def test_statement_line_match_panel_copy_descriptions_to_clipboard() -> None:
+    from PySide6.QtGui import QGuiApplication
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from probooksai.bank_import import BankDatabase
+    from desktop_app.statement_line_match_panel import StatementLineMatchPanel
+
+    db_path = Path(__file__).resolve().parent / "_stmt_line_match_copy_desc.db"
+    if db_path.exists():
+        db_path.unlink()
+    db = BankDatabase(str(db_path))
+    try:
+        panel = StatementLineMatchPanel(db)
+        panel.populate(
+            [
+                {
+                    "status": STATUS_MATCHED,
+                    "stmt_date": "2024-01-01",
+                    "stmt_amount": -1.0,
+                    "stmt_description": "Stmt text",
+                    "register_id": 1,
+                    "reg_date": "2024-01-01",
+                    "reg_amount": -1.0,
+                    "reg_description": "Reg text",
+                },
+                {
+                    "status": STATUS_MISSING,
+                    "stmt_date": "2024-01-02",
+                    "stmt_amount": -2.0,
+                    "stmt_description": "Only stmt",
+                    "register_id": None,
+                    "reg_date": "",
+                    "reg_amount": 0.0,
+                    "reg_description": "",
+                },
+            ]
+        )
+        panel._copy_line_match_stmt_description(0)
+        assert QGuiApplication.clipboard().text() == "Stmt text"
+        panel._copy_line_match_reg_description(0)
+        assert QGuiApplication.clipboard().text() == "Reg text"
+        panel._copy_line_match_stmt_description(1)
+        assert QGuiApplication.clipboard().text() == "Only stmt"
+        panel._copy_line_match_reg_description(1)
+        assert QGuiApplication.clipboard().text() == ""
+    finally:
+        db.close()
+        if db_path.exists():
+            db_path.unlink()
+
+
+def test_statement_line_match_panel_copy_dates_and_amounts_to_clipboard() -> None:
+    from PySide6.QtGui import QGuiApplication
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from probooksai.bank_import import BankDatabase
+    from desktop_app.statement_line_match_panel import StatementLineMatchPanel
+
+    db_path = Path(__file__).resolve().parent / "_stmt_line_match_copy_amt.db"
+    if db_path.exists():
+        db_path.unlink()
+    db = BankDatabase(str(db_path))
+    try:
+        panel = StatementLineMatchPanel(db)
+        panel.populate(
+            [
+                {
+                    "status": STATUS_MATCHED,
+                    "stmt_date": "2024-01-01",
+                    "stmt_amount": -1.0,
+                    "stmt_description": "",
+                    "register_id": 1,
+                    "reg_date": "2024-01-01",
+                    "reg_amount": -1.0,
+                    "reg_description": "",
+                },
+                {
+                    "status": STATUS_MISSING,
+                    "stmt_date": "2024-06-15",
+                    "stmt_amount": -9.99,
+                    "stmt_description": "",
+                    "register_id": None,
+                    "reg_date": "",
+                    "reg_amount": 0.0,
+                    "reg_description": "",
+                },
+            ]
+        )
+        panel._copy_line_match_stmt_date(0)
+        assert QGuiApplication.clipboard().text() == "2024-01-01"
+        panel._copy_line_match_stmt_amount(0)
+        assert QGuiApplication.clipboard().text() == "-1.00"
+        panel._copy_line_match_reg_date(0)
+        assert QGuiApplication.clipboard().text() == "2024-01-01"
+        panel._copy_line_match_reg_amount(0)
+        assert QGuiApplication.clipboard().text() == "-1.00"
+
+        panel._copy_line_match_stmt_date(1)
+        assert QGuiApplication.clipboard().text() == "2024-06-15"
+        panel._copy_line_match_stmt_amount(1)
+        assert QGuiApplication.clipboard().text() == "-9.99"
+        panel._copy_line_match_reg_date(1)
+        assert QGuiApplication.clipboard().text() == ""
+        panel._copy_line_match_reg_amount(1)
+        assert QGuiApplication.clipboard().text() == ""
+    finally:
+        db.close()
+        if db_path.exists():
+            db_path.unlink()
+
+
+def test_statement_line_match_panel_copy_extra_row_stmt_empty_register_to_clipboard() -> None:
+    """**Extra** rows have register data only; statement-side plains and copies are empty."""
+    from PySide6.QtGui import QGuiApplication
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from probooksai.bank_import import BankDatabase
+    from desktop_app.statement_line_match_panel import StatementLineMatchPanel
+
+    db_path = Path(__file__).resolve().parent / "_stmt_line_match_copy_extra.db"
+    if db_path.exists():
+        db_path.unlink()
+    db = BankDatabase(str(db_path))
+    try:
+        panel = StatementLineMatchPanel(db)
+        panel.populate(
+            [
+                {
+                    "status": STATUS_EXTRA,
+                    "stmt_date": "",
+                    "stmt_amount": 0.0,
+                    "stmt_description": "",
+                    "register_id": 9,
+                    "reg_date": "2024-03-03",
+                    "reg_amount": 100.0,
+                    "reg_description": "C",
+                },
+            ]
+        )
+        assert panel._line_match_stmt_date_plain(0) == ""
+        assert panel._line_match_stmt_amount_plain(0) == ""
+        assert panel._line_match_stmt_description_plain(0) == ""
+
+        panel._copy_line_match_stmt_date(0)
+        assert QGuiApplication.clipboard().text() == ""
+        panel._copy_line_match_stmt_amount(0)
+        assert QGuiApplication.clipboard().text() == ""
+        panel._copy_line_match_stmt_description(0)
+        assert QGuiApplication.clipboard().text() == ""
+
+        panel._copy_line_match_reg_date(0)
+        assert QGuiApplication.clipboard().text() == "2024-03-03"
+        panel._copy_line_match_reg_amount(0)
+        assert QGuiApplication.clipboard().text() == "100.00"
+        panel._copy_line_match_reg_description(0)
+        assert QGuiApplication.clipboard().text() == "C"
+        panel._copy_line_match_register_id(0)
+        assert QGuiApplication.clipboard().text() == "9"
+    finally:
+        db.close()
+        if db_path.exists():
+            db_path.unlink()
+
+
 def test_statement_line_match_panel_reviewed_flags_need_qt() -> None:
     """Populate table and toggle reviewed checkboxes (requires QApplication)."""
     from PySide6.QtWidgets import QApplication

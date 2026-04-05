@@ -60,12 +60,19 @@ class TestParseDate:
         ("January 5, 2024", "2024-01-05"),
         ("Jan 5, 2024",   "2024-01-05"),
         ("20240105",      "2024-01-05"),
+        ("2024/03/15",    "2024-03-15"),
     ])
     def test_valid_formats(self, raw, expected):
         assert parse_date(raw) == expected
 
     def test_whitespace_stripped(self):
         assert parse_date("  2024-01-05  ") == "2024-01-05"
+
+    def test_strips_bom_zwsp_soft_hyphen_and_embedded_breaks(self):
+        assert parse_date("\ufeff2024-01-05") == "2024-01-05"
+        assert parse_date("2024-01-05\u200b") == "2024-01-05"
+        assert parse_date("2024\u00ad-01-05") == "2024-01-05"
+        assert parse_date("2024-\r\n01-05") == "2024-01-05"
 
     def test_invalid_returns_none(self):
         assert parse_date("not-a-date") is None
@@ -82,7 +89,12 @@ class TestParseAmount:
     @pytest.mark.parametrize("raw,expected", [
         ("4.50",       4.50),
         ("-4.50",      -4.50),
-        ("$1,234.56",  1234.56),
+        ("\u221212.50", -12.50),
+        ("(\u221212.50)", -12.50),
+        ("12.\u00ad50", 12.50),
+        ("$\u200b1,234.56", 1234.56),
+        ("\ufeff-3.00", -3.0),
+        ("$1,234.56", 1234.56),
         ("(1,234.56)", -1234.56),
         (" 100 ",      100.0),
         ("£50.00",     50.0),
@@ -696,15 +708,45 @@ def test_bank_csv_read_encoding_is_utf8_sig() -> None:
     assert BANK_CSV_READ_ENCODING == "utf-8-sig"
 
 
-def test_register_payee_two_line_plain_prioritizes_coa_then_memo() -> None:
+def test_register_payee_two_line_plain_description_then_coa_line_not_memo() -> None:
     from desktop_app.register_tab import _register_payee_two_line_plain
 
     assert _register_payee_two_line_plain(
         {"description": "Vendor", "coa_account": "6200", "memo": "m"}
     ) == "Vendor\n6200"
-    assert _register_payee_two_line_plain({"description": "", "memo": "Note"}) == "—\nNote"
+    assert _register_payee_two_line_plain({"description": "", "memo": "Note"}) == "—\n— Assign COA —"
     assert "Assign COA" in _register_payee_two_line_plain({"description": "X"})
     assert _register_payee_two_line_plain({"description": "  X  "}) == "X\n— Assign COA —"
+
+
+def test_register_coa_combo_tooltip_posted_vs_editable() -> None:
+    from desktop_app.register_tab import _COA_COMBO_TIP_BODY, _register_coa_combo_tooltip
+
+    assert "★" in _COA_COMBO_TIP_BODY
+
+    open_row = _register_coa_combo_tooltip(
+        posted=False, saved_coa_display="4000 — Sales"
+    )
+    assert "Saved category: 4000 — Sales" in open_row
+    assert _COA_COMBO_TIP_BODY in open_row
+    assert "Posted to GL" not in open_row
+
+    posted_row = _register_coa_combo_tooltip(posted=True, saved_coa_display="")
+    assert "Posted to GL" in posted_row
+    assert "(Uncategorized)" in posted_row
+    assert _COA_COMBO_TIP_BODY in posted_row
+
+
+def test_manual_add_coa_combo_tooltip() -> None:
+    from desktop_app.register_tab import _COA_COMBO_TIP_BODY, _manual_add_coa_combo_tooltip
+
+    tip = _manual_add_coa_combo_tooltip("4000 — Sales")
+    assert "Category to save with this line: 4000 — Sales" in tip
+    assert _COA_COMBO_TIP_BODY in tip
+    assert "Hints refresh when Payee" in tip
+
+    empty = _manual_add_coa_combo_tooltip("")
+    assert "Category to save with this line: (Uncategorized)" in empty
 
 
 def test_register_number_two_line_plain_type_tags() -> None:
@@ -763,12 +805,61 @@ def test_insert_manual_transaction_persists_and_unique_fingerprints(db) -> None:
     assert row["description"] == "Coffee"
     assert row["ref_number"] == "1088"
     assert row["memo"] == "breakfast"
+    assert (row.get("coa_account") or "") == ""
     assert row["fingerprint"].startswith("manual:")
     fps = set()
     for i in range(5):
         tid2 = db.insert_manual_transaction(aid, "2024-06-02", float(i + 1), description="x")
         fps.add(dict(db.get_transaction(tid2))["fingerprint"])
     assert len(fps) == 5
+
+
+def test_latest_txn_date_for_account_none_when_empty(db) -> None:
+    aid = db.add_bank_account("Empty")
+    assert db.latest_txn_date_for_account(aid) is None
+
+
+def test_latest_txn_date_for_account_returns_max_iso_date(db) -> None:
+    aid = db.add_bank_account("Main")
+    bid = db.create_batch(aid)
+    db.import_transactions(
+        bid,
+        aid,
+        [
+            {
+                "txn_date": "2024-01-05",
+                "description": "a",
+                "amount": -1.0,
+                "ref_number": "",
+            },
+            {
+                "txn_date": "2024-01-20",
+                "description": "b",
+                "amount": -2.0,
+                "ref_number": "",
+            },
+            {
+                "txn_date": "2024-01-10",
+                "description": "c",
+                "amount": 1.0,
+                "ref_number": "",
+            },
+        ],
+    )
+    assert db.latest_txn_date_for_account(aid) == "2024-01-20"
+
+
+def test_insert_manual_transaction_persists_coa_account(db) -> None:
+    aid = db.add_bank_account("Main")
+    tid = db.insert_manual_transaction(
+        aid,
+        "2024-06-03",
+        -5.0,
+        description="Snack",
+        coa_account="5010 · Office Supplies",
+    )
+    row = dict(db.get_transaction(tid))
+    assert row["coa_account"] == "5010 · Office Supplies"
 
 
 def test_batch_reconciled_map_matches_import_batches(db) -> None:

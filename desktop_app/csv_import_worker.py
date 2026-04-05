@@ -1,6 +1,6 @@
 """Background CSV bank import with progress and cancel (Phase 21).
 
-``import_kwargs`` must include ``csv_content`` as **decoded** Unicode (Bank Import reads ``utf-8-sig`` before starting the worker).
+``import_kwargs`` must include ``csv_content`` as **decoded** Unicode (Bank Import reads with :data:`probooksai.bank_import.BANK_CSV_READ_ENCODING` before starting the worker).
 """
 
 from __future__ import annotations

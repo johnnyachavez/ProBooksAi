@@ -59,8 +59,13 @@ def tip_qdialog_button_box(
     save: str | None = None,
     cancel: str | None = None,
     close: str | None = None,
+    ok_default: bool = False,
 ) -> None:
-    """Set hover tooltips on **Ok** / **Save** / **Cancel** / **Close** buttons present on *bb*."""
+    """Set hover tooltips on **Ok** / **Save** / **Cancel** / **Close** buttons present on *bb*.
+
+    When *ok_default* is true, the **Ok** button (if present) becomes the dialog default so **Enter**
+    submits where Qt applies default-button behavior; pair with ``QShortcut`` for **Ctrl+Enter** when needed.
+    """
     if ok:
         b = bb.button(QDialogButtonBox.StandardButton.Ok)
         if b is not None:
@@ -77,6 +82,11 @@ def tip_qdialog_button_box(
         b = bb.button(QDialogButtonBox.StandardButton.Close)
         if b is not None:
             b.setToolTip(close)
+    if ok_default:
+        b = bb.button(QDialogButtonBox.StandardButton.Ok)
+        if b is not None:
+            b.setDefault(True)
+            b.setAutoDefault(True)
 
 
 def message_box_information_ok(

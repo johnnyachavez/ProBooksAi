@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication
 
 from desktop_app.register_tab import (
@@ -18,6 +19,7 @@ from desktop_app.register_tab import (
     _REGISTER_MIN_VISIBLE_ROWS,
     _coerce_register_account_id,
     _register_account_ids_equal,
+    _register_row_coa_user_data,
 )
 from probooksai.bank_import import BankDatabase
 from probooksai.coa_db import COADatabase
@@ -42,6 +44,226 @@ def qapp():
     if app is None:
         app = QApplication(sys.argv)
     return app
+
+
+def test_register_copy_payee_description_from_db(qapp) -> None:
+    p = Path(tempfile.mkdtemp()) / "reg_desc_clip.db"
+    db = BankDatabase(str(p))
+    try:
+        coa = COADatabase(db._conn)
+        aid = db.add_bank_account("Primary")
+        db.insert_manual_transaction(
+            aid,
+            "2024-06-01",
+            -1.0,
+            description="  Vendor Name  ",
+        )
+        tab = RegisterTab(db, coa, None)
+        tab._refresh_account_combo()
+        row = None
+        for r in range(tab._table.rowCount()):
+            it = tab._table.item(r, _COL_DATE)
+            if it is None:
+                continue
+            if it.data(Qt.ItemDataRole.UserRole) is not None:
+                row = r
+                break
+        assert row is not None
+        tab._copy_register_row_payee_description(row)
+        assert QGuiApplication.clipboard().text() == "Vendor Name"
+    finally:
+        db.close()
+
+
+def test_register_and_import_copy_transaction_id(qapp) -> None:
+    from desktop_app.bank_import_tab import BankImportTab
+
+    p = Path(tempfile.mkdtemp()) / "reg_tid_clip.db"
+    db = BankDatabase(str(p))
+    try:
+        coa = COADatabase(db._conn)
+        aid = db.add_bank_account("Primary")
+        tid = db.insert_manual_transaction(
+            aid,
+            "2024-11-15",
+            -1.0,
+            description="X",
+        )
+        tab = RegisterTab(db, coa, None)
+        tab._copy_register_txn_id(tid)
+        assert QGuiApplication.clipboard().text() == str(tid)
+
+        with patch.object(BankImportTab, "_build_ui", lambda self: None), patch.object(
+            BankImportTab, "_refresh_accounts", lambda self: None
+        ):
+            bitab = BankImportTab(db, coa, register_tab=None, after_stmt_match_sync=None)
+        bitab._copy_import_txn_id(tid)
+        assert QGuiApplication.clipboard().text() == str(tid)
+    finally:
+        db.close()
+
+
+def test_register_copy_amount_from_db(qapp) -> None:
+    p = Path(tempfile.mkdtemp()) / "reg_amt_clip.db"
+    db = BankDatabase(str(p))
+    try:
+        coa = COADatabase(db._conn)
+        aid = db.add_bank_account("Primary")
+        db.insert_manual_transaction(
+            aid,
+            "2024-11-15",
+            -12.5,
+            description="Payment",
+        )
+        tab = RegisterTab(db, coa, None)
+        tab._refresh_account_combo()
+        row = None
+        for r in range(tab._table.rowCount()):
+            it = tab._table.item(r, _COL_DATE)
+            if it is None:
+                continue
+            if it.data(Qt.ItemDataRole.UserRole) is not None:
+                row = r
+                break
+        assert row is not None
+        tab._copy_register_row_amount(row)
+        assert QGuiApplication.clipboard().text() == "-12.50"
+    finally:
+        db.close()
+
+
+def test_register_copy_txn_date_from_db(qapp) -> None:
+    p = Path(tempfile.mkdtemp()) / "reg_date_clip.db"
+    db = BankDatabase(str(p))
+    try:
+        coa = COADatabase(db._conn)
+        aid = db.add_bank_account("Primary")
+        db.insert_manual_transaction(
+            aid,
+            "2024-11-15",
+            -1.0,
+            description="X",
+        )
+        tab = RegisterTab(db, coa, None)
+        tab._refresh_account_combo()
+        row = None
+        for r in range(tab._table.rowCount()):
+            it = tab._table.item(r, _COL_DATE)
+            if it is None:
+                continue
+            if it.data(Qt.ItemDataRole.UserRole) is not None:
+                row = r
+                break
+        assert row is not None
+        tab._copy_register_row_txn_date(row)
+        assert QGuiApplication.clipboard().text() == "2024-11-15"
+    finally:
+        db.close()
+
+
+def test_register_copy_ref_number_from_db(qapp) -> None:
+    p = Path(tempfile.mkdtemp()) / "reg_ref_clip.db"
+    db = BankDatabase(str(p))
+    try:
+        coa = COADatabase(db._conn)
+        aid = db.add_bank_account("Primary")
+        db.insert_manual_transaction(
+            aid,
+            "2024-06-01",
+            -1.0,
+            description="X",
+            ref_number="  1087  ",
+        )
+        tab = RegisterTab(db, coa, None)
+        tab._refresh_account_combo()
+        row = None
+        for r in range(tab._table.rowCount()):
+            it = tab._table.item(r, _COL_DATE)
+            if it is None:
+                continue
+            if it.data(Qt.ItemDataRole.UserRole) is not None:
+                row = r
+                break
+        assert row is not None
+        tab._copy_register_row_ref_number(row)
+        assert QGuiApplication.clipboard().text() == "1087"
+    finally:
+        db.close()
+
+
+def test_register_copy_memo_from_db(qapp) -> None:
+    p = Path(tempfile.mkdtemp()) / "reg_memo_clip.db"
+    db = BankDatabase(str(p))
+    try:
+        coa = COADatabase(db._conn)
+        aid = db.add_bank_account("Primary")
+        db.insert_manual_transaction(
+            aid,
+            "2024-06-01",
+            -1.0,
+            description="X",
+            memo="  Internal note  ",
+        )
+        tab = RegisterTab(db, coa, None)
+        tab._refresh_account_combo()
+        row = None
+        for r in range(tab._table.rowCount()):
+            it = tab._table.item(r, _COL_DATE)
+            if it is None:
+                continue
+            if it.data(Qt.ItemDataRole.UserRole) is not None:
+                row = r
+                break
+        assert row is not None
+        tab._copy_register_row_memo(row)
+        assert QGuiApplication.clipboard().text() == "Internal note"
+    finally:
+        db.close()
+
+
+def test_register_row_coa_user_data_and_clipboard(qapp) -> None:
+    p = Path(tempfile.mkdtemp()) / "reg_coa_clip.db"
+    db = BankDatabase(str(p))
+    try:
+        coa = COADatabase(db._conn)
+        choices = coa.display_list()
+        label = (choices[0] if choices else "9999 — Other").strip()
+        aid = db.add_bank_account("Primary")
+        db.insert_manual_transaction(
+            aid,
+            "2024-06-01",
+            -1.0,
+            description="Coffee",
+            coa_account=label,
+        )
+        db.insert_manual_transaction(
+            aid,
+            "2024-06-02",
+            -2.0,
+            description="Tea",
+        )
+        tab = RegisterTab(db, coa, None)
+        tab._refresh_account_combo()
+        row_labeled = row_empty = None
+        for r in range(tab._table.rowCount()):
+            it = tab._table.item(r, _COL_DATE)
+            if it is None:
+                continue
+            if it.data(Qt.ItemDataRole.UserRole) is None:
+                continue
+            coa_plain = _register_row_coa_user_data(tab._table, r)
+            if coa_plain == label:
+                row_labeled = r
+            elif coa_plain == "":
+                row_empty = r
+        assert row_labeled is not None
+        assert row_empty is not None
+        tab._copy_register_row_coa(row_labeled)
+        assert QGuiApplication.clipboard().text() == label
+        tab._copy_register_row_coa(row_empty)
+        assert QGuiApplication.clipboard().text() == ""
+    finally:
+        db.close()
 
 
 def test_register_tab_shows_minimum_rows_on_build(qapp) -> None:
@@ -258,6 +480,61 @@ def test_bank_import_forward_line_match_invalid_account_id_skips_register(qapp) 
         reg.apply_line_match_results_from_import.assert_not_called()
         warn.assert_called_once()
         focus.assert_not_called()
+    finally:
+        db.close()
+
+
+def test_bank_import_copy_txn_coa_to_clipboard(qapp) -> None:
+    from desktop_app.bank_import_tab import BankImportTab
+
+    p = Path(tempfile.mkdtemp()) / "bi_copy_coa.db"
+    db = BankDatabase(str(p))
+    try:
+        coa = COADatabase(db._conn)
+        with patch.object(BankImportTab, "_build_ui", lambda self: None), patch.object(
+            BankImportTab, "_refresh_accounts", lambda self: None
+        ):
+            tab = BankImportTab(db, coa, register_tab=None, after_stmt_match_sync=None)
+        aid = db.add_bank_account("Primary")
+        tid_cat = db.insert_manual_transaction(
+            aid,
+            "2024-06-01",
+            -3.0,
+            description="Coffee",
+            coa_account="6100 — Supplies",
+            memo="Quarterly true-up",
+            ref_number="CHK-1042",
+        )
+        tid_tea = db.insert_manual_transaction(
+            aid, "2024-06-02", -1.0, description="Tea"
+        )
+        tid_bare = db.insert_manual_transaction(aid, "2024-06-03", -1.0)
+        tab._copy_import_txn_id(tid_cat)
+        assert QGuiApplication.clipboard().text() == str(tid_cat)
+        tab._copy_import_txn_coa(tid_cat)
+        assert QGuiApplication.clipboard().text() == "6100 — Supplies"
+        tab._copy_import_txn_date(tid_cat)
+        assert QGuiApplication.clipboard().text() == "2024-06-01"
+        tab._copy_import_txn_amount(tid_cat)
+        assert QGuiApplication.clipboard().text() == "-3.00"
+        tab._copy_import_txn_description(tid_cat)
+        assert QGuiApplication.clipboard().text() == "Coffee"
+        tab._copy_import_txn_memo(tid_cat)
+        assert QGuiApplication.clipboard().text() == "Quarterly true-up"
+        tab._copy_import_txn_ref_number(tid_cat)
+        assert QGuiApplication.clipboard().text() == "CHK-1042"
+        tab._copy_import_txn_memo(tid_bare)
+        assert QGuiApplication.clipboard().text() == ""
+        tab._copy_import_txn_ref_number(tid_bare)
+        assert QGuiApplication.clipboard().text() == ""
+        tab._copy_import_txn_coa(tid_tea)
+        assert QGuiApplication.clipboard().text() == ""
+        tab._copy_import_txn_description(tid_tea)
+        assert QGuiApplication.clipboard().text() == "Tea"
+        tab._copy_import_txn_description(tid_bare)
+        assert QGuiApplication.clipboard().text() == ""
+        tab._copy_import_txn_coa(999_999_999)
+        assert QGuiApplication.clipboard().text() == ""
     finally:
         db.close()
 

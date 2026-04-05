@@ -75,6 +75,7 @@ from desktop_app.qt_mnemonic import (
 from desktop_app.table_clipboard import (
     CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
     QTABLE_PLAIN_TEXT_ROLE,
+    VIEW_BANK_REGISTER_KEYS_TOOLTIP,
     FloatSortTableItem,
     IntSortTableItem,
     copy_table_row_as_tsv,
@@ -156,6 +157,7 @@ def _attach_table_copy_row_menu(tbl: QTableWidget, menu_parent: QWidget) -> None
         )
         act_keys.setToolTip(
             "Same summary as Help → Business shortcuts… (F5, Tax % Ctrl+S, sub-tab grids). "
+            + VIEW_BANK_REGISTER_KEYS_TOOLTIP
             + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
@@ -484,6 +486,7 @@ class RulesTab(QWidget):
         )
         act_keys.setToolTip(
             "Same summary as Help → Business shortcuts… (F5, Rules grid, AR/AP/Payroll). "
+            + VIEW_BANK_REGISTER_KEYS_TOOLTIP
             + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
@@ -908,6 +911,7 @@ class ARTab(QWidget):
         )
         act_keys.setToolTip(
             "Same summary as Help → Business shortcuts… (F5, Invoices AR, payments, PDF). "
+            + VIEW_BANK_REGISTER_KEYS_TOOLTIP
             + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
@@ -2002,6 +2006,7 @@ class APTab(QWidget):
         )
         act_keys.setToolTip(
             "Same summary as Help → Business shortcuts… (F5, Bills AP, attachments, payments). "
+            + VIEW_BANK_REGISTER_KEYS_TOOLTIP
             + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
@@ -3134,6 +3139,7 @@ class PayrollTaxTab(QWidget):
         )
         act_keys.setToolTip(
             "Same summary as Help → Business shortcuts… (F5, Payroll grid, tax lines, GL post). "
+            + VIEW_BANK_REGISTER_KEYS_TOOLTIP
             + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
@@ -3668,6 +3674,8 @@ def _business_keyboard_shortcuts_help_text() -> str:
         "Rules Import CSV… reads UTF-8 with optional BOM (same as files from Export CSV…).\n\n"
         "On Tax % (settings):\n"
         "Ctrl+S — Save default tax name and rate (standard Save shortcut)\n\n"
+        "View menu tab focus: Ctrl+1 Document Intake, Ctrl+2 Bank Import, Ctrl+3 Register, "
+        "Ctrl+4 Chart of Accounts, Ctrl+5 Reports, Ctrl+6 Journal, Ctrl+7 Business, Ctrl+8 Audit log.\n\n"
         "Right-click the Rules, Invoices, Bills, or Payroll grid (including empty area) "
         "for Keyboard shortcuts… (same as this dialog).\n\n"
         "Business modal dialogs with a copyable grid (payment apply tables, tax lines, etc.): "
@@ -3679,6 +3687,7 @@ def _business_keyboard_shortcuts_help_text() -> str:
         "Other tabs:\n"
         "Help → Bank import shortcuts…\n"
         "Help → Bank register keyboard shortcuts…\n"
+        "Register bulk actions (add transaction, post, export, cleared, …): main **Tools** menu.\n"
     )
 
 
@@ -3687,8 +3696,11 @@ def show_business_keyboard_shortcuts_dialog(parent: QWidget) -> None:
         parent,
         "Business shortcuts",
         _business_keyboard_shortcuts_help_text(),
-        ok_tip="Close; shortcuts apply when the Business hub has focus. "
-        "Company .db: File → Backup / Restore (probooks.backup).",
+        ok_tip=(
+            "Close; shortcuts apply when the Business hub has focus. "
+            + VIEW_BANK_REGISTER_KEYS_TOOLTIP
+            + "Company .db: File → Backup / Restore (probooks.backup)."
+        ),
     )
 
 

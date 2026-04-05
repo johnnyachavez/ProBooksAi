@@ -12,12 +12,12 @@ Requires PySide6:
 
 ``--help`` prints the shared epilog from ``probooks/help_epilog.py`` (Excel COA workbook, backup parity, UTF-8 BOM CSV exports, bank CSV UTF-8 optional BOM read, ``probooks import csv``; see README Desktop + Excel template).
 
-The **central** **QWidget** (banner + tab widget) has a margin hover hint. The main **QToolBar** has a hover hint for Document Intake import/refresh. Document Intake: **F5** refreshes the inbox; **Help → Document intake shortcuts…** (``message_box_information_ok`` **Ok** tooltip) and inbox **right-click**
+The **central** **QWidget** (banner + tab widget) has a margin hover hint. Document Intake uses **File → Import documents…** (Ctrl+O) and **F5** (when the tab has focus) instead of a main toolbar. Document Intake: **F5** refreshes the inbox; **Help → Document intake shortcuts…** (``message_box_information_ok`` **Ok** tooltip) and inbox **right-click**
 **Keyboard shortcuts…** (including empty area) match that dialog. The **InboxWidget** grid has a hover **tooltip**
 (import, drag-and-drop, F5, shortcuts). The intake **QSplitter** has a resize hint on hover. **DetailPane** (**QScrollArea**) has a window-level hover hint; its inner **QWidget** has a content-area hint; preview, extracted **LineEdit** / spin fields, **Doc Type**,
 **COA Account**, **AI confidence** / **rationale** labels, and action buttons use **tooltips**.
 **Preview** / **Extracted Fields** / **Categorisation** group boxes and the **filename** / **status** labels
-also have hover hints. The banner **QFrame** and its **ProBooks+ai** / company **QLabel**s have tooltips.
+also have hover hints. The banner **AppHeaderWidget** (**QFrame**) right-aligns **ProBooks+ai** and the company **QLabel**s with tooltips.
 **Help → About** uses ``message_box_about_ok`` (rich text + **Ok** hover hint). The main **QTabWidget** sets a **setToolTip** on the tab strip area; its tab bar sets **setTabToolTip** on each top-level tab (Intake through Audit log). **Document Intake**’s root **QWidget** has a hover hint for the whole tab; the inbox **column** **QWidget** (left splitter pane) has a short margin hint.
 Destructive **Yes**/**No** prompts (new company file exists, database restore) use **tip_message_box_buttons** for button hover hints and **QMessageBox.setToolTip** for the dialog window.
 
@@ -60,7 +60,7 @@ from PySide6.QtWidgets import (
     QFormLayout, QFrame, QGroupBox, QHBoxLayout, QLabel,
     QLineEdit, QMainWindow, QMenu, QMessageBox, QPlainTextEdit,
     QPushButton, QScrollArea, QSizePolicy, QSplitter,
-    QStatusBar, QTabWidget, QTableWidget, QToolBar,
+    QStatusBar, QTabWidget, QTableWidget,
     QVBoxLayout, QWidget,
 )
 
@@ -94,6 +94,7 @@ from desktop_app.qt_combo_ids import coerce_combo_int_id
 from desktop_app.table_clipboard import (
     CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
     IntSortTableItem,
+    VIEW_BANK_REGISTER_KEYS_TOOLTIP,
     copy_table_row_as_tsv,
     plain_display_table_item,
     table_cell_clipboard_text,
@@ -114,16 +115,19 @@ def _document_intake_keyboard_shortcuts_help_text() -> str:
         "These shortcuts apply when Document Intake or its controls have focus:\n\n"
         "Menu bar: hover File, View, Edit, Help, or Tools to see shortcut and action hints "
         "in the status bar and on hover for each menu item.\n\n"
-        "F5 — Refresh the document list (same as toolbar Refresh).\n\n"
+        "F5 — Refresh the document list when Document Intake has focus.\n\n"
         "Detail pane: Run AI, Approve, Mark Posted, and Reject have short descriptions on hover.\n\n"
         "File menu:\n"
-        "Ctrl+O — Import documents… (toolbar Import Documents is the same command).\n"
+        "Ctrl+O — Import documents… (PDF/images; same command as File menu).\n"
         "Backup company file… / Restore from backup… — SQLite online backup (probooks.backup), "
         "same path as the CLI; no default shortcuts — hover each action for status-bar tips.\n\n"
         "View menu:\n"
         "Ctrl+1 Document Intake, Ctrl+2 Bank Import, Ctrl+3 Register, Ctrl+4 Chart of Accounts, "
         "Ctrl+5 Reports, Ctrl+6 Journal, Ctrl+7 Business, Ctrl+8 Audit log — all tabs share the open "
-        "company SQLite file (File → Backup / Restore, probooks.backup).\n\n"
+        "company SQLite file (File → Backup / Restore, probooks.backup). "
+        "Hover Bank Import and Register in View for status tips on AI line reconciliation and Stmt match.\n\n"
+        "Tools menu — **Bank register** bulk row actions (add transaction, post to GL, export CSV, cleared, "
+        "attachments, splits, transfer, link payment, receipt flags) when you use Register (Ctrl+3).\n\n"
         "CSV exports on Bank Import (reconciliation report and line-compare), Register, Reports, Journal, Business, "
         "and Audit use UTF-8 with BOM for Excel.\n"
         "Bank Import Import CSV… reads bank statement CSV as UTF-8 with optional BOM.\n\n"
@@ -134,7 +138,7 @@ def _document_intake_keyboard_shortcuts_help_text() -> str:
         "Business:\n"
         "Help → Business shortcuts…\n\n"
         "Bank workflows:\n"
-        "Help → Bank import shortcuts…\n"
+        "Help → Bank import shortcuts… (batch preview, AI line reconciliation).\n"
         "Help → Bank register keyboard shortcuts…\n"
     )
 
@@ -145,6 +149,8 @@ def show_document_intake_keyboard_shortcuts_dialog(parent: QWidget) -> None:
         "Document intake shortcuts",
         _document_intake_keyboard_shortcuts_help_text(),
         ok_tip="Close; shortcuts apply when Document Intake has focus. "
+        "Bank CSV/PDF and AI line reconciliation: Ctrl+2 Bank Import; "
+        "Stmt match overlay: Ctrl+3 Register; register bulk actions: Tools menu. "
         "Company .db: File → Backup / Restore (probooks.backup).",
     )
 
@@ -156,6 +162,11 @@ ACCEPTED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png"}
 STATUS_COLORS = THEME_STATUS_COLORS
 
 INBOX_HEADER_COLOR = "#1F3864"  # dark navy – matches ProBooks+ai branding
+
+# Intake-adjacent tooltips: Bank Import on the View menu (Ctrl+2).
+_BANK_IMPORT_VIEW_POINTER = (
+    "Bank CSV/PDF and AI line reconciliation: View → Bank Import (Ctrl+2). "
+)
 
 # Temporary status bar duration after Bank Import → Register **Stmt match** sync.
 _STMT_MATCH_SYNC_STATUS_MS = 8000
@@ -230,7 +241,8 @@ class InboxWidget(QTableWidget):
         self.setToolTip(
             "Imported documents: click a row to open it in the detail pane. "
             "Drag PDF or image files here to import. F5 refreshes the list. "
-            "Right-click for Keyboard shortcuts… (including on empty area). "
+            + _BANK_IMPORT_VIEW_POINTER
+            + "Right-click for Keyboard shortcuts… (including on empty area). "
             "Rows live in the company SQLite file (File → Backup / probooks backup)."
         )
 
@@ -243,7 +255,8 @@ class InboxWidget(QTableWidget):
         )
         act_keys.setToolTip(
             "Same summary as Help → Document intake shortcuts… "
-            "(F5, Ctrl+O, View chords, links to other Help topics). "
+            "(F5, Ctrl+O, View chords, UTF-8 BOM CSV notes, Bank import pointers in Help). "
+            + VIEW_BANK_REGISTER_KEYS_TOOLTIP
             + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
@@ -343,12 +356,14 @@ class DetailPane(QScrollArea):
         inner = QWidget()
         inner.setToolTip(
             "Preview, extracted fields, categorization, and action buttons for the selected inbox row (scroll when content is tall). "
+            "Bank statement CSV/PDF import is on Bank Import (View menu). "
             "Approve/Posted values write to the company SQLite file (File → Backup / probooks backup)."
         )
         self.setWidget(inner)
         self.setWidgetResizable(True)
         self.setToolTip(
             "Scroll the detail pane: preview, extracted fields, categorization, and workflow actions for the selected inbox row. "
+            "Bank statement CSV/PDF import is on Bank Import (View menu). "
             "Same company .db as the rest of the app (File → Backup / Restore)."
         )
 
@@ -737,37 +752,48 @@ class DetailPane(QScrollArea):
 # ---------------------------------------------------------------------------
 
 class AppHeaderWidget(QFrame):
-    """Top banner showing the app name and current company/file name."""
+    """Top banner: **ProBooks+ai** and company/file name, right-aligned."""
 
     def __init__(self, company_name: str = COMPANY_NAME, parent=None):
         super().__init__(parent)
         self.setStyleSheet(
             f"background: {INBOX_HEADER_COLOR}; border-bottom: 2px solid #4a6fa8;"
         )
-        self.setFixedHeight(44)
+        self.setFixedHeight(52)
         self.setToolTip(
             "App banner; company name is the open SQLite file (File → Open company database; "
-            "File → Backup saves a copy via probooks.backup)."
+            "File → Backup saves a copy via probooks.backup). "
+            "Bank Import and Register host statement reconciliation, AI line reconciliation, and Stmt match."
         )
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(14, 0, 14, 0)
+        layout.setContentsMargins(14, 6, 14, 6)
         layout.setSpacing(0)
+        layout.addStretch(1)
+
+        right = QVBoxLayout()
+        right.setContentsMargins(0, 0, 0, 0)
+        right.setSpacing(2)
 
         lbl_app = QLabel("ProBooks+ai")
+        lbl_app.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
         lbl_app.setStyleSheet(
             "color: white; font-weight: bold; font-size: 16px; background: transparent;"
         )
         lbl_app.setToolTip(
-            "ProBooks+ai — document intake, bank workflows, ledger, and business tools. "
+            "ProBooks+ai — document intake, bank workflows (Bank Import: AI line reconciliation, "
+            "Stmt match sync to Register), ledger, and business tools. "
             "File → Backup copies the open company .db (probooks.backup / probooks backup)."
         )
-        layout.addWidget(lbl_app)
-
-        layout.addStretch()
+        right.addWidget(lbl_app, alignment=Qt.AlignmentFlag.AlignRight)
 
         self._lbl_company = QLabel(escape_ampersand_for_qt(company_name))
         self._lbl_company.setTextFormat(Qt.TextFormat.PlainText)
+        self._lbl_company.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
         self._lbl_company.setStyleSheet(
             "color: #c8d8f0; font-size: 12px; background: transparent;"
         )
@@ -775,7 +801,9 @@ class AppHeaderWidget(QFrame):
             "Current company database or file name (updates when you open another company). "
             "File → Backup / probooks backup copies this path."
         )
-        layout.addWidget(self._lbl_company)
+        right.addWidget(self._lbl_company, alignment=Qt.AlignmentFlag.AlignRight)
+
+        layout.addLayout(right)
 
     def set_company_name(self, name: str):
         """Update the displayed company/file name at runtime."""
@@ -817,37 +845,11 @@ class MainWindow(QMainWindow):
     def _build_ui(self):
         self._build_menu_bar()
 
-        # Toolbar
-        toolbar = QToolBar("Main")
-        toolbar.setMovable(False)
-        toolbar.setToolTip(
-            "Document Intake toolbar: import documents and refresh the inbox (File menu and F5 when Intake has focus). "
-            "Company .db backup: File → Backup / probooks backup."
-        )
-        self.addToolBar(toolbar)
-
-        act_import = QAction("\U0001f4c2  Import Documents\u2026", self)
-        act_import.setToolTip(
-            "Import documents (same as File → Import documents…, Ctrl+O). "
-            "Back up the company .db from File → Backup / probooks backup before risky changes."
-        )
-        act_import.triggered.connect(self._on_import)
-        toolbar.addAction(act_import)
-
-        toolbar.addSeparator()
-
-        act_refresh = QAction("\U0001f504  Refresh", self)
-        act_refresh.setToolTip(
-            "Refresh document list (F5 when Document Intake has focus). "
-            "Company .db backup: File → Backup / probooks backup."
-        )
-        act_refresh.triggered.connect(self._refresh_inbox)
-        toolbar.addAction(act_refresh)
-
         # Container: header banner + tab widget
         container = QWidget()
         container.setToolTip(
             "Main workspace: company banner and tabbed areas (Document Intake through Audit log). "
+            "Bank Import includes AI line reconciliation and Stmt match sync to Register. "
             "All tabs share the open SQLite company file (File → Backup / Restore, probooks.backup)."
         )
         container_layout = QVBoxLayout(container)
@@ -861,7 +863,8 @@ class MainWindow(QMainWindow):
         self._tabs = QTabWidget()
         self._tabs.setToolTip(
             "Main workspace: switch between Document Intake, Bank Import, Register, "
-            "Chart of Accounts, Reports, Journal, Business, and Audit log (hover each tab for a short summary). "
+            "Chart of Accounts, Reports, Journal, Business, and Audit log (hover each tab for a short summary; "
+            "Bank Import includes AI line reconciliation and Stmt match sync to Register when you run compare). "
             "File → Backup / Restore applies to the whole company database (CLI: probooks backup / restore)."
         )
 
@@ -870,6 +873,7 @@ class MainWindow(QMainWindow):
         intake_widget.setToolTip(
             "Document Intake: import files, pick an inbox row, then review extraction and categorization on the right. "
             "F5 refreshes the list when this tab has focus. "
+            "Bank CSV/PDF, statement reconciliation, and AI line reconciliation are on Bank Import (View menu). "
             "Help → Document intake shortcuts lists File → Backup/Restore (probooks.backup)."
         )
         intake_layout = QVBoxLayout(intake_widget)
@@ -883,7 +887,8 @@ class MainWindow(QMainWindow):
         left = QWidget()
         left.setToolTip(
             "Document inbox column: header and file list for the selected company; drag the splitter to resize against the detail pane. "
-            "Same company .db as other tabs; File → Backup / Restore (probooks.backup)."
+            + _BANK_IMPORT_VIEW_POINTER
+            + "Same company .db as other tabs; File → Backup / Restore (probooks.backup)."
         )
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
@@ -896,6 +901,7 @@ class MainWindow(QMainWindow):
         )
         lbl_inbox.setToolTip(
             "Imported documents: pick a row to load extraction and categorization in the detail pane. "
+            "Bank statement files: View → Bank Import (Ctrl+2). "
             "Back up the company file from File → Backup / probooks backup before bulk deletes or experiments."
         )
         left_layout.addWidget(lbl_inbox)
@@ -919,6 +925,7 @@ class MainWindow(QMainWindow):
         splitter.setSizes([380, 720])
         splitter.setToolTip(
             "Drag the handle to resize the document inbox and the extraction detail pane. "
+            "Bank workflows (CSV/PDF, AI line reconciliation) use View → Bank Import (Ctrl+2). "
             "Both sides use the same company SQLite file (File → Backup / probooks backup)."
         )
         intake_layout.addWidget(splitter)
@@ -960,17 +967,21 @@ class MainWindow(QMainWindow):
         main_tab_bar.setTabToolTip(
             0,
             "Import PDFs and images, run AI extraction, approve fields, and categorize to COA. "
+            "Bank CSV/PDF and AI line reconciliation: switch to Bank Import (Ctrl+2). "
             "Shared company .db; File → Backup / probooks backup before risky bulk work.",
         )
         main_tab_bar.setTabToolTip(
             1,
-            "Bank CSV/PDF import, batches, transactions, and statement reconciliation."
+            "Bank CSV/PDF import, batches, transactions, statement reconciliation, "
+            "and AI line reconciliation (row field copies; Stmt match sync when you run compare)."
             + _tab_bar_csv_excel_hint
             + _main_tab_bar_db_hint,
         )
         main_tab_bar.setTabToolTip(
             2,
-            "Check-register view: categorize, splits, transfer links, cleared flags, post to GL."
+            "Check-register grid for one bank account; inline edits where allowed; F5 refresh. "
+            "Reconciliation mode + Stmt match (Bank Import AI line reconciliation can populate it). "
+            "Bulk actions (add transaction, post to GL, export CSV, splits, transfer, link, cleared, attachments, receipt flags): Tools menu."
             + _tab_bar_csv_excel_hint
             + _main_tab_bar_db_hint,
         )
@@ -1012,7 +1023,8 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self._status_bar)
         self._status_bar.showMessage(
             escape_ampersand_for_qt(
-                "Ready \u2013 drag & drop documents or use Import; File → Backup saves the company .db."
+                "Ready \u2013 drag & drop documents or use Import; bank CSV/PDF and AI line reconciliation: "
+                "View → Bank Import (Ctrl+2); File → Backup saves the company .db."
             )
         )
 
@@ -1032,7 +1044,8 @@ class MainWindow(QMainWindow):
         _menu_action_tip(
             act_import_docs,
             "Import PDF or images into the document inbox (Ctrl+O). "
-            "Back up the company .db from File → Backup / probooks backup before risky changes.",
+            + _BANK_IMPORT_VIEW_POINTER
+            + "Back up the company .db from File → Backup / probooks backup before risky changes.",
         )
         act_import_docs.triggered.connect(self._on_import)
         file_menu.addAction(act_import_docs)
@@ -1117,6 +1130,11 @@ class MainWindow(QMainWindow):
         _view_tab_tip_suffix = (
             " Same company SQLite file (File → Backup / Restore, probooks.backup)."
         )
+        _view_tab_tip_extra = {
+            0: " Document Intake; bank CSV/PDF and line reconciliation on Ctrl+2.",
+            1: " Bank Import: AI line reconciliation and Stmt match sync.",
+            2: " Register: Stmt match overlay (Bank Import can populate).",
+        }
         for idx, (sc, label) in enumerate(
             [
                 ("Ctrl+1", "Document &Intake"),
@@ -1132,7 +1150,10 @@ class MainWindow(QMainWindow):
             act = QAction(label, self)
             act.setShortcut(sc)
             act.setShortcutContext(Qt.ApplicationShortcut)
-            _menu_action_tip(act, f"Show this main tab ({sc}).{_view_tab_tip_suffix}")
+            extra = _view_tab_tip_extra.get(idx, "")
+            _menu_action_tip(
+                act, f"Show this main tab ({sc}).{extra}{_view_tab_tip_suffix}"
+            )
             act.triggered.connect(
                 lambda checked=False, i=idx: self._set_main_tab_index(i)
             )
@@ -1166,14 +1187,131 @@ class MainWindow(QMainWindow):
         act_prefs.setEnabled(False)
         edit_menu.addAction(act_prefs)
 
-        # Tools menu
+        # Tools menu — Bank register actions (moved from the register tab for a table-focused UI)
         tools_menu = mb.addMenu("&Tools")
-        act_tools = QAction("(Coming soon)", self)
+
+        m_reg_actions = tools_menu.addMenu("Register &Actions")
+        act_reg_add = QAction("&Add Transaction\u2026", self)
         _menu_action_tip(
-            act_tools, "Additional tools are not available yet."
+            act_reg_add,
+            "Insert one bank transaction for the selected account (persisted; optional COA; "
+            "date prefills to the latest register date when any exist). "
+            "Back up the company .db before bulk entry (File → Backup / probooks backup).",
         )
-        act_tools.setEnabled(False)
-        tools_menu.addAction(act_tools)
+        act_reg_add.triggered.connect(
+            lambda: self._register_tab.tools_register_add_transaction()
+        )
+        m_reg_actions.addAction(act_reg_add)
+        act_reg_post = QAction("&Post Selected to GL", self)
+        _menu_action_tip(
+            act_reg_post,
+            "Post selected unposted rows to the general ledger. "
+            "Shortcut: Ctrl+Shift+G when Register has focus. "
+            "File → Backup / probooks backup before big runs.",
+        )
+        act_reg_post.triggered.connect(
+            lambda: self._register_tab.tools_register_post_selected()
+        )
+        m_reg_actions.addAction(act_reg_post)
+        act_reg_export = QAction("&Export CSV\u2026", self)
+        _menu_action_tip(
+            act_reg_export,
+            "Export the current register grid to CSV (active filter and column order). "
+            "UTF-8 with BOM for Excel. Shortcut: Ctrl+Shift+E when Register has focus.",
+        )
+        act_reg_export.triggered.connect(
+            lambda: self._register_tab.tools_register_export_csv()
+        )
+        m_reg_actions.addAction(act_reg_export)
+
+        m_reg_recon = tools_menu.addMenu("&Reconciliation")
+        act_reg_mark_clr = QAction("&Mark Cleared", self)
+        _menu_action_tip(
+            act_reg_mark_clr,
+            "Set cleared on selected rows. Shortcut: Ctrl+Shift+C when Register has focus.",
+        )
+        act_reg_mark_clr.triggered.connect(
+            lambda: self._register_tab.tools_register_mark_cleared()
+        )
+        m_reg_recon.addAction(act_reg_mark_clr)
+        act_reg_clear_clr = QAction("&Clear Cleared", self)
+        _menu_action_tip(
+            act_reg_clear_clr,
+            "Clear cleared on selected rows. Shortcut: Ctrl+Shift+U when Register has focus.",
+        )
+        act_reg_clear_clr.triggered.connect(
+            lambda: self._register_tab.tools_register_clear_cleared()
+        )
+        m_reg_recon.addAction(act_reg_clear_clr)
+
+        m_reg_attach = tools_menu.addMenu("&Attachments")
+        act_reg_attach = QAction("&Attach File\u2026", self)
+        _menu_action_tip(
+            act_reg_attach,
+            "Choose a file and store its path on all selected rows as the attachment.",
+        )
+        act_reg_attach.triggered.connect(
+            lambda: self._register_tab.tools_register_attach_file()
+        )
+        m_reg_attach.addAction(act_reg_attach)
+        act_reg_clear_att = QAction("&Clear Attachment", self)
+        _menu_action_tip(
+            act_reg_clear_att,
+            "Clear the attachment path on selected rows.",
+        )
+        act_reg_clear_att.triggered.connect(
+            lambda: self._register_tab.tools_register_clear_attachment()
+        )
+        m_reg_attach.addAction(act_reg_clear_att)
+
+        m_reg_txn = tools_menu.addMenu("&Transaction Tools")
+        act_reg_splits = QAction("&Splits\u2026", self)
+        _menu_action_tip(
+            act_reg_splits,
+            "Split one unposted transaction into two COA lines (amounts must sum to the bank amount).",
+        )
+        act_reg_splits.triggered.connect(
+            lambda: self._register_tab.tools_register_splits_dialog()
+        )
+        m_reg_txn.addAction(act_reg_splits)
+        act_reg_transfer = QAction("&Transfer To\u2026", self)
+        _menu_action_tip(
+            act_reg_transfer,
+            "Mark selected rows as transfers, choosing the other bank account (counterparty).",
+        )
+        act_reg_transfer.triggered.connect(
+            lambda: self._register_tab.tools_register_transfer_dialog()
+        )
+        m_reg_txn.addAction(act_reg_transfer)
+        act_reg_link = QAction("&Link Payment\u2026", self)
+        _menu_action_tip(
+            act_reg_link,
+            "Link one selected row to an AR payment, AP payment, or payroll run (or clear an existing link).",
+        )
+        act_reg_link.triggered.connect(
+            lambda: self._register_tab.tools_register_link_payment_dialog()
+        )
+        m_reg_txn.addAction(act_reg_link)
+
+        m_reg_flags = tools_menu.addMenu("&Flags")
+        act_reg_flag_rcpt = QAction("&Flag Needs Receipt", self)
+        _menu_action_tip(
+            act_reg_flag_rcpt,
+            "Set the needs-receipt flag on selected rows (posted rows may not allow changes).",
+        )
+        act_reg_flag_rcpt.triggered.connect(
+            lambda: self._register_tab.tools_register_flag_needs_receipt()
+        )
+        m_reg_flags.addAction(act_reg_flag_rcpt)
+        act_reg_clear_rcpt = QAction("&Clear Needs Receipt", self)
+        _menu_action_tip(
+            act_reg_clear_rcpt,
+            "Clear the needs-receipt flag on selected rows.",
+        )
+        act_reg_clear_rcpt.triggered.connect(
+            lambda: self._register_tab.tools_register_clear_needs_receipt()
+        )
+        m_reg_flags.addAction(act_reg_clear_rcpt)
 
         # Help menu
         help_menu = mb.addMenu("&Help")
@@ -1188,8 +1326,10 @@ class MainWindow(QMainWindow):
         _menu_action_tip(
             act_intake_keys,
             "F5 refresh, Ctrl+O import, File → Backup/Restore (probooks.backup), View chords; "
-            "the dialog summarizes UTF-8 BOM CSV exports on Bank Import, Register, Reports, Journal, Business, and Audit; "
-            "Bank Import Import CSV… reads UTF-8 optional BOM; links to other Help topics.",
+            "the dialog summarizes UTF-8 BOM CSV exports on Bank Import (batch preview + AI line reconciliation), "
+            "Register, Reports, Journal, Business, and Audit; "
+            "Bank Import Import CSV… reads UTF-8 optional BOM; links to other Help topics. "
+            "View → Bank Import and Register status tips mention AI line reconciliation and Stmt match.",
         )
         act_intake_keys.triggered.connect(
             lambda: show_document_intake_keyboard_shortcuts_dialog(self)
@@ -1198,8 +1338,9 @@ class MainWindow(QMainWindow):
         act_bank_import_keys = QAction("Bank &import shortcuts…", self)
         _menu_action_tip(
             act_bank_import_keys,
-            "F5 refresh and context-menu shortcuts for Bank Import; Import CSV reads UTF-8 with optional BOM; "
-            "reconciliation / line-compare CSV uses UTF-8 BOM for Excel. "
+            "F5 refresh and context-menu shortcuts for Bank Import (batch preview: copy row, txn id, date, amount, payee, memo, ref, COA; "
+            "line-reconciliation grid: statement/register date, amount, description, register txn id); "
+            "Import CSV reads UTF-8 with optional BOM; reconciliation / line-compare CSV uses UTF-8 BOM for Excel. "
             "Document intake help lists File backup/restore.",
         )
         act_bank_import_keys.triggered.connect(
@@ -1209,7 +1350,10 @@ class MainWindow(QMainWindow):
         act_register_keys = QAction("Bank &register keyboard shortcuts…", self)
         _menu_action_tip(
             act_register_keys,
-            "F5, Ctrl+Shift+G/E/C/U, and register grid shortcuts; Ctrl+Shift+E export CSV uses UTF-8 BOM for Excel. "
+            "F5, Ctrl+Shift+G/E/C/U, and register grid shortcuts (row menu: copy row, txn id, date, amount, payee, memo, ref, COA); "
+            "Ctrl+Shift+E export CSV uses UTF-8 BOM for Excel. "
+            "Tools menu lists Register Actions, Reconciliation, Attachments, Transaction Tools, and Flags (same handlers as the old register buttons). "
+            "Help dialog links to Bank import for AI line-reconciliation field copies. "
             "Document intake help lists File backup/restore.",
         )
         act_register_keys.triggered.connect(
@@ -1230,7 +1374,8 @@ class MainWindow(QMainWindow):
         _menu_action_tip(
             act_more_tab_keys,
             "F5 refresh and View chords for COA, Journal, Reports, and Audit; "
-            "the dialog summarizes UTF-8 BOM CSV exports and cross-links Register, Business, and Bank Import. "
+            "the dialog summarizes UTF-8 BOM CSV exports, row copy menus on Bank register / Import preview "
+            "and the Bank Import line-reconciliation grid, and cross-links Register, Business, and Bank Import. "
             "Document intake shortcuts summarizes File → Backup/Restore.",
         )
         act_more_tab_keys.triggered.connect(
@@ -1308,6 +1453,7 @@ class MainWindow(QMainWindow):
             f"Keyboard shortcuts are summarized under <b>Help</b>.<br><br>"
             f"\u00a9 2026 ProBooks+ai",
             ok_tip="Close; Help lists shortcuts (including UTF-8 BOM CSV for Excel); "
+            "Bank Import covers AI line reconciliation and Stmt match sync; "
             "File → Backup/Restore uses probooks.backup (same as CLI).",
         )
 
@@ -1499,7 +1645,8 @@ class MainWindow(QMainWindow):
             self._tabs.setCurrentIndex(idx)
             if hasattr(self, "_status_bar"):
                 self._status_bar.showMessage(
-                    "Stmt match updated on Bank register. Reconciliation mode is on.",
+                    "Stmt match updated on Bank register. Reconciliation mode is on. "
+                    "Row field copies: Bank Import line-reconciliation grid (Help → Bank import shortcuts…).",
                     _STMT_MATCH_SYNC_STATUS_MS,
                 )
                 QTimer.singleShot(
@@ -1521,7 +1668,8 @@ class MainWindow(QMainWindow):
         p = getattr(self._bank_db, "_db_path", None) or self._db_path or ""
         self._status_bar.showMessage(
             escape_ampersand_for_qt(
-                f"Company: {p}  \u2013  drag & drop or Import; File → Backup copies this .db."
+                f"Company: {p}  \u2013  drag & drop or Import; bank CSV/PDF and AI line reconciliation: "
+                f"Bank Import (Ctrl+2); File → Backup copies this .db."
             )
         )
         if p:

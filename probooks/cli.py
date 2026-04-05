@@ -137,7 +137,31 @@ def cmd_accounts_add(db: Path, args: argparse.Namespace) -> int:
     return 0
 
 
+def _import_csv_skip_summary_bits(skip_reasons: list[tuple[int, str]]) -> list[str]:
+    """Human-readable counts for stderr (reason strings from ``import_bank_csv``)."""
+    date_only = amt_only = both = 0
+    for _, msg in skip_reasons:
+        parts = {x.strip() for x in msg.split(",") if x.strip()}
+        bd = "bad_date" in parts
+        ba = "bad_amount" in parts
+        if bd and ba:
+            both += 1
+        elif bd:
+            date_only += 1
+        elif ba:
+            amt_only += 1
+    bits: list[str] = []
+    if date_only:
+        bits.append(f"{date_only} bad date only")
+    if amt_only:
+        bits.append(f"{amt_only} bad amount only")
+    if both:
+        bits.append(f"{both} bad date and amount")
+    return bits
+
+
 def cmd_import_csv(db: Path, args: argparse.Namespace) -> int:
+    """Import CSV rows via ``import_bank_csv``; stderr carries skip summary, samples, and tips."""
     conn = connect(db)
     try:
         run_migrations(conn, migration_files(_migrations_dir()))
@@ -155,25 +179,38 @@ def cmd_import_csv(db: Path, args: argparse.Namespace) -> int:
             memo=args.memo_col,
             reference=args.reference_col,
         )
-        result = import_bank_csv(
-            conn,
-            bank_account_id=args.account,
-            csv_path=args.file,
-            columns=cmap,
-            skip_rows=args.skip_rows,
-            invert_amounts=args.invert_amounts,
-            errors_file=args.errors_out,
-        )
+        try:
+            result = import_bank_csv(
+                conn,
+                bank_account_id=args.account,
+                csv_path=args.file,
+                columns=cmap,
+                skip_rows=args.skip_rows,
+                invert_amounts=args.invert_amounts,
+                errors_file=args.errors_out,
+            )
+        except OSError as exc:
+            print(f"Could not read CSV file {args.file}: {exc}", file=sys.stderr)
+            return 1
         print(
             f"Import batch id={result.batch_id}: "
             f"{result.rows_imported} rows imported, {result.rows_skipped} skipped."
         )
+        if result.skip_reasons:
+            bits = _import_csv_skip_summary_bits(result.skip_reasons)
+            if bits:
+                print("Skip summary: " + "; ".join(bits) + ".", file=sys.stderr)
         if result.skip_reasons and not args.errors_out:
             print("Skipped row samples (row_index: reason):", file=sys.stderr)
             for r, msg in result.skip_reasons[:10]:
                 print(f"  line {r}: {msg}", file=sys.stderr)
             if len(result.skip_reasons) > 10:
                 print(f"  ... and {len(result.skip_reasons) - 10} more", file=sys.stderr)
+            print(
+                "Tip: re-run with --errors-out PATH.csv to write every skipped row "
+                "(UTF-8 BOM for Excel).",
+                file=sys.stderr,
+            )
         if args.errors_out and result.rows_skipped:
             print(f"Wrote errors to {args.errors_out}")
     finally:
@@ -289,7 +326,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Import bank transactions from CSV",
         description=(
             "Reads the file as UTF-8 with an optional BOM (typical bank/Excel exports). "
-            "Creates an import_batch and inserts bank_transactions rows."
+            "Creates an import_batch and inserts bank_transactions rows. "
+            "Date cells: ISO datetimes via datetime.fromisoformat, otherwise the same calendar patterns as "
+            "the desktop bank stack (probooksai.bank_import.parse_date), including long month names and "
+            "Y/m/d, after paste-noise cleanup. Amount cells: probooksai.bank_import.parse_amount "
+            "(currency symbols, Unicode minus, parentheses negatives, paste noise)."
         ),
     )
     ic.add_argument("--account", "-a", type=int, required=True, help="bank_accounts.id")
@@ -309,7 +350,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--errors-out",
         type=Path,
         default=None,
-        help="Write skipped rows to CSV with UTF-8 BOM for Excel (issue #33)",
+        help=(
+            "Write every skipped row to this CSV (UTF-8 BOM for Excel; columns row_index, reason, "
+            "raw_cells). Without this flag, stderr lists a short sample and suggests re-running with "
+            "--errors-out (issue #33)."
+        ),
     )
 
     tx = sub.add_parser("transactions", help="Bank transactions")

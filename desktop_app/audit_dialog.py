@@ -33,6 +33,7 @@ from desktop_app.qt_mnemonic import (
 )
 from desktop_app.table_clipboard import (
     CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
+    VIEW_BANK_REGISTER_KEYS_TOOLTIP,
     copy_table_row_as_tsv,
     plain_display_table_item,
 )
@@ -62,6 +63,7 @@ def _audit_history_table_context_menu(
     )
     act_keys.setToolTip(
         "This dialog’s shortcuts summary (Copy row); use the main window Help menu for global chords. "
+        + VIEW_BANK_REGISTER_KEYS_TOOLTIP
         + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
     )
     if not idx.isValid():

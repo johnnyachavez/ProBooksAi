@@ -1,18 +1,26 @@
 """CSV bank import with row validation (#31, #33, #34).
 
-Reads input CSV as UTF-8 with optional BOM by default (``encoding="utf-8-sig"`` in :func:`import_bank_csv`).
+Reads input CSV with optional BOM by default (same as :data:`probooksai.bank_import.BANK_CSV_READ_ENCODING`).
+Amounts use :func:`probooksai.bank_import.parse_amount` (currency symbols, Unicode minus, paste noise);
+dates use ``datetime.fromisoformat`` when a time component is present, else :func:`probooksai.bank_import.parse_date` (same patterns as desktop bank CSV, including long month names); :func:`strip_csv_cell_paste_noise` runs before those parsers.
 When *errors_file* is set, skipped rows are written as UTF-8 CSV with BOM for Excel.
 """
 
 from __future__ import annotations
 
 import csv
-import re
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import TextIO
+
+from probooksai.bank_import import (
+    BANK_CSV_READ_ENCODING,
+    parse_amount,
+    parse_date,
+    strip_csv_cell_paste_noise,
+)
 
 
 @dataclass
@@ -34,17 +42,8 @@ class ImportResult:
     skip_reasons: list[tuple[int, str]] = field(default_factory=list)
 
 
-_DATE_PATTERNS = (
-    "%Y-%m-%d",
-    "%m/%d/%Y",
-    "%m/%d/%y",
-    "%d/%m/%Y",
-    "%Y/%m/%d",
-)
-
-
 def _parse_date(value: str) -> str | None:
-    s = value.strip()
+    s = strip_csv_cell_paste_noise(value)
     if not s:
         return None
     try:
@@ -52,32 +51,14 @@ def _parse_date(value: str) -> str | None:
         return dt.date().isoformat()
     except ValueError:
         pass
-    for pat in _DATE_PATTERNS:
-        try:
-            return datetime.strptime(s, pat).date().isoformat()
-        except ValueError:
-            continue
-    return None
+    return parse_date(s)
 
 
 def _parse_amount(value: str, *, invert: bool) -> float | None:
-    s = value.strip()
-    if not s:
+    n = parse_amount(value)
+    if n is None:
         return None
-    neg = False
-    if s.startswith("(") and s.endswith(")"):
-        neg = True
-        s = s[1:-1]
-    s = re.sub(r"[$,\s]", "", s)
-    try:
-        n = float(s)
-    except ValueError:
-        return None
-    if neg:
-        n = -abs(n)
-    if invert:
-        n = -n
-    return n
+    return -n if invert else n
 
 
 def import_bank_csv(
@@ -87,14 +68,17 @@ def import_bank_csv(
     csv_path: Path,
     columns: ColumnMap,
     skip_rows: int = 0,
-    encoding: str = "utf-8-sig",
+    encoding: str = BANK_CSV_READ_ENCODING,
     invert_amounts: bool = False,
     errors_file: Path | None = None,
 ) -> ImportResult:
     """Insert rows into bank_transactions; create import_batch. Skips bad rows.
 
     When *errors_file* is set, skipped rows are written as UTF-8 CSV with BOM for Excel.
+    Raises :exc:`FileNotFoundError` if *csv_path* is not a regular file (checked before creating a batch).
     """
+    if not csv_path.is_file():
+        raise FileNotFoundError(str(csv_path))
     raw_name = csv_path.name
     cur = conn.execute(
         """

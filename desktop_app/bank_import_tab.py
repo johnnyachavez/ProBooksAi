@@ -21,7 +21,8 @@ re-selects the same batch when it still exists, refreshing transactions and reco
 **Right-click** the **Import Batches** table, **register preview** grid, **AI-assisted line reconciliation** table,
 or **Manage Bank Accounts** tables
 (including empty area) for **Keyboard shortcuts…** and row actions; each **QAction** has **setToolTip** where shown.
-Those tables have hover **tooltips** summarizing the same; **Import Batches** column headers have **setToolTip** per section. The right-pane **BlankBankRegisterTable** uses the same stylesheet as the Register tab grid and **setToolTip** on each column header.
+Imported transaction rows on the preview offer **Copy row** (TSV), **Copy transaction id**, **Copy date**, **Copy amount**, **Copy payee / description**, **Copy memo**, **Copy number / ref**, and **Copy category (COA)** (plain text from the database, aligned with **Bank register** context menus).
+Those tables have hover **tooltips** summarizing the same; **Import Batches** column headers have **setToolTip** per section. The right-pane **BlankBankRegisterTable** uses the same stylesheet as the Register tab grid, the same two-band row delegate (simple mode: one text line per cell in the upper band), and **setToolTip** on each column header.
 
 Tabs / widgets
 --------------
@@ -29,7 +30,7 @@ Tabs / widgets
   ManageAccountsDialog   – CRUD dialog for bank_accounts (window tooltip; add/edit sub-dialog window + field tooltips; delete **Yes**/**No**)
   StatementPeriodDialog  – statement dates and balances (window + field + note tooltips; OK/Cancel via ``tip_qdialog_button_box``)
   ColumnMappingDialog    – map CSV headers (window + combo + OK/Cancel via ``tip_qdialog_button_box``)
-  BlankBankRegisterTable – **QTableWidget** (Date…Balance; blank editable rows, or read-only import rows + padded blanks when a batch is selected)
+  BlankBankRegisterTable – **QTableWidget** (Date…Balance; blank editable rows, or read-only import rows + padded blanks when a batch is selected; populated rows set hover tooltips like the Bank register for elided text)
   ReconciliationPanel    – statement vs import summary (**QGroupBox** + value labels + status **tooltips**)
   StatementLineMatchPanel – mock statement extract vs register (**Matched** / **Missing** / **Extra**; review checkboxes, UI-only); **Run mock extract & compare** also pushes **Stmt match** onto the **Bank register** tab when a ``register_tab`` is wired (optional **after_stmt_match_sync** focuses that tab).
 """
@@ -42,7 +43,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from PySide6.QtCore import QDate, QSettings, Qt, Signal
-from PySide6.QtGui import QColor, QKeySequence, QShortcut
+from PySide6.QtGui import QColor, QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -91,6 +92,7 @@ from desktop_app.qt_mnemonic import (
 from desktop_app.table_clipboard import (
     CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
     QTABLE_PLAIN_TEXT_ROLE,
+    VIEW_BANK_REGISTER_KEYS_TOOLTIP,
     copy_table_row_as_tsv,
     plain_display_table_item,
 )
@@ -101,10 +103,12 @@ from desktop_app.bank_import_csv_export_paths import (
     remember_bank_import_import_dir,
     suggested_bank_import_batch_csv_filename,
 )
+from desktop_app.register_band_delegate import RegisterBandDelegate
 from desktop_app.statement_line_match_panel import StatementLineMatchPanel
 from desktop_app.theme import (
     AMOUNT_NEGATIVE,
     AMOUNT_POSITIVE,
+    REGISTER_ROW_HEIGHT_MIN_PREVIEW,
     register_table_style_sheet,
 )
 
@@ -131,6 +135,9 @@ def _bank_import_keyboard_shortcuts_help_text() -> str:
     return (
         "F5 — Refresh accounts and import batches. If an import batch is selected, it is "
         "re-opened when it still exists (register preview and reconciliation update). "
+        "The batch register preview uses the same banded-row styling as **Bank register**; "
+        "arrow keys move the cell focus on the preview grid. "
+        "Right-click a loaded transaction row for **Copy row**, **Copy transaction id**, **Copy date**, **Copy amount**, **Copy payee / description**, **Copy memo**, **Copy number / ref**, or **Copy category (COA)** (saved fields from the database). "
         "**Export reconciliation report (CSV)** suggests a filename from the import file (or batch id), "
         "writes UTF-8 with a BOM for Excel, and shares a remembered save folder with "
         "**Export comparison CSV\u2026** (line reconciliation). "
@@ -145,20 +152,24 @@ def _bank_import_keyboard_shortcuts_help_text() -> str:
         "If that account cannot be opened on the register, a warning explains that **Stmt match** was not updated. "
         "On success the main **status bar** also shows a short confirmation, then restores the company line. "
         "Right-click the **Matched / Missing / Extra** line-reconciliation grid for **Copy row** "
-        "(tab-separated text) on a row, **Export comparison CSV\u2026** or **Keyboard shortcuts…** "
+        "(tab-separated text) on a row; **Copy statement date** / amount / description when the statement side is filled; "
+        "**Copy register date** / amount / description when the register side is filled; "
+        "**Copy register transaction id** when **Reg #** is present; "
+        "**Export comparison CSV\u2026** or **Keyboard shortcuts…** "
         "when the table has results (empty viewport still offers export + shortcuts). "
         "Export saves UTF-8 CSV with a BOM for Excel (numeric amounts; **Reconciled** yes/no matches the checkboxes). "
         "The save dialog suggests a filename from the batch and re-opens in the last folder you used "
         "when possible: last CSV export folder, else last import folder, else your profile folder "
         "(same as reconciliation export).\n\n"
+        "View menu tab focus: Ctrl+1 Document Intake, Ctrl+2 Bank Import, Ctrl+3 Register.\n\n"
         "Manage Bank Accounts (dialog): right-click the accounts table (including empty area) "
         "for Keyboard shortcuts… (same as this dialog).\n\n"
         "Document Intake:\n"
         "Help → Document intake shortcuts… (includes File → Backup / Restore via probooks.backup).\n\n"
         "COA, Journal, Reports, Audit:\n"
         "Help → More tab shortcuts (F5)…\n\n"
-        "Register tab has additional shortcuts:\n"
-        "Help → Bank register keyboard shortcuts…\n\n"
+        "Register tab: **F5** / **Ctrl+Shift+** shortcuts and **Help → Bank register keyboard shortcuts…**; "
+        "add/post/export and other row actions are on **Tools** (Register Actions, Reconciliation, …).\n\n"
         "Business tab (rules, invoices, bills, payroll):\n"
         "Help → Business shortcuts…"
     )
@@ -170,6 +181,8 @@ def show_bank_import_keyboard_shortcuts_dialog(parent: QWidget) -> None:
         "Bank import shortcuts",
         _bank_import_keyboard_shortcuts_help_text(),
         ok_tip="Close; shortcuts apply when Bank Import has focus. "
+        "View → Register (Ctrl+3) for Stmt match after Run mock extract & compare; "
+        "register bulk actions live under Tools. "
         "Company .db: File → Backup / Restore (probooks.backup).",
     )
 
@@ -211,7 +224,8 @@ class ManageAccountsDialog(QDialog):
         self._table.setSortingEnabled(True)
         self._table.setToolTip(
             "Bank accounts used for import and the register. Right-click for Keyboard shortcuts… "
-            "(including on empty area)."
+            "(including on empty area). "
+            "The same dialog summarizes the main Bank Import tab (preview, reconciliation, AI line reconciliation)."
         )
         layout.addWidget(self._table)
 
@@ -248,7 +262,8 @@ class ManageAccountsDialog(QDialog):
         )
         act_keys.setToolTip(
             "Same summary as Help → Bank import shortcuts… "
-            "(F5, batches, transactions, Manage Accounts). "
+            "(F5, batches, Manage accounts, register preview, AI line reconciliation, row field copies). "
+            + VIEW_BANK_REGISTER_KEYS_TOOLTIP
             + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
@@ -751,7 +766,6 @@ class BlankBankRegisterTable(QTableWidget):
             h = self.horizontalHeaderItem(col)
             if h is not None:
                 h.setToolTip(tip)
-        self.reset_blank()
         self.setEditTriggers(
             QAbstractItemView.EditTrigger.DoubleClicked
             | QAbstractItemView.EditTrigger.EditKeyPressed
@@ -759,7 +773,18 @@ class BlankBankRegisterTable(QTableWidget):
             | QAbstractItemView.EditTrigger.SelectedClicked
         )
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
-        self.setAlternatingRowColors(True)
+        self.setAlternatingRowColors(False)
+        self.setItemDelegate(
+            RegisterBandDelegate(
+                self,
+                simple_band_rows=True,
+                payee_col=None,
+                ref_col=None,
+                center_col=None,
+                right_aligned_cols=frozenset({2, 3, 4}),
+            )
+        )
+        self.verticalHeader().setDefaultSectionSize(REGISTER_ROW_HEIGHT_MIN_PREVIEW)
         self.setShowGrid(False)
         self.setWordWrap(True)
         self.verticalHeader().setVisible(False)
@@ -772,9 +797,11 @@ class BlankBankRegisterTable(QTableWidget):
             "Register-style preview: select an import batch to load its rows (debit/credit split); "
             "running balance fills when the batch has a beginning balance. "
             "Padding rows stay editable scratch space. Right-click for Keyboard shortcuts… "
-            "(including on empty area). "
-            "CSV exports in reconciliation below use UTF-8 BOM for Excel."
+            "(including on empty area); on imported rows also **Copy row**, **Copy transaction id**, **Copy date**, **Copy amount**, **Copy payee / description**, **Copy memo**, **Copy number / ref**, or **Copy category (COA)**. "
+            "CSV exports in reconciliation below use UTF-8 BOM for Excel. "
+            + VIEW_BANK_REGISTER_KEYS_TOOLTIP
         )
+        self.reset_blank()
 
     def reset_blank(self) -> None:
         """Restore default empty editable rows (no batch selection)."""
@@ -788,6 +815,7 @@ class BlankBankRegisterTable(QTableWidget):
                     | Qt.ItemFlag.ItemIsEditable
                 )
                 self.setItem(r, c, it)
+        self.resizeRowsToContents()
 
     def populate_import_batch(
         self,
@@ -812,10 +840,16 @@ class BlankBankRegisterTable(QTableWidget):
             if tid_coerced is not None:
                 date_it.setData(Qt.ItemDataRole.UserRole, tid_coerced)
             date_it.setFlags(self._RO_FLAGS)
+            d_raw = (row.get("txn_date") or "").strip()
+            date_it.setToolTip(escape_ampersand_for_qt(d_raw if d_raw else "—"))
             self.setItem(r, 0, date_it)
 
             desc_it = plain_display_table_item(row.get("description") or "")
             desc_it.setFlags(self._RO_FLAGS)
+            desc_raw = (row.get("description") or "").strip()
+            desc_it.setToolTip(
+                escape_ampersand_for_qt(desc_raw) if desc_raw else ""
+            )
             self.setItem(r, 1, desc_it)
 
             amt = float(row.get("amount") or 0.0)
@@ -839,6 +873,19 @@ class BlankBankRegisterTable(QTableWidget):
             if credit_txt:
                 credit_it.setForeground(QColor(AMOUNT_NEGATIVE))
             self.setItem(r, 3, credit_it)
+            if amt > 0:
+                debit_it.setToolTip(
+                    escape_ampersand_for_qt(f"Debit: ${amt:,.2f}")
+                )
+                credit_it.setToolTip("")
+            elif amt < 0:
+                credit_it.setToolTip(
+                    escape_ampersand_for_qt(f"Credit: ${abs(amt):,.2f}")
+                )
+                debit_it.setToolTip("")
+            else:
+                debit_it.setToolTip("")
+                credit_it.setToolTip("")
 
             if running is not None:
                 running = round(running + amt, 2)
@@ -857,6 +904,14 @@ class BlankBankRegisterTable(QTableWidget):
                     else QColor(AMOUNT_POSITIVE)
                 )
             bal_it.setData(QTABLE_PLAIN_TEXT_ROLE, bal_txt)
+            if bal_txt:
+                bal_it.setToolTip(
+                    escape_ampersand_for_qt(f"Running balance: {bal_txt}")
+                )
+            else:
+                bal_it.setToolTip(
+                    "Running total is shown when this batch has a beginning balance."
+                )
             self.setItem(r, 4, bal_it)
 
         for r in range(n, total_rows):
@@ -869,6 +924,7 @@ class BlankBankRegisterTable(QTableWidget):
                 )
                 self.setItem(r, c, it)
 
+        self.resizeRowsToContents()
 
 # ===========================================================================
 # ReconciliationPanel
@@ -890,7 +946,9 @@ class ReconciliationPanel(QGroupBox):
     def __init__(self, parent=None):
         super().__init__("Reconciliation", parent)
         self.setToolTip(
-            "Compares statement dates and balances to imported transactions for the selected batch."
+            "Compares statement dates and balances to imported transactions for the selected batch. "
+            "Line-by-line Matched / Missing / Extra is in AI-assisted line reconciliation below "
+            "(Help → Bank import shortcuts…)."
         )
         self._build_ui()
         self._reset()
@@ -1099,8 +1157,11 @@ class BankImportTab(QWidget):
     def _build_ui(self):
         self.setToolTip(
             "Bank CSV/PDF import and reconciliation: choose an account, import batches, transactions, "
-            "and match statement balances; exported CSV uses UTF-8 BOM for Excel "
+            "and match statement balances. "
+            "AI-assisted line reconciliation (Matched / Missing / Extra) can update Bank register Stmt match "
+            "when you run compare (Help → Bank import shortcuts…); exported CSV uses UTF-8 BOM for Excel "
             "(F5 refreshes when this tab has focus). "
+            "View → Register (Ctrl+3) shows Stmt match after compare. "
             "Same company SQLite database as other main tabs; File → Backup / Restore (probooks.backup)."
         )
         outer = QVBoxLayout(self)
@@ -1176,20 +1237,22 @@ class BankImportTab(QWidget):
         # Left: batch list
         left = QWidget()
         left.setToolTip(
-            "Import batches column for the selected bank account; pick a batch to load transactions and reconciliation on the right. "
+            "Import batches column for the selected bank account; pick a batch to load transactions into the preview, "
+            "statement reconciliation, and AI line reconciliation on the right. "
             "Batches and transactions live in the company SQLite file (File → Backup / Restore, probooks.backup)."
         )
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
         lbl_import_batches = QLabel("Import Batches:")
         lbl_import_batches.setToolTip(
-            "CSV import batches for the selected bank account; choose one to load transactions and reconciliation. "
+            "CSV import batches for the selected bank account; choose one to load the preview, "
+            "statement reconciliation, and AI line reconciliation. "
             "Same shared company .db as the rest of the app (File → Backup / probooks backup)."
         )
         left_layout.addWidget(lbl_import_batches)
         batch_hint = QLabel(
             "Batches appear after you <b>Import CSV</b> or <b>Import PDF</b> for the account above. "
-            "Select a batch to load transactions and reconciliation on the right."
+            "Select a batch to load the preview, statement reconciliation, and AI line reconciliation on the right."
         )
         batch_hint.setTextFormat(Qt.TextFormat.RichText)
         batch_hint.setWordWrap(True)
@@ -1222,7 +1285,8 @@ class BankImportTab(QWidget):
         )
         self._batch_table.setSortingEnabled(True)
         self._batch_table.setToolTip(
-            "Import batches for the selected bank account; pick one to load its transactions. "
+            "Import batches for the selected bank account; pick one to load its transactions into the "
+            "register preview, statement reconciliation, and AI line-reconciliation panel below. "
             "Right-click for Keyboard shortcuts… (including on empty area). "
             "Batches live in the company .db (File → Backup / Restore, probooks.backup)."
         )
@@ -1253,7 +1317,9 @@ class BankImportTab(QWidget):
         lbl_recon_header = QLabel("Statement reconciliation:")
         lbl_recon_header.setToolTip(
             "Statement period, opening and closing balances, and Mark Reconciled for the batch "
-            "selected on the left. Same company .db (File → Backup / probooks backup)."
+            "selected on the left. Line-by-line Matched / Missing / Extra is in AI-assisted line "
+            "reconciliation below (Help → Bank import shortcuts…). "
+            "Same company .db (File → Backup / probooks backup)."
         )
         recon_col_layout.addWidget(lbl_recon_header)
 
@@ -1287,7 +1353,9 @@ class BankImportTab(QWidget):
         lbl_ai_line = QLabel("AI-assisted line reconciliation:")
         lbl_ai_line.setToolTip(
             "Mock PDF extract vs register (Matched / Missing / Extra). "
-            "Reconciled checkboxes are UI-only; register data is unchanged."
+            "Reconciled checkboxes are UI-only; register data is unchanged. "
+            "Right-click the grid for Copy row and statement/register field copies "
+            "(Help → Bank import shortcuts… summarizes menus)."
         )
         recon_col_layout.addWidget(lbl_ai_line)
         self._line_match_panel = StatementLineMatchPanel(
@@ -1322,16 +1390,19 @@ class BankImportTab(QWidget):
             "F5 refreshes accounts and import batches; if a batch is selected, it is re-opened when "
             "it still exists (preview + reconciliation refresh). "
             "CSV exports (reconciliation report and line-compare) use UTF-8 BOM for Excel. "
-            "Right-click the batch or register preview, or the Manage Bank Accounts table "
-            "(even on empty area), for Keyboard shortcuts…. "
+            "Right-click the batch list, register preview, Manage Bank Accounts table, or "
+            "AI line-reconciliation grid (empty area where supported) for Keyboard shortcuts…; "
+            "preview rows and that grid also offer Copy row and field copies. "
             "Help → Bank import shortcuts…; Register tab: Help → Bank register keyboard shortcuts…. "
+            "View: Ctrl+2 this tab, Ctrl+3 Register (Stmt match overlay). "
             "Company SQLite: File → Backup / Restore (probooks.backup, CLI probooks backup/restore)."
         )
         tip.setWordWrap(True)
         tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
         tip.setToolTip(
-            "F5 reloads accounts and batches; right-click tables for Keyboard shortcuts… "
-            "(see Help → Bank import shortcuts…). "
+            "F5 reloads accounts and batches; right-click batch list, preview, accounts, or "
+            "line-reconciliation grid for Keyboard shortcuts… (see Help → Bank import shortcuts…). "
+            "Preview and line-reconciliation rows include Copy row and field copies. "
             "Back up the company .db from File → Backup / probooks backup before destructive imports."
         )
         outer.addWidget(tip)
@@ -1472,7 +1543,8 @@ class BankImportTab(QWidget):
         )
         act_keys.setToolTip(
             "Same summary as Help → Bank import shortcuts… "
-            "(F5, batches, register preview, reconciliation). "
+            "(F5, batches, register preview, AI line reconciliation, row field copies). "
+            + VIEW_BANK_REGISTER_KEYS_TOOLTIP
             + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
@@ -1497,6 +1569,49 @@ class BankImportTab(QWidget):
             "Copy this transaction row as tab-separated text for pasting into a spreadsheet or editor. "
             + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
+        act_copy_tid = menu.addAction(
+            "Copy transaction id", partial(self._copy_import_txn_id, tid)
+        )
+        act_copy_tid.setToolTip(
+            "Copy the internal database id for this row (bank_transactions.id); matches **Reg #** in line reconciliation. "
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+        )
+        act_copy_date = menu.addAction("Copy date", partial(self._copy_import_txn_date, tid))
+        act_copy_date.setToolTip(
+            "Copy the transaction date on this row (typically YYYY-MM-DD). "
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+        )
+        act_copy_amt = menu.addAction("Copy amount", partial(self._copy_import_txn_amount, tid))
+        act_copy_amt.setToolTip(
+            "Copy the signed amount (two decimals): positive = deposit / inflow, negative = payment / outflow—same as CSV import. "
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+        )
+        act_copy_desc = menu.addAction(
+            "Copy payee / description", partial(self._copy_import_txn_description, tid)
+        )
+        act_copy_desc.setToolTip(
+            "Copy the payee or description text on this transaction for rules or search. "
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+        )
+        act_copy_memo = menu.addAction("Copy memo", partial(self._copy_import_txn_memo, tid))
+        act_copy_memo.setToolTip(
+            "Copy the memo text on this transaction. "
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+        )
+        act_copy_ref = menu.addAction(
+            "Copy number / ref", partial(self._copy_import_txn_ref_number, tid)
+        )
+        act_copy_ref.setToolTip(
+            "Copy the check number or bank reference on this transaction. "
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+        )
+        act_copy_coa = menu.addAction(
+            "Copy category (COA)", partial(self._copy_import_txn_coa, tid)
+        )
+        act_copy_coa.setToolTip(
+            "Copy the saved category line (plain COA string on this transaction) for rules or the register. "
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+        )
         act_history = menu.addAction("View change history…")
         act_history.setToolTip(
             "Open field-level audit history for this bank transaction (import/register edits)."
@@ -1512,6 +1627,9 @@ class BankImportTab(QWidget):
                 empty_message="No audit entries recorded for this transaction yet.",
             )
 
+    def _copy_import_txn_id(self, txn_id: int) -> None:
+        QGuiApplication.clipboard().setText(str(int(txn_id)))
+
     def _open_import_txn_attachment(self, txn_id: int) -> None:
         row = self._db.get_transaction(txn_id)
         if row is None:
@@ -1523,6 +1641,35 @@ class BankImportTab(QWidget):
             empty_message="No attachment path is set for this transaction.",
         )
 
+    def _clip_import_txn_string_field(self, txn_id: int, key: str) -> None:
+        row = self._db.get_transaction(txn_id)
+        if row is None:
+            return
+        text = (dict(row).get(key) or "").strip()
+        QGuiApplication.clipboard().setText(text)
+
+    def _copy_import_txn_coa(self, txn_id: int) -> None:
+        self._clip_import_txn_string_field(txn_id, "coa_account")
+
+    def _copy_import_txn_description(self, txn_id: int) -> None:
+        self._clip_import_txn_string_field(txn_id, "description")
+
+    def _copy_import_txn_memo(self, txn_id: int) -> None:
+        self._clip_import_txn_string_field(txn_id, "memo")
+
+    def _copy_import_txn_ref_number(self, txn_id: int) -> None:
+        self._clip_import_txn_string_field(txn_id, "ref_number")
+
+    def _copy_import_txn_date(self, txn_id: int) -> None:
+        self._clip_import_txn_string_field(txn_id, "txn_date")
+
+    def _copy_import_txn_amount(self, txn_id: int) -> None:
+        row = self._db.get_transaction(txn_id)
+        if row is None:
+            return
+        amt = float(dict(row).get("amount") or 0.0)
+        QGuiApplication.clipboard().setText(f"{amt:.2f}")
+
     def _on_batch_context_menu(self, pos):
         idx = self._batch_table.indexAt(pos)
         menu = QMenu(self)
@@ -1531,7 +1678,8 @@ class BankImportTab(QWidget):
         )
         act_keys.setToolTip(
             "Same summary as Help → Bank import shortcuts… "
-            "(F5, batches, register preview, reconciliation). "
+            "(F5, batches, register preview, AI line reconciliation, row field copies). "
+            + VIEW_BANK_REGISTER_KEYS_TOOLTIP
             + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
