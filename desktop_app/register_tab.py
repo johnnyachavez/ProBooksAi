@@ -13,7 +13,7 @@ later splits those views.
 
 Phase 3 – Bank register: chronological transactions for one bank account with
 debit/credit columns, running balance, memo and COA inline edits
-(txn id on Date ``UserRole``; balance stays chronological), and footer totals.
+(txn id on Date ``UserRole``; balance stays chronological). Footer totals and the long help paragraph appear only when **Reconciliation mode** is on.
 **Add transaction…** persists new lines via a per-account sentinel import batch (``(Manual entry)``); same ``bank_transactions`` rows as CSV imports, with an optional **Category (COA)** picker in the dialog (last non-empty choice per bank account is remembered for the next add, scoped by company file). **Date** defaults to the latest register transaction on that account when any exist, else today. **Amount** receives initial keyboard focus when the dialog opens.
 The grid always shows at least **20** rows (practice lines when short on data; UI-only, not saved).
 **Reconciliation mode** shows a banner and **Stmt match** overlay column (Matched / Missing / Extra demo from mock extract); register stays the base layer.
@@ -28,14 +28,14 @@ The filter choice, last selected bank account, and register table **column heade
 persist in ``QSettings``, scoped by company SQLite path (same app profile as the main window).
 **Ctrl+Shift+C** / **Ctrl+Shift+U** mark cleared / clear cleared; **Ctrl+Shift+E** runs **Export CSV…**;
 **Ctrl+Shift+G** runs **Post selected to GL**; **F5** refreshes the grid when the Register tab (or its
-controls) has keyboard focus. The same actions are on **Tools** → **Register Actions** / **Reconciliation** / **Attachments** / **Transaction Tools** / **Flags**. **Help** → **Bank register keyboard shortcuts…** (dialog also points at **Bank import shortcuts…**) or
+controls) has keyboard focus. The same actions are on **Recon** → **Register Actions** / **Reconciliation** / **Attachments** / **Transaction Tools** / **Flags**. **Help** → **Bank register keyboard shortcuts…** (dialog also points at **Bank import shortcuts…**) or
 **right-click** the grid (including empty area) for **Keyboard shortcuts…** and row actions with **QAction** **setToolTip**
 (**Copy row** as TSV; **Copy transaction id**; **Copy date**; **Copy amount**; **Copy payee / description**; **Copy memo**; **Copy number / ref**; **Copy category (COA)** as plain saved COA); the register grid has a hover **tooltip**
 (shortcuts summary). **Link payment…** dialog: **Current link** (when present), **Suggested matches** / **Manual link**
 headings, and the suggestions list have hover **tooltips**. **Right-click** the list (empty area OK) for
 **Keyboard shortcuts…** (same **Help** dialog as the register grid).
-Modal **Transfer** / **Splits** / **Link payment** dialogs and their buttons use **setToolTip** for hover hints; register actions moved to the main **Tools** menu use **QAction** tips there.
-Footer **debit** / **credit** / **net** totals and the long gray **help** paragraph also have tooltips.
+Modal **Transfer** / **Splits** / **Link payment** dialogs and their buttons use **setToolTip** for hover hints; register actions on the main **Recon** menu use **QAction** tips there.
+In reconciliation mode, footer **debit** / **credit** / **net** totals and the gray **help** paragraph have tooltips; that block is hidden in normal register.
 The tab **root** **QWidget** has a hover hint. **Bank account** and **Filter** combos (and their **QLabel** prompts) use **setToolTip**.
 """
 
@@ -544,7 +544,7 @@ def _register_keyboard_shortcuts_help_text() -> str:
     """Plain text for Register shortcuts (keep aligned with ``QShortcut`` wiring)."""
     return (
         "These shortcuts apply when the Register tab or its controls have focus:\n\n"
-        "Tools menu — Register Actions / Reconciliation / Attachments / Transaction Tools / Flags "
+        "Recon menu — Register Actions / Reconciliation / Attachments / Transaction Tools / Flags "
         "mirror the former register buttons (add, post, export, cleared, attachments, splits, transfer, link, receipt flags); "
         "F5 still refreshes the grid.\n\n"
         "Add transaction… — opens a dialog to save a new line to the register "
@@ -566,7 +566,7 @@ def _register_keyboard_shortcuts_help_text() -> str:
         "Copy payee / description; Copy memo; Copy number / ref; Copy category (COA) (plain saved category). "
         "Bank Import batch preview rows offer the same field copies from the database; "
         "its **Matched / Missing / Extra** line-reconciliation grid adds statement/register copies—see **Help → Bank import shortcuts….**\n\n"
-        "Link payment… (Tools → Transaction Tools) — suggested-matches list: right-click (including empty area) for "
+        "Link payment… (Recon → Transaction Tools) — suggested-matches list: right-click (including empty area) for "
         "Keyboard shortcuts… (same as this dialog).\n\n"
         "F5 — Refresh\n"
         "Ctrl+Shift+G — Post selected to GL\n"
@@ -595,7 +595,7 @@ def show_register_keyboard_shortcuts_dialog(parent: QWidget) -> None:
         "Register keyboard shortcuts",
         _register_keyboard_shortcuts_help_text(),
         ok_tip="Close; shortcuts apply when Bank register has focus. "
-        "Tools menu — Register Actions and related groups for add/post/export, attachments, splits, transfer, link, and receipt flags. "
+        "Recon menu — Register Actions and related groups for add/post/export, attachments, splits, transfer, link, and receipt flags. "
         "View → Bank Import (Ctrl+2) for AI line reconciliation / Stmt match sync. "
         "Company .db: File → Backup / Restore (probooks.backup).",
     )
@@ -630,7 +630,7 @@ class RegisterTab(QWidget):
         self.setToolTip(
             "Bank register for one account: bank account picker, filter, reconciliation mode, and the transaction grid. "
             "F5 refreshes when Register has focus. "
-            "Bulk row actions (add transaction, post to GL, and export CSV (UTF-8 BOM for Excel), cleared, attachments, splits, transfer, link payment, receipt flags): Tools menu. "
+            "Bulk row actions (add transaction, post to GL, and export CSV (UTF-8 BOM for Excel), cleared, attachments, splits, transfer, link payment, receipt flags): Recon menu. "
             "Reconciliation mode + Stmt match can be updated from Bank Import AI line reconciliation "
             "(Help → Bank import shortcuts…). "
             "View → Bank Import (Ctrl+2), Register (Ctrl+3). "
@@ -683,7 +683,7 @@ class RegisterTab(QWidget):
             "Reconciliation workflow: Stmt match (Matched / Missing / Extra), Memo, Clr, and Match columns, "
             "full column layout, and Document Intake + Bank Import tabs. "
             "Off: checkbook-style register (Date, Number, Payee, amounts, Balance, COA) and those tabs hidden. "
-            "F5 refreshes; bulk actions: Tools → Register Actions / Reconciliation / … "
+            "F5 refreshes; bulk actions: Recon → Register Actions / Reconciliation / … "
             "Bank Import compare can populate Stmt match. View → Bank Import (Ctrl+2), Register (Ctrl+3)."
         )
         self._chk_recon.toggled.connect(self._on_reconciliation_mode_toggled)
@@ -748,8 +748,8 @@ class RegisterTab(QWidget):
         self._table.setToolTip(
             "Transactions for the selected bank account and filter; edit memo/COA inline where allowed. "
             "The grid keeps ~20 visible rows (practice lines when you have fewer saved transactions). "
-            "Use Tools → Register Actions for add transaction, post, and export; "
-            "other groups under Tools for attachments, splits, cleared, and flags. "
+            "Use Recon → Register Actions for add transaction, post, and export; "
+            "other groups under Recon for attachments, splits, cleared, and flags. "
             "Right-click for Keyboard shortcuts… (empty area OK); on a saved row, also "
             "**Copy row**, **Copy transaction id**, **Copy date**, **Copy amount**, **Copy payee / description**, **Copy memo**, **Copy number / ref**, or **Copy category (COA)**. "
             "Statement vs register field copies for AI line reconciliation live on Bank Import (Help → Bank import shortcuts…). "
@@ -775,6 +775,11 @@ class RegisterTab(QWidget):
         sc_post.setContext(Qt.WidgetWithChildrenShortcut)
         sc_post.activated.connect(self._post_selected)
 
+        self._register_info_footer = QWidget()
+        footer_column = QVBoxLayout(self._register_info_footer)
+        footer_column.setContentsMargins(0, 8, 0, 0)
+        footer_column.setSpacing(10)
+
         foot = QHBoxLayout()
         self._lbl_debits = QLabel("Total debits: —")
         self._lbl_debits.setToolTip(
@@ -796,9 +801,9 @@ class RegisterTab(QWidget):
         foot.addSpacing(24)
         foot.addWidget(self._lbl_net)
         foot.addStretch()
-        layout.addLayout(foot)
+        footer_column.addLayout(foot)
 
-        tip = QLabel(
+        self._register_help_tip = QLabel(
             "Deposits show in Debit; payments in Credit (cash-basis register). "
             "Payee shows description on the upper row band and COA account on the lower band; "
             "Number shows reference and type tag (DEP / PMT / XFER) together on one line in the upper band. "
@@ -808,7 +813,7 @@ class RegisterTab(QWidget):
             "Starred (★) items at the top of the COA list are hints from your rules "
             "and, when OPENAI_API_KEY is set, optional AI picks. "
             "Balance is the running total in date order for loaded rows. "
-            "Tools → Register Actions → Add Transaction… saves new lines (manual-entry batch). "
+            "Recon → Register Actions → Add Transaction… saves new lines (manual-entry batch). "
             "Extra visible rows pad the grid (practice typing; not saved). "
             "Reconciliation mode adds Stmt match (Matched / Missing / Extra) without hiding the register. "
             "Filter, last bank account, last Add-transaction COA per bank account, and column widths are remembered per company file for the next session. "
@@ -817,17 +822,20 @@ class RegisterTab(QWidget):
             "Help → Bank register keyboard shortcuts… (includes Bank import shortcuts pointer), "
             "Help → Bank import shortcuts…, or right-click the grid (even on empty area)."
         )
-        tip.setWordWrap(True)
-        tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
-        tip.setToolTip(
+        self._register_help_tip.setWordWrap(True)
+        self._register_help_tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        self._register_help_tip.setToolTip(
             "Register layout, debits/credits, Clr column, COA hints (★), shortcuts (F5, Ctrl+Shift+…), "
             "and Help / right-click for Keyboard shortcuts…. "
             "Bank Import AI line-reconciliation row copies: Help → Bank import shortcuts…."
         )
-        layout.addWidget(tip)
+        footer_column.addWidget(self._register_help_tip)
+
+        layout.addWidget(self._register_info_footer)
 
         self._clear_table()
         self._apply_register_column_layout()
+        self._sync_register_info_footer_visibility()
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -846,7 +854,7 @@ class RegisterTab(QWidget):
         self._coa_choices = self._coa_db.display_list()
         self._reload_current()
 
-    # --- Tools menu (MainWindow): same handlers as the former on-tab register action buttons ---------
+    # --- Recon menu (MainWindow): same handlers as the former on-tab register action buttons ---------
     def tools_register_add_transaction(self) -> None:
         self._on_add_manual_transaction()
 
@@ -990,6 +998,10 @@ class RegisterTab(QWidget):
     def is_reconciliation_mode(self) -> bool:
         return self._reconciliation_mode
 
+    def _sync_register_info_footer_visibility(self) -> None:
+        """Show debit/credit/net totals and help text only when reconciliation mode is on."""
+        self._register_info_footer.setVisible(self._reconciliation_mode)
+
     def _restore_default_reconciliation_header_geometry(self) -> None:
         hdr = self._table.horizontalHeader()
         hdr.setSectionResizeMode(_COL_DATE, QHeaderView.ResizeMode.Interactive)
@@ -1090,6 +1102,7 @@ class RegisterTab(QWidget):
             self._recon_txn_status.clear()
             self._recon_overlay_bank_import_mode = False
         self._reload_current()
+        self._sync_register_info_footer_visibility()
         self.reconciliationModeChanged.emit(self._reconciliation_mode)
 
     def apply_line_match_results_from_import(
@@ -1126,6 +1139,7 @@ class RegisterTab(QWidget):
             self._chk_recon.blockSignals(False)
             self._on_reconciliation_mode_toggled(False)
             return False
+        self._sync_register_info_footer_visibility()
         self.reconciliationModeChanged.emit(True)
         return True
 

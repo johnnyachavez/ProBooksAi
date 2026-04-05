@@ -113,7 +113,7 @@ def _document_intake_keyboard_shortcuts_help_text() -> str:
     """Plain text for **Help → Document intake shortcuts…** (aligned with **F5** / **InboxWidget**)."""
     return (
         "These shortcuts apply when Document Intake or its controls have focus:\n\n"
-        "Menu bar: hover File, View, Edit, Help, or Tools to see shortcut and action hints "
+        "Menu bar: hover File, View, Edit, Tools, Recon, Help to see shortcut and action hints "
         "in the status bar and on hover for each menu item.\n\n"
         "F5 — Refresh the document list when Document Intake has focus.\n\n"
         "Detail pane: Run AI, Approve, Mark Posted, and Reject have short descriptions on hover.\n\n"
@@ -126,8 +126,9 @@ def _document_intake_keyboard_shortcuts_help_text() -> str:
         "Ctrl+5 Reports, Ctrl+6 Journal, Ctrl+7 Business, Ctrl+8 Audit log — all tabs share the open "
         "company SQLite file (File → Backup / Restore, probooks.backup). "
         "Hover Bank Import and Register in View for status tips on AI line reconciliation and Stmt match.\n\n"
-        "Tools menu — **Bank register** bulk row actions (add transaction, post to GL, export CSV, cleared, "
-        "attachments, splits, transfer, link payment, receipt flags) when you use Register (Ctrl+3).\n\n"
+        "**Recon** menu — **Bank register** bulk row actions (add transaction, post to GL, export CSV, cleared, "
+        "attachments, splits, transfer, link payment, receipt flags) when you use Register (Ctrl+3). "
+        "**Tools** menu — open **Invoice…** (Business tab, Invoices AR).\n\n"
         "CSV exports on Bank Import (reconciliation report and line-compare), Register, Reports, Journal, Business, "
         "and Audit use UTF-8 with BOM for Excel.\n"
         "Bank Import Import CSV… reads bank statement CSV as UTF-8 with optional BOM.\n\n"
@@ -150,7 +151,7 @@ def show_document_intake_keyboard_shortcuts_dialog(parent: QWidget) -> None:
         _document_intake_keyboard_shortcuts_help_text(),
         ok_tip="Close; shortcuts apply when Document Intake has focus. "
         "Bank CSV/PDF and AI line reconciliation: Ctrl+2 Bank Import; "
-        "Stmt match overlay: Ctrl+3 Register; register bulk actions: Tools menu. "
+        "Stmt match overlay: Ctrl+3 Register; register bulk actions: Recon menu. "
         "Company .db: File → Backup / Restore (probooks.backup).",
     )
 
@@ -961,7 +962,8 @@ class MainWindow(QMainWindow):
         # ── Tabs 5–7: GL reports & business (roadmap phases 5–16) ─────────
         self._tabs.addTab(ReportsTab(self._bank_db._conn), "📈  Reports")
         self._tabs.addTab(JournalTab(self._bank_db._conn), "📗  Journal")
-        self._tabs.addTab(BusinessHub(self._bank_db._conn), "🧾  Business")
+        self._business_hub = BusinessHub(self._bank_db._conn)
+        self._tabs.addTab(self._business_hub, "🧾  Business")
         self._tabs.addTab(AuditTab(self._bank_db._conn), "📜  Audit log")
 
         main_tab_bar = self._tabs.tabBar()
@@ -984,7 +986,7 @@ class MainWindow(QMainWindow):
             2,
             "Check-register grid for one bank account; inline edits where allowed; F5 refresh. "
             "Reconciliation mode + Stmt match (Bank Import AI line reconciliation can populate it). "
-            "Bulk actions (add transaction, post to GL, export CSV, splits, transfer, link, cleared, attachments, receipt flags): Tools menu."
+            "Bulk actions (add transaction, post to GL, export CSV, splits, transfer, link, cleared, attachments, receipt flags): Recon menu."
             + _tab_bar_csv_excel_hint
             + _main_tab_bar_db_hint,
         )
@@ -1199,10 +1201,21 @@ class MainWindow(QMainWindow):
         act_prefs.setEnabled(False)
         edit_menu.addAction(act_prefs)
 
-        # Tools menu — Bank register actions (moved from the register tab for a table-focused UI)
+        # Tools menu — general utilities (invoice access to Business → Invoices AR)
         tools_menu = mb.addMenu("&Tools")
+        act_tools_invoice = QAction("&Invoice\u2026", self)
+        _menu_action_tip(
+            act_tools_invoice,
+            "Open the Business tab on **Invoices (AR)** — customers, new/edit invoice, payments, PDF export. "
+            "Same company .db (File → Backup / Restore, probooks.backup).",
+        )
+        act_tools_invoice.triggered.connect(self._on_tools_invoice)
+        tools_menu.addAction(act_tools_invoice)
 
-        m_reg_actions = tools_menu.addMenu("Register &Actions")
+        # Recon menu — bank register bulk actions (moved from the register tab for a table-focused UI)
+        recon_menu = mb.addMenu("&Recon")
+
+        m_reg_actions = recon_menu.addMenu("Register &Actions")
         act_reg_add = QAction("&Add Transaction\u2026", self)
         _menu_action_tip(
             act_reg_add,
@@ -1236,7 +1249,7 @@ class MainWindow(QMainWindow):
         )
         m_reg_actions.addAction(act_reg_export)
 
-        m_reg_recon = tools_menu.addMenu("&Reconciliation")
+        m_reg_recon = recon_menu.addMenu("&Reconciliation")
         act_reg_mark_clr = QAction("&Mark Cleared", self)
         _menu_action_tip(
             act_reg_mark_clr,
@@ -1256,7 +1269,7 @@ class MainWindow(QMainWindow):
         )
         m_reg_recon.addAction(act_reg_clear_clr)
 
-        m_reg_attach = tools_menu.addMenu("&Attachments")
+        m_reg_attach = recon_menu.addMenu("&Attachments")
         act_reg_attach = QAction("&Attach File\u2026", self)
         _menu_action_tip(
             act_reg_attach,
@@ -1276,7 +1289,7 @@ class MainWindow(QMainWindow):
         )
         m_reg_attach.addAction(act_reg_clear_att)
 
-        m_reg_txn = tools_menu.addMenu("&Transaction Tools")
+        m_reg_txn = recon_menu.addMenu("&Transaction Tools")
         act_reg_splits = QAction("&Splits\u2026", self)
         _menu_action_tip(
             act_reg_splits,
@@ -1305,7 +1318,7 @@ class MainWindow(QMainWindow):
         )
         m_reg_txn.addAction(act_reg_link)
 
-        m_reg_flags = tools_menu.addMenu("&Flags")
+        m_reg_flags = recon_menu.addMenu("&Flags")
         act_reg_flag_rcpt = QAction("&Flag Needs Receipt", self)
         _menu_action_tip(
             act_reg_flag_rcpt,
@@ -1364,7 +1377,7 @@ class MainWindow(QMainWindow):
             act_register_keys,
             "F5, Ctrl+Shift+G/E/C/U, and register grid shortcuts (row menu: copy row, txn id, date, amount, payee, memo, ref, COA); "
             "Ctrl+Shift+E export CSV uses UTF-8 BOM for Excel. "
-            "Tools menu lists Register Actions, Reconciliation, Attachments, Transaction Tools, and Flags (same handlers as the old register buttons). "
+            "Recon menu lists Register Actions, Reconciliation, Attachments, Transaction Tools, and Flags (same handlers as the old register buttons). "
             "Help dialog links to Bank import for AI line-reconciliation field copies. "
             "Document intake help lists File backup/restore.",
         )
@@ -1638,6 +1651,15 @@ class MainWindow(QMainWindow):
         self._detail.update_coa(coa_display)
         self._register_tab.refresh_coa_choices()
 
+    def _on_tools_invoice(self) -> None:
+        """Tools → Invoice: Business hub, Invoices (AR) sub-tab."""
+        if not hasattr(self, "_tabs") or not hasattr(self, "_business_hub"):
+            return
+        idx = self._tabs.indexOf(self._business_hub)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+        self._business_hub.focus_invoices_ar_subtab()
+
     def _set_main_tab_index(self, index: int) -> None:
         if not hasattr(self, "_tabs"):
             return
@@ -1726,13 +1748,15 @@ class MainWindow(QMainWindow):
             if w is not None:
                 w.deleteLater()
         reg_tab = RegisterTab(self._bank_db, self._coa_db, self._gl_db)
+        business_hub = BusinessHub(self._bank_db._conn)
+        self._business_hub = business_hub
         tab_specs = [
             ("🏦  Bank Import", BankImportTab(self._bank_db, self._coa_db, register_tab=reg_tab, after_stmt_match_sync=self._focus_bank_register_tab)),
             ("📒  Bank register", reg_tab),
             ("📊  Chart of Accounts", COATab(self._coa_db)),
             ("📈  Reports", ReportsTab(self._bank_db._conn)),
             ("📗  Journal", JournalTab(self._bank_db._conn)),
-            ("🧾  Business", BusinessHub(self._bank_db._conn)),
+            ("🧾  Business", business_hub),
             ("📜  Audit log", AuditTab(self._bank_db._conn)),
         ]
         for i, (title, widget) in enumerate(tab_specs, start=1):

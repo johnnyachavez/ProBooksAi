@@ -35,7 +35,7 @@ def more_main_tabs_keyboard_shortcuts_help_text() -> str:
         "Help → Document intake shortcuts… (includes File → Backup / Restore via probooks.backup).\n"
         "Help → Bank import shortcuts…\n"
         "Help → Bank register keyboard shortcuts…\n"
-        "Register bulk actions (add transaction, post, export, cleared, …): main **Tools** menu.\n"
+        "Register bulk actions (add transaction, post, export, cleared, …): main **Recon** menu.\n"
         "Help → Business shortcuts…\n"
     )
 

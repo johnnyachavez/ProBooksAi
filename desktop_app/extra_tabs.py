@@ -3687,7 +3687,7 @@ def _business_keyboard_shortcuts_help_text() -> str:
         "Other tabs:\n"
         "Help → Bank import shortcuts…\n"
         "Help → Bank register keyboard shortcuts…\n"
-        "Register bulk actions (add transaction, post, export, cleared, …): main **Tools** menu.\n"
+        "Register bulk actions (add transaction, post, export, cleared, …): main **Recon** menu.\n"
     )
 
 
@@ -3772,6 +3772,12 @@ class BusinessHub(QWidget):
         sc_business_f5 = QShortcut(QKeySequence("F5"), self)
         sc_business_f5.setContext(Qt.WidgetWithChildrenShortcut)
         sc_business_f5.activated.connect(self._refresh_current_subtab)
+
+    def focus_invoices_ar_subtab(self) -> None:
+        """Select the **Invoices (AR)** sub-tab (index 1: customers, invoices, payments, PDF)."""
+        idx = 1
+        if 0 <= idx < self._business_subtabs.count():
+            self._business_subtabs.setCurrentIndex(idx)
 
     def _refresh_current_subtab(self) -> None:
         w = self._business_subtabs.currentWidget()

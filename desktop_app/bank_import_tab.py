@@ -169,7 +169,7 @@ def _bank_import_keyboard_shortcuts_help_text() -> str:
         "COA, Journal, Reports, Audit:\n"
         "Help → More tab shortcuts (F5)…\n\n"
         "Register tab: **F5** / **Ctrl+Shift+** shortcuts and **Help → Bank register keyboard shortcuts…**; "
-        "add/post/export and other row actions are on **Tools** (Register Actions, Reconciliation, …).\n\n"
+        "add/post/export and other row actions are on **Recon** (Register Actions, Reconciliation, …).\n\n"
         "Business tab (rules, invoices, bills, payroll):\n"
         "Help → Business shortcuts…"
     )
@@ -182,7 +182,7 @@ def show_bank_import_keyboard_shortcuts_dialog(parent: QWidget) -> None:
         _bank_import_keyboard_shortcuts_help_text(),
         ok_tip="Close; shortcuts apply when Bank Import has focus. "
         "View → Register (Ctrl+3) for Stmt match after Run mock extract & compare; "
-        "register bulk actions live under Tools. "
+        "register bulk actions live under Recon. "
         "Company .db: File → Backup / Restore (probooks.backup).",
     )
 

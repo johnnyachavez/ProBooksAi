@@ -832,7 +832,7 @@ def test_file_exit_menu_tip_suggests_backup() -> None:
 
 
 def test_main_window_no_toolbar_menu_bar_qaction_counts() -> None:
-    """``_build_ui`` has no main ``QToolBar``; menu bar still defines 21 ``QAction``s."""
+    """``_build_ui`` has no main ``QToolBar``; menu bar defines 33 ``QAction``s."""
     text = _MAIN.read_text(encoding="utf-8")
     bu_s = text.index("def _build_ui(self):")
     bu_e = text.index("    def _build_menu_bar(self):", bu_s)
@@ -842,7 +842,7 @@ def test_main_window_no_toolbar_menu_bar_qaction_counts() -> None:
     assert "# Toolbar" not in bu_chunk
     mb_s = text.index("def _build_menu_bar")
     mb_e = text.index("def dragEnterEvent", mb_s)
-    assert text[mb_s:mb_e].count("QAction(") == 32
+    assert text[mb_s:mb_e].count("QAction(") == 33
 
 
 def test_file_menu_import_wires_on_import_and_mentions_ctrl_o() -> None:
@@ -2289,7 +2289,7 @@ def test_main_window_on_help_roadmap_resolve_none_branch_before_open_url_order()
 
 
 def test_main_window_build_menu_bar_top_level_menu_comments_order() -> None:
-    """``_build_menu_bar`` lists **File → View → Edit → Tools → Help** section comments in that order."""
+    """``_build_menu_bar`` lists **File → View → Edit → Tools → Recon → Help** section comments in that order."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _build_menu_bar(self):")
     end = text.index("\n\n    # -- drag & drop on window", start)
@@ -2299,6 +2299,7 @@ def test_main_window_build_menu_bar_top_level_menu_comments_order() -> None:
         "        # View menu",
         "        # Edit menu",
         "        # Tools menu",
+        "        # Recon menu",
         "        # Help menu",
     )
     positions = [chunk.index(m) for m in markers]
@@ -2363,14 +2364,18 @@ def test_main_window_edit_menu_qaction_definitions_order() -> None:
     assert u < r < sep < p
 
 
-def test_main_window_tools_menu_has_bank_register_submenus() -> None:
-    """**Tools** menu groups bank register actions under submenus (no top-level stub)."""
+def test_main_window_tools_menu_invoice_and_recon_menu_has_register_submenus() -> None:
+    """**Tools** has Invoice; **Recon** groups bank register actions under five submenus."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("        # Tools menu")
     end = text.index("        # Help menu", start)
     chunk = text[start:end]
     assert chunk.count("tools_menu = mb.addMenu(\"&Tools\")") == 1
-    assert chunk.count("tools_menu.addMenu(") == 5
+    assert chunk.count("recon_menu = mb.addMenu(\"&Recon\")") == 1
+    assert chunk.count("tools_menu.addMenu(") == 0
+    assert chunk.count("recon_menu.addMenu(") == 5
+    assert "act_tools_invoice = QAction" in chunk
+    assert "triggered.connect(self._on_tools_invoice)" in chunk
     assert "act_tools = QAction" not in chunk
 
 
@@ -2416,8 +2421,8 @@ def test_main_window_build_menu_bar_wires_all_action_triggers() -> None:
     start = text.index("    def _build_menu_bar(self):")
     end = text.index("    # -- drag & drop on window", start)
     chunk = text[start:end]
-    assert chunk.count("QAction(") == 32
-    assert chunk.count(".triggered.connect(") == 27
+    assert chunk.count("QAction(") == 33
+    assert chunk.count(".triggered.connect(") == 28
     assert (
         chunk.count(
             "lambda checked=False, i=idx: self._set_main_tab_index(i)"
@@ -2789,7 +2794,7 @@ def test_menu_action_tip_helper_docstring_mentions_status_bar() -> None:
 
 
 def test_tools_menu_has_no_disabled_placeholder_action() -> None:
-    """**Tools** menu uses register submenus instead of a disabled **(Coming soon)** stub."""
+    """**Tools** has Invoice; **Recon** holds register actions (no disabled **(Coming soon)** stub)."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("# Tools menu")
     end = text.index("# Help menu", start)
@@ -2847,8 +2852,8 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
         chunk.count("tools_menu.addAction("),
         chunk.count("help_menu.addAction("),
     )
-    assert per_menu_add == (9, 1, 3, 0, 7), (
-        f"expected per-menu addAction (File,View,Edit,Tools,Help)=(9,1,3,0,7); "
+    assert per_menu_add == (9, 1, 3, 1, 7), (
+        f"expected per-menu addAction (File,View,Edit,Tools,Help)=(9,1,3,1,7); "
         f"got {per_menu_add}"
     )
     n_reg_sub_add = (
@@ -2860,8 +2865,8 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
     )
     assert n_reg_sub_add == 12
     n_add = sum(per_menu_add) + n_reg_sub_add
-    assert n_qa == n_tip == n_add == 32, (
-        f"expected 32 menu QActions, _menu_action_tip calls, and *.addAction( calls "
+    assert n_qa == n_tip == n_add == 33, (
+        f"expected 33 menu QActions, _menu_action_tip calls, and *.addAction( calls "
         f"(QAction={n_qa}, _menu_action_tip={n_tip}, addAction={n_add})"
     )
     n_dis = chunk.count("setEnabled(False)")
@@ -2878,8 +2883,8 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
         "expected file_menu, edit_menu, and help_menu each to call addSeparator() once"
     )
     assert chunk.count("self.menuBar()") == 1
-    assert chunk.count("mb.addMenu(") == 5, (
-        "expected five top-level menus (File, View, Edit, Tools, Help)"
+    assert chunk.count("mb.addMenu(") == 6, (
+        "expected six top-level menus (File, View, Edit, Tools, Recon, Help)"
     )
     n_scut = chunk.count(".setShortcut(")
     assert n_scut == 8, (
@@ -2927,7 +2932,7 @@ def test_main_help_menu_wires_document_intake_shortcuts_dialog() -> None:
     assert "Import documents" in text and "Ctrl+O" in text
     assert "status bar" in text
     assert "each menu item" in text
-    assert "File, View, Edit, Help, or Tools" in text
+    assert "File, View, Edit, Tools, Recon, Help" in text
     assert "Detail pane:" in text
 
 
@@ -3086,7 +3091,8 @@ def test_desktop_main_document_intake_shortcuts_help_text_sections() -> None:
     assert "Bank Import Import CSV" in chunk and "optional BOM" in chunk
     assert "batch preview, AI line reconciliation" in chunk
     assert "Hover Bank Import and Register in View for status tips" in chunk
-    assert "Tools menu" in chunk and "Bank register" in chunk
+    assert "**Recon** menu" in chunk and "Bank register" in chunk
+    assert "**Tools** menu" in chunk and "Invoice" in chunk
 
 
 def test_desktop_main_document_intake_help_text_file_view_bank_section_order() -> None:
@@ -3588,7 +3594,7 @@ def test_more_main_tabs_shortcuts_module_exposes_help_dialog() -> None:
     assert "Ctrl+7 Business" in text
     assert "Ctrl+2 Bank Import" in text
     assert "Help → Document intake shortcuts" in text
-    assert "Register bulk actions" in text and "main **Tools** menu" in text
+    assert "Register bulk actions" in text and "main **Recon** menu" in text
     assert "status bar" in text
     assert "per-item hover tooltips" in text
     assert "probooks.backup" in text
@@ -3643,7 +3649,7 @@ def test_register_link_payment_suggestion_list_opens_register_shortcuts_help() -
     rtab = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
     assert rtab.count("show_register_keyboard_shortcuts_dialog(self)") >= 2
     assert "on_sug_context_menu" in rtab
-    assert "Link payment… (Tools → Transaction Tools) — suggested-matches list" in rtab
+    assert "Link payment… (Recon → Transaction Tools) — suggested-matches list" in rtab
     assert "sug_list.setToolTip(" in rtab
 
 
@@ -5099,7 +5105,7 @@ def test_main_window_banner_tabs_status_bar_and_worker_counts() -> None:
     chunk = text[start:end]
     assert chunk.count("self._header.") == 2
     assert chunk.count("self._status_bar.showMessage(") == 12
-    assert chunk.count("self._tabs.") == 20
+    assert chunk.count("self._tabs.") == 31
     assert chunk.count("self._worker") == 13
 
 
@@ -5199,18 +5205,18 @@ def test_help_keyboard_shortcuts_dialog_ok_tips_mention_company_db_backup() -> N
     midx = main_t.index("def show_document_intake_keyboard_shortcuts_dialog")
     inc = main_t[midx : main_t.index("\n\n# Accepted MIME", midx)]
     assert needle in inc
-    assert "register bulk actions: Tools menu" in inc
+    assert "register bulk actions: Recon menu" in inc
     bi = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
     bidx = bi.index("def show_bank_import_keyboard_shortcuts_dialog")
     b = bi[bidx : bi.index("\n\n# =====", bidx)]
     assert needle in b
-    assert "register bulk actions" in b and "Tools" in b
+    assert "register bulk actions" in b and "Recon" in b
     assert "Ctrl+3" in b and "Stmt match" in b
     reg = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
     ridx = reg.index("def show_register_keyboard_shortcuts_dialog")
     r = reg[ridx : reg.index("\n\nclass RegisterTab", ridx)]
     assert needle in r
-    assert "Tools menu" in r and "Register Actions" in r
+    assert "Recon menu" in r and "Register Actions" in r
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
     bidx = et.index("def show_business_keyboard_shortcuts_dialog")
     e = et[bidx : et.index("\n\nclass BusinessHub", bidx)]
@@ -5324,7 +5330,7 @@ def test_extra_tabs_exposes_business_shortcuts_dialog_for_help_menu() -> None:
         "Ctrl+4 Chart of Accounts, Ctrl+5 Reports, Ctrl+6 Journal, Ctrl+7 Business, Ctrl+8 Audit log."
         in bus_help
     )
-    assert "Register bulk actions" in bus_help and "main **Tools** menu" in bus_help
+    assert "Register bulk actions" in bus_help and "main **Recon** menu" in bus_help
     assert (
         et.count("lambda: show_business_keyboard_shortcuts_dialog(self)") == 4
     ), "Rules, AR, AP, Payroll grids should open Business shortcuts from context menu"
@@ -5493,7 +5499,7 @@ def test_bank_import_keyboard_shortcuts_help_text_lists_view_chords() -> None:
         "View menu tab focus: Ctrl+1 Document Intake, Ctrl+2 Bank Import, Ctrl+3 Register."
         in chunk
     )
-    assert "Tools" in chunk and "Register Actions" in chunk
+    assert "Recon" in chunk and "Register Actions" in chunk
 
 
 def test_bank_import_tab_f5_reload_shortcut_wired() -> None:
@@ -6120,8 +6126,8 @@ def test_register_tab_cleared_actions_document_shortcuts_in_tooltips() -> None:
     assert "activated.connect(self._post_selected)" in text
 
 
-def test_register_tab_tools_menu_entrypoints_and_link_dialog_tooltips() -> None:
-    """Register control row has no action buttons; Tools menu calls ``tools_register_*`` handlers."""
+def test_register_tab_recon_menu_entrypoints_and_link_dialog_tooltips() -> None:
+    """Register control row has no action buttons; Recon menu calls ``tools_register_*`` handlers."""
     reg = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
     assert "btn_refresh = QPushButton" not in reg
     assert "def tools_register_add_transaction" in reg
@@ -6143,7 +6149,7 @@ def test_register_tab_tools_menu_entrypoints_and_link_dialog_tooltips() -> None:
         "lbl_link_manual.setToolTip",
         "lbl_current_link.setToolTip",
         "_lbl_debits.setToolTip",
-        "tip.setToolTip",
+        "self._register_help_tip.setToolTip",
     ):
         assert needle in reg, f"register_tab should set tooltip on {needle!r}"
     assert reg.count("tip_qdialog_button_box(\n            bb,") >= 3
@@ -6153,14 +6159,14 @@ def test_register_tab_tools_menu_entrypoints_and_link_dialog_tooltips() -> None:
     assert reg.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 4
 
 
-def test_main_tools_menu_register_action_submenus_and_slots() -> None:
-    """Tools → Register Actions / Reconciliation / … wires to ``RegisterTab.tools_register_*``."""
+def test_main_recon_menu_register_action_submenus_and_slots() -> None:
+    """Recon → Register Actions / Reconciliation / … wires to ``RegisterTab.tools_register_*``."""
     text = _MAIN.read_text(encoding="utf-8")
-    assert 'm_reg_actions = tools_menu.addMenu("Register &Actions")' in text
-    assert 'm_reg_recon = tools_menu.addMenu("&Reconciliation")' in text
-    assert 'm_reg_attach = tools_menu.addMenu("&Attachments")' in text
-    assert 'm_reg_txn = tools_menu.addMenu("&Transaction Tools")' in text
-    assert 'm_reg_flags = tools_menu.addMenu("&Flags")' in text
+    assert 'm_reg_actions = recon_menu.addMenu("Register &Actions")' in text
+    assert 'm_reg_recon = recon_menu.addMenu("&Reconciliation")' in text
+    assert 'm_reg_attach = recon_menu.addMenu("&Attachments")' in text
+    assert 'm_reg_txn = recon_menu.addMenu("&Transaction Tools")' in text
+    assert 'm_reg_flags = recon_menu.addMenu("&Flags")' in text
     assert text.count("self._register_tab.tools_register_add_transaction()") == 1
     assert text.count("self._register_tab.tools_register_post_selected()") == 1
     assert text.count("self._register_tab.tools_register_export_csv()") == 1
@@ -6182,7 +6188,7 @@ def test_register_keyboard_shortcuts_help_text_matches_wired_chords() -> None:
     end = text.index("\n\nclass RegisterTab", start)
     chunk = text[start:end]
     for needle in (
-        "Tools menu",
+        "Recon menu",
         "Add transaction…",
         "manual-entry batch",
         "Reconciliation mode",

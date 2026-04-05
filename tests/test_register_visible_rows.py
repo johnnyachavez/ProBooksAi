@@ -296,6 +296,25 @@ def test_register_reconciliation_mode_keeps_rows_visible(qapp) -> None:
         db.close()
 
 
+def test_register_info_footer_totals_and_help_only_when_reconciliation_on(qapp) -> None:
+    """Normal register hides totals + instructional footer; reconciliation mode shows them."""
+    p = Path(tempfile.mkdtemp()) / "reg_footer_rec.db"
+    db = BankDatabase(str(p))
+    try:
+        coa = COADatabase(db._conn)
+        tab = RegisterTab(db, coa, None)
+        tab.show()
+        assert tab._reconciliation_mode is False
+        assert tab._register_info_footer.isHidden()
+        tab._chk_recon.setChecked(True)
+        assert tab._reconciliation_mode is True
+        assert tab._register_info_footer.isVisible()
+        tab._chk_recon.setChecked(False)
+        assert tab._register_info_footer.isHidden()
+    finally:
+        db.close()
+
+
 def test_register_checkbook_mode_hides_memo_clr_match_stmt_columns(qapp) -> None:
     """Non-reconciliation mode hides Memo, Clr, Match, and Stmt match (no gaps)."""
     p = Path(tempfile.mkdtemp()) / "reg_checkbook_cols.db"

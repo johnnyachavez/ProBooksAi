@@ -44,7 +44,7 @@ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX = (
 VIEW_BANK_REGISTER_KEYS_TOOLTIP = (
     "Bank CSV/PDF and AI line reconciliation: View → Bank Import (Ctrl+2); "
     "Stmt match overlay: Register (Ctrl+3). "
-    "Register bulk actions: Tools menu. "
+    "Register bulk actions: Recon menu. "
 )
 
 
