@@ -9,10 +9,11 @@ from pathlib import Path
 
 import probooks
 
+import desktop_app.version as desktop_version_mod
 from desktop_app import version as version_mod
 from desktop_app.version import application_version
 
-from tests.repo_paths import SCRIPTS_BUILD_DESKTOP_PS1, SCRIPTS_BUILD_DESKTOP_SH
+from tests.repo_paths import PYPROJECT_TOML, SCRIPTS_BUILD_DESKTOP_PS1, SCRIPTS_BUILD_DESKTOP_SH
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -38,6 +39,24 @@ def _build_desktop_script_texts() -> tuple[str, str]:
         SCRIPTS_BUILD_DESKTOP_PS1.read_text(encoding="utf-8"),
         SCRIPTS_BUILD_DESKTOP_SH.read_text(encoding="utf-8"),
     )
+
+
+def _project_distribution_name_from_pyproject(path: Path) -> str:
+    text = path.read_text(encoding="utf-8")
+    in_project = False
+    for raw_line in text.splitlines():
+        stripped = raw_line.strip()
+        if stripped == "[project]":
+            in_project = True
+            continue
+        if in_project:
+            if stripped.startswith("[") and stripped != "[project]":
+                break
+            line = stripped.split("#", 1)[0].strip()
+            m = re.match(r'^name\s*=\s*["\']([^"\']+)["\']', line)
+            if m:
+                return m.group(1)
+    raise AssertionError("pyproject.toml has no [project] name")
 
 
 def _pyinstaller_argv_block(text: str) -> str:
@@ -197,3 +216,12 @@ def test_build_desktop_scripts_add_data_pairs_match() -> None:
         ("docs", "docs"),
         ("pyproject.toml", "."),
     ]
+
+
+def test_build_desktop_copy_metadata_matches_pyproject_and_version_module() -> None:
+    dist_name = _project_distribution_name_from_pyproject(PYPROJECT_TOML)
+    assert dist_name == desktop_version_mod._PACKAGE
+    flag = f"--copy-metadata {dist_name}"
+    ps1, sh = _build_desktop_script_texts()
+    for b in (_pyinstaller_argv_block(ps1), _pyinstaller_argv_block(sh)):
+        assert b.count(flag) == 1
