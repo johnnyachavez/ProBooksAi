@@ -20,7 +20,7 @@ python -m pip install --quiet pyinstaller
 $PackagingVersion = python -c "from desktop_app.version import application_version; print(application_version())"
 Write-Host "Packaging ProBooks+ai version $PackagingVersion"
 
-# 2. Build (paths + bundled packages for frozen runtime)
+# 2. Build (paths + bundled packages for frozen runtime; copy-metadata needs pip install -e ".[desktop]" first)
 python -m PyInstaller `
     --noconfirm `
     --clean `
@@ -31,6 +31,7 @@ python -m PyInstaller `
     "--add-data=probooksai;probooksai" `
     "--add-data=desktop_app;desktop_app" `
     "--add-data=docs;docs" `
+    --copy-metadata probooks-ai `
     desktop_app/main.py
 
 Write-Host ""

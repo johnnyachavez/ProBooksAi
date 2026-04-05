@@ -20,7 +20,7 @@ python -m pip install --quiet pyinstaller
 # 1b. Resolved app version (same helper as the desktop UI / --version; pyproject.toml when not installed)
 echo "Packaging ProBooks+ai version $(python -c 'from desktop_app.version import application_version; print(application_version())')"
 
-# 2. Build
+# 2. Build (copy-metadata needs pip install -e ".[desktop]" first)
 python -m PyInstaller \
     --noconfirm \
     --clean \
@@ -31,6 +31,7 @@ python -m PyInstaller \
     --add-data "probooksai:probooksai" \
     --add-data "desktop_app:desktop_app" \
     --add-data "docs:docs" \
+    --copy-metadata probooks-ai \
     desktop_app/main.py
 
 echo ""
