@@ -60,11 +60,13 @@ def test_build_desktop_scripts_echo_application_version_before_pyinstaller() -> 
     assert "--copy-metadata probooks-ai" in sh
     assert "pyproject.toml" in ps1
     assert "pyproject.toml" in sh
+    assert '"--add-data=ai;ai"' in ps1
+    assert '--add-data "ai:ai"' in sh
     assert '"--add-data=probooks;probooks"' in ps1
     assert '--add-data "probooks:probooks"' in sh
     ps_add = ps1.count('"--add-data=')
     sh_add = sh.count('--add-data "')
-    assert ps_add == sh_add == 5
+    assert ps_add == sh_add == 6
     assert ps1.count("--copy-metadata probooks-ai") == 1
     assert sh.count("--copy-metadata probooks-ai") == 1
     assert ps1.count("--hidden-import generate_workbook") == 1
