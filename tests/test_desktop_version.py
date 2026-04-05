@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.metadata
+import re
 from pathlib import Path
 
 import probooks
@@ -13,6 +14,16 @@ from desktop_app.version import application_version
 from tests.repo_paths import SCRIPTS_BUILD_DESKTOP_PS1, SCRIPTS_BUILD_DESKTOP_SH
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
+
+_PYINSTALLER_BLOCK_END = "desktop_app/main.py"
+_COLLECT_SUBMODULES_RE = re.compile(r"--collect-submodules\s+(\S+)")
+_HIDDEN_IMPORT_RE = re.compile(r"--hidden-import\s+(\S+)")
+
+
+def _pyinstaller_argv_block(text: str) -> str:
+    start = text.index("python -m PyInstaller")
+    end = text.index(_PYINSTALLER_BLOCK_END, start)
+    return text[start:end]
 
 
 def test_application_version_is_non_empty():
@@ -69,22 +80,21 @@ def test_build_desktop_scripts_echo_application_version_before_pyinstaller() -> 
     assert ps_add == sh_add == 6
     assert ps1.count("--copy-metadata probooks-ai") == 1
     assert sh.count("--copy-metadata probooks-ai") == 1
-    assert ps1.count("--hidden-import generate_workbook") == 1
-    assert sh.count("--hidden-import generate_workbook") == 1
-    assert ps1.count("--collect-submodules openai") == 1
-    assert sh.count("--collect-submodules openai") == 1
-    assert ps1.count("--collect-submodules pydantic") == 1
-    assert sh.count("--collect-submodules pydantic") == 1
-    assert ps1.count("--collect-submodules httpx") == 1
-    assert sh.count("--collect-submodules httpx") == 1
-    assert ps1.count("--collect-submodules httpcore") == 1
-    assert sh.count("--collect-submodules httpcore") == 1
-    assert ps1.count("--collect-submodules h11") == 1
-    assert sh.count("--collect-submodules h11") == 1
-    assert ps1.count("--collect-submodules anyio") == 1
-    assert sh.count("--collect-submodules anyio") == 1
-    assert ps1.count("--hidden-import pypdf") == 1
-    assert sh.count("--hidden-import pypdf") == 1
+    b_ps1 = _pyinstaller_argv_block(ps1)
+    b_sh = _pyinstaller_argv_block(sh)
+    coll_ps1 = _COLLECT_SUBMODULES_RE.findall(b_ps1)
+    coll_sh = _COLLECT_SUBMODULES_RE.findall(b_sh)
+    assert coll_ps1 == coll_sh == [
+        "openai",
+        "pydantic",
+        "httpx",
+        "httpcore",
+        "h11",
+        "anyio",
+    ]
+    hid_ps1 = _HIDDEN_IMPORT_RE.findall(b_ps1)
+    hid_sh = _HIDDEN_IMPORT_RE.findall(b_sh)
+    assert hid_ps1 == hid_sh == ["generate_workbook", "pypdf"]
     needle = "python -m PyInstaller"
     assert ps1.index("application_version") < ps1.index(needle)
     assert sh.index("application_version") < sh.index(needle)
