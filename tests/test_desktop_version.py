@@ -26,6 +26,13 @@ _BUNDLES_DOC_LINES = (
     "# pyproject.toml; hidden-import generate_workbook (COA seed); openai + pydantic + httpx stack (httpx/httpcore/h11/anyio); hidden-import pypdf (ai.extractor).",
 )
 
+_ORDERED_STEP_COMMENT_LINES = (
+    "# 1. Ensure PyInstaller is installed; have openai + pypdf installed (e.g. pip install -r requirements.txt or .[ci])",
+    '#    so analysis can bundle them. Editable desktop: pip install -e ".[desktop]"',
+    "# 1b. Resolved app version (same helper as the desktop UI / --version; pyproject.toml when not installed)",
+    '# 2. Build (paths + bundled packages for frozen runtime; copy-metadata needs pip install -e ".[desktop]" first)',
+)
+
 _PYINSTALLER_BLOCK_END = "desktop_app/main.py"
 _COLLECT_SUBMODULES_RE = re.compile(r"--collect-submodules\s+(\S+)")
 _HIDDEN_IMPORT_RE = re.compile(r"--hidden-import\s+(\S+)")
@@ -131,6 +138,22 @@ def test_build_desktop_scripts_header_comment_paths() -> None:
     ps1, sh = _build_desktop_script_texts()
     assert ps1.splitlines()[0] == "# scripts/build_desktop.ps1"
     assert sh.splitlines()[1] == "# scripts/build_desktop.sh"
+
+
+def test_build_desktop_script_files_exist() -> None:
+    assert SCRIPTS_BUILD_DESKTOP_PS1.is_file()
+    assert SCRIPTS_BUILD_DESKTOP_SH.is_file()
+
+
+def test_build_desktop_sh_env_bash_shebang() -> None:
+    _, sh = _build_desktop_script_texts()
+    assert sh.splitlines()[0] == "#!/usr/bin/env bash"
+
+
+def test_build_desktop_scripts_ordered_step_comments_match() -> None:
+    ps1, sh = _build_desktop_script_texts()
+    for line in _ORDERED_STEP_COMMENT_LINES:
+        assert ps1.count(line) == sh.count(line) == 1
 
 
 def test_build_desktop_scripts_shared_doc_comments_match() -> None:
