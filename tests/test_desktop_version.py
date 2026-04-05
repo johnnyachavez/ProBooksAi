@@ -128,6 +128,14 @@ def test_build_desktop_scripts_cd_to_repo_root_once() -> None:
     assert sh.count('cd "$REPO_ROOT"') == 1
 
 
+def test_build_desktop_scripts_repo_parent_trailing_blank_entry_once() -> None:
+    ps1, sh = _build_desktop_script_texts()
+    assert ps1.count("Split-Path -Parent $ScriptDir") == 1
+    assert sh.count('cd "$SCRIPT_DIR/.." && pwd') == 1
+    assert ps1.count('Write-Host ""') == sh.count('echo ""') == 1
+    assert ps1.count("desktop_app/main.py") == sh.count("desktop_app/main.py") == 1
+
+
 def test_build_desktop_scripts_fail_fast_and_script_location() -> None:
     ps1, sh = _build_desktop_script_texts()
     assert ps1.count('$ErrorActionPreference = "Stop"') == 1
