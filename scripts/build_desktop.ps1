@@ -1,7 +1,7 @@
 # scripts/build_desktop.ps1
 # Build a standalone ProBooks+ai desktop executable on Windows (output: ProBooksPlusAi.exe).
 # Bundles ai/ (Document Intake Run AI), probooks/, probooksai/, desktop_app/, docs/ (ROADMAP.md),
-# pyproject.toml; hidden-import generate_workbook (COA seed); collect-submodules openai + pydantic; hidden-import pypdf (ai.extractor).
+# pyproject.toml; hidden-import generate_workbook (COA seed); openai + pydantic + httpx/httpcore subtrees; hidden-import pypdf (ai.extractor).
 #
 # Usage (PowerShell):
 #   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
@@ -40,6 +40,8 @@ python -m PyInstaller `
     --hidden-import generate_workbook `
     --collect-submodules openai `
     --collect-submodules pydantic `
+    --collect-submodules httpx `
+    --collect-submodules httpcore `
     --hidden-import pypdf `
     desktop_app/main.py
 
