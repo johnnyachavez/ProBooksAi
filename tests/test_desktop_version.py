@@ -120,6 +120,14 @@ def test_build_desktop_scripts_cd_to_repo_root_once() -> None:
     assert sh.count('cd "$REPO_ROOT"') == 1
 
 
+def test_build_desktop_scripts_fail_fast_and_script_location() -> None:
+    ps1, sh = _build_desktop_script_texts()
+    assert ps1.count('$ErrorActionPreference = "Stop"') == 1
+    assert sh.count("set -euo pipefail") == 1
+    assert ps1.count("$MyInvocation.MyCommand.Definition") == 1
+    assert sh.count("${BASH_SOURCE[0]}") == 1
+
+
 def test_build_desktop_scripts_packaging_echo_and_version_snippet_match() -> None:
     ps1, sh = _build_desktop_script_texts()
     label = "Packaging ProBooks+ai version"
