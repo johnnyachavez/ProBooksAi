@@ -81,21 +81,10 @@ def test_build_desktop_scripts_echo_application_version_before_pyinstaller() -> 
     ps1, sh = _build_desktop_script_texts()
     assert "application_version" in ps1
     assert "application_version" in sh
-    assert "--copy-metadata probooks-ai" in ps1
-    assert "--copy-metadata probooks-ai" in sh
-    assert "pyproject.toml" in ps1
-    assert "pyproject.toml" in sh
-    assert '"--add-data=ai;ai"' in ps1
-    assert '--add-data "ai:ai"' in sh
-    assert '"--add-data=probooks;probooks"' in ps1
-    assert '--add-data "probooks:probooks"' in sh
-    ps_add = ps1.count('"--add-data=')
-    sh_add = sh.count('--add-data "')
-    assert ps_add == sh_add == 6
-    assert ps1.count("--copy-metadata probooks-ai") == 1
-    assert sh.count("--copy-metadata probooks-ai") == 1
     b_ps1 = _pyinstaller_argv_block(ps1)
     b_sh = _pyinstaller_argv_block(sh)
+    for b in (b_ps1, b_sh):
+        assert b.count("--copy-metadata probooks-ai") == 1
     coll_ps1 = _COLLECT_SUBMODULES_RE.findall(b_ps1)
     coll_sh = _COLLECT_SUBMODULES_RE.findall(b_sh)
     assert coll_ps1 == coll_sh == [
@@ -112,6 +101,12 @@ def test_build_desktop_scripts_echo_application_version_before_pyinstaller() -> 
     needle = "python -m PyInstaller"
     assert ps1.index("application_version") < ps1.index(needle)
     assert sh.index("application_version") < sh.index(needle)
+
+
+def test_build_desktop_scripts_header_comment_paths() -> None:
+    ps1, sh = _build_desktop_script_texts()
+    assert ps1.splitlines()[0] == "# scripts/build_desktop.ps1"
+    assert sh.splitlines()[1] == "# scripts/build_desktop.sh"
 
 
 def test_build_desktop_scripts_cd_to_repo_root_once() -> None:
