@@ -2853,7 +2853,8 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
         chunk.count("help_menu.addAction("),
     )
     assert per_menu_add == (9, 1, 3, 1, 7), (
-        f"expected per-menu addAction (File,View,Edit,Tools,Help)=(9,1,3,1,7); "
+        f"expected top-level addAction counts (File,View,Edit,Tools,Help)=(9,1,3,1,7); "
+        f"Recon register actions use 12 submenu addAction (counted separately); "
         f"got {per_menu_add}"
     )
     n_reg_sub_add = (
