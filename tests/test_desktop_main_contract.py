@@ -567,6 +567,7 @@ def test_desktop_main_app_header_banner_branding_and_set_company_name() -> None:
     assert chunk.count("def set_company_name(self, name: str):") == 1
     assert chunk.count("self._lbl_company.setText(escape_ampersand_for_qt(name))") == 1
     assert "company_name: str = COMPANY_NAME" in chunk
+    assert "application_version()" in chunk
 
 
 def test_desktop_main_app_header_widget_ctor_banner_layout_company_order() -> None:
@@ -3728,6 +3729,7 @@ def test_desktop_main_cli_and_qt_app_strings_use_probooks_plus_ai() -> None:
     assert "**InboxWidget**" in mod_doc
     assert "grid has a hover **tooltip**" in mod_doc
     assert "**AppHeaderWidget**" in mod_doc
+    assert "installed package **version**" in mod_doc
     assert "**QSplitter**" in mod_doc
     assert "**QScrollArea**" in mod_doc
     assert "drag-and-drop" in mod_doc

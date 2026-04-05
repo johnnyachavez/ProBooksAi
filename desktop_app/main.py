@@ -17,7 +17,7 @@ The **central** **QWidget** (banner + tab widget) has a margin hover hint. Docum
 (import, drag-and-drop, F5, shortcuts). The intake **QSplitter** has a resize hint on hover. **DetailPane** (**QScrollArea**) has a window-level hover hint; its inner **QWidget** has a content-area hint; preview, extracted **LineEdit** / spin fields, **Doc Type**,
 **COA Account**, **AI confidence** / **rationale** labels, and action buttons use **tooltips**.
 **Preview** / **Extracted Fields** / **Categorisation** group boxes and the **filename** / **status** labels
-also have hover hints. The banner **AppHeaderWidget** (**QFrame**) right-aligns **ProBooks+ai** and the company **QLabel**s with tooltips.
+also have hover hints. The banner **AppHeaderWidget** (**QFrame**) right-aligns **ProBooks+ai** and the company **QLabel**s with tooltips; the **ProBooks+ai** label tooltip includes the installed package **version** (matches the window title and **Help → About**).
 **Help → About** uses ``message_box_about_ok`` (rich text + **Ok** hover hint). The main **QTabWidget** sets a **setToolTip** on the tab strip area; its tab bar sets **setTabToolTip** on each top-level tab (Intake through Audit log). **Document Intake**’s root **QWidget** has a hover hint for the whole tab; the inbox **column** **QWidget** (left splitter pane) has a short margin hint.
 Destructive **Yes**/**No** prompts (new company file exists, database restore) use **tip_message_box_buttons** for button hover hints and **QMessageBox.setToolTip** for the dialog window.
 
@@ -782,9 +782,11 @@ class AppHeaderWidget(QFrame):
         lbl_app.setStyleSheet(
             "color: white; font-weight: bold; font-size: 16px; background: transparent;"
         )
+        _ver = application_version()
         lbl_app.setToolTip(
             "ProBooks+ai — document intake, bank workflows (Bank Import: AI line reconciliation, "
             "Stmt match sync to Register), ledger, and business tools. "
+            f"Version {_ver} (window title and Help → About). "
             "File → Backup copies the open company .db (probooks.backup / probooks backup)."
         )
         right.addWidget(lbl_app, alignment=Qt.AlignmentFlag.AlignRight)
