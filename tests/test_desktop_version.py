@@ -102,6 +102,21 @@ def test_build_desktop_scripts_echo_application_version_before_pyinstaller() -> 
     assert sh.index("application_version") < sh.index(needle)
 
 
+def test_build_desktop_scripts_pyinstaller_core_options_match() -> None:
+    ps1 = SCRIPTS_BUILD_DESKTOP_PS1.read_text(encoding="utf-8")
+    sh = SCRIPTS_BUILD_DESKTOP_SH.read_text(encoding="utf-8")
+    b_ps1 = _pyinstaller_argv_block(ps1)
+    b_sh = _pyinstaller_argv_block(sh)
+    for b in (b_ps1, b_sh):
+        assert b.count("--noconfirm") == 1
+        assert b.count("--clean") == 1
+        assert b.count("--onefile") == 1
+        assert b.count("--windowed") == 1
+        assert "--name ProBooksPlusAi" in b
+    assert '"--paths=$RepoRoot"' in b_ps1
+    assert '--paths "$REPO_ROOT"' in b_sh
+
+
 def test_build_desktop_scripts_add_data_pairs_match() -> None:
     ps1 = SCRIPTS_BUILD_DESKTOP_PS1.read_text(encoding="utf-8")
     sh = SCRIPTS_BUILD_DESKTOP_SH.read_text(encoding="utf-8")
