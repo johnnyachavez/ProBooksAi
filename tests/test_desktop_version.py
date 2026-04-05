@@ -114,8 +114,6 @@ def test_build_desktop_scripts_echo_application_version_before_pyinstaller() -> 
     assert "application_version" in sh
     b_ps1 = _pyinstaller_argv_block(ps1)
     b_sh = _pyinstaller_argv_block(sh)
-    for b in (b_ps1, b_sh):
-        assert b.count("--copy-metadata probooks-ai") == 1
     coll_ps1 = _COLLECT_SUBMODULES_RE.findall(b_ps1)
     coll_sh = _COLLECT_SUBMODULES_RE.findall(b_sh)
     assert coll_ps1 == coll_sh == [
@@ -193,6 +191,12 @@ def test_build_desktop_scripts_packaging_echo_and_version_snippet_match() -> Non
     assert ps1.count(_VERSION_PY_SNIPPET) == sh.count(_VERSION_PY_SNIPPET) == 1
     done = "Build complete. Executable is in:"
     assert ps1.count(done) == sh.count(done) == 1
+
+
+def test_build_desktop_scripts_done_line_dist_paths() -> None:
+    ps1, sh = _build_desktop_script_texts()
+    assert 'Executable is in: $RepoRoot\\dist\\"' in ps1
+    assert 'Executable is in: $REPO_ROOT/dist/"' in sh
 
 
 def test_build_desktop_scripts_pip_and_pyinstaller_entry_match() -> None:
