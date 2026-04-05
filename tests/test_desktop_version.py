@@ -18,6 +18,8 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 _PYINSTALLER_BLOCK_END = "desktop_app/main.py"
 _COLLECT_SUBMODULES_RE = re.compile(r"--collect-submodules\s+(\S+)")
 _HIDDEN_IMPORT_RE = re.compile(r"--hidden-import\s+(\S+)")
+_ADD_DATA_PS1_RE = re.compile(r'"--add-data=([^;]+);([^"]+)"')
+_ADD_DATA_SH_RE = re.compile(r'--add-data "([^:]+):([^"]+)"')
 
 
 def _pyinstaller_argv_block(text: str) -> str:
@@ -98,3 +100,20 @@ def test_build_desktop_scripts_echo_application_version_before_pyinstaller() -> 
     needle = "python -m PyInstaller"
     assert ps1.index("application_version") < ps1.index(needle)
     assert sh.index("application_version") < sh.index(needle)
+
+
+def test_build_desktop_scripts_add_data_pairs_match() -> None:
+    ps1 = SCRIPTS_BUILD_DESKTOP_PS1.read_text(encoding="utf-8")
+    sh = SCRIPTS_BUILD_DESKTOP_SH.read_text(encoding="utf-8")
+    b_ps1 = _pyinstaller_argv_block(ps1)
+    b_sh = _pyinstaller_argv_block(sh)
+    pairs_ps1 = _ADD_DATA_PS1_RE.findall(b_ps1)
+    pairs_sh = _ADD_DATA_SH_RE.findall(b_sh)
+    assert pairs_ps1 == pairs_sh == [
+        ("ai", "ai"),
+        ("probooks", "probooks"),
+        ("probooksai", "probooksai"),
+        ("desktop_app", "desktop_app"),
+        ("docs", "docs"),
+        ("pyproject.toml", "."),
+    ]
