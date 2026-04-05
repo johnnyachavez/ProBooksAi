@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import importlib.metadata
 import re
 from pathlib import Path
@@ -24,6 +25,14 @@ _COLLECT_SUBMODULES_RE = re.compile(r"--collect-submodules\s+(\S+)")
 _HIDDEN_IMPORT_RE = re.compile(r"--hidden-import\s+(\S+)")
 _ADD_DATA_PS1_RE = re.compile(r'"--add-data=([^;]+);([^"]+)"')
 _ADD_DATA_SH_RE = re.compile(r'--add-data "([^:]+):([^"]+)"')
+
+
+@functools.lru_cache(maxsize=1)
+def _build_desktop_script_texts() -> tuple[str, str]:
+    return (
+        SCRIPTS_BUILD_DESKTOP_PS1.read_text(encoding="utf-8"),
+        SCRIPTS_BUILD_DESKTOP_SH.read_text(encoding="utf-8"),
+    )
 
 
 def _pyinstaller_argv_block(text: str) -> str:
@@ -69,8 +78,7 @@ def test_fallback_version_literal_matches_pyproject_toml() -> None:
 
 
 def test_build_desktop_scripts_echo_application_version_before_pyinstaller() -> None:
-    ps1 = SCRIPTS_BUILD_DESKTOP_PS1.read_text(encoding="utf-8")
-    sh = SCRIPTS_BUILD_DESKTOP_SH.read_text(encoding="utf-8")
+    ps1, sh = _build_desktop_script_texts()
     assert "application_version" in ps1
     assert "application_version" in sh
     assert "--copy-metadata probooks-ai" in ps1
@@ -106,9 +114,14 @@ def test_build_desktop_scripts_echo_application_version_before_pyinstaller() -> 
     assert sh.index("application_version") < sh.index(needle)
 
 
+def test_build_desktop_scripts_cd_to_repo_root_once() -> None:
+    ps1, sh = _build_desktop_script_texts()
+    assert ps1.count("Set-Location $RepoRoot") == 1
+    assert sh.count('cd "$REPO_ROOT"') == 1
+
+
 def test_build_desktop_scripts_packaging_echo_and_version_snippet_match() -> None:
-    ps1 = SCRIPTS_BUILD_DESKTOP_PS1.read_text(encoding="utf-8")
-    sh = SCRIPTS_BUILD_DESKTOP_SH.read_text(encoding="utf-8")
+    ps1, sh = _build_desktop_script_texts()
     label = "Packaging ProBooks+ai version"
     assert ps1.count(label) == sh.count(label) == 1
     assert ps1.count(_VERSION_PY_SNIPPET) == sh.count(_VERSION_PY_SNIPPET) == 1
@@ -117,8 +130,7 @@ def test_build_desktop_scripts_packaging_echo_and_version_snippet_match() -> Non
 
 
 def test_build_desktop_scripts_pip_and_pyinstaller_entry_match() -> None:
-    ps1 = SCRIPTS_BUILD_DESKTOP_PS1.read_text(encoding="utf-8")
-    sh = SCRIPTS_BUILD_DESKTOP_SH.read_text(encoding="utf-8")
+    ps1, sh = _build_desktop_script_texts()
     pip_line = "python -m pip install --quiet pyinstaller"
     assert ps1.count(pip_line) == sh.count(pip_line) == 1
     inv = "python -m PyInstaller"
@@ -134,8 +146,7 @@ def test_build_desktop_scripts_pip_and_pyinstaller_entry_match() -> None:
 
 
 def test_build_desktop_scripts_pyinstaller_core_options_match() -> None:
-    ps1 = SCRIPTS_BUILD_DESKTOP_PS1.read_text(encoding="utf-8")
-    sh = SCRIPTS_BUILD_DESKTOP_SH.read_text(encoding="utf-8")
+    ps1, sh = _build_desktop_script_texts()
     b_ps1 = _pyinstaller_argv_block(ps1)
     b_sh = _pyinstaller_argv_block(sh)
     for b in (b_ps1, b_sh):
@@ -149,8 +160,7 @@ def test_build_desktop_scripts_pyinstaller_core_options_match() -> None:
 
 
 def test_build_desktop_scripts_add_data_pairs_match() -> None:
-    ps1 = SCRIPTS_BUILD_DESKTOP_PS1.read_text(encoding="utf-8")
-    sh = SCRIPTS_BUILD_DESKTOP_SH.read_text(encoding="utf-8")
+    ps1, sh = _build_desktop_script_texts()
     b_ps1 = _pyinstaller_argv_block(ps1)
     b_sh = _pyinstaller_argv_block(sh)
     pairs_ps1 = _ADD_DATA_PS1_RE.findall(b_ps1)
