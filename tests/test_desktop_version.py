@@ -162,6 +162,15 @@ def test_build_desktop_scripts_shared_doc_comments_match() -> None:
     assert ps1.count(editable) == sh.count(editable) == 2
 
 
+def test_build_desktop_scripts_tagline_and_frozen_base_name() -> None:
+    ps1, sh = _build_desktop_script_texts()
+    tag = "Build a standalone ProBooks+ai desktop executable"
+    assert ps1.count(tag) == sh.count(tag) == 1
+    assert ps1.count("(output: ProBooksPlusAi.exe).") == 1
+    assert sh.count("(output: ProBooksPlusAi).") == 1
+    assert ps1.count("ProBooksPlusAi") == sh.count("ProBooksPlusAi") == 2
+
+
 def test_build_desktop_scripts_cd_to_repo_root_once() -> None:
     ps1, sh = _build_desktop_script_texts()
     assert ps1.count("Set-Location $RepoRoot") == 1
