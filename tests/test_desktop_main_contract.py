@@ -3729,6 +3729,9 @@ def test_desktop_main_cli_and_qt_app_strings_use_probooks_plus_ai() -> None:
     assert "**filename** / **status**" in mod_doc
     assert "**ProBooks+ai**" in mod_doc
     assert "Main window **menu bar**" in mod_doc
+    assert "Top-level menus:" in mod_doc
+    assert "**Recon** (bank register bulk actions" in mod_doc
+    assert "**Tools** (e.g. **Invoice…**" in mod_doc
     assert "``setStatusTip``" in mod_doc
     assert "``setToolTip``" in mod_doc
     assert "``message_box_information_ok``" in mod_doc

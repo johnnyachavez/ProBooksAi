@@ -22,6 +22,7 @@ also have hover hints. The banner **AppHeaderWidget** (**QFrame**) right-aligns 
 Destructive **Yes**/**No** prompts (new company file exists, database restore) use **tip_message_box_buttons** for button hover hints and **QMessageBox.setToolTip** for the dialog window.
 
 Main window **menu bar**: each ``QAction`` uses ``setStatusTip`` for the **status bar** and the same text via ``setToolTip`` for hover (``_menu_action_tip`` helper).
+Top-level menus: **File**, **View**, **Edit**, **Tools** (e.g. **Invoice…** to Business → Invoices AR), **Recon** (bank register bulk actions in submenus), **Help**.
 """
 
 from __future__ import annotations
