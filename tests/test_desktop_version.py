@@ -20,6 +20,11 @@ _VERSION_PY_SNIPPET = (
     "from desktop_app.version import application_version; print(application_version())"
 )
 
+_BUNDLES_DOC_LINES = (
+    "# Bundles ai/ (Document Intake Run AI), probooks/, probooksai/, desktop_app/, docs/ (ROADMAP.md),",
+    "# pyproject.toml; hidden-import generate_workbook (COA seed); openai + pydantic + httpx stack (httpx/httpcore/h11/anyio); hidden-import pypdf (ai.extractor).",
+)
+
 _PYINSTALLER_BLOCK_END = "desktop_app/main.py"
 _COLLECT_SUBMODULES_RE = re.compile(r"--collect-submodules\s+(\S+)")
 _HIDDEN_IMPORT_RE = re.compile(r"--hidden-import\s+(\S+)")
@@ -107,6 +112,14 @@ def test_build_desktop_scripts_header_comment_paths() -> None:
     ps1, sh = _build_desktop_script_texts()
     assert ps1.splitlines()[0] == "# scripts/build_desktop.ps1"
     assert sh.splitlines()[1] == "# scripts/build_desktop.sh"
+
+
+def test_build_desktop_scripts_shared_doc_comments_match() -> None:
+    ps1, sh = _build_desktop_script_texts()
+    for line in _BUNDLES_DOC_LINES:
+        assert ps1.count(line) == sh.count(line) == 1
+    editable = 'pip install -e ".[desktop]"'
+    assert ps1.count(editable) == sh.count(editable) == 2
 
 
 def test_build_desktop_scripts_cd_to_repo_root_once() -> None:
