@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import importlib.metadata
+from pathlib import Path
 
 import probooks
 
 from desktop_app import version as version_mod
 from desktop_app.version import application_version
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def test_application_version_is_non_empty():
@@ -35,3 +38,12 @@ def test_application_version_falls_back_to_pyproject_when_metadata_missing(monke
 
     monkeypatch.setattr(importlib.metadata, "version", _raise)
     assert version_mod.application_version() == parsed
+
+
+def test_fallback_version_literal_matches_pyproject_toml() -> None:
+    """``_FALLBACK`` and ``probooks`` metadata-less ``__version__`` match ``[project].version``."""
+    parsed = version_mod._version_from_pyproject_toml()
+    assert parsed is not None
+    assert version_mod._FALLBACK == parsed
+    init_text = (_REPO_ROOT / "probooks" / "__init__.py").read_text(encoding="utf-8")
+    assert f'return "{parsed}"' in init_text
