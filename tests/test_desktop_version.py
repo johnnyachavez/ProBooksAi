@@ -62,6 +62,11 @@ def test_build_desktop_scripts_echo_application_version_before_pyinstaller() -> 
     assert "pyproject.toml" in sh
     assert '"--add-data=probooks;probooks"' in ps1
     assert '--add-data "probooks:probooks"' in sh
+    ps_add = ps1.count('"--add-data=')
+    sh_add = sh.count('--add-data "')
+    assert ps_add == sh_add == 5
+    assert ps1.count("--copy-metadata probooks-ai") == 1
+    assert sh.count("--copy-metadata probooks-ai") == 1
     needle = "python -m PyInstaller"
     assert ps1.index("application_version") < ps1.index(needle)
     assert sh.index("application_version") < sh.index(needle)
