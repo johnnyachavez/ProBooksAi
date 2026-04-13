@@ -881,34 +881,35 @@ def test_main_window_build_ui_has_no_toolbar() -> None:
     assert chunk.count("self.addToolBar(") == 0
 
 
-def test_main_window_build_ui_sets_central_status_and_eight_main_tabs() -> None:
-    """``_build_ui`` attaches one central widget, one status bar, and eight ``_tabs.addTab`` calls."""
+def test_main_window_build_ui_sets_central_status_and_nine_main_tabs() -> None:
+    """``_build_ui`` attaches one central widget, one status bar, and nine ``_tabs.addTab`` calls."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("def _build_ui(self):")
     end = text.index("def _build_menu_bar", start)
     chunk = text[start:end]
     assert chunk.count("self.setCentralWidget(") == 1
     assert chunk.count("self.setStatusBar(") == 1
-    assert chunk.count("self._tabs.addTab(") == 8
+    assert chunk.count("self._tabs.addTab(") == 9
 
 
-def test_main_window_build_ui_tab_strip_titles_intake_through_audit() -> None:
-    """Eight ``addTab`` lines keep Document Intake first and Audit log last, with stable user-visible titles."""
+def test_main_window_build_ui_tab_strip_titles_invoices_through_reconcile() -> None:
+    """Nine ``addTab`` lines keep operational tabs in fixed Invoices→Reconcile order."""
     text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("        # ── Tab 1: Document Intake")
-    end = text.index("        main_tab_bar = self._tabs.tabBar()", start)
+    start = text.index("# Fixed top tab order (approved)")
+    end = text.index("# Rebuild fixed More area pages.", start)
     chunk = text[start:end]
     lines = [ln.strip() for ln in chunk.splitlines() if "self._tabs.addTab(" in ln]
-    assert len(lines) == 8
+    assert len(lines) == 9
     want = (
-        "Document Intake",
-        "Bank Import",
-        "Bank register",
+        "Invoices",
+        "Enter Bills",
+        "Pay Bills",
+        "Receive Payments",
+        "Bank Register",
         "Chart of Accounts",
-        "Reports",
-        "Journal",
-        "Business",
-        "Audit log",
+        "Customers",
+        "Vendors",
+        "Reconcile",
     )
     for i, title in enumerate(want):
         assert title in lines[i], (i, title, lines[i])
@@ -1001,7 +1002,7 @@ def test_main_window_intake_left_inbox_header_row_before_inbox_widget_order() ->
 def test_main_window_build_ui_document_intake_split_inbox_header_and_f5() -> None:
     """Document Intake tab builds inbox header (brand colour), horizontal splitter, sizes, F5, first tab."""
     text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("        # ── Tab 1: Document Intake")
+    start = text.index("# Fixed top tab order (approved)")
     end = text.index("        # ── Tab 2:", start)
     chunk = text[start:end]
     assert chunk.count("intake_layout.setContentsMargins(0, 0, 0, 0)") == 1
@@ -1054,7 +1055,7 @@ def test_main_window_build_ui_document_intake_split_inbox_header_and_f5() -> Non
 def test_main_window_build_ui_intake_f5_shortcut_before_add_tab_order() -> None:
     """Document Intake wires the widget-scoped **F5** shortcut before the tab is added to ``_tabs``."""
     text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("        # ── Tab 1: Document Intake")
+    start = text.index("# Fixed top tab order (approved)")
     end = text.index("        # ── Tab 2:", start)
     chunk = text[start:end]
     assert chunk.index('QShortcut(QKeySequence("F5"), intake_widget)') < chunk.index(
@@ -1437,41 +1438,14 @@ def test_main_window_on_restore_company_picker_target_same_file_guard_before_clo
     assert pick < emp < tgt < same < cdb
 
 
-def test_main_window_rebuild_bank_related_tabs_replaces_seven_tabs_and_rewires_coa() -> None:
+def test_main_window_rebuild_bank_related_tabs_reuses_navigation_populator() -> None:
     """``_rebuild_bank_related_tabs`` removes indices 7..1, inserts seven widgets, reconnects COA."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _rebuild_bank_related_tabs(self):")
     end = text.index("    def _load_company_at_path(", start)
     chunk = text[start:end]
-    assert chunk.count("for i in range(7, 0, -1):") == 1
-    assert chunk.count("self._tabs.removeTab(i)") == 1
-    assert chunk.count("self._tabs.insertTab(i, widget, title)") == 1
-    assert chunk.count("for i, (title, widget) in enumerate(tab_specs, start=1):") == 1
-    assert chunk.count("self._bank_tab = self._tabs.widget(1)") == 1
-    assert chunk.count("self._register_tab = self._tabs.widget(2)") == 1
-    assert chunk.count("self._coa_tab = self._tabs.widget(3)") == 1
-    assert chunk.count("BankImportTab(") == 1
-    assert chunk.count("RegisterTab(") == 1
-    assert chunk.count("COATab(") == 1
-    assert chunk.count("ReportsTab(") == 1
-    assert chunk.count("JournalTab(") == 1
-    assert chunk.count("BusinessHub(") == 1
-    assert chunk.count("AuditTab(") == 1
-    assert chunk.count("self._coa_tab.coaChanged.connect(self._on_coa_changed)") == 1
-    assert chunk.count("w = self._tabs.widget(i)") == 1
-    assert chunk.count("if w is not None:") == 1
-    assert chunk.count("w.deleteLater()") == 1
-    assert "Replace bank/GL/COA-related tabs" in chunk
-    for title in (
-        "🏦  Bank Import",
-        "📒  Bank register",
-        "📊  Chart of Accounts",
-        "📈  Reports",
-        "📗  Journal",
-        "🧾  Business",
-        "📜  Audit log",
-    ):
-        assert title in chunk, f"tab_specs should include {title!r}"
+    assert chunk.count("self._populate_navigation_views()") == 1
+    assert "Rebuild runtime-connected top tabs + More pages" in chunk
 
 
 def test_main_window_switch_company_database_closes_and_loads_at_path() -> None:
@@ -2378,8 +2352,8 @@ def test_main_window_edit_menu_qaction_definitions_order() -> None:
     assert u < r < sep < p
 
 
-def test_main_window_tools_menu_invoice_and_recon_menu_has_register_submenus() -> None:
-    """**Tools** has Invoice; **Recon** groups bank register actions under five submenus."""
+def test_main_window_tools_menu_routes_operational_tabs_and_recon_submenus() -> None:
+    """**Tools** routes all operational top tabs; **Recon** still groups bank register actions under five submenus."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("        # Tools menu")
     end = text.index("        # Help menu", start)
@@ -2389,6 +2363,12 @@ def test_main_window_tools_menu_invoice_and_recon_menu_has_register_submenus() -
     assert chunk.count("tools_menu.addMenu(") == 0
     assert chunk.count("recon_menu.addMenu(") == 5
     assert "act_tools_invoice = QAction" in chunk
+    assert "act_tools_enter_bills = QAction" in chunk
+    assert "act_tools_pay_bills = QAction" in chunk
+    assert "act_tools_receive_payments = QAction" in chunk
+    assert "act_tools_customers = QAction" in chunk
+    assert "act_tools_vendors = QAction" in chunk
+    assert "act_tools_reconcile = QAction" in chunk
     assert "triggered.connect(self._on_tools_invoice)" in chunk
     assert "act_tools = QAction" not in chunk
 
@@ -2649,7 +2629,7 @@ def test_main_window_build_ui_reports_journal_business_audit_use_shared_bank_con
     """Reports, Journal, Business, and Audit tabs are built from ``self._bank_db._conn`` (shared GL SQLite)."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("        # ── Tabs 5–7:")
-    end = text.index("        main_tab_bar = self._tabs.tabBar()", start)
+    end = text.index("# Rebuild fixed More area pages.", start)
     chunk = text[start:end]
     assert chunk.count("ReportsTab(self._bank_db._conn)") == 1
     assert chunk.count("JournalTab(self._bank_db._conn)") == 1
@@ -2953,23 +2933,24 @@ def test_main_help_menu_wires_document_intake_shortcuts_dialog() -> None:
     assert "Detail pane:" in text
 
 
-def test_main_window_view_menu_enumerates_ctrl_one_through_eight() -> None:
-    """View menu builds eight tab actions with Ctrl+1 … Ctrl+8 in a fixed order."""
+def test_main_window_view_menu_enumerates_ctrl_one_through_nine() -> None:
+    """View menu builds nine top-tab actions with Ctrl+1 … Ctrl+9 in a fixed order."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("# View menu — tab shortcuts")
     end = text.index("# Edit menu", start)
     chunk = text[start:end]
-    for n in range(1, 9):
+    for n in range(1, 10):
         assert f'("Ctrl+{n}"' in chunk
     tuples = (
-        '("Ctrl+1", "Document &Intake")',
-        '("Ctrl+2", "&Bank Import")',
-        '("Ctrl+3", "&Register")',
-        '("Ctrl+4", "Chart of &Accounts")',
-        '("Ctrl+5", "&Reports")',
-        '("Ctrl+6", "&Journal")',
-        '("Ctrl+7", "&Business")',
-        '("Ctrl+8", "A&udit log")',
+        '("Ctrl+1", "&Invoices")',
+        '("Ctrl+2", "Enter &Bills")',
+        '("Ctrl+3", "&Pay Bills")',
+        '("Ctrl+4", "Receive &Payments")',
+        '("Ctrl+5", "Bank &Register")',
+        '("Ctrl+6", "Chart of &Accounts")',
+        '("Ctrl+7", "&Customers")',
+        '("Ctrl+8", "&Vendors")',
+        '("Ctrl+9", "&Reconcile")',
     )
     for line in tuples:
         assert line in chunk
@@ -2978,14 +2959,14 @@ def test_main_window_view_menu_enumerates_ctrl_one_through_eight() -> None:
     assert chunk.count("act.setShortcutContext(Qt.ApplicationShortcut)") == 1
 
 
-def test_main_window_main_tab_bar_set_tab_tooltip_index_order() -> None:
-    """``main_tab_bar.setTabToolTip`` uses indices **0–7** in ascending order (matches tab strip)."""
+def test_main_window_main_tab_bar_set_tab_tooltip_index_order_zero_through_eight() -> None:
+    """``main_tab_bar.setTabToolTip`` uses indices **0–8** in ascending order (matches tab strip)."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("main_tab_bar = self._tabs.tabBar()")
     end = text.index("container_layout.addWidget(self._tabs)", start)
     chunk = text[start:end]
     prev = -1
-    for i in range(8):
+    for i in range(9):
         needle = f"main_tab_bar.setTabToolTip(\n            {i},"
         pos = chunk.index(needle)
         assert pos > prev
@@ -3171,7 +3152,7 @@ def test_desktop_main_inbox_header_color_and_placeholder_company_name() -> None:
     )
     chunk = text[start:end]
     assert 'INBOX_HEADER_COLOR = "#1F3864"' in chunk
-    assert 'COMPANY_NAME = "CHAVAN TRUCKING CORPORATION"' in chunk
+    assert 'COMPANY_NAME = "COMPANY NAME"' in chunk
     assert "placeholder" in chunk
 
 
