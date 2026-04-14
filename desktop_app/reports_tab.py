@@ -3,7 +3,7 @@
 **F5** (when this tab or its children have focus) re-runs the last report you opened
 (Trial Balance, Income Statement, or Balance Sheet), if any.
 **Help → More tab shortcuts (F5)…**; results grid **right-click** sets **QAction** tooltips for **Keyboard shortcuts…** and **Copy row** (including empty area).
-The tab **root** **QWidget** has a hover hint. **Start** / **End** date fields use **setToolTip** (ISO yyyy-mm-dd); the date-range **QGroupBox** has a hover hint.
+The tab **root** **QWidget** has a hover hint. **Start** / **End** date fields use **setToolTip** (flexible entry, MM/DD/YYYY display); the date-range **QGroupBox** has a hover hint.
 The results table, **summary** line, and footer **F5** hint label have hover tooltips.
 """
 
@@ -39,6 +39,10 @@ from desktop_app.qt_mnemonic import (
     message_box_critical_ok,
     message_box_information_ok,
 )
+from desktop_app.flexible_date import (
+    attach_line_edit_us_date_normalization,
+    line_edit_to_iso_or_raw,
+)
 from desktop_app.table_clipboard import (
     CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
     VIEW_BANK_REGISTER_KEYS_TOOLTIP,
@@ -67,17 +71,23 @@ class ReportsTab(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
 
-        filt = QGroupBox("Date range (ISO yyyy-mm-dd, optional)")
+        filt = QGroupBox("Date range (optional)")
         filt.setToolTip(
-            "Optional inclusive date bounds for the report; blank start or end means no cutoff on that side."
+            "Optional inclusive date bounds for the report; blank start or end means no cutoff on that side. "
+            "Type dates in common US forms; valid values normalize to MM/DD/YYYY; reports query yyyy-mm-dd."
         )
         fl = QFormLayout(filt)
         self._start = QLineEdit()
         self._start.setToolTip(
-            "Report start date (ISO yyyy-mm-dd), optional; leave blank for no start cutoff."
+            "Report start date, optional; leave blank for no start cutoff. "
+            "Flexible US-style entry; normalized on commit when valid."
         )
+        attach_line_edit_us_date_normalization(self._start)
         self._end = QLineEdit()
-        self._end.setToolTip("Report end date (ISO yyyy-mm-dd), optional.")
+        self._end.setToolTip(
+            "Report end date, optional. Flexible US-style entry; normalized on commit when valid."
+        )
+        attach_line_edit_us_date_normalization(self._end)
         fl.addRow("Start", self._start)
         fl.addRow("End", self._end)
         layout.addWidget(filt)
@@ -211,8 +221,8 @@ class ReportsTab(QWidget):
         self._table.setSortingEnabled(True)
 
     def _show_tb(self):
-        start = self._start.text().strip() or None
-        end = self._end.text().strip() or None
+        start = line_edit_to_iso_or_raw(self._start)
+        end = line_edit_to_iso_or_raw(self._end)
         data = financial_reports.trial_balance_report(self._conn, start, end)
         rows = [
             [d["account"], d["total_debit"], d["total_credit"], d["net"]] for d in data
@@ -232,15 +242,15 @@ class ReportsTab(QWidget):
         self._last_report_kind = "tb"
 
     def _show_pl(self):
-        start = self._start.text().strip()
-        end = self._end.text().strip()
-        if not start or not end:
+        if not self._start.text().strip() or not self._end.text().strip():
             self._last_export = None
             self._last_report_kind = None
             self._summary.setText(
                 escape_ampersand_for_qt("Enter start and end dates for P&L.")
             )
             return
+        start = line_edit_to_iso_or_raw(self._start)
+        end = line_edit_to_iso_or_raw(self._end)
         pl = financial_reports.income_statement(self._conn, start, end)
         headers = ["Metric", "Amount"]
         table_rows = [
@@ -265,7 +275,12 @@ class ReportsTab(QWidget):
         self._last_report_kind = "pl"
 
     def _show_bs(self):
-        end = self._end.text().strip() or self._start.text().strip() or None
+        if self._end.text().strip():
+            end = line_edit_to_iso_or_raw(self._end)
+        elif self._start.text().strip():
+            end = line_edit_to_iso_or_raw(self._start)
+        else:
+            end = None
         bs = financial_reports.balance_sheet_summary(self._conn, as_of_date=end)
         headers = ["Section", "Amount"]
         table_rows = [

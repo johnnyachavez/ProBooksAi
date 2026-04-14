@@ -18,7 +18,7 @@ Issues = "https://github.com/johnnyachavez/ProBooksAi/issues"
 Documentation = "https://github.com/johnnyachavez/ProBooksAi/blob/main/README.md#web-shell-review"
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "pypdf>=5.0"]
+dev = ["pytest>=7.0", "pypdf>=5.0", "watchdog>=4.0"]
 statement = ["pypdf>=5.0"]
 desktop = ["PySide6>=6.5"]
 # Matches GitHub Actions python job: pytest + PDF tests + PySide6 (clipboard, invoice PDF smoke).

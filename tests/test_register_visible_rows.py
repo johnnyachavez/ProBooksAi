@@ -10,9 +10,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QComboBox
 
 from desktop_app.register_band_delegate import REGISTER_LINK_LOWER_PLAIN
+from desktop_app.qt_mnemonic import escape_ampersand_for_qt
 from desktop_app.register_tab import (
     RegisterTab,
     _COL_CLR,
@@ -21,13 +22,30 @@ from desktop_app.register_tab import (
     _COL_MEMO,
     _COL_SPACER,
     _REGISTER_MIN_VISIBLE_ROWS,
+    _UNCATEGORIZED_COMBO_LABEL,
     _coerce_register_account_id,
     _register_account_ids_equal,
     _register_row_coa_user_data,
+    register_coa_combo_resolve_user_data,
 )
 from probooksai.bank_import import BankDatabase
 from probooksai.coa_db import COADatabase
 from probooksai.statement_line_match import STATUS_MATCHED
+
+
+def test_register_coa_combo_resolve_user_data(qapp) -> None:
+    c = QComboBox()
+    c.addItem(_UNCATEGORIZED_COMBO_LABEL, "")
+    c.addItem(escape_ampersand_for_qt("1010 – Checking"), "1010 – Checking")
+    c.setEditable(True)
+    c.setCurrentIndex(1)
+    assert register_coa_combo_resolve_user_data(c) == "1010 – Checking"
+    le = c.lineEdit()
+    assert le is not None
+    le.setText("★ 1010 – Checking")
+    assert register_coa_combo_resolve_user_data(c) == "1010 – Checking"
+    c.setEditable(False)
+    assert register_coa_combo_resolve_user_data(c) == "1010 – Checking"
 
 
 def test_register_account_id_coerce_and_equal() -> None:
@@ -288,7 +306,7 @@ def test_register_reconciliation_mode_keeps_rows_visible(qapp) -> None:
     try:
         coa = COADatabase(db._conn)
         tab = RegisterTab(db, coa, None)
-        tab._chk_recon.setChecked(True)
+        tab._recon_checkbox.setChecked(True)
         assert tab._reconciliation_mode
         assert not tab._recon_banner.isHidden()
         assert not tab._table.horizontalHeader().isSectionHidden(_COL_LINK)
@@ -298,8 +316,8 @@ def test_register_reconciliation_mode_keeps_rows_visible(qapp) -> None:
         db.close()
 
 
-def test_register_info_footer_totals_and_help_only_when_reconciliation_on(qapp) -> None:
-    """Normal register hides totals + instructional footer; reconciliation mode shows them."""
+def test_register_info_footer_totals_only_when_reconciliation_help_always_shown(qapp) -> None:
+    """Footer stays visible for stable height; totals row only in reconciliation mode."""
     p = Path(tempfile.mkdtemp()) / "reg_footer_rec.db"
     db = BankDatabase(str(p))
     try:
@@ -307,12 +325,19 @@ def test_register_info_footer_totals_and_help_only_when_reconciliation_on(qapp) 
         tab = RegisterTab(db, coa, None)
         tab.show()
         assert tab._reconciliation_mode is False
-        assert tab._register_info_footer.isHidden()
-        tab._chk_recon.setChecked(True)
+        assert tab._register_info_footer.isVisible()
+        assert tab._register_help_tip.isVisible()
+        assert tab._register_footer_totals_wrap.isHidden()
+        assert tab._register_footer_totals_spacer.isVisible()
+        tab._recon_checkbox.setChecked(True)
         assert tab._reconciliation_mode is True
         assert tab._register_info_footer.isVisible()
-        tab._chk_recon.setChecked(False)
-        assert tab._register_info_footer.isHidden()
+        assert tab._register_footer_totals_wrap.isVisible()
+        assert tab._register_footer_totals_spacer.isHidden()
+        tab._recon_checkbox.setChecked(False)
+        assert tab._register_info_footer.isVisible()
+        assert tab._register_footer_totals_wrap.isHidden()
+        assert tab._register_footer_totals_spacer.isVisible()
     finally:
         db.close()
 
@@ -330,12 +355,12 @@ def test_register_checkbook_mode_hides_memo_clr_match_keeps_spacer(qapp) -> None
         assert hdr.isSectionHidden(_COL_CLR)
         assert hdr.isSectionHidden(_COL_LINK)
         assert not hdr.isSectionHidden(_COL_SPACER)
-        tab._chk_recon.setChecked(True)
+        tab._recon_checkbox.setChecked(True)
         assert hdr.isSectionHidden(_COL_MEMO)
         assert not hdr.isSectionHidden(_COL_CLR)
         assert not hdr.isSectionHidden(_COL_LINK)
         assert not hdr.isSectionHidden(_COL_SPACER)
-        tab._chk_recon.setChecked(False)
+        tab._recon_checkbox.setChecked(False)
         assert hdr.isSectionHidden(_COL_MEMO)
         assert hdr.isSectionHidden(_COL_CLR)
         assert hdr.isSectionHidden(_COL_LINK)
@@ -446,7 +471,7 @@ def test_register_apply_line_match_unknown_account_leaves_recon_off(qapp) -> Non
         )
         assert ok is False
         assert tab._reconciliation_mode is False
-        assert tab._chk_recon.isChecked() is False
+        assert tab._recon_checkbox.isChecked() is False
         assert tab._recon_overlay_bank_import_mode is False
     finally:
         db.close()

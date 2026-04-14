@@ -416,6 +416,43 @@ class COATab(QWidget):
         count = len(packed)
         self._lbl_count.setText(f"{count} account{'s' if count != 1 else ''}")
 
+    def navigate_to_account_id(self, account_id: int) -> bool:
+        """Select and scroll to *account_id* in the grid; refresh with inactive rows if needed."""
+        aid = coerce_combo_int_id(account_id)
+        if aid is None:
+            return False
+
+        def _row_for_id() -> int:
+            for r in range(self._table.rowCount()):
+                it = self._table.item(r, 0)
+                if it is None:
+                    continue
+                if coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole)) == aid:
+                    return r
+            return -1
+
+        row = _row_for_id()
+        if row < 0:
+            acct = self._db.get_account(aid)
+            if acct is not None and not bool(acct["is_active"]) and not self._chk_inactive.isChecked():
+                self._chk_inactive.setChecked(True)
+                self._refresh()
+                row = _row_for_id()
+        if row < 0:
+            return False
+        self._table.setSortingEnabled(False)
+        item0 = self._table.item(row, 0)
+        self._table.clearSelection()
+        self._table.selectRow(row)
+        if item0 is not None:
+            self._table.scrollToItem(
+                item0,
+                QAbstractItemView.ScrollHint.PositionAtCenter,
+            )
+        self._table.setSortingEnabled(True)
+        self._on_selection()
+        return True
+
     def _selected_id(self) -> Optional[int]:
         rows = self._table.selectedItems()
         if not rows:

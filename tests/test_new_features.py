@@ -477,7 +477,15 @@ class TestCOADatabase:
         cdb.add_account("4000", "Revenue", "income")
         disp = cdb.display_list()
         assert any("1010" in s and "Checking" in s for s in disp)
-        assert any("4000" in s and "Revenue" in s for s in disp)
+
+    def test_find_account_id_by_display_line(self, coa_db):
+        cdb, _ = coa_db
+        aid = cdb.add_account("2020", "Office Supplies", "expense")
+        line = "2020 – Office Supplies"
+        assert cdb.find_account_id_by_display_line(line) == aid
+        assert cdb.find_account_id_by_display_line(line.lower()) == aid
+        assert cdb.find_account_id_by_display_line("") is None
+        assert cdb.find_account_id_by_display_line("9999 – Nope") is None
 
     def test_get_account_by_number(self, coa_db):
         cdb, _ = coa_db

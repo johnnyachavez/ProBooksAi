@@ -1,0 +1,376 @@
+"""Reusable **Bill To** customer lookup for the Invoice screen (and future AR UIs).
+
+Uses ``probooksai.business`` customer rows (same source as Business → Customers / Customer Corral).
+Schema today: ``name``, ``email``, ``phone``, ``address``, ``notes`` — optional ``Contact:`` prefix
+in ``notes`` for quick-add contact name.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPlainTextEdit,
+    QPushButton,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
+
+from probooksai import business
+
+# Styling aligned with :class:`desktop_app.invoice_screen.InvoiceScreen` Bill To frame
+_INV_PANEL = "#ffffff"
+_INV_GRID = "#b9c8dc"
+_INV_TEXT = "#1a1a2e"
+
+
+def format_customer_bill_to_plaintext(customer: dict) -> str:
+    """Format a ``customers`` row for the Bill To multi-line block."""
+    lines: list[str] = []
+    name = (customer.get("name") or "").strip()
+    if name:
+        lines.append(name)
+
+    addr = (customer.get("address") or "").strip()
+    if addr:
+        lines.append(addr)
+
+    notes = (customer.get("notes") or "").strip()
+    contact = ""
+    extra_notes = ""
+    if notes:
+        lower = notes.lower()
+        if lower.startswith("contact:"):
+            first, _, rest = notes.partition("\n")
+            contact = first.split(":", 1)[1].strip() if ":" in first else ""
+            extra_notes = rest.strip()
+        else:
+            extra_notes = notes
+
+    if contact:
+        lines.append(f"Contact: {contact}")
+    ph = (customer.get("phone") or "").strip()
+    if ph:
+        lines.append(f"Phone: {ph}")
+    em = (customer.get("email") or "").strip()
+    if em:
+        lines.append(f"Email: {em}")
+    if extra_notes:
+        lines.append(extra_notes)
+
+    return "\n".join(lines)
+
+
+class CustomerQuickAddDialog(QDialog):
+    """Minimal new-customer capture; persists via :func:`business.add_customer`."""
+
+    def __init__(
+        self,
+        parent: QWidget | None,
+        conn: sqlite3.Connection,
+        *,
+        initial_name: str = "",
+    ) -> None:
+        super().__init__(parent)
+        self._conn = conn
+        self._new_id: int | None = None
+        self.setWindowTitle("Add customer")
+        self.setMinimumWidth(400)
+        self.setToolTip(
+            "Save a new customer to the company file; Bill To fills from this record. "
+            "Same .db as Business → Customers (File → Backup / Restore, probooks.backup)."
+        )
+        form = QFormLayout(self)
+        self._name = QLineEdit(initial_name.strip())
+        self._name.setPlaceholderText("Customer / company name (required)")
+        self._contact = QLineEdit()
+        self._contact.setPlaceholderText("Contact name (optional)")
+        self._address = QPlainTextEdit()
+        self._address.setPlaceholderText("Bill To address")
+        self._address.setFixedHeight(72)
+        self._phone = QLineEdit()
+        self._email = QLineEdit()
+        _ss = (
+            f"QLineEdit, QPlainTextEdit {{ background: {_INV_PANEL}; color: {_INV_TEXT}; "
+            f"border: 1px solid {_INV_GRID}; border-radius: 4px; padding: 4px; }}"
+        )
+        for w in (self._name, self._contact, self._phone, self._email):
+            w.setStyleSheet(_ss)
+        self._address.setStyleSheet(_ss)
+        form.addRow("Customer / Company *", self._name)
+        form.addRow("Contact", self._contact)
+        form.addRow("Bill To address", self._address)
+        form.addRow("Phone", self._phone)
+        form.addRow("Email", self._email)
+        bb = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+        )
+        bb.accepted.connect(self._try_save)
+        bb.rejected.connect(self.reject)
+        form.addRow(bb)
+
+    def _try_save(self) -> None:
+        name = self._name.text().strip()
+        if not name:
+            self._name.setFocus()
+            return
+        contact = self._contact.text().strip()
+        notes = f"Contact: {contact}" if contact else ""
+        addr = self._address.toPlainText().strip()
+        try:
+            cid = business.add_customer(
+                self._conn,
+                name,
+                email=self._email.text().strip(),
+                phone=self._phone.text().strip(),
+                address=addr,
+                notes=notes,
+            )
+        except sqlite3.Error:
+            return
+        self._new_id = cid
+        self.accept()
+
+    def new_customer_id(self) -> int | None:
+        return self._new_id
+
+
+class CustomerBillToPanel(QFrame):
+    """Bill To: type-ahead customer combo + details text; quick-add when needed."""
+
+    customerIdChanged = Signal(object)
+
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        ap_conn: sqlite3.Connection | None = None,
+        layout_max_width_px: int | None = None,
+        bill_plain_height_px: int | None = None,
+        combo_min_width_px: int | None = None,
+        show_new_customer_button: bool = True,
+    ) -> None:
+        super().__init__(parent)
+        self._conn: sqlite3.Connection | None = ap_conn
+        self._customer_id: int | None = None
+        self._filling_combo = False
+        self.setStyleSheet(
+            f"QFrame {{ background-color: {_INV_PANEL}; border: 1px solid {_INV_GRID}; "
+            "border-radius: 6px; }}"
+        )
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(8, 6, 8, 8)
+        lay.setSpacing(4)
+        cap = QLabel("Bill To")
+        cap.setStyleSheet(f"color: {_INV_TEXT}; font-size: 12px; font-weight: 600;")
+        lay.addWidget(cap)
+
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        self._combo = QComboBox()
+        self._combo.setEditable(True)
+        self._combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._combo.setMinimumWidth(
+            combo_min_width_px if combo_min_width_px is not None else 200
+        )
+        self._combo.setStyleSheet(
+            f"QComboBox {{ background: {_INV_PANEL}; border: 1px solid {_INV_GRID}; "
+            f"padding: 4px 8px; color: {_INV_TEXT}; border-radius: 4px; }}"
+        )
+        le = self._combo.lineEdit()
+        if le is not None:
+            le.setPlaceholderText("Type to find customer…")
+        comp = self._combo.completer()
+        if comp is not None:
+            comp.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+            comp.setFilterMode(Qt.MatchFlag.MatchContains)
+
+        self._btn_new = QPushButton("New customer…")
+        self._btn_new.setToolTip(
+            "Add a customer to the company file when no match exists; Bill To fills automatically."
+        )
+        self._btn_new.clicked.connect(self._on_new_customer)
+        self._btn_new.setVisible(show_new_customer_button)
+        row.addWidget(self._combo, 1)
+        if show_new_customer_button:
+            row.addWidget(self._btn_new, 0)
+        lay.addLayout(row)
+
+        self._bill_te = QPlainTextEdit()
+        self._bill_te.setPlaceholderText("Bill To")
+        self._bill_te.setFixedHeight(
+            bill_plain_height_px if bill_plain_height_px is not None else 68
+        )
+        self._bill_te.setStyleSheet(
+            f"QPlainTextEdit {{ background: {_INV_PANEL}; color: {_INV_TEXT}; "
+            f"border: 1px solid {_INV_GRID}; border-radius: 4px; padding: 4px; }}"
+        )
+        lay.addWidget(self._bill_te)
+
+        self._combo.currentIndexChanged.connect(self._on_combo_index_changed)
+        if layout_max_width_px is not None:
+            self.setMaximumWidth(layout_max_width_px)
+            self.setSizePolicy(
+                QSizePolicy.Policy.Maximum,
+                QSizePolicy.Policy.Preferred,
+            )
+        self._apply_conn_state()
+        if self._conn is not None:
+            self.reload_customers()
+
+    def bill_text_edit(self) -> QPlainTextEdit:
+        return self._bill_te
+
+    def clear_bill_to(self) -> None:
+        """Clear Bill To text and customer selection (draft / clear form)."""
+        self._customer_id = None
+        self._bill_te.clear()
+        self._filling_combo = True
+        self._combo.blockSignals(True)
+        self._combo.setCurrentIndex(-1)
+        le = self._combo.lineEdit()
+        if le is not None:
+            le.clear()
+        self._combo.blockSignals(False)
+        self._filling_combo = False
+
+    def select_customer_by_id(self, cid: int) -> None:
+        """Select a customer by id and fill Bill To from the database."""
+        self._apply_customer_id(cid)
+
+    def selected_customer_id(self) -> int | None:
+        return self._customer_id
+
+    def set_connection(self, conn: sqlite3.Connection | None) -> None:
+        self._conn = conn
+        self._apply_conn_state()
+        self.reload_customers()
+
+    def _apply_conn_state(self) -> None:
+        on = self._conn is not None
+        self._combo.setEnabled(on)
+        self._btn_new.setEnabled(on)
+        if not on:
+            tip = (
+                "Connect a company database to search customers (same file as Business → Customers)."
+            )
+        else:
+            tip = (
+                "Pick or type a customer name; Bill To fills from Customer Center records. "
+                "Use **New customer…** if no match."
+            )
+        self.setToolTip(tip)
+        self._combo.setToolTip(tip)
+        self._bill_te.setToolTip("Bill To details; filled when you select a customer (editable).")
+
+    def reload_customers(self) -> None:
+        keep_id = self._customer_id
+        self._filling_combo = True
+        self._combo.blockSignals(True)
+        self._combo.clear()
+        cur_text = ""
+        le = self._combo.lineEdit()
+        if le is not None:
+            cur_text = le.text()
+        if self._conn is not None:
+            try:
+                for row in business.list_customers(self._conn):
+                    d = dict(row)
+                    cid = int(d["id"])
+                    label = (d.get("name") or "").strip() or f"Customer #{cid}"
+                    self._combo.addItem(label, cid)
+            except (sqlite3.Error, KeyError, TypeError, ValueError):
+                pass
+        self._combo.setCurrentIndex(-1)
+        if le is not None:
+            le.setText(cur_text)
+            le.setPlaceholderText("Type to find customer…")
+        self._combo.blockSignals(False)
+        self._filling_combo = False
+        if keep_id is not None and self._conn is not None:
+            idx = self._combo.findData(keep_id, Qt.ItemDataRole.UserRole)
+            if idx >= 0:
+                self._apply_customer_id(keep_id)
+
+    def _on_combo_index_changed(self, index: int) -> None:
+        if self._filling_combo or index < 0:
+            return
+        raw = self._combo.itemData(index, Qt.ItemDataRole.UserRole)
+        if raw is None:
+            return
+        try:
+            cid = int(raw)
+        except (TypeError, ValueError):
+            return
+        self._apply_customer_id(cid)
+
+    def _apply_customer_id(self, cid: int) -> None:
+        if self._conn is None:
+            return
+        row = business.get_customer(self._conn, cid)
+        if row is None:
+            return
+        d = dict(row)
+        self._customer_id = cid
+        self._bill_te.setPlainText(format_customer_bill_to_plaintext(d))
+        self._filling_combo = True
+        self._combo.blockSignals(True)
+        idx = self._combo.findData(cid, Qt.ItemDataRole.UserRole)
+        if idx >= 0:
+            self._combo.setCurrentIndex(idx)
+            le = self._combo.lineEdit()
+            if le is not None:
+                le.setText(self._combo.itemText(idx))
+        self._combo.blockSignals(False)
+        self._filling_combo = False
+        self.customerIdChanged.emit(cid)
+
+    def open_new_customer_dialog(self) -> None:
+        """Run the same flow as **New customer…** (for a host-placed toolbar button)."""
+        self._on_new_customer()
+
+    def _on_new_customer(self) -> None:
+        if self._conn is None:
+            return
+        hint = ""
+        le = self._combo.lineEdit()
+        if le is not None:
+            hint = le.text().strip()
+        dlg = CustomerQuickAddDialog(self, self._conn, initial_name=hint)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        nid = dlg.new_customer_id()
+        if nid is None:
+            return
+        self.reload_customers()
+        self._apply_customer_id(nid)
+
+
+def build_customer_bill_to_panel(
+    parent: QWidget | None,
+    *,
+    ap_conn: sqlite3.Connection | None,
+    layout_max_width_px: int | None = None,
+    bill_plain_height_px: int | None = None,
+    combo_min_width_px: int | None = None,
+    show_new_customer_button: bool = True,
+) -> tuple[CustomerBillToPanel, QPlainTextEdit]:
+    """Build framed Bill To + return ``(panel, plain_text_edit)`` for layout/tests."""
+    panel = CustomerBillToPanel(
+        parent,
+        ap_conn=ap_conn,
+        layout_max_width_px=layout_max_width_px,
+        bill_plain_height_px=bill_plain_height_px,
+        combo_min_width_px=combo_min_width_px,
+        show_new_customer_button=show_new_customer_button,
+    )
+    return panel, panel.bill_text_edit()

@@ -284,6 +284,34 @@ def list_invoices(conn: sqlite3.Connection) -> list:
     ).fetchall()
 
 
+_DEFAULT_FIRST_INVOICE_NUMBER = "13001"
+
+
+def next_default_invoice_number(conn: sqlite3.Connection | None) -> str:
+    """Suggested next *invoice_number* for a new invoice (desktop default).
+
+    Uses the maximum existing *invoice_number* whose trimmed value is all digits,
+    plus one. Non-numeric values are ignored for sequencing. If none qualify,
+    returns ``13001``. With *conn* ``None`` (no company file), returns ``13001``.
+    """
+    if conn is None:
+        return _DEFAULT_FIRST_INVOICE_NUMBER
+    try:
+        rows = conn.execute("SELECT invoice_number FROM invoices").fetchall()
+    except sqlite3.Error:
+        return _DEFAULT_FIRST_INVOICE_NUMBER
+    best: int | None = None
+    for r in rows:
+        s = (r["invoice_number"] or "").strip()
+        if s.isdigit():
+            v = int(s)
+            if best is None or v > best:
+                best = v
+    if best is None:
+        return _DEFAULT_FIRST_INVOICE_NUMBER
+    return str(best + 1)
+
+
 def write_invoices_csv(
     conn: sqlite3.Connection,
     path: str,
@@ -337,6 +365,21 @@ def write_invoices_csv(
             )
             n += 1
     return n
+
+
+def list_invoice_ids_chronological(conn: sqlite3.Connection) -> list[int]:
+    """Invoice primary keys ordered by ``id`` ascending (oldest created first)."""
+    try:
+        rows = conn.execute("SELECT id FROM invoices ORDER BY id ASC").fetchall()
+    except sqlite3.Error:
+        return []
+    out: list[int] = []
+    for r in rows:
+        try:
+            out.append(int(r["id"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
 
 
 def get_invoice_detail(

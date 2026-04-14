@@ -1,16 +1,17 @@
 """Rules, AR/AP, payroll, and tax settings (roadmap phases 6, 8–16).
 
 **Business** hub (**F5**): refreshes the active sub-tab list when it defines
-``_refresh`` (Rules, Invoices, Bills, Payroll). **Tax %** is settings-only.
+``_refresh`` (Rules, Payroll). **Tax %** is settings-only. Full AR/AP grids live on the top-level **Customers** / **Vendors** tabs.
+Invoice print/PDF is only from the **Invoice** workflow tab (``invoice_screen``), not AR list toolbars.
 The **BusinessHub** root **QWidget** has a hover hint; the nested **QTabWidget** strip has a **setToolTip** for switching subtabs.
-Each **sub-tab** on the hub bar has a **setTabToolTip** summary (Rules through Tax %).
-**Rules**, **Invoices (AR)**, **Bills (AP)**, **Payroll**, and **Tax %** tab roots also set **self.setToolTip** for margin hover.
+Each **sub-tab** on the hub bar has a **setTabToolTip** summary (Rules, Payroll, Tax %).
+**Rules**, **Payroll**, and **Tax %** hub tab roots also set **self.setToolTip** for margin hover.
 **Keyboard shortcuts…** on Rules / AR / AP / Payroll grids (including empty area)
 matches **Help → Business shortcuts…**; context-menu **QAction**s use **setToolTip**. The same dialog is offered on Business modal tables
 that support **Copy row** (``_attach_table_copy_row_menu``).
 Main toolbars on Rules, AR, AP, Payroll, and **Tax %** use **setToolTip** on primary actions.
 **Rules** and **Payroll** subtabs include a gray footer hint **QLabel** with its own tooltip.
-Rules / AR / AP / Payroll **main grids** also use **setToolTip** (shortcuts + **F5** on Business).
+Rules / AR / AP / Payroll **main grids** also use **setToolTip** (shortcuts + **F5** on Business or top-level Customers/Vendors).
 AR/AP **footer** summary lines and payroll **edit tax lines** intro text have hover hints.
 **Invoices (AR)** and **Bills (AP)** **Filter** prompts and line edits have **setToolTip** (word-match behavior + persistence).
 Payment dialogs label **Apply to open** sections; edit-invoice labels **Line items**; allocation hints have tooltips.
@@ -58,6 +59,12 @@ from PySide6.QtCore import QDate, QSettings, Qt
 from PySide6.QtGui import QGuiApplication, QHideEvent, QKeySequence, QShortcut, QShowEvent
 
 from desktop_app.open_attachment import open_local_attachment
+from desktop_app.flexible_date import (
+    attach_line_edit_us_date_normalization,
+    configure_qdate_edit_us,
+    format_iso_to_us_display,
+    line_edit_to_iso_or_raw,
+)
 from desktop_app.qt_combo_ids import (
     coerce_combo_int_id,
     combo_index_for_int_user_data,
@@ -295,8 +302,7 @@ def _prompt_as_of_date(parent: QWidget, title: str) -> str | None:
     )
     f = QFormLayout(d)
     de = QDateEdit()
-    de.setCalendarPopup(True)
-    de.setDisplayFormat("yyyy-MM-dd")
+    configure_qdate_edit_us(de)
     de.setDate(QDate.currentDate())
     de.setToolTip("Aging balances and buckets are computed as of this date.")
     f.addRow("As of date", de)
@@ -736,7 +742,8 @@ class ARTab(QWidget):
         super().__init__(parent)
         self._conn = conn
         self.setToolTip(
-            "Accounts receivable: customers, invoices, payments, PDF export, aging CSV; F5 refreshes lists."
+            "Accounts receivable: customers, invoices, payments, aging CSV; F5 refreshes lists. "
+            "Print or save-as-PDF for an invoice: Invoice workflow tab → Print… (after Save if needed)."
         )
         lay = QVBoxLayout(self)
         row = QHBoxLayout()
@@ -788,10 +795,21 @@ class ARTab(QWidget):
         )
         ar_export_alloc.clicked.connect(self._export_ar_allocations)
         row.addWidget(ar_export_alloc)
-        ar_save_pdf = QPushButton("Save invoice PDF…")
-        ar_save_pdf.setToolTip("Save the selected invoice as a PDF (pick a row first).")
-        ar_save_pdf.clicked.connect(self._save_pdf)
-        row.addWidget(ar_save_pdf)
+        # Toolbar: no invoice PDF/file dialog here — only Invoice workflow tab → Print… (QPrintDialog).
+        for b in (
+            ar_new_cust,
+            ar_edit_cust,
+            ar_new_inv,
+            ar_edit_inv,
+            ar_record_pay,
+            ar_export_aging,
+            ar_export_cust,
+            ar_export_inv,
+            ar_export_payments,
+            ar_export_alloc,
+        ):
+            b.setAutoDefault(False)
+            b.setDefault(False)
         row.addStretch()
         lay.addLayout(row)
         fil = QHBoxLayout()
@@ -875,7 +893,7 @@ class ARTab(QWidget):
             self,
             "Invoice",
             f"Invoice #{iid} is not in the list (removed or different company).",
-            ok_tip="Close; check Business → Invoices or the bank link.",
+            ok_tip="Close; check the **Customers** tab invoice list or the bank link.",
         )
         return False
 
@@ -932,7 +950,7 @@ class ARTab(QWidget):
             lambda: show_business_keyboard_shortcuts_dialog(self),
         )
         act_keys.setToolTip(
-            "Same summary as Help → Business shortcuts… (F5, Invoices AR, payments, PDF). "
+            "Same summary as Help → Business shortcuts… (F5, Invoices AR, payments). "
             + VIEW_BANK_REGISTER_KEYS_TOOLTIP
             + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
@@ -946,10 +964,6 @@ class ARTab(QWidget):
         m.addSeparator()
         act_edit = m.addAction("Edit…", lambda r=row: (self._tbl.selectRow(r), self._edit_inv()))
         act_edit.setToolTip("Edit this invoice (not allowed when payments are applied).")
-        act_pdf = m.addAction(
-            "Save invoice PDF…", lambda r=row: (self._tbl.selectRow(r), self._save_pdf())
-        )
-        act_pdf.setToolTip("Export a PDF for this invoice (you choose the save path).")
         act_invno = m.addAction(
             "Copy invoice #",
             lambda r=row: QGuiApplication.clipboard().setText(
@@ -966,39 +980,6 @@ class ARTab(QWidget):
             + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         m.exec(self._tbl.viewport().mapToGlobal(pos))
-
-    def _save_pdf(self):
-        r = self._tbl.currentRow()
-        inv_id = _table_row_entity_id(self._tbl, r)
-        if inv_id is None:
-            message_box_information_ok(
-                self,
-                "PDF",
-                "Select an invoice row.",
-                ok_tip="Close; click an invoice in the grid, then Save invoice PDF again.",
-            )
-            return
-        path, _ = QFileDialog.getSaveFileName(self, "Invoice PDF", "", "PDF (*.pdf)")
-        if not path:
-            return
-        try:
-            from desktop_app.invoice_pdf import save_invoice_pdf
-
-            save_invoice_pdf(self._conn, inv_id, path)
-        except Exception as exc:  # noqa: BLE001
-            message_box_warning_ok(
-                self,
-                "PDF",
-                escape_ampersand_for_qt(str(exc)),
-                ok_tip="Close; fix the error shown, then try exporting again.",
-            )
-            return
-        message_box_information_ok(
-            self,
-            "PDF",
-            f"Saved to {escape_ampersand_for_qt(path)}",
-            ok_tip="Close; open the PDF from the path shown.",
-        )
 
     def _new_cust(self):
         d = QDialog(self)
@@ -1181,12 +1162,12 @@ class ARTab(QWidget):
         invno = QLineEdit()
         invno.setToolTip("Unique invoice number for this customer (required).")
         idate = QDateEdit()
-        idate.setCalendarPopup(True)
-        idate.setDisplayFormat("yyyy-MM-dd")
+        configure_qdate_edit_us(idate)
         idate.setDate(QDate.currentDate())
         idate.setToolTip("Invoice date.")
         due_e = QLineEdit()
         due_e.setToolTip("Due date as text if you track it (optional).")
+        attach_line_edit_us_date_normalization(due_e)
         memo_e = QLineEdit()
         memo_e.setToolTip("Header memo on the invoice (optional).")
         rate = QDoubleSpinBox()
@@ -1228,7 +1209,7 @@ class ARTab(QWidget):
                 cust_id,
                 invno.text().strip(),
                 idate.date().toString("yyyy-MM-dd"),
-                due_date=due_e.text().strip(),
+                due_date=(line_edit_to_iso_or_raw(due_e) or ""),
                 memo=memo_e.text().strip(),
                 lines=[{"description": "Services", "qty": 1, "rate": rate.value()}],
                 tax_rate_pct=tax.value(),
@@ -1307,13 +1288,13 @@ class ARTab(QWidget):
         invno = QLineEdit(inv["invoice_number"] or "")
         invno.setToolTip("Unique invoice number (required).")
         idate = QDateEdit()
-        idate.setCalendarPopup(True)
-        idate.setDisplayFormat("yyyy-MM-dd")
+        configure_qdate_edit_us(idate)
         qd = QDate.fromString(inv["invoice_date"] or "", "yyyy-MM-dd")
         idate.setDate(qd if qd.isValid() else QDate.currentDate())
         idate.setToolTip("Invoice date.")
-        due_e = QLineEdit(inv["due_date"] or "")
+        due_e = QLineEdit(format_iso_to_us_display(inv["due_date"] or ""))
         due_e.setToolTip("Due date as text if you track it (optional).")
+        attach_line_edit_us_date_normalization(due_e)
         memo_e = QLineEdit(inv["memo"] or "")
         memo_e.setToolTip("Header memo on the invoice (optional).")
         sub = float(inv["subtotal"] or 0)
@@ -1444,7 +1425,7 @@ class ARTab(QWidget):
                 new_cust,
                 invno.text().strip(),
                 idate.date().toString("yyyy-MM-dd"),
-                due_date=due_e.text().strip(),
+                due_date=(line_edit_to_iso_or_raw(due_e) or ""),
                 memo=memo_e.text().strip(),
                 lines=lines_out,
                 tax_rate_pct=tax.value(),
@@ -1494,8 +1475,7 @@ class ARTab(QWidget):
         form.addRow("Filter list", cust_filt)
         form.addRow("Customer", cust_cb)
         pdate = QDateEdit()
-        pdate.setCalendarPopup(True)
-        pdate.setDisplayFormat("yyyy-MM-dd")
+        configure_qdate_edit_us(pdate)
         pdate.setDate(QDate.currentDate())
         pdate.setToolTip("Date the payment was received.")
         pay_amt = QDoubleSpinBox()
@@ -1993,7 +1973,7 @@ class APTab(QWidget):
             self,
             "Bill",
             f"Bill #{bid} is not in the list (removed or different company).",
-            ok_tip="Close; check Business → Bills or the bank link.",
+            ok_tip="Close; check the **Vendors** tab bill list or the bank link.",
         )
         return False
 
@@ -2286,12 +2266,12 @@ class APTab(QWidget):
         amt.setDecimals(2)
         amt.setToolTip("Total bill amount (required).")
         bdt = QDateEdit()
-        bdt.setCalendarPopup(True)
-        bdt.setDisplayFormat("yyyy-MM-dd")
+        configure_qdate_edit_us(bdt)
         bdt.setDate(QDate.currentDate())
         bdt.setToolTip("Bill date.")
         due_e = QLineEdit()
         due_e.setToolTip("Due date as text if you track it (optional).")
+        attach_line_edit_us_date_normalization(due_e)
         memo_e = QLineEdit()
         memo_e.setToolTip("Memo on the bill (optional).")
         att = QLineEdit()
@@ -2338,7 +2318,7 @@ class APTab(QWidget):
             bdt.date().toString("yyyy-MM-dd"),
             amt.value(),
             vendor_invoice_number=vinv.text().strip(),
-            due_date=due_e.text().strip(),
+            due_date=(line_edit_to_iso_or_raw(due_e) or ""),
             memo=memo_e.text().strip(),
             attachment_path=att.text().strip(),
         )
@@ -2413,13 +2393,13 @@ class APTab(QWidget):
         amt.setValue(float(b["total"] or 0))
         amt.setToolTip("Total bill amount (required).")
         bdt = QDateEdit()
-        bdt.setCalendarPopup(True)
-        bdt.setDisplayFormat("yyyy-MM-dd")
+        configure_qdate_edit_us(bdt)
         qbd = QDate.fromString(b["bill_date"] or "", "yyyy-MM-dd")
         bdt.setDate(qbd if qbd.isValid() else QDate.currentDate())
         bdt.setToolTip("Bill date.")
-        due_e = QLineEdit(b["due_date"] or "")
+        due_e = QLineEdit(format_iso_to_us_display(b["due_date"] or ""))
         due_e.setToolTip("Due date as text if you track it (optional).")
+        attach_line_edit_us_date_normalization(due_e)
         memo_e = QLineEdit(b["memo"] or "")
         memo_e.setToolTip("Memo on the bill (optional).")
         att = QLineEdit(b["attachment_path"] or "")
@@ -2468,7 +2448,7 @@ class APTab(QWidget):
                 bdt.date().toString("yyyy-MM-dd"),
                 amt.value(),
                 vendor_invoice_number=vinv.text().strip(),
-                due_date=due_e.text().strip(),
+                due_date=(line_edit_to_iso_or_raw(due_e) or ""),
                 memo=memo_e.text().strip(),
                 attachment_path=att.text().strip(),
             )
@@ -2509,8 +2489,7 @@ class APTab(QWidget):
         form.addRow("Filter list", vend_filt)
         form.addRow("Vendor", vend_cb)
         pdate = QDateEdit()
-        pdate.setCalendarPopup(True)
-        pdate.setDisplayFormat("yyyy-MM-dd")
+        configure_qdate_edit_us(pdate)
         pdate.setDate(QDate.currentDate())
         pdate.setToolTip("Date the payment was made.")
         pay_amt = QDoubleSpinBox()
@@ -3237,12 +3216,10 @@ class PayrollTaxTab(QWidget):
         )
         f = QFormLayout(d)
         s = QDateEdit()
-        s.setCalendarPopup(True)
-        s.setDisplayFormat("yyyy-MM-dd")
+        configure_qdate_edit_us(s)
         s.setToolTip("Include pay runs with pay date on or after this day.")
         e = QDateEdit()
-        e.setCalendarPopup(True)
-        e.setDisplayFormat("yyyy-MM-dd")
+        configure_qdate_edit_us(e)
         e.setDate(QDate.currentDate())
         e.setToolTip("Include pay runs with pay date on or before this day.")
         s.setDate(QDate.currentDate().addMonths(-1))
@@ -3522,8 +3499,7 @@ class PayrollTaxTab(QWidget):
         ded.setDecimals(2)
         ded.setToolTip("Total deductions and withholdings (net = gross − deductions).")
         pd = QDateEdit()
-        pd.setCalendarPopup(True)
-        pd.setDisplayFormat("yyyy-MM-dd")
+        configure_qdate_edit_us(pd)
         pd.setDate(QDate.currentDate())
         pd.setToolTip("Check or pay date for this run.")
         f.addRow("Employee", cb)
@@ -3647,12 +3623,10 @@ class TaxSettingsTab(QWidget):
         )
         f = QFormLayout(d)
         s = QDateEdit()
-        s.setCalendarPopup(True)
-        s.setDisplayFormat("yyyy-MM-dd")
+        configure_qdate_edit_us(s)
         s.setToolTip("Include invoices dated on or after this day.")
         e = QDateEdit()
-        e.setCalendarPopup(True)
-        e.setDisplayFormat("yyyy-MM-dd")
+        configure_qdate_edit_us(e)
         e.setDate(QDate.currentDate())
         e.setToolTip("Include invoices dated on or before this day.")
         s.setDate(QDate.currentDate().addMonths(-1))
@@ -3729,17 +3703,16 @@ def _business_keyboard_shortcuts_help_text() -> str:
     """Plain text for **Help → Business shortcuts…** (aligned with **F5** / **Tax %** **Save**)."""
     return (
         "These shortcuts apply when the Business tab or its controls have focus:\n\n"
-        "F5 — Refresh the current sub-tab list (Rules, Invoices, Bills, Payroll). "
+        "F5 — Refresh the current sub-tab list (Rules, Payroll). "
         "Tax % has no list to reload.\n\n"
-        "CSV exports from Business (Rules, aging, customer/vendor lists, invoices/bills, payments, "
-        "allocations, payroll tax report, sales tax summary) use UTF-8 with BOM for Excel.\n"
+        "CSV exports from Business (Rules, payroll tax report, sales tax summary) use UTF-8 with BOM for Excel. "
+        "Customer/vendor lists, invoices/bills, and AR/AP payments export from the main **Customers** and **Vendors** tabs.\n"
         "Rules Import CSV… reads UTF-8 with optional BOM (same as files from Export CSV…).\n\n"
         "On Tax % (settings):\n"
         "Ctrl+S — Save default tax name and rate (standard Save shortcut)\n\n"
-        "View menu tab focus: Ctrl+1 Document Intake, Ctrl+2 Bank Import, Ctrl+3 Register, "
-        "Ctrl+4 Chart of Accounts, Ctrl+5 Reports, Ctrl+6 Journal, Ctrl+7 Business, Ctrl+8 Audit log.\n\n"
-        "Tools menu: Ctrl+Shift+I — Invoice… (jumps to this tab on Invoices AR).\n\n"
-        "Right-click the Rules, Invoices, Bills, or Payroll grid (including empty area) "
+        "View menu tab focus: Ctrl+1 Invoices … Ctrl+9 Reconcile, Ctrl+0 More (Reports, Journal, Business, Audit log).\n\n"
+        "Tools menu: Ctrl+Shift+I — Invoice… (top-level Invoices tab).\n\n"
+        "Right-click the Rules or Payroll grid (including empty area) "
         "for Keyboard shortcuts… (same as this dialog).\n\n"
         "Business modal dialogs with a copyable grid (payment apply tables, tax lines, etc.): "
         "right-click (including empty area) for Keyboard shortcuts… (same as this dialog).\n\n"
@@ -3769,25 +3742,24 @@ def show_business_keyboard_shortcuts_dialog(parent: QWidget) -> None:
 
 
 class BusinessHub(QWidget):
-    """Nested tabs for rules, AR, AP, payroll, tax."""
+    """Nested tabs for rules, payroll, and tax (AR/AP workflows: main Customers / Vendors tabs)."""
 
     def __init__(self, conn: sqlite3.Connection, parent=None):
         super().__init__(parent)
         self._conn = conn
         self.setToolTip(
-            "Business hub: Rules, AR invoices, AP bills, Payroll, and default Tax % (F5 refreshes the active list sub-tab). "
+            "Business hub: categorization Rules, Payroll, and default Tax % (F5 refreshes the active list sub-tab). "
+            "Full AR/AP is on the main Customers and Vendors tabs. "
             "CSV exports use UTF-8 BOM for Excel. "
             "Same company SQLite database as other main tabs; File → Backup / Restore (probooks.backup)."
         )
         self._business_subtabs = QTabWidget()
         self._business_subtabs.setToolTip(
-            "Switch between Rules, Invoices (AR), Bills (AP), Payroll, and Tax % "
+            "Switch between Rules, Payroll, and Tax % "
             "(hover each sub-tab for a summary; F5 refreshes list subtabs). "
             "All sub-tabs share the open company .db (File → Backup / probooks backup)."
         )
         self._business_subtabs.addTab(RulesTab(conn), "Rules")
-        self._business_subtabs.addTab(ARTab(conn), "Invoices (AR)")
-        self._business_subtabs.addTab(APTab(conn), "Bills (AP)")
         self._business_subtabs.addTab(PayrollTaxTab(conn), "Payroll")
         self._business_subtabs.addTab(TaxSettingsTab(conn), "Tax %")
         bar = self._business_subtabs.tabBar()
@@ -3797,18 +3769,10 @@ class BusinessHub(QWidget):
         )
         bar.setTabToolTip(
             1,
-            "Customers, invoices, PDF export, and customer payments (accounts receivable).",
-        )
-        bar.setTabToolTip(
-            2,
-            "Vendors, bills, attachments, and vendor payments (accounts payable).",
-        )
-        bar.setTabToolTip(
-            3,
             "Employees, pay runs, payroll tax lines, and posting pay runs to the GL.",
         )
         bar.setTabToolTip(
-            4,
+            2,
             "Default sales tax name and rate for new invoices; export sales tax summary CSV (UTF-8 BOM for Excel).",
         )
         raw_idx = QSettings().value(_BUSINESS_HUB_SUBTAB_KEY, 0)
@@ -3823,7 +3787,7 @@ class BusinessHub(QWidget):
         lay = QVBoxLayout(self)
         lay.addWidget(self._business_subtabs)
         tip = QLabel(
-            "F5 refreshes the current sub-tab when it has a list (Rules, Invoices, Bills, Payroll). "
+            "F5 refreshes the current sub-tab when it has a list (Rules, Payroll). "
             "Tax % is settings-only; sales tax CSV export uses UTF-8 BOM for Excel. "
             "Help → Business shortcuts… for details; other main tabs also use F5."
         )
@@ -3838,26 +3802,14 @@ class BusinessHub(QWidget):
         sc_business_f5.setContext(Qt.WidgetWithChildrenShortcut)
         sc_business_f5.activated.connect(self._refresh_current_subtab)
 
-    def focus_invoices_ar_subtab(self) -> None:
-        """Select the **Invoices (AR)** sub-tab (index 1: customers, invoices, payments, PDF)."""
+    def focus_payroll_subtab(self) -> None:
+        """Select the **Payroll** sub-tab (index 1)."""
         idx = 1
         if 0 <= idx < self._business_subtabs.count():
             self._business_subtabs.setCurrentIndex(idx)
 
-    def focus_bills_ap_subtab(self) -> None:
-        """Select the **Bills (AP)** sub-tab (index 2)."""
-        idx = 2
-        if 0 <= idx < self._business_subtabs.count():
-            self._business_subtabs.setCurrentIndex(idx)
-
-    def focus_payroll_subtab(self) -> None:
-        """Select the **Payroll** sub-tab (index 3)."""
-        idx = 3
-        if 0 <= idx < self._business_subtabs.count():
-            self._business_subtabs.setCurrentIndex(idx)
-
     def navigate_bank_match_link(self, parent: QWidget, link_type: str, link_id: int) -> None:
-        """Open the linked AR/AP/payroll record from a bank register Match link."""
+        """Open the linked payroll record from a bank register Match link (AR/AP use main Customers/Vendors)."""
         lt = (link_type or "").strip()
         try:
             lid = int(link_id)
@@ -3869,83 +3821,11 @@ class BusinessHub(QWidget):
                 ok_tip="Close; clear the bank link and set it again if needed.",
             )
             return
-        if lt == "ar_invoice":
-            self.focus_invoices_ar_subtab()
-            w = self._business_subtabs.widget(1)
-            if isinstance(w, ARTab):
-                w.open_invoice_by_id(lid)
-            return
-        if lt == "ap_bill":
-            self.focus_bills_ap_subtab()
-            w = self._business_subtabs.widget(2)
-            if isinstance(w, APTab):
-                w.open_bill_by_id(lid)
-            return
         if lt == "payroll_run":
             self.focus_payroll_subtab()
-            w = self._business_subtabs.widget(3)
+            w = self._business_subtabs.widget(1)
             if isinstance(w, PayrollTaxTab):
                 w.open_payroll_run_by_id(lid)
-            return
-        if lt == "ar_payment":
-            self.focus_invoices_ar_subtab()
-            row = self._conn.execute(
-                """
-                SELECT p.payment_date, p.amount, p.reference, c.name AS party_name
-                FROM ar_payments p
-                JOIN customers c ON c.id = p.customer_id
-                WHERE p.id = ?
-                """,
-                (lid,),
-            ).fetchone()
-            if row is None:
-                message_box_information_ok(
-                    parent,
-                    "AR payment",
-                    f"No AR payment #{lid} in this company file.",
-                    ok_tip="Close; the link may point at removed data.",
-                )
-                return
-            r = dict(row)
-            ref = (r.get("reference") or "").strip() or "—"
-            message_box_information_ok(
-                parent,
-                "AR payment",
-                f"AR payment #{lid}: {r['payment_date']}  ${float(r['amount']):.2f}  — {r['party_name']}\n"
-                f"Reference: {ref}\n\n"
-                "Export AR payments CSV from this tab for a full list; use Record customer payment… for new entries.",
-                ok_tip="Close; you are on Business → Invoices (AR).",
-            )
-            return
-        if lt == "ap_payment":
-            self.focus_bills_ap_subtab()
-            row = self._conn.execute(
-                """
-                SELECT p.payment_date, p.amount, p.reference, v.name AS party_name
-                FROM ap_payments p
-                JOIN vendors v ON v.id = p.vendor_id
-                WHERE p.id = ?
-                """,
-                (lid,),
-            ).fetchone()
-            if row is None:
-                message_box_information_ok(
-                    parent,
-                    "AP payment",
-                    f"No AP payment #{lid} in this company file.",
-                    ok_tip="Close; the link may point at removed data.",
-                )
-                return
-            r = dict(row)
-            ref = (r.get("reference") or "").strip() or "—"
-            message_box_information_ok(
-                parent,
-                "AP payment",
-                f"AP payment #{lid}: {r['payment_date']}  ${float(r['amount']):.2f}  — {r['party_name']}\n"
-                f"Reference: {ref}\n\n"
-                "Export AP payments CSV from this tab for a full list; use Record vendor payment… for new entries.",
-                ok_tip="Close; you are on Business → Bills (AP).",
-            )
             return
         message_box_information_ok(
             parent,
@@ -3965,10 +3845,6 @@ class BusinessHub(QWidget):
     def _on_business_subtab_changed(self, idx: int) -> None:
         prev_w = self._business_subtabs.widget(self._prev_business_subtab_idx)
         if isinstance(prev_w, RulesTab):
-            prev_w.persist_header_state()
-        elif isinstance(prev_w, ARTab):
-            prev_w.persist_header_state()
-        elif isinstance(prev_w, APTab):
             prev_w.persist_header_state()
         elif isinstance(prev_w, PayrollTaxTab):
             prev_w.persist_header_state()

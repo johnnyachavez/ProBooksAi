@@ -31,6 +31,63 @@ def test_bank_schema_version_includes_gl_profile(db):
     )
 
 
+def test_list_invoice_ids_chronological_order(db) -> None:
+    assert business.list_invoice_ids_chronological(db._conn) == []
+    c1 = business.add_customer(db._conn, "A")
+    c2 = business.add_customer(db._conn, "B")
+    i2 = business.create_invoice(
+        db._conn,
+        c2,
+        "2",
+        "2024-02-01",
+        lines=[{"description": "b", "qty": 1, "rate": 1.0}],
+    )
+    i1 = business.create_invoice(
+        db._conn,
+        c1,
+        "1",
+        "2024-01-01",
+        lines=[{"description": "a", "qty": 1, "rate": 1.0}],
+    )
+    assert business.list_invoice_ids_chronological(db._conn) == [i2, i1]
+
+
+def test_next_default_invoice_number_starts_at_13001(db) -> None:
+    assert business.next_default_invoice_number(db._conn) == "13001"
+
+
+def test_next_default_invoice_number_none_conn() -> None:
+    assert business.next_default_invoice_number(None) == "13001"
+
+
+def test_next_default_invoice_number_max_digits_plus_one(db) -> None:
+    cid = business.add_customer(db._conn, "C")
+    business.create_invoice(
+        db._conn,
+        cid,
+        "13001",
+        "2024-01-01",
+        lines=[{"description": "x", "qty": 1, "rate": 0.0}],
+    )
+    assert business.next_default_invoice_number(db._conn) == "13002"
+    business.create_invoice(
+        db._conn,
+        cid,
+        "INV-9",
+        "2024-01-02",
+        lines=[{"description": "y", "qty": 1, "rate": 0.0}],
+    )
+    assert business.next_default_invoice_number(db._conn) == "13002"
+    business.create_invoice(
+        db._conn,
+        cid,
+        "13009",
+        "2024-01-03",
+        lines=[{"description": "z", "qty": 1, "rate": 0.0}],
+    )
+    assert business.next_default_invoice_number(db._conn) == "13010"
+
+
 def test_extension_schema_applied(db):
     row = db._conn.execute(
         "SELECT version FROM extension_schema_version WHERE id = 1"

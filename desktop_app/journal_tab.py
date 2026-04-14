@@ -39,6 +39,10 @@ from desktop_app.qt_mnemonic import (
     message_box_critical_ok,
     message_box_information_ok,
 )
+from desktop_app.flexible_date import (
+    attach_line_edit_us_date_normalization,
+    line_edit_to_iso_or_raw,
+)
 from desktop_app.table_clipboard import (
     CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
     QLIST_PLAIN_TEXT_ROLE,
@@ -68,15 +72,18 @@ class JournalTab(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
 
         row = QHBoxLayout()
-        lbl_j_from = QLabel("Filter from (yyyy-mm-dd):")
+        lbl_j_from = QLabel("Filter from:")
         lbl_j_from.setToolTip(
-            "Lower bound for journal entry dates (ISO yyyy-mm-dd); the field to the right sets the value."
+            "Lower bound for journal entry dates; type flexibly, shown as MM/DD/YYYY when valid; "
+            "queries use yyyy-mm-dd when parsing succeeds."
         )
         row.addWidget(lbl_j_from)
         self._start = QLineEdit()
         self._start.setToolTip(
-            "Earliest entry date to include (ISO yyyy-mm-dd), optional; blank means no lower bound."
+            "Earliest entry date to include, optional; blank means no lower bound. "
+            "Flexible US-style entry; normalized to MM/DD/YYYY on commit when valid."
         )
+        attach_line_edit_us_date_normalization(self._start)
         row.addWidget(self._start)
         lbl_j_to = QLabel("to:")
         lbl_j_to.setToolTip(
@@ -85,8 +92,10 @@ class JournalTab(QWidget):
         row.addWidget(lbl_j_to)
         self._end = QLineEdit()
         self._end.setToolTip(
-            "Latest entry date to include (ISO yyyy-mm-dd), optional; blank means no upper bound."
+            "Latest entry date to include, optional; blank means no upper bound. "
+            "Flexible US-style entry; normalized to MM/DD/YYYY on commit when valid."
         )
+        attach_line_edit_us_date_normalization(self._end)
         row.addWidget(self._end)
         b = QPushButton("Refresh")
         b.setToolTip(
@@ -214,8 +223,8 @@ class JournalTab(QWidget):
 
     def _refresh_list(self):
         self._list.clear()
-        start = self._start.text().strip() or None
-        end = self._end.text().strip() or None
+        start = line_edit_to_iso_or_raw(self._start)
+        end = line_edit_to_iso_or_raw(self._end)
         raw = self._gl.list_journal_entries(start, end)
         self._entries = [
             e for e in raw if coerce_combo_int_id(e["id"]) is not None
@@ -232,8 +241,8 @@ class JournalTab(QWidget):
             self._list.setCurrentRow(0)
 
     def _export_csv(self):
-        start = self._start.text().strip() or None
-        end = self._end.text().strip() or None
+        start = line_edit_to_iso_or_raw(self._start)
+        end = line_edit_to_iso_or_raw(self._end)
         rows = self._gl.journal_export_rows(start, end)
         path, _ = QFileDialog.getSaveFileName(
             self,

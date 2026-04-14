@@ -50,10 +50,9 @@ def test_desktop_main_imports_backup_data_layers_and_tab_widgets() -> None:
     )
     assert "from desktop_app.reports_tab import ReportsTab" in head
     assert "from desktop_app.journal_tab import JournalTab" in head
-    assert (
-        "from desktop_app.extra_tabs import BusinessHub, show_business_keyboard_shortcuts_dialog"
-        in head
-    )
+    assert "from desktop_app.extra_tabs import" in head
+    assert "ARTab" in head and "APTab" in head and "BusinessHub" in head
+    assert "show_business_keyboard_shortcuts_dialog" in head
     assert "from desktop_app.audit_tab import AuditTab" in head
     assert (
         "from desktop_app.theme import apply_dark_theme, STATUS_COLORS as THEME_STATUS_COLORS"
@@ -462,13 +461,13 @@ def test_edit_menu_preferences_disabled_stub() -> None:
 def test_view_menu_tab_actions_use_menu_action_tip_only() -> None:
     """**View** menu tab shortcuts use ``_menu_action_tip(act, …)`` only (no direct tip methods).
 
-    The loop body is written once in source; the list must still enumerate eight main tabs.
+    The loop body is written once in source; the list must still enumerate ten main tabs.
     """
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("# View menu")
     end = text.index("# Edit menu", start)
     chunk = text[start:end]
-    assert chunk.count('("Ctrl+') == 8
+    assert chunk.count('("Ctrl+') == 10
     assert chunk.count("act = QAction(") == 1
     assert chunk.count("_menu_action_tip(") == 1
     assert "view_menu.addAction(act)" in chunk
@@ -476,15 +475,13 @@ def test_view_menu_tab_actions_use_menu_action_tip_only() -> None:
     assert "act.setStatusTip(" not in chunk
 
 
-def test_main_window_view_menu_ctrl_1_through_8_tuple_source_order() -> None:
-    """**View** menu shortcut list keeps **Ctrl+1 … Ctrl+8** paired rows in tab-index order."""
+def test_main_window_view_menu_ctrl_1_through_0_tuple_source_order() -> None:
+    """**View** menu shortcut list keeps **Ctrl+1 … Ctrl+9** and **Ctrl+0** paired rows in tab-index order."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("# View menu")
     end = text.index("# Edit menu", start)
     chunk = text[start:end]
-    pairs = tuple(
-        f'("Ctrl+{n}",' for n in range(1, 9)
-    )
+    pairs = tuple(f'("Ctrl+{n}",' for n in range(1, 10)) + ('("Ctrl+0",',)
     positions = [chunk.index(p) for p in pairs]
     assert positions == sorted(positions)
 
@@ -615,28 +612,23 @@ def test_main_window_defines_bank_import_view_pointer_for_intake_tooltips() -> N
     text = _MAIN.read_text(encoding="utf-8")
     assert "_BANK_IMPORT_VIEW_POINTER = (" in text
     assert text.count("+ _BANK_IMPORT_VIEW_POINTER") >= 3
-    assert "View → Bank Import (Ctrl+2). " in text
+    assert "Reconcile tab → Bank import (View → Reconcile, Ctrl+9). " in text
 
 
 def test_main_window_tab_bar_has_tab_tooltips() -> None:
     text = _MAIN.read_text(encoding="utf-8")
     assert "main_tab_bar = self._tabs.tabBar()" in text
     assert "main_tab_bar.setTabToolTip" in text
-    assert '_tab_bar_csv_excel_hint = " CSV: UTF-8 with BOM for Excel."' in text
-    assert text.count("_tab_bar_csv_excel_hint") == 7
-    z = text.index("main_tab_bar.setTabToolTip(\n            0,")
-    assert "Bank Import (Ctrl+2)" in text[z : z + 420]
-    assert "File → Backup" in text[z : z + 420]
-    assert text.count("_main_tab_bar_db_hint") == 8
-    assert "Bank CSV/PDF import" in text
-    assert "AI line reconciliation (row field copies" in text
-    assert "Match overlay (Bank Import AI line reconciliation can populate it)" in text
-    assert "Business hub:" in text
+    assert "_apply_main_tab_bar_tooltips" in text
+    tips = text.index("tips = [")
+    assert "Invoices:" in text[tips : tips + 1200]
+    assert "More:" in text[tips : tips + 3500]
+    assert "for i, tip in enumerate(tips):" in text
+    assert text.count("_main_tab_bar_db_hint") >= 10
     assert "self._tabs.setToolTip(" in text
     assert "Main workspace:" in text
-    assert "Bank Import includes AI line reconciliation" in text
     assert "intake_widget.setToolTip(" in text
-    assert "AI line reconciliation are on Bank Import (View menu)" in text
+    assert "Reconcile → Bank import" in text
     iw = text.split("class InboxWidget(QTableWidget):", 1)[1].split(
         "    def _on_context_menu(self, pos):", 1
     )[0]
@@ -646,8 +638,7 @@ def test_main_window_tab_bar_has_tab_tooltips() -> None:
     assert "left.setToolTip(" in text
     assert "Document inbox column:" in text
     assert "container.setToolTip(" in text
-    assert "company banner and tabbed areas" in text
-    assert "Bank Import includes AI line reconciliation and Match overlay sync to Register" in text
+    assert "fixed-order tabs" in text
 
 
 def test_main_tab_widgets_have_root_hover_tooltips() -> None:
@@ -660,12 +651,12 @@ def test_main_tab_widgets_have_root_hover_tooltips() -> None:
     assert "def _build_ui(self):" in bchunk
     assert "self.setToolTip(" in bchunk
     assert "Bank CSV/PDF import and reconciliation" in bchunk
-    assert "AI-assisted line reconciliation" in bchunk
+    assert "Line Reconciliation (AI)" in bchunk
     assert "exported CSV uses UTF-8 BOM for Excel" in bchunk
     assert "left.setToolTip(" in bchunk
     assert "Import batches column" in bchunk
-    assert "statement reconciliation, and AI line reconciliation on the right" in bchunk
-    assert "View → Register (Ctrl+3)" in bchunk
+    assert "**Line Reconciliation (AI)**" in bchunk
+    assert "View → Bank Register (Ctrl+5)" in bchunk
 
     rep = (_DESKTOP_APP_DIR / "reports_tab.py").read_text(encoding="utf-8")
     assert "Financial reports: trial balance" in rep
@@ -685,18 +676,18 @@ def test_main_tab_widgets_have_root_hover_tooltips() -> None:
 
     reg = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
     assert "Bank register for one account:" in reg
-    assert "Reconciliation mode + Match overlay can be updated from Bank Import AI line reconciliation" in reg
-    assert "View → Bank Import (Ctrl+2), Register (Ctrl+3)" in reg
+    assert "Bank Import AI line reconciliation can populate it" in reg
+    assert "View → Reconcile (Ctrl+9) → Bank import; Bank Register (Ctrl+5)." in reg
     assert "and export CSV (UTF-8 BOM for Excel)" in reg
 
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
     assert "class BusinessHub" in et
     hub = et.split("class BusinessHub", 1)[1].split("def _refresh_current_subtab", 1)[0]
     assert "self.setToolTip(" in hub
-    assert "Business hub: Rules, AR invoices" in hub
+    assert "Business hub: categorization Rules" in hub
     assert "CSV exports use UTF-8 BOM for Excel" in hub
     assert "self._business_subtabs.setToolTip(" in hub
-    assert "Switch between Rules, Invoices (AR)" in hub
+    assert "Switch between Rules, Payroll" in hub
     rules = et.split("class RulesTab", 1)[1].split("class ARTab", 1)[0]
     assert "self.setToolTip(" in rules
     assert "description patterns → COA suggestions" in rules
@@ -881,58 +872,61 @@ def test_main_window_build_ui_has_no_toolbar() -> None:
     assert chunk.count("self.addToolBar(") == 0
 
 
-def test_main_window_build_ui_sets_central_status_and_eight_main_tabs() -> None:
-    """``_build_ui`` attaches one central widget, one status bar, and eight ``_tabs.addTab`` calls."""
+def test_main_window_build_ui_sets_central_status_and_assemble_adds_ten_main_tabs() -> None:
+    """``_build_ui`` attaches one central widget, one status bar; ``_assemble_main_tabs`` adds ten ``addTab`` calls."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("def _build_ui(self):")
     end = text.index("def _build_menu_bar", start)
-    chunk = text[start:end]
-    assert chunk.count("self.setCentralWidget(") == 1
-    assert chunk.count("self.setStatusBar(") == 1
-    assert chunk.count("self._tabs.addTab(") == 8
+    chunk_ui = text[start:end]
+    assert chunk_ui.count("self.setCentralWidget(") == 1
+    assert chunk_ui.count("self.setStatusBar(") == 1
+    assert chunk_ui.count("self._tabs.addTab(") == 0
+    start_a = text.index("def _assemble_main_tabs(self) -> None:")
+    end_a = text.index("def _apply_main_tab_bar_tooltips(self) -> None:", start_a)
+    chunk_a = text[start_a:end_a]
+    assert chunk_a.count("self._tabs.addTab(") == 10
 
 
-def test_main_window_build_ui_tab_strip_titles_intake_through_audit() -> None:
-    """Eight ``addTab`` lines keep Document Intake first and Audit log last, with stable user-visible titles."""
+def test_main_window_assemble_tab_strip_titles_fixed_order() -> None:
+    """Ten ``addTab`` lines keep Invoices first and More last, with stable user-visible titles."""
     text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("        # ── Tab 1: Document Intake")
-    end = text.index("        main_tab_bar = self._tabs.tabBar()", start)
+    start = text.index("def _assemble_main_tabs(self) -> None:")
+    end = text.index("def _apply_main_tab_bar_tooltips(self) -> None:", start)
     chunk = text[start:end]
     lines = [ln.strip() for ln in chunk.splitlines() if "self._tabs.addTab(" in ln]
-    assert len(lines) == 8
+    assert len(lines) == 10
     want = (
-        "Document Intake",
-        "Bank Import",
-        "Bank register",
+        "Invoices",
+        "Enter Bills",
+        "Pay Bills",
+        "Receive Payments",
+        "Bank Register",
         "Chart of Accounts",
-        "Reports",
-        "Journal",
-        "Business",
-        "Audit log",
+        "Customers",
+        "Vendors",
+        "Reconcile",
+        "More",
     )
     for i, title in enumerate(want):
         assert title in lines[i], (i, title, lines[i])
 
 
 def test_main_window_build_ui_tab_section_banner_comments_order() -> None:
-    """``_build_ui`` keeps **Tab 1→4** section banners before the **Tabs 5–7** block."""
+    """``_build_ui`` calls intake builder then assembler; no legacy per-tab banners in ``_build_ui``."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("def _build_ui(self):")
     end = text.index("def _build_menu_bar", start)
     chunk = text[start:end]
-    markers = (
-        "        # ── Tab 1: Document Intake",
-        "        # ── Tab 2: Bank Import",
-        "        # ── Tab 3: Bank register",
-        "        # ── Tab 4: Chart of Accounts",
-        "        # ── Tabs 5–7:",
+    assert chunk.index("self._build_document_intake_widget()") < chunk.index(
+        "self._assemble_main_tabs()"
     )
-    positions = [chunk.index(m) for m in markers]
-    assert positions == sorted(positions)
+    assert chunk.index("self._assemble_main_tabs()") < chunk.index(
+        "self._apply_main_tab_bar_tooltips()"
+    )
 
 
 def test_main_window_build_ui_structural_inline_comments_order() -> None:
-    """``_build_ui`` orders menu call, container, tabs, Intake splitter panes, status bar, window DnD."""
+    """``_build_ui`` orders menu call, container, tabs widget, intake+assemble+tooltips, status bar, window DnD."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("def _build_ui(self):")
     end = text.index("    def _build_menu_bar(self):", start)
@@ -941,36 +935,37 @@ def test_main_window_build_ui_structural_inline_comments_order() -> None:
         "        # Container: header banner + tab widget"
     )
     assert chunk.index("        # Container: header banner + tab widget") < chunk.index(
-        "        # Tab widget"
+        "        self._tabs = QTabWidget()"
     )
-    assert chunk.index("        # Tab widget") < chunk.index(
-        "        # ── Tab 1: Document Intake"
+    assert chunk.index("self._build_document_intake_widget()") < chunk.index(
+        "self._assemble_main_tabs()"
     )
-    t1 = chunk.index("        # ── Tab 1: Document Intake")
-    t2 = chunk.index("        # ── Tab 2:", t1)
-    intake = chunk[t1:t2]
-    assert intake.index("        # Splitter ") < intake.index("        # Left: inbox")
-    assert intake.index("        # Left: inbox") < intake.index("        # Right: detail pane")
-    assert chunk.index("        # ── Tabs 5–7:") < chunk.index("        # Status bar")
+    assert chunk.index("self._assemble_main_tabs()") < chunk.index(
+        "self._apply_main_tab_bar_tooltips()"
+    )
     assert chunk.index("        # Status bar") < chunk.index(
         "        # Drag & drop on the main window itself"
     )
 
 
 def test_main_window_build_ui_tab_tooltips_intake_f5_and_window_drops() -> None:
-    """``_build_ui`` sets eight tab bar tooltips, Intake F5 shortcut, and main-window drag/drop."""
+    """``_apply_main_tab_bar_tooltips`` sets ten tab tooltips; intake F5 lives in ``_build_document_intake_widget``."""
     text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("def _build_ui(self):")
-    end = text.index("def _build_menu_bar", start)
-    chunk = text[start:end]
-    assert chunk.count("main_tab_bar.setTabToolTip(") == 8
-    assert chunk.count("_main_tab_bar_db_hint") == 8, (
-        "one _main_tab_bar_db_hint assignment plus seven tab tooltips that append it (tab 0 uses inline text)"
-    )
-    assert chunk.count('QShortcut(QKeySequence("F5"), intake_widget)') == 1
-    assert chunk.count("sc_intake_f5.setContext(Qt.WidgetWithChildrenShortcut)") == 1
-    assert chunk.count("sc_intake_f5.activated.connect(self._refresh_inbox)") == 1
-    assert chunk.count("self.setAcceptDrops(True)") == 1
+    start = text.index("def _apply_main_tab_bar_tooltips(self) -> None:")
+    end = text.index("def _teardown_main_tabs_for_rebuild(self) -> None:", start)
+    chunk_tt = text[start:end]
+    assert chunk_tt.count("main_tab_bar.setTabToolTip(") == 1
+    assert chunk_tt.count("for i, tip in enumerate(tips):") == 1
+    start_i = text.index("def _build_document_intake_widget(self) -> None:")
+    end_i = text.index("def _assemble_main_tabs(self) -> None:", start_i)
+    chunk_i = text[start_i:end_i]
+    assert chunk_i.count('QShortcut(QKeySequence("F5"), intake_widget)') == 1
+    assert chunk_i.count("sc_intake_f5.setContext(Qt.WidgetWithChildrenShortcut)") == 1
+    assert chunk_i.count("sc_intake_f5.activated.connect(self._refresh_inbox)") == 1
+    start_u = text.index("def _build_ui(self):")
+    end_u = text.index("def _build_menu_bar", start_u)
+    chunk_u = text[start_u:end_u]
+    assert chunk_u.count("self.setAcceptDrops(True)") == 1
 
 
 def test_main_window_build_ui_central_status_bar_before_window_accept_drops_order() -> None:
@@ -990,8 +985,8 @@ def test_main_window_build_ui_central_status_bar_before_window_accept_drops_orde
 def test_main_window_intake_left_inbox_header_row_before_inbox_widget_order() -> None:
     """Document Intake left column adds the navy **Document Inbox** header before constructing ``InboxWidget``."""
     text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("        # Left: inbox")
-    end = text.index("        splitter.addWidget(left)", start)
+    start = text.index("def _build_document_intake_widget(self) -> None:")
+    end = text.index("def _assemble_main_tabs(self) -> None:", start)
     chunk = text[start:end]
     hdr = chunk.index("left_layout.addWidget(lbl_inbox)")
     ib = chunk.index("self._inbox = InboxWidget()")
@@ -999,10 +994,10 @@ def test_main_window_intake_left_inbox_header_row_before_inbox_widget_order() ->
 
 
 def test_main_window_build_ui_document_intake_split_inbox_header_and_f5() -> None:
-    """Document Intake tab builds inbox header (brand colour), horizontal splitter, sizes, F5, first tab."""
+    """Document Intake builds inbox header (brand colour), horizontal splitter, sizes, F5; added under Reconcile."""
     text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("        # ── Tab 1: Document Intake")
-    end = text.index("        # ── Tab 2:", start)
+    start = text.index("def _build_document_intake_widget(self) -> None:")
+    end = text.index("def _assemble_main_tabs(self) -> None:", start)
     chunk = text[start:end]
     assert chunk.count("intake_layout.setContentsMargins(0, 0, 0, 0)") == 1
     assert chunk.count("intake_layout.setSpacing(0)") == 1
@@ -1043,23 +1038,20 @@ def test_main_window_build_ui_document_intake_split_inbox_header_and_f5() -> Non
         == 1
     )
     assert chunk.count('QShortcut(QKeySequence("F5"), intake_widget)') == 1
-    assert chunk.count("self._tabs.addTab(intake_widget,") == 1
-    assert "Document Intake" in chunk
-    tab_line = next(
-        ln for ln in chunk.splitlines() if "self._tabs.addTab(intake_widget," in ln
-    )
-    assert "\\U0001f4c4" in tab_line or "📄" in tab_line
+    asm = text.index("def _assemble_main_tabs(self) -> None:")
+    asm_end = text.index("def _apply_main_tab_bar_tooltips(self) -> None:", asm)
+    chunk_asm = text[asm:asm_end]
+    assert chunk_asm.count('self._reconcile_hub.addTab(self._intake_widget, "Document intake")') == 1
 
 
-def test_main_window_build_ui_intake_f5_shortcut_before_add_tab_order() -> None:
-    """Document Intake wires the widget-scoped **F5** shortcut before the tab is added to ``_tabs``."""
+def test_main_window_build_ui_intake_f5_shortcut_before_reconcile_add_tab_order() -> None:
+    """Document Intake wires **F5** before ``_assemble_main_tabs`` nests it under Reconcile."""
     text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("        # ── Tab 1: Document Intake")
-    end = text.index("        # ── Tab 2:", start)
-    chunk = text[start:end]
-    assert chunk.index('QShortcut(QKeySequence("F5"), intake_widget)') < chunk.index(
-        "self._tabs.addTab(intake_widget,"
+    f5 = text.index('QShortcut(QKeySequence("F5"), intake_widget)')
+    add_intake = text.index(
+        'self._reconcile_hub.addTab(self._intake_widget, "Document intake")'
     )
+    assert f5 < add_intake
 
 
 def test_main_window_build_ui_status_bar_ready_message_and_qstatusbar() -> None:
@@ -1074,9 +1066,9 @@ def test_main_window_build_ui_status_bar_ready_message_and_qstatusbar() -> None:
     assert "application_version()" in chunk
     assert "ProBooks+ai v" in chunk
     assert "AI line reconciliation" in chunk
-    assert "Bank Import" in chunk
+    assert "Reconcile" in chunk
     assert "File → Backup saves the company .db." in chunk
-    assert "drag & drop documents" in chunk
+    assert "drag & drop" in chunk
     assert "\\u2013" in chunk
 
 
@@ -1255,30 +1247,28 @@ def test_main_window_switch_company_create_new_file_exists_qmessagebox_buttons_t
     assert sb < db < dlg_tt < tip < ex
 
 
-def test_main_window_rebuild_removes_tabs_before_tab_specs_insert() -> None:
-    """``_rebuild_bank_related_tabs`` removes old tabs, defines ``tab_specs``, then ``insertTab`` in a loop."""
+def test_main_window_rebuild_calls_teardown_assemble_tooltips_wire() -> None:
+    """``_rebuild_bank_related_tabs`` tears down, re-assembles, reapplies tab tooltips, rewires register navigation."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _rebuild_bank_related_tabs(self):")
     end = text.index("    def _load_company_at_path(", start)
     chunk = text[start:end]
-    rm = chunk.index("for i in range(7, 0, -1):")
-    ts = chunk.index("        tab_specs = [")
-    ins = chunk.index("for i, (title, widget) in enumerate(tab_specs, start=1):")
-    assert rm < ts < ins
+    td = chunk.index("self._teardown_main_tabs_for_rebuild()")
+    am = chunk.index("self._assemble_main_tabs()")
+    tt = chunk.index("self._apply_main_tab_bar_tooltips()")
+    wn = chunk.index("self._wire_register_bank_match_navigation()")
+    assert td < am < tt < wn
 
 
-def test_main_window_rebuild_bank_tabs_insert_loop_then_widget_refs_and_coa_signal_order() -> None:
-    """After ``insertTab`` loop, ``_rebuild_bank_related_tabs`` caches tab refs **1→3** then wires ``coaChanged``."""
+def test_main_window_teardown_extracts_intake_before_removing_main_tabs() -> None:
+    """``_teardown_main_tabs_for_rebuild`` removes Document Intake from Reconcile before stripping ``_tabs``."""
     text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("    def _rebuild_bank_related_tabs(self):")
-    end = text.index("    def _load_company_at_path(", start)
+    start = text.index("    def _teardown_main_tabs_for_rebuild(self) -> None:")
+    end = text.index("    def _build_ui(self):", start)
     chunk = text[start:end]
-    ins = chunk.index("for i, (title, widget) in enumerate(tab_specs, start=1):")
-    w1 = chunk.index("self._bank_tab = self._tabs.widget(1)")
-    w2 = chunk.index("self._register_tab = self._tabs.widget(2)")
-    w3 = chunk.index("self._coa_tab = self._tabs.widget(3)")
-    sig = chunk.index("self._coa_tab.coaChanged.connect(self._on_coa_changed)")
-    assert ins < w1 < w2 < w3 < sig
+    assert "rh.removeTab(ix)" in chunk
+    assert "iw.setParent(None)" in chunk
+    assert "while self._tabs.count() > 0:" in chunk
 
 
 def test_main_window_on_backup_save_dialog_try_backup_before_complete_dialog() -> None:
@@ -1437,19 +1427,16 @@ def test_main_window_on_restore_company_picker_target_same_file_guard_before_clo
     assert pick < emp < tgt < same < cdb
 
 
-def test_main_window_rebuild_bank_related_tabs_replaces_seven_tabs_and_rewires_coa() -> None:
-    """``_rebuild_bank_related_tabs`` removes indices 7..1, inserts seven widgets, reconnects COA."""
+def test_main_window_assemble_main_tabs_instantiates_core_widgets() -> None:
+    """``_assemble_main_tabs`` constructs workflow, bank, GL, and More hub widgets once each."""
     text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("    def _rebuild_bank_related_tabs(self):")
-    end = text.index("    def _load_company_at_path(", start)
+    start = text.index("    def _assemble_main_tabs(self) -> None:")
+    end = text.index("    def _apply_main_tab_bar_tooltips(self) -> None:", start)
     chunk = text[start:end]
-    assert chunk.count("for i in range(7, 0, -1):") == 1
-    assert chunk.count("self._tabs.removeTab(i)") == 1
-    assert chunk.count("self._tabs.insertTab(i, widget, title)") == 1
-    assert chunk.count("for i, (title, widget) in enumerate(tab_specs, start=1):") == 1
-    assert chunk.count("self._bank_tab = self._tabs.widget(1)") == 1
-    assert chunk.count("self._register_tab = self._tabs.widget(2)") == 1
-    assert chunk.count("self._coa_tab = self._tabs.widget(3)") == 1
+    assert chunk.count("InvoiceScreen(") == 1
+    assert chunk.count("EnterBillsScreen(") == 1
+    assert chunk.count("PayBillsScreen(") == 1
+    assert chunk.count("ReceiveChecksScreen(") == 1
     assert chunk.count("BankImportTab(") == 1
     assert chunk.count("RegisterTab(") == 1
     assert chunk.count("COATab(") == 1
@@ -1458,20 +1445,6 @@ def test_main_window_rebuild_bank_related_tabs_replaces_seven_tabs_and_rewires_c
     assert chunk.count("BusinessHub(") == 1
     assert chunk.count("AuditTab(") == 1
     assert chunk.count("self._coa_tab.coaChanged.connect(self._on_coa_changed)") == 1
-    assert chunk.count("w = self._tabs.widget(i)") == 1
-    assert chunk.count("if w is not None:") == 1
-    assert chunk.count("w.deleteLater()") == 1
-    assert "Replace bank/GL/COA-related tabs" in chunk
-    for title in (
-        "🏦  Bank Import",
-        "📒  Bank register",
-        "📊  Chart of Accounts",
-        "📈  Reports",
-        "📗  Journal",
-        "🧾  Business",
-        "📜  Audit log",
-    ):
-        assert title in chunk, f"tab_specs should include {title!r}"
 
 
 def test_main_window_switch_company_database_closes_and_loads_at_path() -> None:
@@ -2393,31 +2366,23 @@ def test_main_window_tools_menu_invoice_and_recon_menu_has_register_submenus() -
     assert "act_tools = QAction" not in chunk
 
 
-def test_main_window_rebuild_bank_tab_specs_title_order() -> None:
-    """``_rebuild_bank_related_tabs`` keeps **tab_specs** titles Bank → register → COA → reports → journal → business → audit."""
+def test_main_window_assemble_add_tab_title_order() -> None:
+    """``_assemble_main_tabs`` adds top-level tabs in fixed order ending with Reconcile and More."""
     text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("        tab_specs = [")
-    end = text.index("        for i, (title, widget) in enumerate(tab_specs, start=1):", start)
+    start = text.index("    def _assemble_main_tabs(self) -> None:")
+    end = text.index("    def _apply_main_tab_bar_tooltips(self) -> None:", start)
     chunk = text[start:end]
-    titles = (
-        '("🏦  Bank Import"',
-        '("📒  Bank register"',
-        '("📊  Chart of Accounts"',
-        '("📈  Reports"',
-        '("📗  Journal"',
-        '("🧾  Business"',
-        '("📜  Audit log"',
+    assert chunk.index('self._tabs.addTab(self._invoice_screen, "Invoices")') < chunk.index(
+        'self._tabs.addTab(self._more_hub, "More")'
     )
-    positions = [chunk.index(t) for t in titles]
-    assert positions == sorted(positions)
     assert "after_stmt_match_sync=self._focus_bank_register_tab" in chunk
 
 
 def test_main_window_build_ui_wires_stmt_match_sync_focus_register() -> None:
-    """``MainWindow`` passes ``after_stmt_match_sync`` into ``BankImportTab`` (build + rebuild) and defines ``_focus_bank_register_tab``."""
+    """``MainWindow`` passes ``after_stmt_match_sync`` into ``BankImportTab`` (via ``_assemble_main_tabs``) and defines ``_focus_bank_register_tab``."""
     text = _MAIN.read_text(encoding="utf-8")
     assert "def _focus_bank_register_tab(self)" in text
-    assert text.count("after_stmt_match_sync=self._focus_bank_register_tab") == 2
+    assert text.count("after_stmt_match_sync=self._focus_bank_register_tab") == 1
     assert "Match overlay updated on Bank register" in text
     assert "line-reconciliation grid" in text
     assert "_STMT_MATCH_SYNC_STATUS_MS = 8000" in text
@@ -2533,7 +2498,7 @@ def test_main_window_set_tab_sync_title_and_company_status_helpers() -> None:
     assert chunk.count("escape_ampersand_for_qt(Path(p).name)") == 1
     assert chunk.count("self._header.set_company_name(Path(p).name)") == 1
     assert 'f"Company: {p}  \\u2013  drag & drop or Import;' in chunk
-    assert "Bank Import (Ctrl+2)" in chunk
+    assert "Reconcile → Bank import (Ctrl+9)" in chunk
 
 
 def test_main_window_sync_window_title_includes_company_name_or_desktop_only() -> None:
@@ -2592,34 +2557,27 @@ def test_main_window_drag_enter_event_def_before_drop_event_def() -> None:
     )
 
 
-def test_main_window_build_ui_instantiates_core_tab_widgets_once_each() -> None:
-    """``_build_ui`` wires one header, intake split, detail pane, and each main-tab class."""
+def test_main_window_build_ui_instantiates_header_and_intake_split_once() -> None:
+    """``_build_ui`` wires one header; ``_build_document_intake_widget`` builds inbox + detail once."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("def _build_ui(self):")
     end = text.index("def _build_menu_bar", start)
     chunk = text[start:end]
     assert chunk.count("AppHeaderWidget()") == 1
-    assert chunk.count("QSplitter(") == 1
-    assert chunk.count("InboxWidget()") == 1
-    assert chunk.count("coa_display_list(") == 1
-    assert chunk.count("DetailPane(") == 1
-    assert chunk.count("BankImportTab(") == 1
-    assert chunk.count("RegisterTab(") == 1
-    assert chunk.count("COATab(") == 1
-    assert chunk.count("ReportsTab(") == 1
-    assert chunk.count("JournalTab(") == 1
-    assert chunk.count("BusinessHub(") == 1
-    assert chunk.count("AuditTab(") == 1
-    assert chunk.count("self._bank_tab = BankImportTab(") == 1
-    assert chunk.count("self._register_tab = RegisterTab(") == 1
-    assert chunk.count("self._coa_tab = COATab(") == 1
+    start_i = text.index("def _build_document_intake_widget(self) -> None:")
+    end_i = text.index("def _assemble_main_tabs(self) -> None:", start_i)
+    chunk_i = text[start_i:end_i]
+    assert chunk_i.count("QSplitter(") == 1
+    assert chunk_i.count("InboxWidget()") == 1
+    assert chunk_i.count("coa_display_list(") == 1
+    assert chunk_i.count("DetailPane(") == 1
 
 
-def test_main_window_build_ui_bank_register_coa_tabs_receive_expected_db_deps() -> None:
+def test_main_window_assemble_bank_register_coa_tabs_receive_expected_db_deps() -> None:
     """Bank Import, Register, and COA tabs are constructed with ``BankDatabase`` / ``COADatabase`` / ``GLDatabase`` wiring."""
     text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("        # ── Tab 2: Bank Import")
-    end = text.index("        # ── Tabs 5–7:", start)
+    start = text.index("    def _assemble_main_tabs(self) -> None:")
+    end = text.index("    def _apply_main_tab_bar_tooltips(self) -> None:", start)
     chunk = text[start:end]
     assert chunk.count("register_tab=self._register_tab") == 1
     assert chunk.count("after_stmt_match_sync=self._focus_bank_register_tab") == 1
@@ -2627,38 +2585,36 @@ def test_main_window_build_ui_bank_register_coa_tabs_receive_expected_db_deps() 
     assert chunk.count("COATab(self._coa_db)") == 1
 
 
-def test_main_window_build_ui_tabs_2_through_4_ctor_before_add_tab_coa_signal_before_add_tab_order() -> None:
-    """Tabs 2–4 construct each widget before ``addTab``; COA tab wires ``coaChanged`` before ``addTab``."""
+def test_main_window_assemble_register_bank_ctor_before_bank_tab_coa_signal_before_top_level_add() -> None:
+    """Register is constructed before BankImportTab; COA wires ``coaChanged`` before top-level ``addTab``."""
     text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("        # ── Tab 2: Bank Import")
-    end = text.index("        # ── Tabs 5–7:", start)
+    start = text.index("    def _assemble_main_tabs(self) -> None:")
+    end = text.index("    def _apply_main_tab_bar_tooltips(self) -> None:", start)
     chunk = text[start:end]
     r_ctor = chunk.index(
         "self._register_tab = RegisterTab(self._bank_db, self._coa_db, self._gl_db)"
     )
     b_ctor = chunk.index("self._bank_tab = BankImportTab(")
-    b_tab = chunk.index('self._tabs.addTab(self._bank_tab, "🏦  Bank Import")')
-    r_tab = chunk.index('self._tabs.addTab(self._register_tab, "📒  Bank register")')
     c_ctor = chunk.index("self._coa_tab = COATab(self._coa_db)")
     c_sig = chunk.index("self._coa_tab.coaChanged.connect(self._on_coa_changed)")
-    c_tab = chunk.index('self._tabs.addTab(self._coa_tab, "📊  Chart of Accounts")')
-    assert r_ctor < b_ctor < b_tab < r_tab < c_ctor < c_sig < c_tab
+    c_tab = chunk.index('self._tabs.addTab(self._coa_tab, "Chart of Accounts")')
+    assert r_ctor < b_ctor < c_ctor < c_sig < c_tab
 
 
-def test_main_window_build_ui_reports_journal_business_audit_use_shared_bank_connection() -> None:
-    """Reports, Journal, Business, and Audit tabs are built from ``self._bank_db._conn`` (shared GL SQLite)."""
+def test_main_window_assemble_reports_journal_business_audit_use_shared_bank_connection() -> None:
+    """Reports, Journal, Business, and Audit tabs are built from ``conn`` (shared GL SQLite)."""
     text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("        # ── Tabs 5–7:")
-    end = text.index("        main_tab_bar = self._tabs.tabBar()", start)
+    start = text.index("    def _assemble_main_tabs(self) -> None:")
+    end = text.index("    def _apply_main_tab_bar_tooltips(self) -> None:", start)
     chunk = text[start:end]
-    assert chunk.count("ReportsTab(self._bank_db._conn)") == 1
-    assert chunk.count("JournalTab(self._bank_db._conn)") == 1
-    assert chunk.count("BusinessHub(self._bank_db._conn)") == 1
-    assert chunk.count("AuditTab(self._bank_db._conn)") == 1
+    assert chunk.count("ReportsTab(conn)") == 1
+    assert chunk.count("JournalTab(conn)") == 1
+    assert chunk.count("BusinessHub(conn)") == 1
+    assert chunk.count("AuditTab(conn)") == 1
 
 
 def test_main_window_build_ui_wires_tabs_container_inbox_and_detail_signals() -> None:
-    """``_build_ui`` attaches ``QTabWidget`` to the container and wires Intake/COA/Detail slots."""
+    """``_build_ui`` attaches ``QTabWidget``; intake + assemble wire inbox/detail and COA."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("def _build_ui(self):")
     end = text.index("def _build_menu_bar", start)
@@ -2672,22 +2628,28 @@ def test_main_window_build_ui_wires_tabs_container_inbox_and_detail_signals() ->
     assert chunk.index("container_layout.addWidget(self._header)") < chunk.index(
         "container_layout.addWidget(self._tabs)"
     )
-    assert chunk.count("self._coa_tab.coaChanged.connect(self._on_coa_changed)") == 1
-    assert chunk.count("self._inbox.filesDropped.connect(self._on_files_dropped)") == 1
-    assert chunk.count(
+    start_i = text.index("def _build_document_intake_widget(self) -> None:")
+    end_i = text.index("def _assemble_main_tabs(self) -> None:", start_i)
+    chunk_i = text[start_i:end_i]
+    assert chunk_i.count("self._inbox.filesDropped.connect(self._on_files_dropped)") == 1
+    assert chunk_i.count(
         "self._inbox.itemSelectionChanged.connect(self._on_selection_changed)"
     ) == 1
-    assert chunk.count("self._detail.runAI.connect(self._on_run_ai)") == 1
-    assert chunk.count("self._detail.approve.connect(self._on_approve)") == 1
-    assert chunk.count("self._detail.markPosted.connect(self._on_mark_posted)") == 1
-    assert chunk.count("self._detail.reject.connect(self._on_reject)") == 1
+    assert chunk_i.count("self._detail.runAI.connect(self._on_run_ai)") == 1
+    assert chunk_i.count("self._detail.approve.connect(self._on_approve)") == 1
+    assert chunk_i.count("self._detail.markPosted.connect(self._on_mark_posted)") == 1
+    assert chunk_i.count("self._detail.reject.connect(self._on_reject)") == 1
+    start_a = text.index("    def _assemble_main_tabs(self) -> None:")
+    end_a = text.index("    def _apply_main_tab_bar_tooltips(self) -> None:", start_a)
+    chunk_a = text[start_a:end_a]
+    assert chunk_a.count("self._coa_tab.coaChanged.connect(self._on_coa_changed)") == 1
 
 
 def test_main_window_build_ui_detail_pane_signal_connect_run_approve_post_reject_order() -> None:
     """Intake ``DetailPane`` slots wire **Run AI → Approve → Mark Posted → Reject** in source order."""
     text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("def _build_ui(self):")
-    end = text.index("def _build_menu_bar", start)
+    start = text.index("def _build_document_intake_widget(self) -> None:")
+    end = text.index("def _assemble_main_tabs(self) -> None:", start)
     chunk = text[start:end]
     r = chunk.index("self._detail.runAI.connect(self._on_run_ai)")
     a = chunk.index("self._detail.approve.connect(self._on_approve)")
@@ -2921,8 +2883,12 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
     assert "\n            act_more_tab_keys,\n" in chunk
     assert chunk.count("_view_tab_tip_suffix") == 2
     assert "_view_tab_tip_extra" in chunk
-    assert "Document Intake; bank CSV/PDF and line reconciliation on Ctrl+2" in chunk
-    assert "AI line reconciliation and Match overlay sync" in chunk
+    assert (
+        "View → Bank Import and Register status tips mention AI line reconciliation and Match overlay."
+        in chunk
+    )
+    assert " Reconcile: Bank import + Document intake." in chunk
+    assert "AI line reconciliation" in chunk and "Match overlay" in chunk
     assert 'f"Show this main tab ({sc}).{extra}{_view_tab_tip_suffix}"' in chunk
 
 
@@ -2942,7 +2908,7 @@ def test_main_help_menu_wires_document_intake_shortcuts_dialog() -> None:
     assert "show_document_intake_keyboard_shortcuts_dialog" in text
     assert "def _document_intake_keyboard_shortcuts_help_text" in text
     assert "Document &intake shortcuts" in text
-    assert "Ctrl+7 Business" in text and "Ctrl+8 Audit log" in text
+    assert "Ctrl+0 More" in text and "Ctrl+9 Reconcile" in text
     assert "all tabs share the open" in text
     assert "Help → Business shortcuts" in text
     assert "Import documents" in text and "Ctrl+O" in text
@@ -2953,23 +2919,26 @@ def test_main_help_menu_wires_document_intake_shortcuts_dialog() -> None:
     assert "Detail pane:" in text
 
 
-def test_main_window_view_menu_enumerates_ctrl_one_through_eight() -> None:
-    """View menu builds eight tab actions with Ctrl+1 … Ctrl+8 in a fixed order."""
+def test_main_window_view_menu_enumerates_ctrl_one_through_zero() -> None:
+    """View menu builds ten tab actions with Ctrl+1 … Ctrl+9 and Ctrl+0 in a fixed order."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("# View menu — tab shortcuts")
     end = text.index("# Edit menu", start)
     chunk = text[start:end]
-    for n in range(1, 9):
+    for n in range(1, 10):
         assert f'("Ctrl+{n}"' in chunk
+    assert '("Ctrl+0"' in chunk
     tuples = (
-        '("Ctrl+1", "Document &Intake")',
-        '("Ctrl+2", "&Bank Import")',
-        '("Ctrl+3", "&Register")',
-        '("Ctrl+4", "Chart of &Accounts")',
-        '("Ctrl+5", "&Reports")',
-        '("Ctrl+6", "&Journal")',
-        '("Ctrl+7", "&Business")',
-        '("Ctrl+8", "A&udit log")',
+        '("Ctrl+1", "&Invoices")',
+        '("Ctrl+2", "&Enter Bills")',
+        '("Ctrl+3", "&Pay Bills")',
+        '("Ctrl+4", "&Receive Payments")',
+        '("Ctrl+5", "&Bank Register")',
+        '("Ctrl+6", "Chart of &Accounts")',
+        '("Ctrl+7", "&Customers")',
+        '("Ctrl+8", "&Vendors")',
+        '("Ctrl+9", "&Reconcile")',
+        '("Ctrl+0", "&More")',
     )
     for line in tuples:
         assert line in chunk
@@ -2978,18 +2947,15 @@ def test_main_window_view_menu_enumerates_ctrl_one_through_eight() -> None:
     assert chunk.count("act.setShortcutContext(Qt.ApplicationShortcut)") == 1
 
 
-def test_main_window_main_tab_bar_set_tab_tooltip_index_order() -> None:
-    """``main_tab_bar.setTabToolTip`` uses indices **0–7** in ascending order (matches tab strip)."""
+def test_main_window_main_tab_bar_set_tab_tooltip_loop_matches_strip() -> None:
+    """``_apply_main_tab_bar_tooltips`` assigns ``tips[i]`` to ``main_tab_bar.setTabToolTip(i, …)`` for each index."""
     text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("main_tab_bar = self._tabs.tabBar()")
-    end = text.index("container_layout.addWidget(self._tabs)", start)
+    start = text.index("def _apply_main_tab_bar_tooltips(self) -> None:")
+    end = text.index("def _teardown_main_tabs_for_rebuild(self) -> None:", start)
     chunk = text[start:end]
-    prev = -1
-    for i in range(8):
-        needle = f"main_tab_bar.setTabToolTip(\n            {i},"
-        pos = chunk.index(needle)
-        assert pos > prev
-        prev = pos
+    assert "main_tab_bar = self._tabs.tabBar()" in chunk
+    assert "for i, tip in enumerate(tips):" in chunk
+    assert "main_tab_bar.setTabToolTip(i, tip)" in chunk
 
 
 def test_inbox_widget_context_menu_includes_keyboard_shortcuts_help() -> None:
@@ -3067,8 +3033,8 @@ def test_desktop_main_show_intake_shortcuts_dialog_delegates_to_message_box() ->
     assert (
         'ok_tip="Close; shortcuts apply when Document Intake has focus. "' in chunk
     )
-    assert "Ctrl+2 Bank Import" in chunk
-    assert "Ctrl+3 Register" in chunk
+    assert "Ctrl+9 Reconcile" in chunk and "Bank import" in chunk
+    assert "Ctrl+5 Bank Register" in chunk
     assert "Company .db: File → Backup / Restore (probooks.backup)." in chunk
 
 
@@ -3107,7 +3073,7 @@ def test_desktop_main_document_intake_shortcuts_help_text_sections() -> None:
     assert "reconciliation report and line-compare" in chunk
     assert "Bank Import Import CSV" in chunk and "optional BOM" in chunk
     assert "batch preview, AI line reconciliation" in chunk
-    assert "Hover Bank Import and Register in View for status tips" in chunk
+    assert "Use **Reconcile** (Ctrl+9) for Bank Import" in chunk
     assert "**Recon** menu" in chunk and "Bank register" in chunk
     assert "**Tools** menu" in chunk and "Invoice" in chunk
 
@@ -3171,7 +3137,7 @@ def test_desktop_main_inbox_header_color_and_placeholder_company_name() -> None:
     )
     chunk = text[start:end]
     assert 'INBOX_HEADER_COLOR = "#1F3864"' in chunk
-    assert 'COMPANY_NAME = "CHAVAN TRUCKING CORPORATION"' in chunk
+    assert 'COMPANY_NAME = ""' in chunk
     assert "placeholder" in chunk
 
 
@@ -3539,8 +3505,8 @@ def test_business_hub_subtab_bar_has_tab_tooltips() -> None:
     text = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
     assert "class BusinessHub" in text
     assert "bar.setTabToolTip" in text
-    assert "accounts receivable" in text
-    assert "accounts payable" in text
+    assert "Accounts receivable" in text
+    assert "Accounts payable" in text
     hub = text.split("class BusinessHub", 1)[1].split("def _refresh_current_subtab", 1)[0]
     assert "tip.setToolTip" in hub
     assert "export sales tax summary CSV (UTF-8 BOM for Excel)" in hub
@@ -3615,8 +3581,8 @@ def test_more_main_tabs_shortcuts_module_exposes_help_dialog() -> None:
     assert "UTF-8 with BOM for Excel" in text
     assert "Ctrl+Shift+E" in text
     assert "line-compare" in text
-    assert "Ctrl+7 Business" in text
-    assert "Ctrl+2 Bank Import" in text
+    assert "Ctrl+0 More" in text
+    assert "Ctrl+9 Reconcile" in text
     assert "Help → Document intake shortcuts" in text
     assert "Register bulk actions" in text and "main **Recon** menu" in text
     assert "Ctrl+Shift+B" in text
@@ -3718,8 +3684,8 @@ def test_bank_import_tab_exposes_shortcuts_dialog_for_help_menu() -> None:
     assert "If that account cannot be opened on the register" in bit
     assert "status bar" in bit.lower()
     assert "restores the company line" in bit
-    assert "AI line-reconciliation panel below" in bit
-    assert "Line-by-line Matched / Missing / Extra is in AI-assisted line" in bit
+    assert "**Line Reconciliation (AI)** (lower panel):" in bit
+    assert "**Matched / Missing / Extra** line-reconciliation grid" in bit
     assert "The same dialog summarizes the main Bank Import tab" in bit
     assert "line-reconciliation grid" in bit
     assert "Export comparison CSV" in bit
@@ -3920,8 +3886,8 @@ def test_desktop_main_detail_pane_document_info_filename_before_status_labels_or
 def test_main_window_intake_coa_display_list_before_detail_pane_ctor_order() -> None:
     """Intake builds ``coa_display_list(self._coa)`` before constructing ``DetailPane(coa_display)``."""
     text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("        # Right: detail pane")
-    end = text.index("        splitter.addWidget(self._detail)", start)
+    start = text.index("        splitter.addWidget(left)")
+    end = text.index("        splitter.setSizes([380, 720])", start)
     chunk = text[start:end]
     cd = chunk.index("coa_display = coa_display_list(self._coa)")
     dp = chunk.index("self._detail = DetailPane(coa_display)")
@@ -4247,8 +4213,8 @@ def test_bank_import_manage_accounts_and_reconciliation_buttons_have_tooltips() 
     assert "_btn_reconcile.setToolTip" in bit
     assert "_btn_export_csv.setToolTip" in bit
     rec_chunk = bit.split("class ReconciliationPanel", 1)[1].split("class BankImportTab", 1)[0]
-    assert "Compares statement dates and balances" in rec_chunk
-    assert "AI-assisted line reconciliation below" in rec_chunk
+    assert "statement vs import" in rec_chunk
+    assert "Statement period, balances, and difference" in rec_chunk
     assert "_lbl_status.setToolTip" in rec_chunk
     assert "UTF-8 with BOM for Excel" in rec_chunk
     assert "Export comparison CSV" in rec_chunk
@@ -4873,8 +4839,7 @@ def test_ar_tab_toolbar_buttons_have_tooltips() -> None:
         "ar_new_cust.setToolTip",
         "ar_edit_inv.setToolTip",
         "ar_record_pay.setToolTip",
-        "ar_export_alloc.setToolTip",
-        "ar_save_pdf.setToolTip",
+        "ar_export_aging.setToolTip",
         "ar_inv_add_line.setToolTip",
         "ar_inv_rm_line.setToolTip",
         "ar_pay_fill_old.setToolTip",
@@ -5081,13 +5046,13 @@ def test_main_window_uses_warning_and_critical_ok_helpers() -> None:
     assert "QMessageBox.about(" not in main_t
 
 
-def test_main_window_message_box_information_ok_six_user_feedback_paths() -> None:
-    """``MainWindow`` uses ``message_box_information_ok`` for copy path, roadmap, AI busy, backup/restore outcomes."""
+def test_main_window_message_box_information_ok_user_feedback_paths() -> None:
+    """``MainWindow`` uses ``message_box_information_ok`` for copy path, roadmap, AI busy, backup/restore, bank-link navigation."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("class MainWindow(QMainWindow):")
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
-    assert chunk.count("message_box_information_ok(") == 6
+    assert chunk.count("message_box_information_ok(") == 12
 
 
 def test_main_window_message_box_warning_critical_and_file_dialog_counts() -> None:
@@ -5147,7 +5112,7 @@ def test_main_window_banner_tabs_status_bar_and_worker_counts() -> None:
     chunk = text[start:end]
     assert chunk.count("self._header.") == 2
     assert chunk.count("self._status_bar.showMessage(") == 12
-    assert chunk.count("self._tabs.") == 33
+    assert chunk.count("self._tabs.") == 31
     assert chunk.count("self._worker") == 13
 
 
@@ -5175,12 +5140,12 @@ def test_main_window_sqlite_layers_constructed_twice_and_document_db_closed_thri
 
 
 def test_main_window_coa_tab_changed_signal_wired_after_initial_and_rebuild() -> None:
-    """``COATab.coaChanged`` is connected in ``_build_ui`` and again after ``_rebuild_bank_related_tabs``."""
+    """``COATab.coaChanged`` is connected in ``_assemble_main_tabs`` (runs on boot and after company rebuild)."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("class MainWindow(QMainWindow):")
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
-    assert chunk.count("self._coa_tab.coaChanged.connect(self._on_coa_changed)") == 2
+    assert chunk.count("self._coa_tab.coaChanged.connect(self._on_coa_changed)") == 1
 
 
 def test_main_window_load_coa_three_times_seed_workbook_twice() -> None:
@@ -5253,7 +5218,7 @@ def test_help_keyboard_shortcuts_dialog_ok_tips_mention_company_db_backup() -> N
     b = bi[bidx : bi.index("\n\n# =====", bidx)]
     assert needle in b
     assert "register bulk actions" in b and "Recon" in b
-    assert "Ctrl+3" in b and "Match overlay" in b
+    assert "Ctrl+5" in b and "Match overlay" in b
     reg = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
     ridx = reg.index("def show_register_keyboard_shortcuts_dialog")
     r = reg[ridx : reg.index("\n\nclass RegisterTab", ridx)]
@@ -5295,7 +5260,7 @@ def test_intake_and_bank_import_splitters_have_resize_tooltips() -> None:
     assert "document inbox" in main_t
     sp = main_t.index("Drag the handle to resize the document inbox")
     assert "File → Backup" in main_t[sp : sp + 400]
-    assert "View → Bank Import" in main_t[sp : sp + 400]
+    assert "Reconcile → Bank import" in main_t[sp : sp + 400]
     bi = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
     assert "splitter.setToolTip" in bi
     assert "right_splitter.setToolTip" in bi
@@ -5368,9 +5333,8 @@ def test_extra_tabs_exposes_business_shortcuts_dialog_for_help_menu() -> None:
     )[0]
     assert "UTF-8 with BOM for Excel" in bus_help
     assert "Rules Import CSV" in bus_help and "optional BOM" in bus_help
-    assert "View menu tab focus: Ctrl+1 Document Intake, Ctrl+2 Bank Import, Ctrl+3 Register, " in bus_help
     assert (
-        "Ctrl+4 Chart of Accounts, Ctrl+5 Reports, Ctrl+6 Journal, Ctrl+7 Business, Ctrl+8 Audit log."
+        "View menu tab focus: Ctrl+1 Invoices … Ctrl+9 Reconcile, Ctrl+0 More (Reports, Journal, Business, Audit log)."
         in bus_help
     )
     assert "Register bulk actions" in bus_help and "main **Recon** menu" in bus_help
@@ -5545,7 +5509,7 @@ def test_bank_import_keyboard_shortcuts_help_text_lists_view_chords() -> None:
     end = bit.index("\n\n\ndef show_bank_import_keyboard_shortcuts_dialog", start)
     chunk = bit[start:end]
     assert (
-        "View menu tab focus: Ctrl+1 Document Intake, Ctrl+2 Bank Import, Ctrl+3 Register."
+        "View menu tab focus: Ctrl+1 Invoices … Ctrl+9 Reconcile, Ctrl+0 More"
         in chunk
     )
     assert "Recon" in chunk and "Register Actions" in chunk
@@ -5701,8 +5665,6 @@ def test_bank_import_blank_register_table_columns_empty_rows_and_pdf_dialog() ->
     assert chunk.count("setData(QTABLE_PLAIN_TEXT_ROLE,") >= 3
     assert "debit_it.setForeground(QColor(AMOUNT_POSITIVE))" in chunk
     assert "credit_it.setForeground(QColor(AMOUNT_NEGATIVE))" in chunk
-    assert "lbl_recon_header" in bit
-    assert "Statement reconciliation:" in bit
     assert "_recon_placeholder" in bit
     assert "_recon_panel_empty_hint" in bit
 
@@ -5772,8 +5734,8 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
     assert "def line_reconciliation_table" in sm
     assert "def try_ctrl_shift_b_open_linked_business" in sm
     assert "bank_import_shortcuts_help" in sm
-    assert "Right-click the table for Copy row and statement/register field copies" in sm
-    assert "View → Bank Import (Ctrl+2), Register (Ctrl+3)" in sm
+    assert "Right-click the table for Copy row, field copies, and Open linked Business" in sm
+    assert "View → Reconcile (Ctrl+9)" in sm
     assert "+ VIEW_BANK_REGISTER_KEYS_TOOLTIP" in sm
     assert "StatementLineMatchPanel(" in bit and "bank_import_shortcuts_help=" in bit
     assert "register_tab=self._register_tab" in bit
@@ -5783,7 +5745,7 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
     run_sm = sm.split("def _on_run_clicked", 1)[1].split("def _mark_reviewed_selected", 1)[0]
     assert "coerce_combo_int_id(b.get(\"bank_account_id\"))" in run_sm
     assert "line_match_results_ready = Signal(int, list)" in sm
-    assert "Run mock extract & compare" in sm
+    assert "Run extract & compare" in sm
     assert "compare_statement_to_register" in sm
     assert "write_line_match_comparison_csv" in sm
     slm_py = (REPO_ROOT / "probooksai" / "statement_line_match.py").read_text(encoding="utf-8")
@@ -5820,10 +5782,10 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
 def test_bank_import_recon_panel_empty_hint_when_no_batch_selected() -> None:
     """Reconciliation stack shows a fixed line when batches exist but none is selected."""
     bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
-    msg = "Select a batch on the left to view statement reconciliation"
+    msg = "Select an import batch on the left."
     assert msg in bit
     hint_idx = bit.index("_recon_panel_empty_hint = QLabel")
-    assert "color: #A0A0B0; font-size: 11px;" in bit[hint_idx : hint_idx + 400]
+    assert "color: #A0A0B0; font-size: 12px;" in bit[hint_idx : hint_idx + 400]
     sync_start = bit.index("    def _sync_right_pane_placeholder_visibility(self)")
     sync_end = bit.index("    def _reload_bank_import_view(self)", sync_start)
     sync = bit[sync_start:sync_end]
@@ -5959,9 +5921,8 @@ def test_grids_context_menus_use_qaction_hover_tooltips() -> None:
     rs2 = et.index("def _on_rules_context_menu")
     assert "act_edit.setToolTip" in et[rs2 : rs2 + 900]
     inv_s = et.index("def _on_invoice_context_menu")
-    inv_e = et.index("\n    def _save_pdf", inv_s)
+    inv_e = et.index("\n    def _new_cust(self):", inv_s)
     inv_chunk = et[inv_s:inv_e]
-    assert "act_pdf.setToolTip" in inv_chunk
     assert "act_invno.setToolTip" in inv_chunk
     assert inv_chunk.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
 
@@ -5973,7 +5934,7 @@ def test_bank_import_batch_table_column_header_tooltips() -> None:
     window = bit[i : i + 700]
     assert window.count("horizontalHeaderItem(col)") >= 1
     assert "Date this batch was imported (YYYY-MM-DD)." in window
-    assert "Whether Mark Reconciled has been applied for this batch." in window
+    assert "Whether **Mark reconciled** has been applied for this batch." in window
 
 
 def test_bank_import_context_menu_copy_row_tooltips_mention_backup_safety() -> None:
@@ -6043,7 +6004,7 @@ def test_register_tab_min_visible_rows_and_reconciliation_mode() -> None:
     m = re.search(r"_REGISTER_MIN_VISIBLE_ROWS = (\d+)", text)
     assert m is not None
     assert 15 <= int(m.group(1)) <= 25
-    assert "Bank Import **Run mock extract & compare** can populate that overlay" in text
+    assert "Bank Import **Run extract & compare** can populate that overlay" in text
     assert "Reconciliation Mode Active" in text
     assert "_COL_SPACER" in text
     assert "n_vis = max(n_data, _REGISTER_MIN_VISIBLE_ROWS)" in text
@@ -6310,8 +6271,8 @@ def test_register_keyboard_shortcuts_help_text_matches_wired_chords() -> None:
         "Business shortcuts",
         "Bank import shortcuts",
         "statement/register copies",
-        "Ctrl+2 Bank Import",
-        "Ctrl+3 Register",
+        "Ctrl+9 Reconcile",
+        "Ctrl+5 Bank Register",
         "Ctrl+Shift+I",
         "Invoice…",
         "status bar",

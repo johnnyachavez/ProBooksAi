@@ -65,6 +65,14 @@ FONT_SIZE_NORMAL = "13px"
 FONT_SIZE_SMALL  = "11px"
 FONT_SIZE_LARGE  = "15px"
 
+# Main window ``QTabWidget`` tab bar (``MainWindow._build_ui``); compact strip scoped by objectName.
+MAIN_WORKSPACE_TAB_BAR_OBJECT_NAME = "mainWorkspaceTabBar"
+MAIN_WORKSPACE_TAB_MIN_HEIGHT_PX = 32
+MAIN_WORKSPACE_TAB_PADDING = "4px 10px"
+MAIN_WORKSPACE_TAB_FONT_SIZE = "11px"
+MAIN_WORKSPACE_TAB_FONT_WEIGHT = "500"
+MAIN_WORKSPACE_TAB_BAR_WIDGET_MIN_HEIGHT_PX = 32
+
 
 def register_row_band_colors_hex(alternate_row: bool, missing_coa: bool) -> tuple[str, str]:
     """Return ``(upper_hex, lower_hex)`` for register row panels (even/odd zebra; missing-COA tint)."""
@@ -157,6 +165,15 @@ QTabBar::tab:selected {{
 QTabBar::tab:hover:!selected {{
     background-color: {ACCENT};
     color: {FG_PRIMARY};
+}}
+
+/* Main workspace tab strip only (objectName set on ``MainWindow`` tab bar). */
+QTabBar#{MAIN_WORKSPACE_TAB_BAR_OBJECT_NAME}::tab {{
+    min-height: {MAIN_WORKSPACE_TAB_MIN_HEIGHT_PX}px;
+    padding: {MAIN_WORKSPACE_TAB_PADDING};
+    font-size: {MAIN_WORKSPACE_TAB_FONT_SIZE};
+    font-weight: {MAIN_WORKSPACE_TAB_FONT_WEIGHT};
+    qproperty-alignment: AlignCenter;
 }}
 
 /* ── Tables ──────────────────────────────────────────────────────── */
