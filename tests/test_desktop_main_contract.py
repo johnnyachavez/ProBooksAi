@@ -5580,17 +5580,21 @@ def test_csv_import_worker_module_documents_decoded_utf8_sig_content() -> None:
 def test_bank_import_csv_flow_column_map_then_statement_then_worker() -> None:
     """CSV path: map columns → statement period → save profile → threaded import with progress UI."""
     bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
-    start = bit.index("    def _on_import_csv(self):")
+    on_csv = bit.split("    def _on_import_csv(self):", 1)[1].split(
+        "    def _on_import_pasted_csv(self):", 1
+    )[0]
+    assert "bank_import_open_dialog_start_dir()" in on_csv
+    assert "remember_bank_import_import_dir(path)" in on_csv
+    assert "read_text(encoding=BANK_CSV_READ_ENCODING)" in on_csv
+    assert "_run_csv_import_wizard(content, Path(path).name)" in on_csv
+    start = bit.index("    def _run_csv_import_wizard(self, content: str, filename: str) -> None:")
     end = bit.index("\n    def _on_manage_accounts(self):", start)
     chunk = bit[start:end]
-    assert "bank_import_open_dialog_start_dir()" in chunk
-    assert "remember_bank_import_import_dir(path)" in chunk
     i_col = chunk.index("col_dlg = ColumnMappingDialog")
     i_per = chunk.index("period_dlg = StatementPeriodDialog")
     i_save = chunk.index("self._db.save_import_column_profile")
     i_work = chunk.index("worker = CsvImportWorker")
     assert i_col < i_per < i_save < i_work
-    assert "read_text(encoding=BANK_CSV_READ_ENCODING)" in chunk
     assert 'prog_dlg.setWindowTitle("Importing bank CSV")' in chunk
     assert "CSV import progress. Cancel stops further rows" in chunk
 
@@ -5944,7 +5948,8 @@ def test_bank_import_context_menu_copy_row_tooltips_mention_backup_safety() -> N
 
 def test_extra_tabs_business_main_grids_have_hover_tooltips() -> None:
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
-    assert et.count("F5 refreshes when Business has focus.") == 5
+    assert et.count("F5 refreshes when Business has focus.") == 4
+    assert et.count("F5 refreshes when this tab has focus.") >= 1
 
 
 def test_extra_tabs_business_copy_row_tooltips_mention_backup_safety() -> None:

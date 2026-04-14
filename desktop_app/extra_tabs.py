@@ -31,6 +31,7 @@ import sqlite3
 from datetime import date as date_cls
 
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QComboBox,
     QDateEdit,
@@ -38,6 +39,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QDoubleSpinBox,
     QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -47,6 +49,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSpinBox,
+    QSplitter,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -1892,6 +1895,60 @@ class APTab(QWidget):
         row.addWidget(ap_export_alloc)
         row.addStretch()
         lay.addLayout(row)
+
+        self._focused_vendor_id: int | None = None
+
+        split = QSplitter(Qt.Orientation.Vertical)
+        split.setToolTip(
+            "Drag to resize vendor summary vs bills. Click a vendor row to filter the bill list."
+        )
+
+        vendor_box = QGroupBox("Vendor summary")
+        vendor_box.setToolTip(
+            "One row per vendor: open AP balance, current vs overdue (by due date), last bill and payment. "
+            "Click a row to show that vendor’s bills in the grid below."
+        )
+        vb_lay = QVBoxLayout(vendor_box)
+        vhdr = QHBoxLayout()
+        self._vendor_scope_lbl = QLabel("Bills: all vendors — click a vendor row to focus.")
+        self._vendor_scope_lbl.setWordWrap(True)
+        self._vendor_scope_lbl.setToolTip(
+            "When a vendor row is selected, the bill list is limited to that vendor (text filter still applies)."
+        )
+        vhdr.addWidget(self._vendor_scope_lbl, 1)
+        btn_all_v = QPushButton("Show all bills")
+        btn_all_v.setToolTip("Clear vendor focus and list bills for every vendor.")
+        btn_all_v.clicked.connect(self._clear_vendor_focus)
+        vhdr.addWidget(btn_all_v)
+        vb_lay.addLayout(vhdr)
+
+        self._vendor_tbl = QTableWidget()
+        self._vendor_tbl.setColumnCount(6)
+        self._vendor_tbl.setHorizontalHeaderLabels(
+            [
+                "Vendor",
+                "Open Balance",
+                "Current Due",
+                "Overdue",
+                "Last Bill Date",
+                "Last Payment Date",
+            ]
+        )
+        self._vendor_tbl.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self._vendor_tbl.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._vendor_tbl.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self._vendor_tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._vendor_tbl.setSortingEnabled(True)
+        self._vendor_tbl.cellClicked.connect(self._on_vendor_summary_clicked)
+        self._vendor_tbl.setToolTip(
+            "Vendor snapshot; click a row to filter bills below. F5 refreshes."
+        )
+        vb_lay.addWidget(self._vendor_tbl)
+        split.addWidget(vendor_box)
+
+        bills_area = QWidget()
+        bills_lay = QVBoxLayout(bills_area)
+        bills_lay.setContentsMargins(0, 0, 0, 0)
         fil = QHBoxLayout()
         lbl_ap_bill_filter = QLabel("Filter:")
         lbl_ap_bill_filter.setToolTip(
@@ -1912,7 +1969,7 @@ class APTab(QWidget):
         self._bill_filter.setClearButtonEnabled(True)
         self._bill_filter.textChanged.connect(self._persist_ap_bill_filter_and_refresh)
         fil.addWidget(self._bill_filter)
-        lay.addLayout(fil)
+        bills_lay.addLayout(fil)
         _wire_find_focuses_line_edit(self, self._bill_filter)
         self._tbl = QTableWidget()
         self._tbl.setColumnCount(7)
@@ -1927,16 +1984,20 @@ class APTab(QWidget):
         self._tbl.customContextMenuRequested.connect(self._on_bill_context_menu)
         self._tbl.setToolTip(
             "Bills (AP). Right-click for Keyboard shortcuts… (empty area OK). "
-            "F5 refreshes when Business has focus. "
+            "F5 refreshes when this tab has focus. "
             "CSV exports (toolbar) use UTF-8 BOM for Excel."
         )
-        lay.addWidget(self._tbl)
+        bills_lay.addWidget(self._tbl)
         self._ap_footer = QLabel()
         self._ap_footer.setStyleSheet("font-weight: bold;")
         self._ap_footer.setToolTip(
-            "Footer summary for the bill list (count and dollar totals; reflects the active filter)."
+            "Footer summary for the bill list (count and dollar totals; reflects vendor focus and filter)."
         )
-        lay.addWidget(self._ap_footer)
+        bills_lay.addWidget(self._ap_footer)
+        split.addWidget(bills_area)
+        split.setStretchFactor(0, 1)
+        split.setStretchFactor(1, 2)
+        lay.addWidget(split, 1)
         self._refresh()
 
     def persist_header_state(self) -> None:
@@ -1958,6 +2019,9 @@ class APTab(QWidget):
     def open_bill_by_id(self, bill_id: int) -> bool:
         """Clear the bill filter, select the row, and open Edit bill (returns False if not listed)."""
         bid = int(bill_id)
+        self._focused_vendor_id = None
+        self._vendor_scope_lbl.setText("Bills: all vendors — click a vendor row to focus.")
+        self._vendor_tbl.clearSelection()
         self._bill_filter.blockSignals(True)
         self._bill_filter.clear()
         self._bill_filter.blockSignals(False)
@@ -1981,8 +2045,67 @@ class APTab(QWidget):
         QSettings().setValue(_AP_BILL_GRID_FILTER_KEY, self._bill_filter.text())
         self._refresh()
 
+    def _clear_vendor_focus(self) -> None:
+        self._focused_vendor_id = None
+        self._vendor_scope_lbl.setText("Bills: all vendors — click a vendor row to focus.")
+        self._vendor_tbl.clearSelection()
+        self._refresh()
+
+    def _on_vendor_summary_clicked(self, row: int, _col: int) -> None:
+        if row < 0:
+            return
+        it = self._vendor_tbl.item(row, 0)
+        if it is None:
+            return
+        vid = coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole))
+        if vid is None:
+            return
+        self._focused_vendor_id = vid
+        nm = (it.text() or "").strip()
+        self._vendor_scope_lbl.setText("Bills filtered to vendor: " + escape_ampersand_for_qt(nm))
+        self._refresh()
+
+    def _refresh_vendor_summary(self) -> None:
+        rows = business.list_vendor_ap_summaries(self._conn)
+        self._vendor_tbl.setSortingEnabled(False)
+        self._vendor_tbl.setRowCount(len(rows))
+        for i, r in enumerate(rows):
+            vid = int(r["vendor_id"])
+            nm = r["vendor_name"] or ""
+            it0 = QTableWidgetItem(escape_ampersand_for_qt(nm))
+            it0.setData(Qt.ItemDataRole.UserRole, vid)
+            self._vendor_tbl.setItem(i, 0, it0)
+            ob = float(r["open_balance"] or 0)
+            cd = float(r["current_due"] or 0)
+            ov = float(r["overdue"] or 0)
+            self._vendor_tbl.setItem(i, 1, _FloatSortTableItem(f"{ob:.2f}", ob))
+            self._vendor_tbl.setItem(i, 2, _FloatSortTableItem(f"{cd:.2f}", cd))
+            self._vendor_tbl.setItem(i, 3, _FloatSortTableItem(f"{ov:.2f}", ov))
+            self._vendor_tbl.setItem(
+                i, 4, plain_display_table_item(r["last_bill_date"] or "")
+            )
+            self._vendor_tbl.setItem(
+                i, 5, plain_display_table_item(r["last_payment_date"] or "")
+            )
+        self._vendor_tbl.setSortingEnabled(True)
+        if self._focused_vendor_id is not None:
+            for row in range(self._vendor_tbl.rowCount()):
+                it = self._vendor_tbl.item(row, 0)
+                if it is None:
+                    continue
+                if coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole)) == self._focused_vendor_id:
+                    self._vendor_tbl.selectRow(row)
+                    break
+
     def _refresh(self):
+        self._refresh_vendor_summary()
         all_rows = business.list_bills(self._conn)
+        if self._focused_vendor_id is not None:
+            all_rows = [
+                r
+                for r in all_rows
+                if int(r["vendor_id"]) == self._focused_vendor_id
+            ]
         rows = business_list_filter.filter_business_rows(
             all_rows, self._bill_filter.text(), business_list_filter.AP_BILL_FILTER_KEYS
         )

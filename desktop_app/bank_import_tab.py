@@ -37,6 +37,8 @@ Tabs / widgets
 
 from __future__ import annotations
 
+import csv
+import io
 import sqlite3
 from functools import partial
 from pathlib import Path
@@ -60,6 +62,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMenu,
     QMessageBox,
+    QPlainTextEdit,
     QProgressDialog,
     QPushButton,
     QSizePolicy,
@@ -149,7 +152,8 @@ def _bank_import_keyboard_shortcuts_help_text() -> str:
         "**Import CSV\u2026** or **Import PDF\u2026** (then your profile folder). "
         "**Import CSV\u2026** and **Import PDF\u2026** reopen the last folder you picked a bank file from, "
         "or the last CSV export folder if you have not imported yet. "
-        "**Import CSV\u2026** reads UTF-8 with optional BOM (typical Excel bank exports).\n\n"
+        "**Import CSV\u2026** reads UTF-8 with optional BOM (typical Excel bank exports). "
+        "**Paste bank CSV** + **Import pasted CSV\u2026** runs the same import using text from the clipboard.\n\n"
         "**Line Reconciliation (AI)** (lower panel): **Run extract & compare** "
         "fills the **Bank register** **Match** column statement overlay for the same bank account and "
         "switches the main window to **Bank register** and turns on reconciliation overlay there. "
@@ -1261,6 +1265,32 @@ class BankImportTab(QWidget):
         )
         outer.addWidget(import_hint)
 
+        paste_box = QGroupBox("Paste bank CSV")
+        paste_box.setToolTip(
+            "Paste the same bank-export CSV you would pick from disk (include the header row). "
+            "Uses the same column mapping, statement period, import batch, register preview, and reconciliation as Import CSV."
+        )
+        paste_lay = QVBoxLayout(paste_box)
+        self._paste_csv_edit = QPlainTextEdit()
+        self._paste_csv_edit.setPlaceholderText(
+            "Paste CSV text here (header row + data rows), then Import pasted CSV…"
+        )
+        self._paste_csv_edit.setToolTip(
+            "UTF-8 bank export text. After pasting, use Import pasted CSV… for the same wizard as Import CSV…."
+        )
+        self._paste_csv_edit.setFixedHeight(100)
+        paste_lay.addWidget(self._paste_csv_edit)
+        paste_row = QHBoxLayout()
+        btn_paste_import = QPushButton("Import pasted CSV…")
+        btn_paste_import.setToolTip(
+            "Run the same import as Import CSV… using the text above (filename shown as pasted)."
+        )
+        btn_paste_import.clicked.connect(self._on_import_pasted_csv)
+        paste_row.addWidget(btn_paste_import)
+        paste_row.addStretch()
+        paste_lay.addLayout(paste_row)
+        outer.addWidget(paste_box)
+
         # ── Splitter: batch list (left) | detail (right) ──────────────────
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
@@ -1281,7 +1311,7 @@ class BankImportTab(QWidget):
         )
         left_layout.addWidget(lbl_import_batches)
         batch_hint = QLabel(
-            "Batches appear after you <b>Import CSV</b> or <b>Import PDF</b> for the account above. "
+            "Batches appear after you <b>Import CSV</b>, <b>paste CSV</b>, or <b>Import PDF</b> for the account above. "
             "Select a batch to load the preview and reconciliation panels on the right."
         )
         batch_hint.setTextFormat(Qt.TextFormat.RichText)
@@ -1459,7 +1489,7 @@ class BankImportTab(QWidget):
             )
         elif batches is not None and len(batches) == 0:
             self._recon_placeholder.setText(
-                "No batches yet — use <b>Import CSV</b> or <b>Import PDF</b>."
+                "No batches yet — use <b>Import CSV</b>, <b>paste CSV</b>, or <b>Import PDF</b>."
             )
         else:
             self._recon_placeholder.setVisible(False)
@@ -2052,20 +2082,42 @@ class BankImportTab(QWidget):
             )
             return
 
-        import csv, io
+        self._run_csv_import_wizard(content, Path(path).name)
+
+    def _on_import_pasted_csv(self) -> None:
+        if self._current_account_id is None:
+            message_box_information_ok(
+                self,
+                "No Account",
+                "Please create and select a bank account first (Manage Accounts).",
+                ok_tip="Close; use Manage Accounts to add an account, then select it above.",
+            )
+            return
+        content = self._paste_csv_edit.toPlainText()
+        if not (content or "").strip():
+            message_box_information_ok(
+                self,
+                "Nothing to import",
+                "Paste bank-export CSV text first (include the header row), then try again.",
+                ok_tip="Close; same column mapping and statement period steps as Import CSV.",
+            )
+            return
+        self._run_csv_import_wizard(content, "(pasted).csv")
+
+    def _run_csv_import_wizard(self, content: str, filename: str) -> None:
+        """Shared path for file import and pasted CSV: map columns, statement period, background import."""
         reader = csv.reader(io.StringIO(content))
         try:
             headers = next(reader)
         except StopIteration:
             message_box_critical_ok(
                 self,
-                "File Error",
-                "CSV file appears to be empty.",
-                ok_tip="Close; pick a CSV with a header row and data.",
+                "CSV Error",
+                "CSV text appears to be empty.",
+                ok_tip="Close; include a header row and at least one data row.",
             )
             return
 
-        # 3. Column mapping (pre-fill from saved profile when present)
         acct_row = self._db.get_bank_account(self._current_account_id)
         preset = {}
         if acct_row is not None:
@@ -2080,7 +2132,6 @@ class BankImportTab(QWidget):
         if col_dlg.exec() != QDialog.DialogCode.Accepted:
             return
 
-        # 4. Statement period & balances
         period_dlg = StatementPeriodDialog(parent=self)
         if period_dlg.exec() != QDialog.DialogCode.Accepted:
             return
@@ -2093,7 +2144,6 @@ class BankImportTab(QWidget):
             ref_col=col_dlg.ref_col,
         )
 
-        # 5. Import on background thread (keeps UI responsive for large files)
         import_kw = dict(
             bank_account_id=self._current_account_id,
             csv_content=content,
@@ -2101,7 +2151,7 @@ class BankImportTab(QWidget):
             amount_col=col_dlg.amount_col,
             description_col=col_dlg.description_col,
             ref_col=col_dlg.ref_col,
-            filename=Path(path).name,
+            filename=filename,
             statement_start=period_dlg.statement_start,
             statement_end=period_dlg.statement_end,
             beginning_balance=period_dlg.beginning_balance,

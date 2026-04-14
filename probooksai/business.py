@@ -1044,6 +1044,67 @@ def list_open_bills_for_vendor(conn: sqlite3.Connection, vendor_id: int) -> list
     ).fetchall()
 
 
+def list_vendor_ap_summaries(conn: sqlite3.Connection) -> list[dict]:
+    """One row per vendor: open AP balance, current vs overdue (by due date), last bill and payment dates.
+
+    *current_due* sums open balances whose due date is empty or not before today; *overdue* sums
+    balances past due. Uses *today* in local calendar sense (``date.today()`` ISO compare to ``due_date``).
+    """
+    from datetime import date
+
+    today = date.today()
+    vendors = list_vendors(conn)
+    out: list[dict] = []
+    for v in vendors:
+        vid = int(v["id"])
+        name = (v["name"] or "").strip()
+        bill_rows = conn.execute(
+            "SELECT balance_due, due_date FROM bills WHERE vendor_id = ?",
+            (vid,),
+        ).fetchall()
+        open_bal = 0.0
+        current_due = 0.0
+        overdue = 0.0
+        for b in bill_rows:
+            bal = float(b["balance_due"] or 0)
+            if bal <= 0.005:
+                continue
+            open_bal += bal
+            due_s = (b["due_date"] or "").strip()
+            days_past = 0
+            if due_s:
+                try:
+                    dd = date.fromisoformat(due_s)
+                    days_past = (today - dd).days
+                except ValueError:
+                    days_past = 0
+            if days_past <= 0:
+                current_due += bal
+            else:
+                overdue += bal
+        last_bill_row = conn.execute(
+            "SELECT MAX(bill_date) FROM bills WHERE vendor_id = ?", (vid,)
+        ).fetchone()
+        last_bill_date = (last_bill_row[0] or "").strip() if last_bill_row else ""
+        pay_row = conn.execute(
+            "SELECT MAX(payment_date) FROM ap_payments WHERE vendor_id = ?", (vid,)
+        ).fetchone()
+        last_pay = (pay_row[0] or "").strip() if pay_row and pay_row[0] else ""
+        out.append(
+            {
+                "vendor_id": vid,
+                "vendor_name": name,
+                "open_balance": round(open_bal, 2),
+                "current_due": round(current_due, 2),
+                "overdue": round(overdue, 2),
+                "last_bill_date": last_bill_date,
+                "last_payment_date": last_pay,
+            }
+        )
+    out.sort(key=lambda x: (x["vendor_name"] or "").lower())
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Aging (Phases 10 & 13)
 # ---------------------------------------------------------------------------

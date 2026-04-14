@@ -1331,3 +1331,23 @@ def test_update_bill_and_blocked_after_payment(db):
     business.record_ap_payment(db._conn, vid, "2024-04-15", 80.0, [(bid, 80.0)])
     with pytest.raises(ValueError, match="payments"):
         business.update_bill(db._conn, bid, vid, "2024-04-02", 50.0)
+
+
+def test_list_vendor_ap_summaries_open_current_overdue_and_last_dates(db):
+    from datetime import date, timedelta
+
+    today = date.today()
+    past = (today - timedelta(days=30)).isoformat()
+    future = (today + timedelta(days=30)).isoformat()
+    v1 = business.add_vendor(db._conn, "SumVendor")
+    business.create_bill(db._conn, v1, "2024-06-01", 40.0, due_date=future)
+    business.create_bill(db._conn, v1, "2024-05-01", 60.0, due_date=past)
+    by_id = {r["vendor_id"]: r for r in business.list_vendor_ap_summaries(db._conn)}
+    r = by_id[v1]
+    assert r["open_balance"] == pytest.approx(100.0)
+    assert r["current_due"] == pytest.approx(40.0)
+    assert r["overdue"] == pytest.approx(60.0)
+    assert r["last_bill_date"] == "2024-06-01"
+    business.record_ap_payment(db._conn, v1, "2025-01-15", 1.0, [])
+    by_id2 = {r["vendor_id"]: r for r in business.list_vendor_ap_summaries(db._conn)}
+    assert by_id2[v1]["last_payment_date"] == "2025-01-15"
