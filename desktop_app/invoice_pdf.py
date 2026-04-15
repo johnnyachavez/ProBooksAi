@@ -2,13 +2,11 @@
 
 **Desktop UI**
 
-- End-user print or “print to PDF” uses **Invoice workflow tab** → **Print…** → ``QPrintDialog``
-  (``invoice_screen.InvoiceScreen``); that path does **not** import this module.
-- This function is for **programmatic** export: tests (subprocess), scripts, or future features that
-  already have a destination path.
+- **Invoices** tab uses ``invoice_html_string`` for print preview HTML and ``save_invoice_pdf`` for
+  PDF files; **Print…** opens ``QPrintDialog`` (user may pick a physical printer or a “Print to PDF” driver).
+- ``save_invoice_pdf`` / ``invoice_html_string`` are also used from tests and CLI helpers.
 
-It creates ``QPrinter`` in PDF mode and calls ``QTextDocument.print_`` — keep callers non-UI or
-behind an application-controlled path.
+``save_invoice_pdf`` creates ``QPrinter`` in PDF mode and calls ``QTextDocument.print_``.
 """
 
 from __future__ import annotations
@@ -27,20 +25,8 @@ from desktop_app.invoice_print_html import (
 )
 
 
-def save_invoice_pdf(conn: sqlite3.Connection, invoice_id: int, file_path: str) -> None:
-    """
-    Render an invoice as HTML and print it to a PDF file using Qt.
-
-    IMPORTANT: Qt requires an application instance (Q(Core/Gui)Application)
-    to exist before constructing QPrinter. In CLI/subprocess contexts (like pytest),
-    there usually isn't one yet, so we create it if needed.
-    """
-    from PySide6.QtWidgets import QApplication
-
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-
+def invoice_html_string(conn: sqlite3.Connection, invoice_id: int) -> str:
+    """Build the same HTML used for PDF export and **Invoices** tab printing (saved invoice row)."""
     from probooksai import business
 
     inv, lines = business.get_invoice_detail(conn, invoice_id)
@@ -74,7 +60,7 @@ def save_invoice_pdf(conn: sqlite3.Connection, invoice_id: int, file_path: str) 
     total = float(inv_d.get("total") or 0)
     balance_plain = f"${total:,.2f}"
 
-    html = build_invoice_print_html(
+    return build_invoice_print_html(
         company_block_plain="",
         invoice_date=inv_date,
         invoice_number=(inv_d.get("invoice_number") or "").strip(),
@@ -86,6 +72,22 @@ def save_invoice_pdf(conn: sqlite3.Connection, invoice_id: int, file_path: str) 
         balance_due_plain=balance_plain,
     )
 
+
+def save_invoice_pdf(conn: sqlite3.Connection, invoice_id: int, file_path: str) -> None:
+    """
+    Render an invoice as HTML and print it to a PDF file using Qt.
+
+    IMPORTANT: Qt requires an application instance (Q(Core/Gui)Application)
+    to exist before constructing QPrinter. In CLI/subprocess contexts (like pytest),
+    there usually isn't one yet, so we create it if needed.
+    """
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+
+    html = invoice_html_string(conn, invoice_id)
     doc = QTextDocument()
     doc.setHtml(html)
 

@@ -660,9 +660,8 @@ def test_main_tab_widgets_have_root_hover_tooltips() -> None:
     assert "View → Bank Register (Ctrl+5)" in bchunk
 
     rep = (_DESKTOP_APP_DIR / "reports_tab.py").read_text(encoding="utf-8")
-    assert "Financial reports: trial balance" in rep
-    assert "with optional date range and CSV export " in rep
-    assert '(UTF-8 BOM for Excel) "' in rep
+    assert "Financial reports" in rep and "trial balance" in rep
+    assert "CSV export" in rep and "UTF-8 BOM for Excel" in rep
 
     jt = (_DESKTOP_APP_DIR / "journal_tab.py").read_text(encoding="utf-8")
     assert "General journal: browse entries" in jt

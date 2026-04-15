@@ -121,10 +121,45 @@ def test_invoice_screen_print_and_nav_buttons_exist(qapp: QApplication) -> None:
     w = InvoiceScreen()
     assert w._btn_clear_fields.text() == "Clear Fields"
     assert w._btn_save.text() == "Save"
+    assert w._btn_export_pdf.text() == "Export PDF…"
     assert w._btn_print.text() == "Print…"
     assert w._btn_new_customer.text() == "New Customer"
     assert w._btn_reverse.text() == "Reverse"
     assert w._btn_forward.text() == "Forward"
+
+
+def test_invoice_screen_export_pdf_saves_to_chosen_path(
+    qapp: QApplication, tmp_path
+) -> None:
+    """Export PDF… persists, then writes to the path from Save file (mocked)."""
+    db_path = tmp_path / "invoice_export.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "ExportCo")
+    w = InvoiceScreen(ap_conn=db._conn)
+    w._bill_customer_panel.select_customer_by_id(cid)
+    w._inv_number.setText("93001")
+    desc = w._table.cellWidget(0, 2)
+    assert isinstance(desc, QLineEdit)
+    desc.setText("Export line")
+    rate = w._table.cellWidget(0, 4)
+    assert isinstance(rate, QDoubleSpinBox)
+    rate.setValue(50.0)
+    qty = w._table.cellWidget(0, 5)
+    assert isinstance(qty, QDoubleSpinBox)
+    qty.setValue(1.0)
+    out = tmp_path / "MyInvoice.pdf"
+    with patch(
+        "desktop_app.invoice_screen.QFileDialog.getSaveFileName",
+        return_value=(str(out), "PDF files (*.pdf)"),
+    ):
+        QTest.mouseClick(w._btn_export_pdf, Qt.MouseButton.LeftButton)
+        qapp.processEvents()
+    assert out.is_file()
+    invs = business.list_invoices(db._conn)
+    assert any((r["invoice_number"] or "").strip() == "93001" for r in invs)
+    assert w._inv_number.text() == "93002"
+    db.close()
 
 
 def test_invoice_screen_save_persists_and_advances_form(qapp: QApplication, tmp_path) -> None:
@@ -302,6 +337,9 @@ def test_invoice_save_and_print_handlers_require_real_button_sender(
     qty.setValue(1.0)
     with patch.object(w, "_try_persist_invoice") as m_persist:
         w._on_save_invoice()
+        m_persist.assert_not_called()
+    with patch.object(w, "_try_persist_invoice") as m_persist:
+        w._on_export_pdf_as()
         m_persist.assert_not_called()
     with patch(
         "desktop_app.invoice_screen.configure_printer_for_invoice_print"

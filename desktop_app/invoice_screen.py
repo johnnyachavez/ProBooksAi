@@ -6,16 +6,18 @@ so editors stay inline (no multiline popup editors). Bill To is wired to
 
 **Invoice UI dialog policy (print / PDF / file picker)**
 
-Modal print or file UI for *this* workflow tab is allowed only from:
+Modal UI for *this* workflow tab is allowed only from explicit header buttons:
 
-- **Save** (``_btn_save``): persists to SQLite, then writes invoice PDF to the folder from
+- **Save** (``_btn_save``): persists to SQLite, then writes **PDF** to the folder from
   **Edit → Preferences → Invoice Options** (or a one-time folder prompt). No print dialog.
-- **Print** (``_btn_print``): ``sender()`` must be that button; ``_invoice_print_dialog_armed``
-  gates printing. Uses the saved print destination when set; otherwise ``QPrintDialog`` once.
+- **Export PDF…** (``_btn_export_pdf``): persists, then **Save file** dialog for a single ``.pdf`` path
+  (does not change the preferences folder).
+- **Print…** (``_btn_print``): ``sender()`` must be that button; ``_invoice_print_dialog_armed``
+  gates ``QPrintDialog``. After save, print uses the **same HTML as PDF** (loaded from the saved invoice row).
+  Uses the saved printer when set; otherwise ``QPrintDialog`` once (includes “Print to PDF” / virtual printers).
 
-No other signal may trigger Save/Print invoice output paths.
-Programmatic PDF rendering (no file picker) remains in ``desktop_app.invoice_pdf.save_invoice_pdf``
-for tests/CLI only.
+No other signal may trigger Save / Export / Print invoice output paths.
+``desktop_app.invoice_pdf.invoice_html_string`` / ``save_invoice_pdf`` also serve tests and CLI.
 """
 
 from __future__ import annotations
@@ -34,6 +36,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFrame,
     QHBoxLayout,
+    QFileDialog,
     QHeaderView,
     QLabel,
     QLineEdit,
@@ -63,8 +66,7 @@ from desktop_app.invoice_preferences import (
     configure_printer_for_invoice_print,
     ensure_invoice_output_folder,
 )
-from desktop_app.invoice_pdf import save_invoice_pdf
-from desktop_app.invoice_print_html import build_invoice_print_html
+from desktop_app.invoice_pdf import invoice_html_string, save_invoice_pdf
 from desktop_app.qt_mnemonic import message_box_information_ok
 from probooksai import business
 from desktop_app.ar_customer_actions import (
@@ -98,7 +100,7 @@ _INVOICE_TOP_FOUR_LINE_HEIGHT_PX = max(22, _INVOICE_BILL_TO_TEXT_HEIGHT_PX // 2)
 _TOP_STRIP_RADIUS_PX = 6
 _TOP_STRIP_CAPTION_FONT_PX = 11
 _TOP_STRIP_BODY_FONT_PX = 12
-# Clear Fields / Save / Print / New Customer / Reverse / Forward — per-button outline on white
+# Clear Fields / Save / Export PDF / Print / New Customer / Reverse / Forward — per-button outline on white
 # faces (not the outer panel). Dark stroke for strong contrast; same on all six.
 _INV_STRIP_ACTION_BTN_OUTLINE = "#1f2a3d"
 _INV_STRIP_ACTION_BTN_BORDER_W = 4
@@ -492,6 +494,11 @@ class InvoiceScreen(QWidget):
             "Edit → Preferences → Invoice Options (you can choose the folder once if unset). "
             "Then start a new blank invoice with the next number."
         )
+        self._btn_export_pdf = QPushButton("Export PDF…")
+        self._btn_export_pdf.setToolTip(
+            "Save this invoice to the company file, then pick a PDF file path (one-time). "
+            "Does not change the default folder used by Save. Then start a new blank invoice."
+        )
         self._btn_reverse = QPushButton("Reverse")
         self._btn_forward = QPushButton("Forward")
         self._btn_reverse.setToolTip("Open the previous saved invoice (by id).")
@@ -503,6 +510,7 @@ class InvoiceScreen(QWidget):
         for b in (
             self._btn_clear_fields,
             self._btn_save,
+            self._btn_export_pdf,
             self._btn_print,
             self._btn_new_customer,
             self._btn_reverse,
@@ -522,6 +530,7 @@ class InvoiceScreen(QWidget):
         for b in (
             self._btn_clear_fields,
             self._btn_save,
+            self._btn_export_pdf,
             self._btn_print,
             self._btn_new_customer,
             self._btn_reverse,
@@ -545,6 +554,7 @@ class InvoiceScreen(QWidget):
         # Save/Print: only clicked → persistence; UniqueConnection prevents duplicate slots.
         _uc = Qt.ConnectionType.UniqueConnection
         self._btn_save.clicked.connect(self._on_save_invoice, _uc)
+        self._btn_export_pdf.clicked.connect(self._on_export_pdf_as, _uc)
         self._btn_print.clicked.connect(self._on_print_invoice, _uc)
         self._btn_clear_fields.clicked.connect(self._on_clear_fields, _uc)
         self._btn_new_customer.clicked.connect(
@@ -1095,45 +1105,6 @@ class InvoiceScreen(QWidget):
             return
         self._load_invoice_by_list_index(self._browse_index + 1)
 
-    def _line_row_display_tuple(self, r: int) -> tuple[str, str, str, str, str, str, str]:
-        """One grid row as display strings for print/PDF (Serviced On … Amount)."""
-        dt_w = self._table.cellWidget(r, 0)
-        code_w = self._table.cellWidget(r, 1)
-        desc_w = self._table.cellWidget(r, 2)
-        bol_w = self._table.cellWidget(r, 3)
-        rate_w = self._table.cellWidget(r, 4)
-        qty_w = self._table.cellWidget(r, 5)
-        tot_w = self._table.cellWidget(r, 6)
-        line_date = dt_w.text().strip() if isinstance(dt_w, QLineEdit) else ""
-        code = code_w.text().strip() if isinstance(code_w, QLineEdit) else ""
-        desc = desc_w.text().strip() if isinstance(desc_w, QLineEdit) else ""
-        bol = bol_w.text().strip() if isinstance(bol_w, QLineEdit) else ""
-        rate_s = f"{rate_w.value():,.2f}" if isinstance(rate_w, QDoubleSpinBox) else ""
-        qty_s = f"{qty_w.value():.2f}" if isinstance(qty_w, QDoubleSpinBox) else ""
-        amt_s = f"{tot_w.value():,.2f}" if isinstance(tot_w, QDoubleSpinBox) else ""
-        return (line_date, code, desc, bol, rate_s, qty_s, amt_s)
-
-    def _invoice_draft_html(self) -> str:
-        data_rows: list[tuple[str, str, str, str, str, str, str]] = []
-        for r in range(self._N_LINE_ROWS):
-            row_t = self._line_row_display_tuple(r)
-            if any(x.strip() for x in row_t):
-                data_rows.append(row_t)
-        bill_plain = self._bill_to[1].toPlainText().strip()
-        tot_plain = self._lbl_total.text().replace("Total:", "").strip()
-        return build_invoice_print_html(
-            company_block_plain="",
-            invoice_date=self._date.text().strip(),
-            invoice_number=self._inv_number.text().strip(),
-            bill_to_plain=bill_plain,
-            po_contract=self._po.text().strip(),
-            name_job=self._job.text().strip(),
-            footer_plain=(self._invoice_memo_notes or "").strip(),
-            line_rows=data_rows,
-            balance_due_plain=tot_plain,
-            min_body_rows=max(18, self._N_LINE_ROWS),
-        )
-
     def _build_invoice_memo(self) -> str:
         parts: list[str] = []
         po = self._po.text().strip()
@@ -1285,13 +1256,53 @@ class InvoiceScreen(QWidget):
         self._refresh_browse_state()
         self._go_to_new_invoice_draft()
 
-    def _run_invoice_print_dialog(self) -> None:
-        """Print HTML when ``_invoice_print_dialog_armed``; uses Preferences printer or one prompt."""
+    def _on_export_pdf_as(self) -> None:
+        if self.sender() is not self._btn_export_pdf:
+            return
+        if self._ap_conn is None:
+            self._invoice_feedback_message("Connect a company file to export a PDF.")
+            return
+        ok, msg, inv_id = self._save_invoice_data_only()
+        if not ok:
+            self._invoice_feedback_message(msg)
+            return
+        assert inv_id is not None
+        num = self._inv_number.text().strip()
+        default_name = f"Invoice-{_safe_invoice_pdf_stem(num)}.pdf"
+        path, _filt = QFileDialog.getSaveFileName(
+            self,
+            "Export invoice as PDF",
+            default_name,
+            "PDF files (*.pdf);;All files (*.*)",
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".pdf"):
+            path = f"{path}.pdf"
+        try:
+            save_invoice_pdf(self._ap_conn, inv_id, path)
+        except OSError as exc:
+            self._invoice_feedback_message(
+                f"Invoice saved, but the PDF could not be written: {exc}"
+            )
+            return
+        except Exception as exc:  # noqa: BLE001
+            self._invoice_feedback_message(
+                f"Invoice saved, but PDF export failed: {exc}"
+            )
+            return
+        self._refresh_browse_state()
+        self._go_to_new_invoice_draft()
+
+    def _run_invoice_print_dialog(self, inv_id: int) -> None:
+        """Print saved invoice HTML when ``_invoice_print_dialog_armed``; same template as PDF."""
         if not self._invoice_print_dialog_armed:
+            return
+        if self._ap_conn is None:
             return
         doc = QTextDocument()
         try:
-            doc.setHtml(self._invoice_draft_html())
+            doc.setHtml(invoice_html_string(self._ap_conn, inv_id))
         except Exception as exc:  # noqa: BLE001 — show any render issue
             self._invoice_feedback_message(
                 f"Could not prepare the invoice for printing: {exc}"
@@ -1301,22 +1312,24 @@ class InvoiceScreen(QWidget):
         if not configure_printer_for_invoice_print(self, printer):
             return
         doc.print_(printer)
-        if self._ap_conn is not None:
-            self._refresh_browse_state()
-            self._go_to_new_invoice_draft()
+        self._refresh_browse_state()
+        self._go_to_new_invoice_draft()
 
     def _on_print_invoice(self) -> None:
         # Phantom dialog fix: require explicit Print button as sender, then arm gate for dialog code only.
         if self.sender() is not self._btn_print:
             return
+        if self._ap_conn is None:
+            self._invoice_feedback_message("Connect a company file to print invoices.")
+            return
         self._invoice_print_dialog_armed = True
         try:
-            if self._ap_conn is not None:
-                ok, msg, _inv_id = self._save_invoice_data_only()
-                if not ok:
-                    self._invoice_feedback_message(msg)
-                    return
-            self._run_invoice_print_dialog()
+            ok, msg, inv_id = self._save_invoice_data_only()
+            if not ok:
+                self._invoice_feedback_message(msg)
+                return
+            assert inv_id is not None
+            self._run_invoice_print_dialog(inv_id)
         finally:
             self._invoice_print_dialog_armed = False
 

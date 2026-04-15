@@ -1,17 +1,20 @@
-"""Financial reports: trial balance, P&L, balance sheet (Phase 5).
+"""Financial reports: GL trial balance, P&L, balance sheet; AR/AP lists and aging (More → Reports).
 
-**F5** (when this tab or its children have focus) re-runs the last report you opened
-(Trial Balance, Income Statement, or Balance Sheet), if any.
+**F5** re-runs the last report you opened (financial or AR/AP).
+
 **Help → More tab shortcuts (F5)…**; results grid **right-click** sets **QAction** tooltips for **Keyboard shortcuts…** and **Copy row** (including empty area).
 The tab **root** **QWidget** has a hover hint. **Start** / **End** date fields use **setToolTip** (flexible entry, MM/DD/YYYY display); the date-range **QGroupBox** has a hover hint.
 The results table, **summary** line, and footer **F5** hint label have hover tooltips.
+
+**As-of date for AR/AP aging:** uses the **End** field when set; otherwise today (local date). Bank register remains the system of record for posted bank activity; these reports read AR/AP tables in the company file.
 """
 
 from __future__ import annotations
 
 import sqlite3
+from datetime import date
 from functools import partial
-from typing import Literal, Optional
+from typing import Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QShortcut
@@ -50,7 +53,15 @@ from desktop_app.table_clipboard import (
     copy_table_row_as_tsv,
     plain_display_table_item,
 )
-from probooksai import financial_reports
+from probooksai import business, financial_reports
+
+_AGING_BUCKET_LABELS = {
+    "current": "Current",
+    "1_30": "1–30 days",
+    "31_60": "31–60 days",
+    "61_90": "61–90 days",
+    "91_plus": "91+ days",
+}
 
 
 class ReportsTab(QWidget):
@@ -58,23 +69,24 @@ class ReportsTab(QWidget):
         super().__init__(parent)
         self._conn = conn
         self._last_export: dict | None = None
-        self._last_report_kind: Optional[Literal["tb", "pl", "bs"]] = None
+        self._last_report_kind: Optional[str] = None
         self._build_ui()
 
     def _build_ui(self):
         self.setToolTip(
-            "Financial reports: trial balance, income statement, and balance sheet with optional date range and CSV export "
-            "(UTF-8 BOM for Excel) "
-            "(F5 re-runs the last report you opened when this tab has focus). "
+            "Financial reports (trial balance, P&L, balance sheet) and receivables/payables lists (aging, open invoices/bills, recent payments) "
+            "with CSV export (UTF-8 BOM for Excel). "
+            "F5 re-runs the last report you opened when this tab has focus. "
             "Same company SQLite database as other main tabs; File → Backup / Restore (probooks.backup)."
         )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
 
-        filt = QGroupBox("Date range (optional)")
+        filt = QGroupBox("Date range / as-of (optional)")
         filt.setToolTip(
-            "Optional inclusive date bounds for the report; blank start or end means no cutoff on that side. "
-            "Type dates in common US forms; valid values normalize to MM/DD/YYYY; reports query yyyy-mm-dd."
+            "Financial reports: optional inclusive start/end (blank means open on that side). "
+            "AR/AP aging: **End** is the as-of date when set; otherwise today is used. "
+            "Type dates in common US forms; valid values normalize to MM/DD/YYYY."
         )
         fl = QFormLayout(filt)
         self._start = QLineEdit()
@@ -98,7 +110,7 @@ class ReportsTab(QWidget):
                 "Trial Balance",
                 self._show_tb,
                 "Run trial balance. F5 re-runs whichever report you opened last "
-                "(trial balance, income statement, or balance sheet).",
+                "(financial or AR/AP).",
             ),
             (
                 "Income Statement",
@@ -117,19 +129,61 @@ class ReportsTab(QWidget):
             row.addWidget(b)
         btn_export = QPushButton("Export CSV…")
         btn_export.setToolTip(
-            "Export the current report table to CSV (run a report first). "
-            "UTF-8 with BOM for Excel."
+            "Toolbar Export CSV uses UTF-8 BOM for Excel. "
+            "Exports the last report table you ran (financial or AR/AP)."
         )
         btn_export.clicked.connect(self._export_csv)
         row.addWidget(btn_export)
-        btn_ar_aging = QPushButton("Export AR aging CSV…")
-        btn_ar_aging.setToolTip(
-            "Export accounts-receivable aging detail to CSV (pick as-of date). UTF-8 BOM for Excel."
-        )
-        btn_ar_aging.clicked.connect(self._export_ar_aging_csv)
-        row.addWidget(btn_ar_aging)
         row.addStretch()
         layout.addLayout(row)
+
+        ar_ap = QGroupBox("Receivables & payables")
+        ar_ap.setToolTip(
+            "Open-item and aging views from the company AR/AP tables (not the Bank Register grid). "
+            "Export CSV… exports the last table you ran. UTF-8 BOM for Excel."
+        )
+        ar_ap_lay = QVBoxLayout(ar_ap)
+        ar_buttons = (
+            (
+                "A/R aging",
+                self._show_ar_aging,
+                "Open balances by aging bucket as of the End date (or today).",
+            ),
+            (
+                "A/P aging",
+                self._show_ap_aging,
+                "Open vendor balances by aging bucket as of the End date (or today).",
+            ),
+            (
+                "Open invoices",
+                self._show_open_invoices,
+                "Invoices with balance due (same source as AR workflows).",
+            ),
+            (
+                "Open bills",
+                self._show_open_bills,
+                "Bills with balance due (same source as AP workflows).",
+            ),
+            (
+                "Recent customer payments",
+                self._show_recent_ar_payments,
+                "AR payment records, newest first (limited to 100 rows).",
+            ),
+            (
+                "Recent vendor payments",
+                self._show_recent_ap_payments,
+                "AP payment records, newest first (limited to 100 rows).",
+            ),
+        )
+        for row_start in (0, 3):
+            h = QHBoxLayout()
+            for label, fn, tip in ar_buttons[row_start : row_start + 3]:
+                b = QPushButton(label)
+                b.setToolTip(tip)
+                b.clicked.connect(fn)
+                h.addWidget(b)
+            ar_ap_lay.addLayout(h)
+        layout.addWidget(ar_ap)
 
         self._table = QTableWidget()
         self._table.horizontalHeader().setSectionResizeMode(
@@ -139,8 +193,8 @@ class ReportsTab(QWidget):
         self._table.customContextMenuRequested.connect(self._on_report_context_menu)
         self._table.setSortingEnabled(True)
         self._table.setToolTip(
-            "Report results after you run Trial Balance, Income Statement, or Balance Sheet. "
-            "Toolbar Export CSV uses UTF-8 BOM for Excel. "
+            "Report results after you run a report from the toolbar or Receivables & payables. "
+            "Export CSV… uses UTF-8 BOM for Excel. "
             "Right-click for Keyboard shortcuts… (including on empty area)."
         )
         layout.addWidget(self._table)
@@ -153,13 +207,13 @@ class ReportsTab(QWidget):
         layout.addWidget(self._summary)
 
         tip = QLabel(
-            "F5 re-runs the last Trial Balance, Income Statement, or Balance Sheet you ran (if any). "
-            "Export CSV uses UTF-8 BOM for Excel."
+            "F5 re-runs the last report you opened (financial or AR/AP). "
+            "Export CSV… saves the current table (UTF-8 with BOM for Excel)."
         )
         tip.setWordWrap(True)
         tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
         tip.setToolTip(
-            "Shortcut reminder: F5 repeats the last report you opened (trial balance, P&L, or balance sheet)."
+            "Shortcut reminder: F5 repeats the last report you opened."
         )
         layout.addWidget(tip)
 
@@ -174,11 +228,24 @@ class ReportsTab(QWidget):
             self._show_pl()
         elif self._last_report_kind == "bs":
             self._show_bs()
+        elif self._last_report_kind == "ar_aging":
+            self._show_ar_aging()
+        elif self._last_report_kind == "ap_aging":
+            self._show_ap_aging()
+        elif self._last_report_kind == "open_inv":
+            self._show_open_invoices()
+        elif self._last_report_kind == "open_bill":
+            self._show_open_bills()
+        elif self._last_report_kind == "ar_pay":
+            self._show_recent_ar_payments()
+        elif self._last_report_kind == "ap_pay":
+            self._show_recent_ap_payments()
 
-    def _export_ar_aging_csv(self) -> None:
-        from desktop_app.ar_customer_actions import export_ar_aging_csv
-
-        export_ar_aging_csv(self, self._conn)
+    def _as_of_iso(self) -> str:
+        end = line_edit_to_iso_or_raw(self._end)
+        if end:
+            return end
+        return date.today().isoformat()
 
     def _on_report_context_menu(self, pos):
         idx = self._table.indexAt(pos)
@@ -314,12 +381,239 @@ class ReportsTab(QWidget):
         }
         self._last_report_kind = "bs"
 
+    def _show_ar_aging(self) -> None:
+        as_of = self._as_of_iso()
+        data = business.ar_aging_buckets(self._conn, as_of)[0]
+        lines = data["lines"]
+        buckets = data["buckets"]
+        headers = ["Invoice id", "Customer", "Balance", "Aging bucket", "Days past due"]
+        rows: list[list] = []
+        for ln in lines:
+            bk = ln["bucket"]
+            rows.append(
+                [
+                    ln["invoice_id"],
+                    ln["customer"],
+                    ln["balance"],
+                    _AGING_BUCKET_LABELS.get(bk, bk),
+                    ln.get("days_past_due", ""),
+                ]
+            )
+        self._fill_table(headers, rows, numeric_columns=frozenset({2, 4}))
+        tot = sum(float(ln["balance"]) for ln in lines)
+        buck_txt = ", ".join(
+            f"{_AGING_BUCKET_LABELS.get(k, k)}={v:,.2f}" for k, v in buckets.items()
+        )
+        self._summary.setText(
+            f"A/R aging as of {as_of}: {len(lines)} open line(s), total {tot:,.2f}. Buckets: {buck_txt}."
+        )
+        self._last_export = {
+            "preamble": [
+                "ProBooks+ai – A/R aging",
+                f"As of: {as_of}",
+                f"Bucket totals: {buck_txt}",
+            ],
+            "headers": headers,
+            "rows": rows,
+        }
+        self._last_report_kind = "ar_aging"
+
+    def _show_ap_aging(self) -> None:
+        as_of = self._as_of_iso()
+        data = business.ap_aging_buckets(self._conn, as_of)[0]
+        lines = data["lines"]
+        buckets = data["buckets"]
+        headers = ["Bill id", "Vendor", "Balance", "Aging bucket", "Days past due"]
+        rows = []
+        for ln in lines:
+            bk = ln["bucket"]
+            rows.append(
+                [
+                    ln["bill_id"],
+                    ln["vendor"],
+                    ln["balance"],
+                    _AGING_BUCKET_LABELS.get(bk, bk),
+                    ln.get("days_past_due", ""),
+                ]
+            )
+        self._fill_table(headers, rows, numeric_columns=frozenset({2, 4}))
+        tot = sum(float(ln["balance"]) for ln in lines)
+        buck_txt = ", ".join(
+            f"{_AGING_BUCKET_LABELS.get(k, k)}={v:,.2f}" for k, v in buckets.items()
+        )
+        self._summary.setText(
+            f"A/P aging as of {as_of}: {len(lines)} open line(s), total {tot:,.2f}. Buckets: {buck_txt}."
+        )
+        self._last_export = {
+            "preamble": [
+                "ProBooks+ai – A/P aging",
+                f"As of: {as_of}",
+                f"Bucket totals: {buck_txt}",
+            ],
+            "headers": headers,
+            "rows": rows,
+        }
+        self._last_report_kind = "ap_aging"
+
+    def _show_open_invoices(self) -> None:
+        """Invoices with balance_due > 0."""
+        rows_raw = business.list_invoices(self._conn)
+        open_rows = [dict(r) for r in rows_raw if float(r["balance_due"] or 0) > 0.005]
+        open_rows.sort(
+            key=lambda d: (d.get("due_date") or "", d.get("invoice_number") or "")
+        )
+        headers = [
+            "Invoice #",
+            "Customer",
+            "Invoice date",
+            "Due date",
+            "Total",
+            "Balance due",
+            "Status",
+        ]
+        rows: list[list] = []
+        tot_bal = 0.0
+        for d in open_rows:
+            bd = float(d.get("balance_due") or 0)
+            tot_bal += bd
+            rows.append(
+                [
+                    d.get("invoice_number") or "",
+                    d.get("customer_name") or "",
+                    d.get("invoice_date") or "",
+                    d.get("due_date") or "",
+                    float(d.get("total") or 0),
+                    bd,
+                    d.get("status") or "",
+                ]
+            )
+        self._fill_table(headers, rows, numeric_columns=frozenset({4, 5}))
+        self._summary.setText(
+            f"Open invoices: {len(rows)} row(s), total balance due {tot_bal:,.2f}."
+        )
+        self._last_export = {
+            "preamble": ["ProBooks+ai – Open invoices (balance due > 0)"],
+            "headers": headers,
+            "rows": rows,
+        }
+        self._last_report_kind = "open_inv"
+
+    def _show_open_bills(self) -> None:
+        rows_raw = business.list_bills(self._conn)
+        open_rows = [dict(r) for r in rows_raw if float(r["balance_due"] or 0) > 0.005]
+        open_rows.sort(
+            key=lambda d: (d.get("due_date") or "", d.get("vendor_invoice_number") or "")
+        )
+        headers = [
+            "Vendor inv. #",
+            "Vendor",
+            "Bill date",
+            "Due date",
+            "Total",
+            "Balance due",
+            "Status",
+        ]
+        rows = []
+        tot_bal = 0.0
+        for d in open_rows:
+            bd = float(d.get("balance_due") or 0)
+            tot_bal += bd
+            rows.append(
+                [
+                    d.get("vendor_invoice_number") or "",
+                    d.get("vendor_name") or "",
+                    d.get("bill_date") or "",
+                    d.get("due_date") or "",
+                    float(d.get("total") or 0),
+                    bd,
+                    d.get("status") or "",
+                ]
+            )
+        self._fill_table(headers, rows, numeric_columns=frozenset({4, 5}))
+        self._summary.setText(
+            f"Open bills: {len(rows)} row(s), total balance due {tot_bal:,.2f}."
+        )
+        self._last_export = {
+            "preamble": ["ProBooks+ai – Open bills (balance due > 0)"],
+            "headers": headers,
+            "rows": rows,
+        }
+        self._last_report_kind = "open_bill"
+
+    def _show_recent_ar_payments(self) -> None:
+        rows_raw = business.list_ar_payments(self._conn)[:100]
+        headers = [
+            "Payment date",
+            "Customer",
+            "Amount",
+            "Method",
+            "Reference",
+            "Memo",
+            "Bank account",
+        ]
+        rows = []
+        for r in rows_raw:
+            d = dict(r)
+            rows.append(
+                [
+                    d.get("payment_date") or "",
+                    d.get("customer_name") or "",
+                    float(d.get("amount") or 0),
+                    d.get("method") or "",
+                    d.get("reference") or "",
+                    d.get("memo") or "",
+                    d.get("bank_account_name") or "",
+                ]
+            )
+        self._fill_table(headers, rows, numeric_columns=frozenset({2}))
+        self._summary.setText(f"Recent customer (AR) payments: {len(rows)} row(s), newest first.")
+        self._last_export = {
+            "preamble": ["ProBooks+ai – Recent customer payments (newest first, up to 100)"],
+            "headers": headers,
+            "rows": rows,
+        }
+        self._last_report_kind = "ar_pay"
+
+    def _show_recent_ap_payments(self) -> None:
+        rows_raw = business.list_ap_payments(self._conn)[:100]
+        headers = [
+            "Payment date",
+            "Vendor",
+            "Amount",
+            "Method",
+            "Reference",
+            "Memo",
+            "Bank account",
+        ]
+        rows = []
+        for r in rows_raw:
+            d = dict(r)
+            rows.append(
+                [
+                    d.get("payment_date") or "",
+                    d.get("vendor_name") or "",
+                    float(d.get("amount") or 0),
+                    d.get("method") or "",
+                    d.get("reference") or "",
+                    d.get("memo") or "",
+                    d.get("bank_account_name") or "",
+                ]
+            )
+        self._fill_table(headers, rows, numeric_columns=frozenset({2}))
+        self._summary.setText(f"Recent vendor (AP) payments: {len(rows)} row(s), newest first.")
+        self._last_export = {
+            "preamble": ["ProBooks+ai – Recent vendor payments (newest first, up to 100)"],
+            "headers": headers,
+            "rows": rows,
+        }
+        self._last_report_kind = "ap_pay"
+
     def _export_csv(self):
         if not self._last_export:
             message_box_information_ok(
                 self,
                 "Reports",
-                "Run Trial Balance, Income Statement, or Balance Sheet first, then export.",
+                "Run a report first (financial toolbar or Receivables & payables), then export.",
                 ok_tip="Close; open a report, then use Export CSV again.",
             )
             return
