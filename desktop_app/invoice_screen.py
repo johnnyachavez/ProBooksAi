@@ -380,11 +380,15 @@ class InvoiceScreen(QWidget):
 
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(12, 12, 12, 12)
-        outer.setSpacing(10)
+        outer.setContentsMargins(8, 6, 8, 8)
+        outer.setSpacing(0)
 
-        ar_tool = QHBoxLayout()
-        ar_tool.setSpacing(8)
+        self._invoice_tabs = QTabWidget(self)
+        self._invoice_tabs.setObjectName("invoiceModuleTabs")
+        self._invoice_tabs.setToolTip(
+            "Manual Invoice: full entry workflow. Invoice Intake: stage documents for future drafting."
+        )
+
         self._btn_ar_new_inv = QPushButton("New invoice (AR)…")
         self._btn_ar_new_inv.setToolTip(
             "Create an invoice using the AR dialog (moved from the Customers tab)."
@@ -398,9 +402,20 @@ class InvoiceScreen(QWidget):
         for b in (self._btn_ar_new_inv, self._btn_ar_export_inv):
             b.setAutoDefault(False)
             b.setDefault(False)
-            ar_tool.addWidget(b)
-        ar_tool.addStretch(1)
-        outer.addLayout(ar_tool)
+
+        _ar_corner = QWidget(self._invoice_tabs)
+        _ar_corner_lay = QHBoxLayout(_ar_corner)
+        _ar_corner_lay.setContentsMargins(0, 0, 6, 0)
+        _ar_corner_lay.setSpacing(6)
+        _ar_corner_lay.addWidget(self._btn_ar_new_inv)
+        _ar_corner_lay.addWidget(self._btn_ar_export_inv)
+        self._invoice_tabs.setCornerWidget(_ar_corner, Qt.Corner.TopRightCorner)
+        self._invoice_tabs.tabBar().setExpanding(False)
+        self._invoice_tabs.setStyleSheet(
+            f"QTabWidget#invoiceModuleTabs::pane {{ border: none; margin: 0; padding: 0; }}"
+            f"QTabWidget#invoiceModuleTabs QTabBar::tab {{ padding: 3px 10px; min-height: 20px; }}"
+        )
+
         self._sync_ar_toolbar_enabled()
 
         page = QFrame()
@@ -410,8 +425,8 @@ class InvoiceScreen(QWidget):
             "border-radius: 8px; }}"
         )
         play = QVBoxLayout(page)
-        play.setContentsMargins(16, 16, 16, 16)
-        play.setSpacing(12)
+        play.setContentsMargins(12, 10, 12, 12)
+        play.setSpacing(8)
 
         # ── Title row (Pay Bills / Receive Payments style: title left, key field right) ──
         title_row = QHBoxLayout()
@@ -475,7 +490,7 @@ class InvoiceScreen(QWidget):
         three_col = QWidget()
         three_lay = QVBoxLayout(three_col)
         three_lay.setContentsMargins(0, 0, 0, 0)
-        three_lay.setSpacing(10)
+        three_lay.setSpacing(8)
         fields_h = QHBoxLayout()
         fields_h.setSpacing(10)
         fields_h.addWidget(
@@ -579,8 +594,8 @@ class InvoiceScreen(QWidget):
             f"border: 1px solid {_INV_GRID}; border-radius: 8px; }}"
         )
         hb_lay = QVBoxLayout(header_band)
-        hb_lay.setContentsMargins(12, 12, 12, 12)
-        hb_lay.setSpacing(10)
+        hb_lay.setContentsMargins(10, 8, 10, 10)
+        hb_lay.setSpacing(8)
         hb_lay.addLayout(top_fields_row)
         play.addWidget(header_band)
 
@@ -749,11 +764,6 @@ class InvoiceScreen(QWidget):
         tot.addLayout(tot_col)
         play.addWidget(tot_frame)
 
-        self._invoice_tabs = QTabWidget()
-        self._invoice_tabs.setObjectName("invoiceModuleTabs")
-        self._invoice_tabs.setToolTip(
-            "Manual Invoice: full entry workflow. Invoice Intake: stage documents for future drafting."
-        )
         self._invoice_intake = InvoiceIntakePanel(self._invoice_tabs, invoice_screen=self)
         self._invoice_tabs.addTab(page, "Manual Invoice")
         self._invoice_tabs.addTab(self._invoice_intake, "Invoice Intake")
