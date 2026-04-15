@@ -730,7 +730,7 @@ def show_register_keyboard_shortcuts_dialog(parent: QWidget) -> None:
         ok_tip="Close; shortcuts apply when Bank register has focus. "
         "Recon menu — Register Actions and related groups for add/post/export, attachments, splits, transfer, link, open linked Business, and receipt flags. "
         "**Link payment…** also shows **Open linked Business record…** when the stored link is complete (can open in Business). "
-        "View → Reconcile (Ctrl+9) → Bank import for AI line reconciliation / Match-column overlay sync. "
+        "View → Reconcile (Ctrl+9) → Bank statements for AI line reconciliation / Match-column overlay sync. "
         "Company .db: File → Backup / Restore (probooks.backup).",
     )
 
@@ -770,7 +770,7 @@ class RegisterTab(QWidget):
             "Bulk row actions (add transaction, post to GL, and export CSV (UTF-8 BOM for Excel), cleared, attachments, splits, transfer, link payment, open linked Business, receipt flags): Recon menu. "
             "Reconciliation mode (toggle on the main tab bar when this tab is active) adds the Match overlay; "
             "Bank Import AI line reconciliation can populate it (Help → Bank import shortcuts…). "
-            "View → Reconcile (Ctrl+9) → Bank import; Bank Register (Ctrl+5). "
+            "View → Reconcile (Ctrl+9) → Bank statements; Bank Register (Ctrl+5). "
             "Same company SQLite database as other main tabs; File → Backup / Restore (probooks.backup)."
         )
         layout = QVBoxLayout(self)

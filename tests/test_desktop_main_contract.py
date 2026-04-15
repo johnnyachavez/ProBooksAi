@@ -18,6 +18,7 @@ from tests.repo_paths import (
 )
 
 _MAIN = _DESKTOP_APP_DIR / "main.py"
+_AR_CUSTOMER_ACTIONS = _DESKTOP_APP_DIR / "ar_customer_actions.py"
 
 
 def test_desktop_main_imports_partial_for_inbox_context_menu() -> None:
@@ -612,7 +613,7 @@ def test_main_window_defines_bank_import_view_pointer_for_intake_tooltips() -> N
     text = _MAIN.read_text(encoding="utf-8")
     assert "_BANK_IMPORT_VIEW_POINTER = (" in text
     assert text.count("+ _BANK_IMPORT_VIEW_POINTER") >= 3
-    assert "Reconcile tab → Bank import (View → Reconcile, Ctrl+9). " in text
+    assert "Reconcile tab → Bank statements (View → Reconcile, Ctrl+9). " in text
 
 
 def test_main_window_tab_bar_has_tab_tooltips() -> None:
@@ -628,7 +629,7 @@ def test_main_window_tab_bar_has_tab_tooltips() -> None:
     assert "self._tabs.setToolTip(" in text
     assert "Main workspace:" in text
     assert "intake_widget.setToolTip(" in text
-    assert "Reconcile → Bank import" in text
+    assert "Reconcile → Bank statements" in text
     iw = text.split("class InboxWidget(QTableWidget):", 1)[1].split(
         "    def _on_context_menu(self, pos):", 1
     )[0]
@@ -677,7 +678,7 @@ def test_main_tab_widgets_have_root_hover_tooltips() -> None:
     reg = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
     assert "Bank register for one account:" in reg
     assert "Bank Import AI line reconciliation can populate it" in reg
-    assert "View → Reconcile (Ctrl+9) → Bank import; Bank Register (Ctrl+5)." in reg
+    assert "View → Reconcile (Ctrl+9) → Bank statements; Bank Register (Ctrl+5)." in reg
     assert "and export CSV (UTF-8 BOM for Excel)" in reg
 
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
@@ -1041,7 +1042,7 @@ def test_main_window_build_ui_document_intake_split_inbox_header_and_f5() -> Non
     asm = text.index("def _assemble_main_tabs(self) -> None:")
     asm_end = text.index("def _apply_main_tab_bar_tooltips(self) -> None:", asm)
     chunk_asm = text[asm:asm_end]
-    assert chunk_asm.count('self._reconcile_hub.addTab(self._intake_widget, "Document intake")') == 1
+    assert chunk_asm.count('self._reconcile_hub.addTab(self._intake_widget, "Documents")') == 1
 
 
 def test_main_window_build_ui_intake_f5_shortcut_before_reconcile_add_tab_order() -> None:
@@ -1049,7 +1050,7 @@ def test_main_window_build_ui_intake_f5_shortcut_before_reconcile_add_tab_order(
     text = _MAIN.read_text(encoding="utf-8")
     f5 = text.index('QShortcut(QKeySequence("F5"), intake_widget)')
     add_intake = text.index(
-        'self._reconcile_hub.addTab(self._intake_widget, "Document intake")'
+        'self._reconcile_hub.addTab(self._intake_widget, "Documents")'
     )
     assert f5 < add_intake
 
@@ -2498,7 +2499,7 @@ def test_main_window_set_tab_sync_title_and_company_status_helpers() -> None:
     assert chunk.count("escape_ampersand_for_qt(Path(p).name)") == 1
     assert chunk.count("self._header.set_company_name(Path(p).name)") == 1
     assert 'f"Company: {p}  \\u2013  drag & drop or Import;' in chunk
-    assert "Reconcile → Bank import (Ctrl+9)" in chunk
+    assert "Reconcile → Bank statements (Ctrl+9)" in chunk
 
 
 def test_main_window_sync_window_title_includes_company_name_or_desktop_only() -> None:
@@ -2887,7 +2888,7 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
         "View → Bank Import and Register status tips mention AI line reconciliation and Match overlay."
         in chunk
     )
-    assert " Reconcile: Bank import + Document intake." in chunk
+    assert " Reconcile: Bank statements + Documents (intake → review/match)." in chunk
     assert "AI line reconciliation" in chunk and "Match overlay" in chunk
     assert 'f"Show this main tab ({sc}).{extra}{_view_tab_tip_suffix}"' in chunk
 
@@ -3033,7 +3034,7 @@ def test_desktop_main_show_intake_shortcuts_dialog_delegates_to_message_box() ->
     assert (
         'ok_tip="Close; shortcuts apply when Document Intake has focus. "' in chunk
     )
-    assert "Ctrl+9 Reconcile" in chunk and "Bank import" in chunk
+    assert "Ctrl+9 Reconcile" in chunk and "Bank statements" in chunk
     assert "Ctrl+5 Bank Register" in chunk
     assert "Company .db: File → Backup / Restore (probooks.backup)." in chunk
 
@@ -3073,7 +3074,7 @@ def test_desktop_main_document_intake_shortcuts_help_text_sections() -> None:
     assert "reconciliation report and line-compare" in chunk
     assert "Bank Import Import CSV" in chunk and "optional BOM" in chunk
     assert "batch preview, AI line reconciliation" in chunk
-    assert "Use **Reconcile** (Ctrl+9) for Bank Import" in chunk
+    assert "Use **Reconcile** (Ctrl+9) → **Bank statements**" in chunk
     assert "**Recon** menu" in chunk and "Bank register" in chunk
     assert "**Tools** menu" in chunk and "Invoice" in chunk
 
@@ -4920,12 +4921,12 @@ def test_extra_tabs_as_of_date_prompt_has_field_tooltip() -> None:
 
 
 def test_extra_tabs_business_qdialog_windows_have_hover_tooltips() -> None:
+    """Modal tooltips: Business hub dialogs in ``extra_tabs``; AR invoice/payment dialogs in ``ar_customer_actions``."""
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
+    ar = _AR_CUSTOMER_ACTIONS.read_text(encoding="utf-8")
     for needle in (
         "higher priority rules are considered first",
         "Create a customer record used for AR invoices",
-        "Edit invoice header, customer, line items",
-        "Enter payment details and allocate amounts to open invoices",
         "Create a vendor record used for AP bills",
         "Review company payroll tax codes",
         "Map wage expense, cash/bank, and withholdings liability",
@@ -4933,15 +4934,23 @@ def test_extra_tabs_business_qdialog_windows_have_hover_tooltips() -> None:
         "Choose invoice dates from/to",
     ):
         assert needle in et, f"extra_tabs.py should document modal window tooltips: {needle!r}"
+    for needle in (
+        "Edit invoice header, customer, line items",
+        "Enter payment details and allocate amounts to open invoices",
+    ):
+        assert needle in ar, f"ar_customer_actions.py should document AR modal tooltips: {needle!r}"
 
 
 def test_extra_tabs_dialog_button_boxes_use_tooltip_helpers() -> None:
     """QDialogButtonBox OK/Cancel and Save/Cancel get hover tips (Business + shared prompts)."""
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
+    ar = _AR_CUSTOMER_ACTIONS.read_text(encoding="utf-8")
     assert "def _tip_dialog_ok_cancel" in et
     assert "def _tip_dialog_save_cancel" in et
     assert "_DIALOG_CANCEL_TIP" in et
-    assert et.count("_tip_dialog_ok_cancel(bb") >= 14
+    # Count includes ``def _tip_dialog_ok_cancel`` plus call sites (some wrap ``(`` onto the next line).
+    assert et.count("_tip_dialog_ok_cancel(") >= 15
+    assert ar.count("et._tip_dialog_ok_cancel(") >= 2
     assert "_tip_dialog_save_cancel(\n            bb" in et
     assert "tip_qdialog_button_box(bb, ok=ok_tip, cancel=cancel_tip)" in et
     assert "tip_qdialog_button_box(bb, save=save_tip, cancel=cancel_tip)" in et
@@ -5248,7 +5257,7 @@ def test_intake_and_bank_import_splitters_have_resize_tooltips() -> None:
     assert "document inbox" in main_t
     sp = main_t.index("Drag the handle to resize the document inbox")
     assert "File → Backup" in main_t[sp : sp + 400]
-    assert "Reconcile → Bank import" in main_t[sp : sp + 400]
+    assert "Reconcile → Bank statements" in main_t[sp : sp + 400]
     bi = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
     assert "splitter.setToolTip" in bi
     assert "right_splitter.setToolTip" in bi
@@ -5376,6 +5385,7 @@ def test_extra_tabs_new_pay_run_coerces_employee_combo_id() -> None:
 
 def test_extra_tabs_sync_entity_combo_and_ar_ap_payments_coerce_int_ids() -> None:
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
+    ar = _AR_CUSTOMER_ACTIONS.read_text(encoding="utf-8")
     rent = et.split("def _restore_entity_combo", 1)[1].split(
         "def _save_entity_combo", 1
     )[0]
@@ -5385,17 +5395,20 @@ def test_extra_tabs_sync_entity_combo_and_ar_ap_payments_coerce_int_ids() -> Non
     )[0]
     assert "prev_id = coerce_combo_int_id(cb.currentData())" in sync
     assert "combo_index_for_int_user_data(cb, prev_id)" in sync
-    ar = et.split("def rebuild_ar_alloc_table", 1)[1].split("def sync_ar_payment_customers", 1)[0]
-    assert "cid = coerce_combo_int_id(cust_cb.currentData())" in ar
-    ar_pay = et.split("if d.exec() != QDialog.DialogCode.Accepted:\n            return\n        cid = coerce_combo_int_id(cust_cb.currentData())", 1)[
-        1
-    ].split("business.record_ar_payment", 1)[0]
+    ar_alloc = ar.split("def rebuild_ar_alloc_table", 1)[1].split(
+        "def sync_ar_payment_customers", 1
+    )[0]
+    assert "cid = coerce_combo_int_id(cust_cb.currentData())" in ar_alloc
+    ar_pay = ar.split(
+        "if d.exec() != QDialog.DialogCode.Accepted:\n        return\n    cid = coerce_combo_int_id(cust_cb.currentData())",
+        1,
+    )[1].split("business.record_ar_payment", 1)[0]
     assert "iid = coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole))" in ar_pay
     assert (
-        "bank_account_id = (\n            coerce_combo_int_id(bank_cb.itemData(bidx)) if bidx > 0 else None\n        )"
-        in et
+        "bank_account_id = coerce_combo_int_id(bank_cb.itemData(bidx)) if bidx > 0 else None"
+        in ar
     )
-    assert "business.record_ar_payment(\n            self._conn,\n            cid," in et
+    assert "business.record_ar_payment(\n        conn,\n        cid," in ar
     assert 'bill_vid = coerce_combo_int_id(b["vendor_id"])' in et
 
 
@@ -5485,10 +5498,13 @@ def test_extra_tabs_payroll_run_tax_lines_lookup_uses_coerce_combo_int_id() -> N
 
 def test_extra_tabs_edit_invoice_and_bill_coerce_customer_vendor_ids() -> None:
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
-    inv = et.split("def _edit_inv(self):", 1)[1].split("def _record_ar_payment(self):", 1)[0]
+    ar = _AR_CUSTOMER_ACTIONS.read_text(encoding="utf-8")
+    inv = ar.split("def open_ar_invoice_edit_dialog(", 1)[1].split(
+        "def open_record_ar_payment_dialog(", 1
+    )[0]
     assert "inv_cust_id = coerce_combo_int_id(inv[\"customer_id\"])" in inv
-    bill = et.split("def _open_edit_bill_dialog(self, bill_id: int)", 1)[1].split(
-        "def _export_vendors(self):", 1
+    bill = et.split("def open_ap_bill_edit_dialog(", 1)[1].split(
+        "def _prompt_as_of_date(", 1
     )[0]
     assert "bill_vid = coerce_combo_int_id(b[\"vendor_id\"])" in bill
 
@@ -5914,11 +5930,12 @@ def test_grids_context_menus_use_qaction_hover_tooltips() -> None:
     assert "act_copy.setToolTip" in et[acs:ace]
     rs2 = et.index("def _on_rules_context_menu")
     assert "act_edit.setToolTip" in et[rs2 : rs2 + 900]
-    inv_s = et.index("def _on_invoice_context_menu")
-    inv_e = et.index("\n    def _new_cust(self):", inv_s)
-    inv_chunk = et[inv_s:inv_e]
-    assert "act_invno.setToolTip" in inv_chunk
-    assert inv_chunk.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
+    cust_s = et.index("def _on_customer_context_menu")
+    cust_e = et.index("def _apply_detail_from_focus", cust_s)
+    cust_chunk = et[cust_s:cust_e]
+    assert "act_keys.setToolTip" in cust_chunk
+    assert "act_copy.setToolTip" in cust_chunk
+    assert cust_chunk.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
 
 
 def test_bank_import_batch_table_column_header_tooltips() -> None:
@@ -5944,7 +5961,8 @@ def test_extra_tabs_business_main_grids_have_hover_tooltips() -> None:
 
 def test_extra_tabs_business_copy_row_tooltips_mention_backup_safety() -> None:
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
-    assert et.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 11
+    # Customer/vendor master grids (plus rules, payroll run); AR invoice list grid moved off Business hub.
+    assert et.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 10
 
 
 def test_register_tab_persists_header_state_via_qsettings() -> None:

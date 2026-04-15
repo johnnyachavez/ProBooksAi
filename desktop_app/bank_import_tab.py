@@ -1200,6 +1200,27 @@ class BankImportTab(QWidget):
         )
         outer = QVBoxLayout(self)
         outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(10)
+
+        intake_gb = QGroupBox("Intake")
+        intake_gb.setToolTip(
+            "Import bank CSV or PDF (or paste CSV) for the selected account. "
+            "Creates import batches using the same logic as before."
+        )
+        intake_lay = QVBoxLayout(intake_gb)
+        intake_lay.setSpacing(8)
+
+        intake_intro = QLabel(
+            "<b>Bring in statements</b> — pick the bank account, then <b>Import CSV</b>, <b>Import PDF</b>, "
+            "or <b>paste</b> bank-export text below. Formats and mapping are unchanged."
+        )
+        intake_intro.setTextFormat(Qt.TextFormat.RichText)
+        intake_intro.setWordWrap(True)
+        intake_intro.setStyleSheet("color: #A0A0B0; font-size: 12px;")
+        intake_intro.setToolTip(
+            "Digital PDFs need selectable text (no OCR). CSV is UTF-8 with optional BOM, same as exports."
+        )
+        intake_lay.addWidget(intake_intro)
 
         # ── Header row ──────────────────────────────────────────────────────
         hdr_row = QHBoxLayout()
@@ -1248,7 +1269,7 @@ class BankImportTab(QWidget):
         hdr_row.addWidget(btn_pdf)
 
         hdr_row.addStretch()
-        outer.addLayout(hdr_row)
+        intake_lay.addLayout(hdr_row)
 
         import_hint = QLabel(
             "Import formats: <b>CSV</b> — typical bank export (UTF-8, optional BOM for Excel). "
@@ -1263,7 +1284,7 @@ class BankImportTab(QWidget):
             "ProBooks+ai reads text embedded in PDFs; it does not OCR scans. "
             "For photo or scanned statements, use CSV until automatic OCR ships (Phase 7)."
         )
-        outer.addWidget(import_hint)
+        intake_lay.addWidget(import_hint)
 
         paste_box = QGroupBox("Paste bank CSV")
         paste_box.setToolTip(
@@ -1289,7 +1310,28 @@ class BankImportTab(QWidget):
         paste_row.addWidget(btn_paste_import)
         paste_row.addStretch()
         paste_lay.addLayout(paste_row)
-        outer.addWidget(paste_box)
+        intake_lay.addWidget(paste_box)
+        outer.addWidget(intake_gb)
+
+        review_gb = QGroupBox("Review & match")
+        review_gb.setToolTip(
+            "Imported batches, register-styled preview, reconciliation summary, and AI line match vs Bank Register."
+        )
+        review_lay = QVBoxLayout(review_gb)
+        review_lay.setSpacing(8)
+
+        review_intro = QLabel(
+            "<b>Review and reconcile</b> — select an import batch, check rows and balances, then use "
+            "<b>Line Reconciliation (AI)</b>. Open <b>Bank Register</b> (Ctrl+5) to work the Match overlay; "
+            "the register remains the source of truth for posted bank activity."
+        )
+        review_intro.setTextFormat(Qt.TextFormat.RichText)
+        review_intro.setWordWrap(True)
+        review_intro.setStyleSheet("color: #A0A0B0; font-size: 12px;")
+        review_intro.setToolTip(
+            "Matched / Missing / Extra and tolerance behave as before; extract & compare can sync the register overlay."
+        )
+        review_lay.addWidget(review_intro)
 
         # ── Splitter: batch list (left) | detail (right) ──────────────────
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -1442,7 +1484,7 @@ class BankImportTab(QWidget):
             "All bank import data is in the open company .db (File → Backup / Restore, probooks.backup)."
         )
 
-        outer.addWidget(splitter)
+        review_lay.addWidget(splitter, stretch=1)
 
         tip = QLabel(
             "F5 refreshes accounts and import batches; if a batch is selected, it is re-opened when "
@@ -1463,7 +1505,8 @@ class BankImportTab(QWidget):
             "Preview and line-reconciliation rows include Copy row and field copies. "
             "Back up the company .db from File → Backup / probooks backup before destructive imports."
         )
-        outer.addWidget(tip)
+        review_lay.addWidget(tip)
+        outer.addWidget(review_gb, stretch=1)
 
         sc_reload = QShortcut(QKeySequence("F5"), self)
         sc_reload.setContext(Qt.WidgetWithChildrenShortcut)

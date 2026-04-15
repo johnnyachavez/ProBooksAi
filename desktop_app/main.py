@@ -134,7 +134,7 @@ def _document_intake_keyboard_shortcuts_help_text() -> str:
         "View menu:\n"
         "Ctrl+1 Invoices … Ctrl+9 Reconcile, Ctrl+0 More (Reports, Journal, Business, Audit log) — all tabs share the open "
         "company SQLite file (File → Backup / Restore, probooks.backup). "
-        "Use **Reconcile** (Ctrl+9) for Bank Import and **Bank Register** (Ctrl+5) for the Match overlay.\n\n"
+        "Use **Reconcile** (Ctrl+9) → **Bank statements** for statement import and **Bank Register** (Ctrl+5) for the Match overlay.\n\n"
         "**Recon** menu — **Bank register** bulk row actions (add transaction, post to GL, export CSV, cleared, "
         "attachments, splits, transfer, link payment, open linked Business record, receipt flags) when you use Bank Register (Ctrl+5). "
         "**Tools** menu — open **Invoice…** (Ctrl+Shift+I; top-level Invoices tab).\n\n"
@@ -159,7 +159,7 @@ def show_document_intake_keyboard_shortcuts_dialog(parent: QWidget) -> None:
         "Document intake shortcuts",
         _document_intake_keyboard_shortcuts_help_text(),
         ok_tip="Close; shortcuts apply when Document Intake has focus. "
-        "Bank CSV/PDF and AI line reconciliation: Ctrl+9 Reconcile → Bank import; "
+        "Bank CSV/PDF and AI line reconciliation: Ctrl+9 Reconcile → Bank statements; "
         "Register Match overlay: Ctrl+5 Bank Register; register bulk actions: Recon menu. "
         "Company .db: File → Backup / Restore (probooks.backup).",
     )
@@ -175,7 +175,7 @@ INBOX_HEADER_COLOR = "#1F3864"  # dark navy – matches ProBooks+ai branding
 
 # Intake-adjacent tooltips: bank import lives under the Reconcile top-level tab (View Ctrl+9).
 _BANK_IMPORT_VIEW_POINTER = (
-    "Bank CSV/PDF and AI line reconciliation: Reconcile tab → Bank import (View → Reconcile, Ctrl+9). "
+    "Bank CSV/PDF and AI line reconciliation: Reconcile tab → Bank statements (View → Reconcile, Ctrl+9). "
 )
 
 # Temporary status bar duration after Bank Import → Register **Match overlay** sync.
@@ -866,17 +866,28 @@ class MainWindow(QMainWindow):
         return w
 
     def _build_document_intake_widget(self) -> None:
-        """Build the Document Intake UI (hosted under Reconcile → Document intake)."""
+        """Build the Document Intake UI (hosted under Reconcile → Documents)."""
         intake_widget = QWidget()
         intake_widget.setToolTip(
             "Document Intake: import files, pick an inbox row, then review extraction and categorization on the right. "
             "F5 refreshes the list when this tab has focus. "
-            "Bank CSV/PDF and AI line reconciliation: Reconcile → Bank import. "
+            "Bank CSV/PDF and AI line reconciliation: Reconcile → Bank statements. "
             "Help → Document intake shortcuts lists File → Backup/Restore (probooks.backup)."
         )
         intake_layout = QVBoxLayout(intake_widget)
         intake_layout.setContentsMargins(0, 0, 0, 0)
         intake_layout.setSpacing(0)
+
+        doc_guidance = QLabel(
+            "<b>Documents</b> — import PDFs or images (File → Import or drag-and-drop), then review extraction on the right. "
+            "For <b>bank CSV/PDF statements</b> and register reconciliation, use the <b>Bank statements</b> subtab."
+        )
+        doc_guidance.setTextFormat(Qt.TextFormat.RichText)
+        doc_guidance.setWordWrap(True)
+        doc_guidance.setStyleSheet("color: #A0A0B0; font-size: 12px; padding: 0 0 8px 0;")
+        doc_guidance.setToolTip(
+            "Same document pipeline as before; statement workflows stay on Bank statements so intake feels unified."
+        )
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
@@ -897,7 +908,7 @@ class MainWindow(QMainWindow):
         )
         lbl_inbox.setToolTip(
             "Imported documents: pick a row to load extraction and categorization in the detail pane. "
-            "Bank statement files: Reconcile → Bank import (View → Reconcile, Ctrl+9). "
+            "Bank statement files: Reconcile → Bank statements (View → Reconcile, Ctrl+9). "
             "Back up the company file from File → Backup / probooks backup before bulk deletes or experiments."
         )
         left_layout.addWidget(lbl_inbox)
@@ -920,9 +931,10 @@ class MainWindow(QMainWindow):
         splitter.setSizes([380, 720])
         splitter.setToolTip(
             "Drag the handle to resize the document inbox and the extraction detail pane. "
-            "Bank workflows (CSV/PDF, AI line reconciliation) use Reconcile → Bank import. "
+            "Bank workflows (CSV/PDF, AI line reconciliation) use Reconcile → Bank statements. "
             "Both sides use the same company SQLite file (File → Backup / probooks backup)."
         )
+        intake_layout.addWidget(doc_guidance)
         intake_layout.addWidget(splitter)
 
         sc_intake_f5 = QShortcut(QKeySequence("F5"), intake_widget)
@@ -958,8 +970,30 @@ class MainWindow(QMainWindow):
             "Reconcile: bank statement import, AI line reconciliation, and document intake. "
             "Same company .db (File → Backup / Restore, probooks.backup)."
         )
-        self._reconcile_hub.addTab(self._bank_tab, "Bank import")
-        self._reconcile_hub.addTab(self._intake_widget, "Document intake")
+        self._reconcile_hub.addTab(self._bank_tab, "Bank statements")
+        self._reconcile_hub.addTab(self._intake_widget, "Documents")
+
+        self._reconcile_root = QWidget()
+        self._reconcile_root.setToolTip(
+            "Reconcile: intake (statements or documents), then review and match against Bank Register. "
+            "Same company .db (File → Backup / Restore, probooks.backup)."
+        )
+        reconcile_root_layout = QVBoxLayout(self._reconcile_root)
+        reconcile_root_layout.setContentsMargins(8, 8, 8, 0)
+        reconcile_root_layout.setSpacing(6)
+        reconcile_banner = QLabel(
+            "<b>Reconcile</b> — intake on the subtabs below, then review and match against <b>Bank Register</b> "
+            "(Ctrl+5; source of truth for posted activity)."
+        )
+        reconcile_banner.setTextFormat(Qt.TextFormat.RichText)
+        reconcile_banner.setWordWrap(True)
+        reconcile_banner.setStyleSheet("color: #A0A0B0; font-size: 12px;")
+        reconcile_banner.setToolTip(
+            "Bank statements: CSV/PDF/paste and AI line reconciliation. Documents: inbox and extraction. "
+            "No change to import or reconciliation logic."
+        )
+        reconcile_root_layout.addWidget(reconcile_banner)
+        reconcile_root_layout.addWidget(self._reconcile_hub, stretch=1)
 
         self._reports_tab = ReportsTab(conn)
         self._journal_tab = JournalTab(conn)
@@ -984,7 +1018,7 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(self._coa_tab, "Chart of Accounts")
         self._tabs.addTab(self._customers_tab, "Customers")
         self._tabs.addTab(self._vendors_tab, "Vendors")
-        self._tabs.addTab(self._reconcile_hub, "Reconcile")
+        self._tabs.addTab(self._reconcile_root, "Reconcile")
         self._tabs.addTab(self._more_hub, "More")
 
     def _apply_main_tab_bar_tooltips(self) -> None:
@@ -1032,7 +1066,7 @@ class MainWindow(QMainWindow):
                 + _main_tab_bar_db_hint
             ),
             (
-                "Reconcile: Bank import (CSV/PDF, AI line reconciliation, Match overlay sync) and Document intake."
+                "Reconcile: Bank statements (CSV/PDF, AI line reconciliation, Match overlay sync) and Documents."
                 + _tab_bar_csv_excel_hint
                 + _main_tab_bar_db_hint
             ),
@@ -1107,7 +1141,7 @@ class MainWindow(QMainWindow):
         self._status_bar.showMessage(
             escape_ampersand_for_qt(
                 "Ready \u2013 drag & drop or use Import; bank CSV/PDF and AI line reconciliation: "
-                "Reconcile → Bank import (Ctrl+9); File → Backup saves the company .db."
+                "Reconcile → Bank statements (Ctrl+9); File → Backup saves the company .db."
             )
             + f" ProBooks+ai v{_boot_ver}."
         )
@@ -1223,7 +1257,7 @@ class MainWindow(QMainWindow):
             5: " Chart of Accounts editor.",
             6: " AR: customers, invoices, payments (primary route; Business hub is Rules/Payroll/Tax %).",
             7: " AP: vendors, bills, payments (primary route; Business hub is Rules/Payroll/Tax %).",
-            8: " Reconcile: Bank import + Document intake.",
+            8: " Reconcile: Bank statements + Documents (intake → review/match).",
         }
         for idx, (sc, label) in enumerate(
             [
@@ -1915,7 +1949,7 @@ class MainWindow(QMainWindow):
         self._status_bar.showMessage(
             escape_ampersand_for_qt(
                 f"Company: {p}  \u2013  drag & drop or Import; bank CSV/PDF and AI line reconciliation: "
-                f"Reconcile → Bank import (Ctrl+9); File → Backup copies this .db."
+                f"Reconcile → Bank statements (Ctrl+9); File → Backup copies this .db."
             )
             + f" ProBooks+ai v{_sv}."
         )
