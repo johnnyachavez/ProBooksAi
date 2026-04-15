@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import csv
 import sqlite3
+from collections.abc import Callable
 from datetime import date as date_cls
 
 from PySide6.QtWidgets import (
@@ -61,7 +62,6 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import QDate, QSettings, Qt
 from PySide6.QtGui import QGuiApplication, QHideEvent, QKeySequence, QShortcut, QShowEvent
 
-from desktop_app.open_attachment import open_local_attachment
 from desktop_app.flexible_date import (
     attach_line_edit_us_date_normalization,
     configure_qdate_edit_us,
@@ -242,6 +242,7 @@ _AR_INVOICE_GRID_FILTER_KEY = "business/ar_invoice_grid_filter"
 _AP_BILL_GRID_FILTER_KEY = "business/ap_bill_grid_filter"
 _AR_INVOICE_HEADER_STATE_KEY = "business/ar_invoice_table_header_state"
 _AP_BILL_HEADER_STATE_KEY = "business/ap_bill_table_header_state"
+_AP_VENDOR_HEADER_STATE_KEY = "business/ap_vendor_table_header_state"
 _RULES_TABLE_HEADER_STATE_KEY = "business/rules_table_header_state"
 _PAYROLL_RUNS_HEADER_STATE_KEY = "business/payroll_runs_table_header_state"
 _BUSINESS_HUB_SUBTAB_KEY = "business/hub_subtab_index"
@@ -294,6 +295,151 @@ def _sync_filtered_entity_combo(
     ix = combo_index_for_int_user_data(cb, prev_id)
     pick = ix if ix is not None else 0
     cb.setCurrentIndex(min(pick, cb.count() - 1))
+
+
+def open_ap_bill_edit_dialog(
+    parent: QWidget,
+    conn: sqlite3.Connection,
+    bill_id: int,
+    *,
+    after_save: Callable[[], None] | None = None,
+) -> bool:
+    """Modal **Edit bill** dialog (shared by **Enter Bills** and bank/register AP bill links).
+
+    Returns ``False`` if the bill id is missing; otherwise shows the dialog and returns ``True``.
+    """
+    bid = int(bill_id)
+    if business.bill_has_payment_allocations(conn, bid):
+        message_box_information_ok(
+            parent,
+            "Bill",
+            "This bill has payments applied and cannot be edited.",
+            ok_tip="Close; adjust or void AP payments before editing this bill.",
+        )
+        return True
+    b = business.get_bill(conn, bid)
+    if b is None:
+        message_box_information_ok(
+            parent,
+            "Bill",
+            f"Bill #{bid} is not in this company file.",
+            ok_tip="Close; check Enter Bills or the bank link.",
+        )
+        return False
+    vs = business.list_vendors(conn)
+    if not vs:
+        return False
+    d = QDialog(parent)
+    d.setWindowTitle("Edit bill")
+    d.setToolTip(
+        "Update vendor, amounts, dates, memo, or attachment (not allowed when AP payments are applied)."
+    )
+    f = QFormLayout(d)
+    bill_vid = coerce_combo_int_id(b["vendor_id"])
+    if bill_vid is None:
+        return False
+    ensure_v = frozenset({bill_vid})
+    vend_filt = QLineEdit()
+    vend_filt.setPlaceholderText("Filter vendors (current bill vendor always listed)…")
+    vend_filt.setClearButtonEnabled(True)
+    vend_filt.setToolTip("Narrow the vendor list; the bill’s vendor stays available.")
+    cb = QComboBox()
+    cb.setToolTip("Vendor on this bill.")
+
+    def sync_edit_bill_vendors() -> None:
+        _sync_filtered_entity_combo(
+            vs,
+            vend_filt.text(),
+            cb,
+            business_list_filter.VENDOR_ENTITY_KEYS,
+            tag_1099=True,
+            always_include_ids=ensure_v,
+        )
+
+    vend_filt.textChanged.connect(sync_edit_bill_vendors)
+    f.addRow("Filter list", vend_filt)
+    f.addRow("Vendor", cb)
+    sync_edit_bill_vendors()
+    vidx = combo_index_for_int_user_data(cb, bill_vid)
+    cb.setCurrentIndex(vidx if vidx is not None else 0)
+    vinv = QLineEdit(b["vendor_invoice_number"] or "")
+    vinv.setToolTip("Vendor’s invoice or reference number (optional).")
+    amt = QDoubleSpinBox()
+    amt.setRange(0, 9_999_999)
+    amt.setDecimals(2)
+    amt.setValue(float(b["total"] or 0))
+    amt.setToolTip("Total bill amount (required).")
+    bdt = QDateEdit()
+    configure_qdate_edit_us(bdt)
+    qbd = QDate.fromString(b["bill_date"] or "", "yyyy-MM-dd")
+    bdt.setDate(qbd if qbd.isValid() else QDate.currentDate())
+    bdt.setToolTip("Bill date.")
+    due_e = QLineEdit(format_iso_to_us_display(b["due_date"] or ""))
+    due_e.setToolTip("Due date as text if you track it (optional).")
+    attach_line_edit_us_date_normalization(due_e)
+    memo_e = QLineEdit(b["memo"] or "")
+    memo_e.setToolTip("Memo on the bill (optional).")
+    att = QLineEdit(b["attachment_path"] or "")
+    att.setToolTip("Path to a linked file, or use Browse… (optional).")
+
+    def browse_att():
+        path, _ = QFileDialog.getOpenFileName(d, "Attachment", "", "All Files (*.*)")
+        if path:
+            att.setText(path)
+
+    att_row = QHBoxLayout()
+    att_row.addWidget(att)
+    ap_bill_att_browse = QPushButton("Browse…")
+    ap_bill_att_browse.setToolTip(
+        "Choose a file to link as this bill's attachment (optional)."
+    )
+    ap_bill_att_browse.clicked.connect(browse_att)
+    att_row.addWidget(ap_bill_att_browse)
+    f.addRow("Vendor invoice #", vinv)
+    f.addRow("Amount *", amt)
+    f.addRow("Bill date", bdt)
+    f.addRow("Due date (optional)", due_e)
+    f.addRow("Memo", memo_e)
+    f.addRow("Attachment path", att_row)
+    bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+    _tip_dialog_ok_cancel(bb, "Save changes to this bill.")
+    bb.accepted.connect(d.accept)
+    bb.rejected.connect(d.reject)
+    f.addRow(bb)
+    if d.exec() != QDialog.DialogCode.Accepted:
+        return True
+    new_vid = coerce_combo_int_id(cb.currentData())
+    if new_vid is None:
+        message_box_warning_ok(
+            parent,
+            "Bill",
+            "Select a vendor (try clearing the filter).",
+            ok_tip="Close; pick a vendor or clear the vendor filter.",
+        )
+        return True
+    try:
+        business.update_bill(
+            conn,
+            bid,
+            new_vid,
+            bdt.date().toString("yyyy-MM-dd"),
+            amt.value(),
+            vendor_invoice_number=vinv.text().strip(),
+            due_date=(line_edit_to_iso_or_raw(due_e) or ""),
+            memo=memo_e.text().strip(),
+            attachment_path=att.text().strip(),
+        )
+    except ValueError as exc:
+        message_box_warning_ok(
+            parent,
+            "Bill",
+            escape_ampersand_for_qt(str(exc)),
+            ok_tip="Close; fix the issue shown and save again.",
+        )
+        return True
+    if after_save is not None:
+        after_save()
+    return True
 
 
 def _prompt_as_of_date(parent: QWidget, title: str) -> str | None:
@@ -746,7 +892,8 @@ class ARTab(QWidget):
         self._conn = conn
         self.setToolTip(
             "Accounts receivable: customers, invoices, payments, aging CSV; F5 refreshes lists. "
-            "Print or save-as-PDF for an invoice: Invoice workflow tab → Print… (after Save if needed)."
+            "Print or save-as-PDF for an invoice: Invoice workflow tab → Print… (after Save if needed). "
+            "(F5 refreshes when this tab has focus.)"
         )
         lay = QVBoxLayout(self)
         row = QHBoxLayout()
@@ -1840,90 +1987,78 @@ class APTab(QWidget):
     def __init__(self, conn: sqlite3.Connection, parent=None):
         super().__init__(parent)
         self._conn = conn
+        self._vendor_summary_by_id: dict[int, dict] = {}
+        self._focused_vendor_id: int | None = None
         self.setToolTip(
-            "Accounts payable: vendors, bills, attachments, vendor payments, aging CSV; F5 refreshes lists."
+            "Accounts payable: vendor master list, balances, and last activity; "
+            "F5 refreshes when Business has focus. "
+            "Toolbar export uses UTF-8 BOM for Excel. "
+            "(F5 refreshes when this tab has focus.)"
         )
         lay = QVBoxLayout(self)
         row = QHBoxLayout()
-        ap_new_v = QPushButton("New vendor")
+        ap_new_v = QPushButton("New Vendor")
         ap_new_v.setToolTip("Create a new vendor record.")
         ap_new_v.clicked.connect(self._new_v)
         row.addWidget(ap_new_v)
-        ap_edit_v = QPushButton("Edit vendor…")
+        ap_edit_v = QPushButton("Edit Vendor…")
         ap_edit_v.setToolTip("Choose a vendor and edit name, contact, 1099 flag, and notes.")
         ap_edit_v.clicked.connect(self._edit_v)
         row.addWidget(ap_edit_v)
-        ap_new_b = QPushButton("New bill")
-        ap_new_b.setToolTip("Create a new bill (add a vendor first if the list is empty).")
-        ap_new_b.clicked.connect(self._new_b)
-        row.addWidget(ap_new_b)
-        ap_edit_b = QPushButton("Edit selected bill…")
-        ap_edit_b.setToolTip(
-            "Edit the selected bill. Double-click a row or press Enter for the same."
-        )
-        ap_edit_b.clicked.connect(self._edit_b)
-        row.addWidget(ap_edit_b)
-        ap_record_pay = QPushButton("Record vendor payment…")
-        ap_record_pay.setToolTip("Record a payment and allocate amounts to open bills.")
-        ap_record_pay.clicked.connect(self._record_ap_payment)
-        row.addWidget(ap_record_pay)
-        ap_export_aging = QPushButton("Export AP aging CSV")
-        ap_export_aging.setToolTip(
-            "Export accounts-payable aging summary to CSV." + _CSV_EXCEL_ENCODING_TIP
-        )
-        ap_export_aging.clicked.connect(self._export_aging)
-        row.addWidget(ap_export_aging)
-        ap_export_vendors = QPushButton("Export vendors CSV…")
+        ap_export_vendors = QPushButton("Export Vendors CSV…")
         ap_export_vendors.setToolTip("Export all vendors to CSV." + _CSV_EXCEL_ENCODING_TIP)
         ap_export_vendors.clicked.connect(self._export_vendors)
         row.addWidget(ap_export_vendors)
-        ap_export_bills = QPushButton("Export bills CSV…")
-        ap_export_bills.setToolTip("Export bill headers to CSV." + _CSV_EXCEL_ENCODING_TIP)
-        ap_export_bills.clicked.connect(self._export_bills)
-        row.addWidget(ap_export_bills)
-        ap_export_payments = QPushButton("Export AP payments CSV…")
-        ap_export_payments.setToolTip(
-            "Export vendor payment records to CSV." + _CSV_EXCEL_ENCODING_TIP
-        )
-        ap_export_payments.clicked.connect(self._export_ap_payments)
-        row.addWidget(ap_export_payments)
-        ap_export_alloc = QPushButton("Export AP payment allocations CSV…")
-        ap_export_alloc.setToolTip(
-            "Export how payments were applied to bills." + _CSV_EXCEL_ENCODING_TIP
-        )
-        ap_export_alloc.clicked.connect(self._export_ap_allocations)
-        row.addWidget(ap_export_alloc)
         row.addStretch()
         lay.addLayout(row)
 
-        self._focused_vendor_id: int | None = None
-
         split = QSplitter(Qt.Orientation.Vertical)
-        split.setToolTip(
-            "Drag to resize vendor summary vs bills. Click a vendor row to filter the bill list."
-        )
+        split.setToolTip("Drag to resize selected-vendor detail vs vendor list.")
 
-        vendor_box = QGroupBox("Vendor summary")
-        vendor_box.setToolTip(
-            "One row per vendor: open AP balance, current vs overdue (by due date), last bill and payment. "
-            "Click a row to show that vendor’s bills in the grid below."
+        detail_box = QGroupBox("Selected Vendor")
+        detail_box.setToolTip(
+            "Contact fields from the vendor master record; balances from open bills and payments."
         )
-        vb_lay = QVBoxLayout(vendor_box)
-        vhdr = QHBoxLayout()
-        self._vendor_scope_lbl = QLabel("Bills: all vendors — click a vendor row to focus.")
-        self._vendor_scope_lbl.setWordWrap(True)
-        self._vendor_scope_lbl.setToolTip(
-            "When a vendor row is selected, the bill list is limited to that vendor (text filter still applies)."
+        df = QFormLayout(detail_box)
+        self._d_name = QLabel("—")
+        self._d_address = QLabel("—")
+        self._d_address.setWordWrap(True)
+        self._d_phone = QLabel("—")
+        self._d_email = QLabel("—")
+        self._d_tax_id = QLabel("—")
+        self._d_tax_id.setToolTip(
+            "No dedicated Tax ID column in the database yet; store EIN/TIN in Notes if needed."
         )
-        vhdr.addWidget(self._vendor_scope_lbl, 1)
-        btn_all_v = QPushButton("Show all bills")
-        btn_all_v.setToolTip("Clear vendor focus and list bills for every vendor.")
-        btn_all_v.clicked.connect(self._clear_vendor_focus)
-        vhdr.addWidget(btn_all_v)
-        vb_lay.addLayout(vhdr)
+        self._d_terms = QLabel("—")
+        self._d_terms.setToolTip(
+            "Payment terms are not stored separately yet; describe them in Notes if needed."
+        )
+        self._d_open_bal = QLabel("—")
+        self._d_cur_due = QLabel("—")
+        self._d_overdue = QLabel("—")
+        self._d_last_bill = QLabel("—")
+        self._d_last_pay = QLabel("—")
+        self._d_notes = QLabel("—")
+        self._d_notes.setWordWrap(True)
+        df.addRow("Vendor Name", self._d_name)
+        df.addRow("Address", self._d_address)
+        df.addRow("Phone", self._d_phone)
+        df.addRow("Email", self._d_email)
+        df.addRow("Tax ID", self._d_tax_id)
+        df.addRow("Terms", self._d_terms)
+        df.addRow("Open Balance", self._d_open_bal)
+        df.addRow("Current Due", self._d_cur_due)
+        df.addRow("Overdue", self._d_overdue)
+        df.addRow("Last Bill Date", self._d_last_bill)
+        df.addRow("Last Payment Date", self._d_last_pay)
+        df.addRow("Notes", self._d_notes)
+        split.addWidget(detail_box)
 
+        list_box = QGroupBox("Vendors")
+        list_box.setToolTip("Click a row to show that vendor in the detail card above.")
+        lb_lay = QVBoxLayout(list_box)
         self._vendor_tbl = QTableWidget()
-        self._vendor_tbl.setColumnCount(6)
+        self._vendor_tbl.setColumnCount(7)
         self._vendor_tbl.setHorizontalHeaderLabels(
             [
                 "Vendor",
@@ -1932,6 +2067,7 @@ class APTab(QWidget):
                 "Overdue",
                 "Last Bill Date",
                 "Last Payment Date",
+                "Status",
             ]
         )
         self._vendor_tbl.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
@@ -1939,62 +2075,15 @@ class APTab(QWidget):
         self._vendor_tbl.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._vendor_tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._vendor_tbl.setSortingEnabled(True)
-        self._vendor_tbl.cellClicked.connect(self._on_vendor_summary_clicked)
+        self._vendor_tbl.cellClicked.connect(self._on_vendor_row_clicked)
+        self._vendor_tbl.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._vendor_tbl.customContextMenuRequested.connect(self._on_vendor_context_menu)
         self._vendor_tbl.setToolTip(
-            "Vendor snapshot; click a row to filter bills below. F5 refreshes."
-        )
-        vb_lay.addWidget(self._vendor_tbl)
-        split.addWidget(vendor_box)
-
-        bills_area = QWidget()
-        bills_lay = QVBoxLayout(bills_area)
-        bills_lay.setContentsMargins(0, 0, 0, 0)
-        fil = QHBoxLayout()
-        lbl_ap_bill_filter = QLabel("Filter:")
-        lbl_ap_bill_filter.setToolTip(
-            "Prompt for the bill list filter; type in the field to the right (words must all match a row)."
-        )
-        fil.addWidget(lbl_ap_bill_filter)
-        self._bill_filter = QLineEdit()
-        _saved_ap_filt = QSettings().value(_AP_BILL_GRID_FILTER_KEY, "")
-        if isinstance(_saved_ap_filt, str) and _saved_ap_filt:
-            self._bill_filter.setText(_saved_ap_filt)
-        self._bill_filter.setPlaceholderText(
-            "Vendor, vendor inv. #, memo, attachment path/filename, dates, status, id, amounts…"
-        )
-        self._bill_filter.setToolTip(
-            "Narrow the bill grid: every word must appear somewhere in the row’s visible text "
-            "(see placeholder). The filter is saved and restored per company."
-        )
-        self._bill_filter.setClearButtonEnabled(True)
-        self._bill_filter.textChanged.connect(self._persist_ap_bill_filter_and_refresh)
-        fil.addWidget(self._bill_filter)
-        bills_lay.addLayout(fil)
-        _wire_find_focuses_line_edit(self, self._bill_filter)
-        self._tbl = QTableWidget()
-        self._tbl.setColumnCount(7)
-        self._tbl.setHorizontalHeaderLabels(
-            ["#", "Vendor", "Bill date", "Due", "Total", "Balance", "Status"]
-        )
-        self._tbl.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self._tbl.setSortingEnabled(True)
-        self._tbl.cellDoubleClicked.connect(self._on_bill_row_double_clicked)
-        _wire_enter_opens_edit(self._tbl, self._edit_b)
-        self._tbl.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self._tbl.customContextMenuRequested.connect(self._on_bill_context_menu)
-        self._tbl.setToolTip(
-            "Bills (AP). Right-click for Keyboard shortcuts… (empty area OK). "
-            "F5 refreshes when this tab has focus. "
+            "Vendor master snapshot; click a row to update the detail card. F5 refreshes. "
             "CSV exports (toolbar) use UTF-8 BOM for Excel."
         )
-        bills_lay.addWidget(self._tbl)
-        self._ap_footer = QLabel()
-        self._ap_footer.setStyleSheet("font-weight: bold;")
-        self._ap_footer.setToolTip(
-            "Footer summary for the bill list (count and dollar totals; reflects vendor focus and filter)."
-        )
-        bills_lay.addWidget(self._ap_footer)
-        split.addWidget(bills_area)
+        lb_lay.addWidget(self._vendor_tbl)
+        split.addWidget(list_box)
         split.setStretchFactor(0, 1)
         split.setStretchFactor(1, 2)
         lay.addWidget(split, 1)
@@ -2002,56 +2091,21 @@ class APTab(QWidget):
 
     def persist_header_state(self) -> None:
         QSettings().setValue(
-            _AP_BILL_HEADER_STATE_KEY,
-            self._tbl.horizontalHeader().saveState(),
+            _AP_VENDOR_HEADER_STATE_KEY,
+            self._vendor_tbl.horizontalHeader().saveState(),
         )
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
-        raw = QSettings().value(_AP_BILL_HEADER_STATE_KEY)
+        raw = QSettings().value(_AP_VENDOR_HEADER_STATE_KEY)
         if raw:
-            self._tbl.horizontalHeader().restoreState(raw)
+            self._vendor_tbl.horizontalHeader().restoreState(raw)
 
     def hideEvent(self, event: QHideEvent) -> None:
         self.persist_header_state()
         super().hideEvent(event)
 
-    def open_bill_by_id(self, bill_id: int) -> bool:
-        """Clear the bill filter, select the row, and open Edit bill (returns False if not listed)."""
-        bid = int(bill_id)
-        self._focused_vendor_id = None
-        self._vendor_scope_lbl.setText("Bills: all vendors — click a vendor row to focus.")
-        self._vendor_tbl.clearSelection()
-        self._bill_filter.blockSignals(True)
-        self._bill_filter.clear()
-        self._bill_filter.blockSignals(False)
-        QSettings().setValue(_AP_BILL_GRID_FILTER_KEY, "")
-        self._refresh()
-        for row in range(self._tbl.rowCount()):
-            if _table_row_entity_id(self._tbl, row) == bid:
-                self._tbl.selectRow(row)
-                self._tbl.setFocus()
-                self._edit_b()
-                return True
-        message_box_information_ok(
-            self,
-            "Bill",
-            f"Bill #{bid} is not in the list (removed or different company).",
-            ok_tip="Close; check the **Vendors** tab bill list or the bank link.",
-        )
-        return False
-
-    def _persist_ap_bill_filter_and_refresh(self) -> None:
-        QSettings().setValue(_AP_BILL_GRID_FILTER_KEY, self._bill_filter.text())
-        self._refresh()
-
-    def _clear_vendor_focus(self) -> None:
-        self._focused_vendor_id = None
-        self._vendor_scope_lbl.setText("Bills: all vendors — click a vendor row to focus.")
-        self._vendor_tbl.clearSelection()
-        self._refresh()
-
-    def _on_vendor_summary_clicked(self, row: int, _col: int) -> None:
+    def _on_vendor_row_clicked(self, row: int, _col: int) -> None:
         if row < 0:
             return
         it = self._vendor_tbl.item(row, 0)
@@ -2061,12 +2115,90 @@ class APTab(QWidget):
         if vid is None:
             return
         self._focused_vendor_id = vid
-        nm = (it.text() or "").strip()
-        self._vendor_scope_lbl.setText("Bills filtered to vendor: " + escape_ampersand_for_qt(nm))
-        self._refresh()
+        self._apply_detail_from_focus()
 
-    def _refresh_vendor_summary(self) -> None:
+    def _on_vendor_context_menu(self, pos) -> None:
+        idx = self._vendor_tbl.indexAt(pos)
+        m = QMenu(self)
+        act_keys = m.addAction(
+            "Keyboard shortcuts…",
+            lambda: show_business_keyboard_shortcuts_dialog(self),
+        )
+        act_keys.setToolTip(
+            "Same summary as Help → Business shortcuts… (F5, Vendors grid). "
+            + VIEW_BANK_REGISTER_KEYS_TOOLTIP
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+        )
+        if not idx.isValid():
+            m.exec(self._vendor_tbl.viewport().mapToGlobal(pos))
+            return
+        row = idx.row()
+        it = self._vendor_tbl.item(row, 0)
+        if it is None or coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole)) is None:
+            m.exec(self._vendor_tbl.viewport().mapToGlobal(pos))
+            return
+        m.addSeparator()
+        act_copy = m.addAction(
+            "Copy row", lambda r=row: copy_table_row_as_tsv(self._vendor_tbl, r)
+        )
+        act_copy.setToolTip(
+            "Copy this vendor row as tab-separated text for pasting into a spreadsheet or editor. "
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+        )
+        m.exec(self._vendor_tbl.viewport().mapToGlobal(pos))
+
+    def _apply_detail_from_focus(self) -> None:
+        if self._focused_vendor_id is None:
+            self._clear_detail_card()
+            return
+        v = business.get_vendor(self._conn, self._focused_vendor_id)
+        summ = self._vendor_summary_by_id.get(self._focused_vendor_id)
+        if v is None:
+            self._clear_detail_card()
+            return
+        d = dict(v)
+        self._d_name.setText(escape_ampersand_for_qt(d.get("name") or "—"))
+        addr = (d.get("address") or "").strip()
+        self._d_address.setText(escape_ampersand_for_qt(addr) if addr else "—")
+        self._d_phone.setText(escape_ampersand_for_qt(d.get("phone") or "") or "—")
+        self._d_email.setText(escape_ampersand_for_qt(d.get("email") or "") or "—")
+        self._d_tax_id.setText("—")
+        self._d_terms.setText("—")
+        notes = (d.get("notes") or "").strip()
+        self._d_notes.setText(escape_ampersand_for_qt(notes) if notes else "—")
+        if summ is None:
+            self._d_open_bal.setText("—")
+            self._d_cur_due.setText("—")
+            self._d_overdue.setText("—")
+            self._d_last_bill.setText("—")
+            self._d_last_pay.setText("—")
+            return
+        self._d_open_bal.setText(f"{float(summ['open_balance']):,.2f}")
+        self._d_cur_due.setText(f"{float(summ['current_due']):,.2f}")
+        self._d_overdue.setText(f"{float(summ['overdue']):,.2f}")
+        self._d_last_bill.setText(summ.get("last_bill_date") or "—")
+        self._d_last_pay.setText(summ.get("last_payment_date") or "—")
+
+    def _clear_detail_card(self) -> None:
+        for w in (
+            self._d_name,
+            self._d_address,
+            self._d_phone,
+            self._d_email,
+            self._d_tax_id,
+            self._d_terms,
+            self._d_open_bal,
+            self._d_cur_due,
+            self._d_overdue,
+            self._d_last_bill,
+            self._d_last_pay,
+            self._d_notes,
+        ):
+            w.setText("—")
+
+    def _refresh(self) -> None:
         rows = business.list_vendor_ap_summaries(self._conn)
+        self._vendor_summary_by_id = {int(r["vendor_id"]): r for r in rows}
         self._vendor_tbl.setSortingEnabled(False)
         self._vendor_tbl.setRowCount(len(rows))
         for i, r in enumerate(rows):
@@ -2087,7 +2219,15 @@ class APTab(QWidget):
             self._vendor_tbl.setItem(
                 i, 5, plain_display_table_item(r["last_payment_date"] or "")
             )
+            self._vendor_tbl.setItem(
+                i, 6, plain_display_table_item(r.get("ap_status") or "")
+            )
         self._vendor_tbl.setSortingEnabled(True)
+        ids = {int(r["vendor_id"]) for r in rows}
+        if self._focused_vendor_id is not None and self._focused_vendor_id not in ids:
+            self._focused_vendor_id = None
+        if self._focused_vendor_id is None and rows:
+            self._focused_vendor_id = int(rows[0]["vendor_id"])
         if self._focused_vendor_id is not None:
             for row in range(self._vendor_tbl.rowCount()):
                 it = self._vendor_tbl.item(row, 0)
@@ -2096,102 +2236,10 @@ class APTab(QWidget):
                 if coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole)) == self._focused_vendor_id:
                     self._vendor_tbl.selectRow(row)
                     break
-
-    def _refresh(self):
-        self._refresh_vendor_summary()
-        all_rows = business.list_bills(self._conn)
-        if self._focused_vendor_id is not None:
-            all_rows = [
-                r
-                for r in all_rows
-                if int(r["vendor_id"]) == self._focused_vendor_id
-            ]
-        rows = business_list_filter.filter_business_rows(
-            all_rows, self._bill_filter.text(), business_list_filter.AP_BILL_FILTER_KEYS
-        )
-        packed = [
-            (bid, r)
-            for r in rows
-            if (bid := coerce_combo_int_id(r["id"])) is not None
-        ]
-        self._tbl.setSortingEnabled(False)
-        self._tbl.setRowCount(len(packed))
-        for i, (bid, r) in enumerate(packed):
-            id_it = _IntSortTableItem(str(bid), bid)
-            id_it.setData(Qt.ItemDataRole.UserRole, bid)
-            self._tbl.setItem(i, 0, id_it)
-            self._tbl.setItem(i, 1, plain_display_table_item(r["vendor_name"] or ""))
-            self._tbl.setItem(i, 2, plain_display_table_item(r["bill_date"] or ""))
-            self._tbl.setItem(i, 3, plain_display_table_item(r["due_date"] or ""))
-            tot = float(r["total"] or 0)
-            bal = float(r["balance_due"] or 0)
-            self._tbl.setItem(i, 4, _FloatSortTableItem(f"{tot:.2f}", tot))
-            self._tbl.setItem(i, 5, _FloatSortTableItem(f"{bal:.2f}", bal))
-            self._tbl.setItem(i, 6, plain_display_table_item(r["status"] or ""))
-        self._tbl.setSortingEnabled(True)
-        n = len(rows)
-        sum_total = sum(float(r["total"] or 0) for r in rows)
-        sum_bal = sum(float(r["balance_due"] or 0) for r in rows)
-        filt = len(all_rows) - n
-        extra = f" ({filt} hidden by filter)" if filt else ""
-        self._ap_footer.setText(
-            f"{n} bill(s){extra} · Bill total: {sum_total:,.2f} · Balance due: {sum_bal:,.2f}"
-        )
-
-    def _on_bill_row_double_clicked(self, row: int, _col: int) -> None:
-        if row < 0:
-            return
-        self._tbl.selectRow(row)
-        self._edit_b()
-
-    def _on_bill_context_menu(self, pos) -> None:
-        idx = self._tbl.indexAt(pos)
-        m = QMenu(self)
-        act_keys = m.addAction(
-            "Keyboard shortcuts…",
-            lambda: show_business_keyboard_shortcuts_dialog(self),
-        )
-        act_keys.setToolTip(
-            "Same summary as Help → Business shortcuts… (F5, Bills AP, attachments, payments). "
-            + VIEW_BANK_REGISTER_KEYS_TOOLTIP
-            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
-        )
-        if not idx.isValid():
-            m.exec(self._tbl.viewport().mapToGlobal(pos))
-            return
-        row = idx.row()
-        if _table_row_entity_id(self._tbl, row) is None:
-            m.exec(self._tbl.viewport().mapToGlobal(pos))
-            return
-        m.addSeparator()
-        act_edit = m.addAction("Edit…", lambda r=row: (self._tbl.selectRow(r), self._edit_b()))
-        act_edit.setToolTip("Edit this bill (not allowed when AP payments are applied).")
-        act_att = m.addAction(
-            "Open attachment…",
-            lambda r=row: self._open_bill_attachment(r),
-        )
-        act_att.setToolTip("Open the linked attachment file if a path is set on this bill.")
-        act_copy = m.addAction("Copy row", lambda r=row: copy_table_row_as_tsv(self._tbl, r))
-        act_copy.setToolTip(
-            "Copy this bill row as tab-separated text for pasting into a spreadsheet or editor. "
-            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
-        )
-        m.exec(self._tbl.viewport().mapToGlobal(pos))
-
-    def _open_bill_attachment(self, row: int) -> None:
-        self._tbl.selectRow(row)
-        bid = _table_row_entity_id(self._tbl, row)
-        if bid is None:
-            return
-        b = business.get_bill(self._conn, bid)
-        if b is None:
-            return
-        apath = (dict(b).get("attachment_path") or "").strip()
-        open_local_attachment(
-            self,
-            apath,
-            empty_message="No attachment path is set for this bill.",
-        )
+            self._apply_detail_from_focus()
+        else:
+            self._vendor_tbl.clearSelection()
+            self._clear_detail_card()
 
     def _new_v(self):
         d = QDialog(self)
@@ -2345,505 +2393,6 @@ class APTab(QWidget):
             return
         self._refresh()
 
-    def _new_b(self):
-        vs = business.list_vendors(self._conn)
-        if not vs:
-            message_box_information_ok(
-                self,
-                "Vendors",
-                "Add a vendor first.",
-                ok_tip="Close; create a vendor before adding bills.",
-            )
-            return
-        d = QDialog(self)
-        d.setWindowTitle("New bill")
-        d.setToolTip(
-            "Enter vendor, amount, bill date, optional due date, memo, and attachment path for a new bill."
-        )
-        f = QFormLayout(d)
-        vend_filt = QLineEdit()
-        vend_filt.setPlaceholderText("Filter vendors by name, email, phone, 1099…")
-        vend_filt.setClearButtonEnabled(True)
-        vend_filt.setToolTip("Narrow the vendor list; clear to show all again.")
-        cb = QComboBox()
-        cb.setToolTip("Vendor for this bill (required).")
-
-        def sync_new_bill_vendors() -> None:
-            _sync_filtered_entity_combo(
-                vs,
-                vend_filt.text(),
-                cb,
-                business_list_filter.VENDOR_ENTITY_KEYS,
-                tag_1099=True,
-            )
-
-        vend_filt.textChanged.connect(sync_new_bill_vendors)
-        f.addRow("Filter list", vend_filt)
-        f.addRow("Vendor", cb)
-        sync_new_bill_vendors()
-        _restore_entity_combo(cb, _NEW_BILL_VENDOR_KEY)
-        vinv = QLineEdit()
-        vinv.setToolTip("Vendor’s invoice or reference number (optional).")
-        amt = QDoubleSpinBox()
-        amt.setRange(0, 9_999_999)
-        amt.setDecimals(2)
-        amt.setToolTip("Total bill amount (required).")
-        bdt = QDateEdit()
-        configure_qdate_edit_us(bdt)
-        bdt.setDate(QDate.currentDate())
-        bdt.setToolTip("Bill date.")
-        due_e = QLineEdit()
-        due_e.setToolTip("Due date as text if you track it (optional).")
-        attach_line_edit_us_date_normalization(due_e)
-        memo_e = QLineEdit()
-        memo_e.setToolTip("Memo on the bill (optional).")
-        att = QLineEdit()
-        att.setToolTip("Path to a linked file, or use Browse… (optional).")
-
-        def browse_att():
-            path, _ = QFileDialog.getOpenFileName(d, "Attachment", "", "All Files (*.*)")
-            if path:
-                att.setText(path)
-
-        att_row = QHBoxLayout()
-        att_row.addWidget(att)
-        ap_bill_att_browse = QPushButton("Browse…")
-        ap_bill_att_browse.setToolTip(
-            "Choose a file to link as this bill's attachment (optional)."
-        )
-        ap_bill_att_browse.clicked.connect(browse_att)
-        att_row.addWidget(ap_bill_att_browse)
-        f.addRow("Vendor invoice #", vinv)
-        f.addRow("Amount *", amt)
-        f.addRow("Bill date", bdt)
-        f.addRow("Due date (optional)", due_e)
-        f.addRow("Memo", memo_e)
-        f.addRow("Attachment path", att_row)
-        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        _tip_dialog_ok_cancel(bb, "Create the bill with this vendor, amount, and dates.")
-        bb.accepted.connect(d.accept)
-        bb.rejected.connect(d.reject)
-        f.addRow(bb)
-        if d.exec() != QDialog.DialogCode.Accepted:
-            return
-        vid = coerce_combo_int_id(cb.currentData())
-        if vid is None:
-            message_box_warning_ok(
-                self,
-                "Bill",
-                "Select a vendor (try clearing the filter).",
-                ok_tip="Close; pick a vendor or clear the vendor filter.",
-            )
-            return
-        business.create_bill(
-            self._conn,
-            vid,
-            bdt.date().toString("yyyy-MM-dd"),
-            amt.value(),
-            vendor_invoice_number=vinv.text().strip(),
-            due_date=(line_edit_to_iso_or_raw(due_e) or ""),
-            memo=memo_e.text().strip(),
-            attachment_path=att.text().strip(),
-        )
-        _save_entity_combo(cb, _NEW_BILL_VENDOR_KEY)
-        self._refresh()
-
-    def _edit_b(self):
-        r = self._tbl.currentRow()
-        bill_id = _table_row_entity_id(self._tbl, r)
-        if bill_id is None:
-            message_box_information_ok(
-                self,
-                "Bill",
-                "Select a bill row.",
-                ok_tip="Close; click a bill, then Edit bill again.",
-            )
-            return
-        if business.bill_has_payment_allocations(self._conn, bill_id):
-            message_box_information_ok(
-                self,
-                "Bill",
-                "This bill has payments applied and cannot be edited.",
-                ok_tip="Close; adjust or void AP payments before editing this bill.",
-            )
-            return
-        b = business.get_bill(self._conn, bill_id)
-        if b is None:
-            self._refresh()
-            return
-        vs = business.list_vendors(self._conn)
-        if not vs:
-            return
-        d = QDialog(self)
-        d.setWindowTitle("Edit bill")
-        d.setToolTip(
-            "Update vendor, amounts, dates, memo, or attachment (not allowed when AP payments are applied)."
-        )
-        f = QFormLayout(d)
-        bill_vid = coerce_combo_int_id(b["vendor_id"])
-        if bill_vid is None:
-            self._refresh()
-            return
-        ensure_v = frozenset({bill_vid})
-        vend_filt = QLineEdit()
-        vend_filt.setPlaceholderText("Filter vendors (current bill vendor always listed)…")
-        vend_filt.setClearButtonEnabled(True)
-        vend_filt.setToolTip("Narrow the vendor list; the bill’s vendor stays available.")
-        cb = QComboBox()
-        cb.setToolTip("Vendor on this bill.")
-
-        def sync_edit_bill_vendors() -> None:
-            _sync_filtered_entity_combo(
-                vs,
-                vend_filt.text(),
-                cb,
-                business_list_filter.VENDOR_ENTITY_KEYS,
-                tag_1099=True,
-                always_include_ids=ensure_v,
-            )
-
-        vend_filt.textChanged.connect(sync_edit_bill_vendors)
-        f.addRow("Filter list", vend_filt)
-        f.addRow("Vendor", cb)
-        sync_edit_bill_vendors()
-        vidx = combo_index_for_int_user_data(cb, bill_vid)
-        cb.setCurrentIndex(vidx if vidx is not None else 0)
-        vinv = QLineEdit(b["vendor_invoice_number"] or "")
-        vinv.setToolTip("Vendor’s invoice or reference number (optional).")
-        amt = QDoubleSpinBox()
-        amt.setRange(0, 9_999_999)
-        amt.setDecimals(2)
-        amt.setValue(float(b["total"] or 0))
-        amt.setToolTip("Total bill amount (required).")
-        bdt = QDateEdit()
-        configure_qdate_edit_us(bdt)
-        qbd = QDate.fromString(b["bill_date"] or "", "yyyy-MM-dd")
-        bdt.setDate(qbd if qbd.isValid() else QDate.currentDate())
-        bdt.setToolTip("Bill date.")
-        due_e = QLineEdit(format_iso_to_us_display(b["due_date"] or ""))
-        due_e.setToolTip("Due date as text if you track it (optional).")
-        attach_line_edit_us_date_normalization(due_e)
-        memo_e = QLineEdit(b["memo"] or "")
-        memo_e.setToolTip("Memo on the bill (optional).")
-        att = QLineEdit(b["attachment_path"] or "")
-        att.setToolTip("Path to a linked file, or use Browse… (optional).")
-
-        def browse_att():
-            path, _ = QFileDialog.getOpenFileName(d, "Attachment", "", "All Files (*.*)")
-            if path:
-                att.setText(path)
-
-        att_row = QHBoxLayout()
-        att_row.addWidget(att)
-        ap_bill_att_browse = QPushButton("Browse…")
-        ap_bill_att_browse.setToolTip(
-            "Choose a file to link as this bill's attachment (optional)."
-        )
-        ap_bill_att_browse.clicked.connect(browse_att)
-        att_row.addWidget(ap_bill_att_browse)
-        f.addRow("Vendor invoice #", vinv)
-        f.addRow("Amount *", amt)
-        f.addRow("Bill date", bdt)
-        f.addRow("Due date (optional)", due_e)
-        f.addRow("Memo", memo_e)
-        f.addRow("Attachment path", att_row)
-        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        _tip_dialog_ok_cancel(bb, "Save changes to this bill.")
-        bb.accepted.connect(d.accept)
-        bb.rejected.connect(d.reject)
-        f.addRow(bb)
-        if d.exec() != QDialog.DialogCode.Accepted:
-            return
-        new_vid = coerce_combo_int_id(cb.currentData())
-        if new_vid is None:
-            message_box_warning_ok(
-                self,
-                "Bill",
-                "Select a vendor (try clearing the filter).",
-                ok_tip="Close; pick a vendor or clear the vendor filter.",
-            )
-            return
-        try:
-            business.update_bill(
-                self._conn,
-                bill_id,
-                new_vid,
-                bdt.date().toString("yyyy-MM-dd"),
-                amt.value(),
-                vendor_invoice_number=vinv.text().strip(),
-                due_date=(line_edit_to_iso_or_raw(due_e) or ""),
-                memo=memo_e.text().strip(),
-                attachment_path=att.text().strip(),
-            )
-        except ValueError as exc:
-            message_box_warning_ok(
-                self,
-                "Bill",
-                escape_ampersand_for_qt(str(exc)),
-                ok_tip="Close; fix the issue shown and save again.",
-            )
-            return
-        self._refresh()
-
-    def _record_ap_payment(self):
-        vs = business.list_vendors(self._conn)
-        if not vs:
-            message_box_information_ok(
-                self,
-                "AP payment",
-                "Add a vendor first.",
-                ok_tip="Close; create a vendor before recording vendor payments.",
-            )
-            return
-        d = QDialog(self)
-        d.setWindowTitle("Record vendor payment")
-        d.setToolTip(
-            "Enter payment details and allocate amounts to open bills; Apply column must sum to the payment."
-        )
-        d.setMinimumWidth(540)
-        outer = QVBoxLayout(d)
-        form = QFormLayout()
-        vend_filt = QLineEdit()
-        vend_filt.setPlaceholderText("Filter vendors by name, email, phone, 1099…")
-        vend_filt.setClearButtonEnabled(True)
-        vend_filt.setToolTip("Narrow the vendor list; clear to show all again.")
-        vend_cb = QComboBox()
-        vend_cb.setToolTip("Vendor you paid (open bills load below).")
-        form.addRow("Filter list", vend_filt)
-        form.addRow("Vendor", vend_cb)
-        pdate = QDateEdit()
-        configure_qdate_edit_us(pdate)
-        pdate.setDate(QDate.currentDate())
-        pdate.setToolTip("Date the payment was made.")
-        pay_amt = QDoubleSpinBox()
-        pay_amt.setRange(0.01, 99_999_999.99)
-        pay_amt.setDecimals(2)
-        pay_amt.setToolTip("Total payment amount; sum of Apply column must match.")
-        method_e = QLineEdit()
-        method_e.setToolTip("e.g. Check, ACH, card (optional).")
-        ref_e = QLineEdit()
-        ref_e.setToolTip("Check number, confirmation id, or bank reference (optional).")
-        memo_e = QLineEdit()
-        memo_e.setToolTip("Note stored on the payment (optional).")
-        bank_cb = QComboBox()
-        bank_cb.setToolTip("Bank account this payment cleared from, if any.")
-        bank_cb.addItem("(None)")
-        try:
-            banks = self._conn.execute(
-                "SELECT id, name FROM bank_accounts WHERE is_active = 1 ORDER BY name"
-            ).fetchall()
-        except sqlite3.OperationalError:
-            banks = []
-        for b in banks:
-            bid = coerce_combo_int_id(b["id"])
-            if bid is None:
-                continue
-            bank_cb.addItem(escape_ampersand_for_qt(b["name"] or ""), bid)
-        _restore_payment_bank_combo(bank_cb, _AP_PAYMENT_BANK_KEY)
-        form.addRow("Payment date", pdate)
-        form.addRow("Amount *", pay_amt)
-        form.addRow("Paid from bank", bank_cb)
-        form.addRow("Method", method_e)
-        form.addRow("Reference #", ref_e)
-        form.addRow("Memo", memo_e)
-        outer.addLayout(form)
-        lbl_ap_apply_hdr = QLabel("Apply to open bills:")
-        lbl_ap_apply_hdr.setToolTip(
-            "Allocate this payment across unpaid bills for the vendor (table below)."
-        )
-        outer.addWidget(lbl_ap_apply_hdr)
-        hint = QLabel('Sum of "Apply" must equal the payment amount.')
-        hint.setStyleSheet("color: palette(mid);")
-        hint.setToolTip(
-            "The total in the Apply column must match the payment amount exactly (within penny rounding)."
-        )
-        outer.addWidget(hint)
-        alloc_tbl = QTableWidget()
-        alloc_tbl.setColumnCount(4)
-        alloc_tbl.setHorizontalHeaderLabels(["Vendor inv. #", "Date", "Balance", "Apply"])
-        alloc_tbl.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        alloc_tbl.setToolTip(
-            "Open bills for the selected vendor. Enter Apply amounts; they must sum to the payment."
-        )
-
-        def rebuild_ap_alloc_table(_idx: int | None = None) -> None:
-            vid = coerce_combo_int_id(vend_cb.currentData())
-            alloc_tbl.setSortingEnabled(False)
-            alloc_tbl.setRowCount(0)
-            if vid is None:
-                alloc_tbl.setSortingEnabled(True)
-                return
-            opens = business.list_open_bills_for_vendor(self._conn, vid)
-            open_packed = [
-                (bid, r)
-                for r in opens
-                if (bid := coerce_combo_int_id(r["id"])) is not None
-            ]
-            alloc_tbl.setRowCount(len(open_packed))
-            align_rc = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-            for i, (bid, r) in enumerate(open_packed):
-                label = (r["vendor_invoice_number"] or "").strip() or f"Bill #{bid}"
-                it0 = plain_display_table_item(label)
-                it0.setData(Qt.ItemDataRole.UserRole, bid)
-                alloc_tbl.setItem(i, 0, it0)
-                alloc_tbl.setItem(
-                    i, 1, plain_display_table_item(r["bill_date"] or "")
-                )
-                bal = float(r["balance_due"])
-                bal_it = _FloatSortTableItem(f"{bal:,.2f}", bal)
-                bal_it.setTextAlignment(align_rc)
-                alloc_tbl.setItem(i, 2, bal_it)
-                sp = QDoubleSpinBox()
-                sp.setRange(0, float(r["balance_due"]))
-                sp.setDecimals(2)
-                alloc_tbl.setCellWidget(i, 3, sp)
-            alloc_tbl.setSortingEnabled(True)
-
-        def sync_ap_payment_vendors() -> None:
-            _sync_filtered_entity_combo(
-                vs,
-                vend_filt.text(),
-                vend_cb,
-                business_list_filter.VENDOR_ENTITY_KEYS,
-                tag_1099=True,
-            )
-            rebuild_ap_alloc_table()
-
-        def apply_oldest_first_ap() -> None:
-            remaining = round(pay_amt.value(), 2)
-            for row in range(alloc_tbl.rowCount()):
-                w = alloc_tbl.cellWidget(row, 3)
-                if not isinstance(w, QDoubleSpinBox):
-                    continue
-                cap = round(float(w.maximum()), 2)
-                use = min(remaining, cap)
-                w.setValue(use)
-                remaining = round(remaining - use, 2)
-                if remaining <= 0.001:
-                    break
-
-        vend_filt.textChanged.connect(sync_ap_payment_vendors)
-        vend_cb.currentIndexChanged.connect(rebuild_ap_alloc_table)
-        sync_ap_payment_vendors()
-        _restore_entity_combo(vend_cb, _AP_PAYMENT_VENDOR_KEY)
-        auto_row = QHBoxLayout()
-        ap_pay_fill_old = QPushButton("Fill oldest first")
-        ap_pay_fill_old.setToolTip(
-            "Fill Apply from the oldest open bill upward until the payment amount is used."
-        )
-        ap_pay_fill_old.clicked.connect(apply_oldest_first_ap)
-        auto_row.addWidget(ap_pay_fill_old)
-        auto_row.addStretch()
-        outer.addLayout(auto_row)
-        _attach_table_copy_row_menu(alloc_tbl, d)
-        outer.addWidget(alloc_tbl)
-        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        _tip_dialog_ok_cancel(
-            bb,
-            "Record the payment and apply amounts to open bills (totals must match).",
-        )
-        bb.accepted.connect(d.accept)
-        bb.rejected.connect(d.reject)
-        outer.addWidget(bb)
-        if d.exec() != QDialog.DialogCode.Accepted:
-            return
-        vid = coerce_combo_int_id(vend_cb.currentData())
-        if vid is None:
-            message_box_warning_ok(
-                self,
-                "AP payment",
-                "Select a vendor (try clearing the filter).",
-                ok_tip="Close; pick a vendor or clear the filter.",
-            )
-            return
-        amt = round(pay_amt.value(), 2)
-        allocs: list[tuple[int, float]] = []
-        for row in range(alloc_tbl.rowCount()):
-            it = alloc_tbl.item(row, 0)
-            w = alloc_tbl.cellWidget(row, 3)
-            if it is None or not isinstance(w, QDoubleSpinBox):
-                continue
-            v = round(w.value(), 2)
-            if v <= 0.005:
-                continue
-            bid = coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole))
-            if bid is None:
-                continue
-            allocs.append((bid, v))
-        if not allocs:
-            message_box_warning_ok(
-                self,
-                "AP payment",
-                "Enter an amount in Apply for at least one bill.",
-                ok_tip="Close; enter Apply amounts for open bills.",
-            )
-            return
-        applied = round(sum(a for _, a in allocs), 2)
-        if abs(applied - amt) > 0.02:
-            message_box_warning_ok(
-                self,
-                "AP payment",
-                f"Apply amounts ({applied:.2f}) must equal payment amount ({amt:.2f}).",
-                ok_tip="Close; adjust Apply so the total matches the payment amount.",
-            )
-            return
-        bidx = bank_cb.currentIndex()
-        bank_account_id = (
-            coerce_combo_int_id(bank_cb.itemData(bidx)) if bidx > 0 else None
-        )
-        business.record_ap_payment(
-            self._conn,
-            vid,
-            pdate.date().toString("yyyy-MM-dd"),
-            amt,
-            allocs,
-            bank_account_id=bank_account_id,
-            method=method_e.text().strip(),
-            reference=ref_e.text().strip(),
-            memo=memo_e.text().strip(),
-        )
-        _save_entity_combo(vend_cb, _AP_PAYMENT_VENDOR_KEY)
-        _save_payment_bank_choice(bank_cb, _AP_PAYMENT_BANK_KEY)
-        self._refresh()
-        message_box_information_ok(
-            self,
-            "AP payment",
-            "Payment recorded.",
-            ok_tip="Close; bill balances and allocations are updated.",
-        )
-
-    def _export_aging(self):
-        as_of = _prompt_as_of_date(self, "Export AP aging")
-        if as_of is None:
-            return
-        path, _ = QFileDialog.getSaveFileName(self, "AP aging", "", "CSV (*.csv)")
-        if not path:
-            return
-        data = business.ap_aging_buckets(self._conn, as_of)[0]
-        with open(path, "w", newline="", encoding="utf-8-sig") as fp:
-            w = csv.writer(fp)
-            w.writerow(
-                ["Vendor", "Bill id", "Balance", "Bucket", "Days past due", "As of"]
-            )
-            for ln in data["lines"]:
-                w.writerow(
-                    [
-                        ln["vendor"],
-                        ln["bill_id"],
-                        f"{ln['balance']:.2f}",
-                        ln["bucket"],
-                        ln.get("days_past_due", ""),
-                        as_of,
-                    ]
-                )
-            _append_aging_bucket_totals_csv(w, data["buckets"], as_of)
-        message_box_information_ok(
-            self,
-            "Export",
-            f"Wrote {escape_ampersand_for_qt(path)}\n(As of {as_of})",
-            ok_tip="Close; open the AP aging CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
-        )
-
     def _export_vendors(self):
         path, _ = QFileDialog.getSaveFileName(
             self, "Export vendors", "vendors.csv", "CSV (*.csv)"
@@ -2866,98 +2415,6 @@ class APTab(QWidget):
             self,
             "Export",
             f"Exported {n} vendor(s) to {escape_ampersand_for_qt(path)}",
-            ok_tip="Close; open the CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
-        )
-
-    def _export_bills(self):
-        filt = self._bill_filter.text().strip()
-        all_rows = business.list_bills(self._conn)
-        filtered = business_list_filter.filter_business_rows(
-            all_rows, filt, business_list_filter.AP_BILL_FILTER_KEYS
-        )
-        vis_ids = [
-            bid
-            for r in filtered
-            if (bid := coerce_combo_int_id(r["id"])) is not None
-        ]
-        scope = _prompt_list_csv_export_scope(self, "bills", bool(filt), vis_ids)
-        if scope is None:
-            return
-        bill_ids = None if scope == "all" else scope
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Export bills", "bills.csv", "CSV (*.csv)"
-        )
-        if not path:
-            return
-        if not path.lower().endswith(".csv"):
-            path += ".csv"
-        try:
-            n = business.write_bills_csv(self._conn, path, bill_ids=bill_ids)
-        except OSError as exc:
-            message_box_critical_ok(
-                self,
-                "Export failed",
-                escape_ampersand_for_qt(str(exc)),
-                ok_tip="Close; check path, permissions, and disk space.",
-            )
-            return
-        message_box_information_ok(
-            self,
-            "Export",
-            f"Exported {n} bill(s) to {escape_ampersand_for_qt(path)}",
-            ok_tip="Close; open the CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
-        )
-
-    def _export_ap_payments(self):
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Export AP payments", "ap_payments.csv", "CSV (*.csv)"
-        )
-        if not path:
-            return
-        if not path.lower().endswith(".csv"):
-            path += ".csv"
-        try:
-            n = business.write_ap_payments_csv(self._conn, path)
-        except OSError as exc:
-            message_box_critical_ok(
-                self,
-                "Export failed",
-                escape_ampersand_for_qt(str(exc)),
-                ok_tip="Close; check path, permissions, and disk space.",
-            )
-            return
-        message_box_information_ok(
-            self,
-            "Export",
-            f"Exported {n} payment(s) to {escape_ampersand_for_qt(path)}",
-            ok_tip="Close; open the CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
-        )
-
-    def _export_ap_allocations(self):
-        path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Export AP payment allocations",
-            "ap_payment_allocations.csv",
-            "CSV (*.csv)",
-        )
-        if not path:
-            return
-        if not path.lower().endswith(".csv"):
-            path += ".csv"
-        try:
-            n = business.write_ap_payment_allocations_csv(self._conn, path)
-        except OSError as exc:
-            message_box_critical_ok(
-                self,
-                "Export failed",
-                escape_ampersand_for_qt(str(exc)),
-                ok_tip="Close; check path, permissions, and disk space.",
-            )
-            return
-        message_box_information_ok(
-            self,
-            "Export",
-            f"Exported {n} allocation row(s) to {escape_ampersand_for_qt(path)}",
             ok_tip="Close; open the CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
         )
 

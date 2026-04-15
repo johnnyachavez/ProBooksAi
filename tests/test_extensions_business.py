@@ -1348,6 +1348,7 @@ def test_list_vendor_ap_summaries_open_current_overdue_and_last_dates(db):
     assert r["current_due"] == pytest.approx(40.0)
     assert r["overdue"] == pytest.approx(60.0)
     assert r["last_bill_date"] == "2024-06-01"
+    assert r["ap_status"] == "Overdue"
     business.record_ap_payment(db._conn, v1, "2025-01-15", 1.0, [])
     by_id2 = {r["vendor_id"]: r for r in business.list_vendor_ap_summaries(db._conn)}
     assert by_id2[v1]["last_payment_date"] == "2025-01-15"

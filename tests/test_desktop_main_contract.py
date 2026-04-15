@@ -4791,7 +4791,7 @@ def test_extra_tabs_business_csv_export_tooltips_append_excel_bom_hint() -> None
     """Business CSV exports and the filtered export scope dialog share one UTF-8 BOM suffix string."""
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
     assert '_CSV_EXCEL_ENCODING_TIP = " UTF-8 with BOM for Excel."' in et
-    assert et.count("_CSV_EXCEL_ENCODING_TIP") == 17
+    assert et.count("_CSV_EXCEL_ENCODING_TIP") == 13
 
 
 def test_extra_tabs_business_main_grids_mention_csv_utf8_bom_for_excel() -> None:
@@ -4862,23 +4862,20 @@ def test_ap_tab_toolbar_buttons_have_tooltips() -> None:
     chunk = et[start:end]
     for needle in (
         "ap_new_v.setToolTip",
-        "ap_edit_b.setToolTip",
-        "ap_record_pay.setToolTip",
-        "ap_export_alloc.setToolTip",
-        "ap_pay_fill_old.setToolTip",
-        "_bill_filter.setToolTip",
-        "vend_filt.setToolTip",
-        "Open bills for the selected vendor",
-        "lbl_ap_bill_filter.setToolTip",
-        "lbl_ap_apply_hdr.setToolTip",
-        "_ap_footer.setToolTip",
+        "ap_edit_v.setToolTip",
+        "ap_export_vendors.setToolTip",
+        "detail_box.setToolTip",
+        "split.setToolTip",
+        "self._vendor_tbl.setToolTip",
+        "self._d_tax_id.setToolTip",
+        "self._d_terms.setToolTip",
     ):
         assert needle in chunk, f"AP tab UI should set tooltip on {needle!r}"
 
 
 def test_ap_bill_new_and_edit_attachment_browse_buttons_have_tooltips() -> None:
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
-    assert et.count("ap_bill_att_browse.setToolTip") == 2
+    assert et.count("ap_bill_att_browse.setToolTip") == 1
 
 
 def test_payroll_tax_tab_toolbar_and_tax_codes_dialog_have_tooltips() -> None:
@@ -4938,7 +4935,6 @@ def test_extra_tabs_business_qdialog_windows_have_hover_tooltips() -> None:
         "Edit invoice header, customer, line items",
         "Enter payment details and allocate amounts to open invoices",
         "Create a vendor record used for AP bills",
-        "Enter payment details and allocate amounts to open bills",
         "Review company payroll tax codes",
         "Map wage expense, cash/bank, and withholdings liability",
         "d.setWindowTitle(\"New employee\")",
@@ -4953,7 +4949,7 @@ def test_extra_tabs_dialog_button_boxes_use_tooltip_helpers() -> None:
     assert "def _tip_dialog_ok_cancel" in et
     assert "def _tip_dialog_save_cancel" in et
     assert "_DIALOG_CANCEL_TIP" in et
-    assert et.count("_tip_dialog_ok_cancel(bb") >= 15
+    assert et.count("_tip_dialog_ok_cancel(bb") >= 14
     assert "_tip_dialog_save_cancel(\n            bb" in et
     assert "tip_qdialog_button_box(bb, ok=ok_tip, cancel=cancel_tip)" in et
     assert "tip_qdialog_button_box(bb, save=save_tip, cancel=cancel_tip)" in et
@@ -5408,7 +5404,7 @@ def test_extra_tabs_sync_entity_combo_and_ar_ap_payments_coerce_int_ids() -> Non
         in et
     )
     assert "business.record_ar_payment(\n            self._conn,\n            cid," in et
-    assert "business.record_ap_payment(\n            self._conn,\n            vid," in et
+    assert 'bill_vid = coerce_combo_int_id(b["vendor_id"])' in et
 
 
 def test_bank_import_tab_account_combo_uses_int_safe_restore_and_current_data() -> None:
@@ -5499,7 +5495,9 @@ def test_extra_tabs_edit_invoice_and_bill_coerce_customer_vendor_ids() -> None:
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
     inv = et.split("def _edit_inv(self):", 1)[1].split("def _record_ar_payment(self):", 1)[0]
     assert "inv_cust_id = coerce_combo_int_id(inv[\"customer_id\"])" in inv
-    bill = et.split("def _edit_b(self):", 1)[1].split("def _record_ap_payment(self):", 1)[0]
+    bill = et.split("def _open_edit_bill_dialog(self, bill_id: int)", 1)[1].split(
+        "def _export_vendors(self):", 1
+    )[0]
     assert "bill_vid = coerce_combo_int_id(b[\"vendor_id\"])" in bill
 
 
@@ -5948,7 +5946,7 @@ def test_bank_import_context_menu_copy_row_tooltips_mention_backup_safety() -> N
 
 def test_extra_tabs_business_main_grids_have_hover_tooltips() -> None:
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
-    assert et.count("F5 refreshes when Business has focus.") == 4
+    assert et.count("F5 refreshes when Business has focus.") == 5
     assert et.count("F5 refreshes when this tab has focus.") >= 1
 
 
@@ -6044,11 +6042,14 @@ def test_register_bank_match_opens_business_navigation_wiring() -> None:
     main = (_DESKTOP_APP_DIR / "main.py").read_text(encoding="utf-8")
     assert "_wire_register_bank_match_navigation" in main
     assert "_navigate_register_bank_match_link" in main
+    assert "self._enter_bills_screen.open_bill_by_id" in main
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
     assert "def navigate_bank_match_link" in et
     assert "def open_invoice_by_id" in et
-    assert "def open_bill_by_id" in et
+    assert "def open_ap_bill_edit_dialog" in et
     assert "def open_payroll_run_by_id" in et
+    ebs = (_DESKTOP_APP_DIR / "enter_bills_screen.py").read_text(encoding="utf-8")
+    assert "def open_bill_by_id" in ebs
 
 
 def test_register_tab_manual_entry_dialog_and_insert_wiring() -> None:

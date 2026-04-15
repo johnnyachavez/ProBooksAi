@@ -1026,8 +1026,8 @@ class MainWindow(QMainWindow):
                 + _main_tab_bar_db_hint
             ),
             (
-                "Vendors: accounts payable — vendors, bills, vendor payments, exports (F5). "
-                "Primary AP workspace (Business hub holds Rules, Payroll, Tax % only)."
+                "Vendors: vendor master (detail + list), balances and activity; export vendors CSV (F5). "
+                "Bills and payments use Enter Bills, Pay Bills, and Reports (Business hub holds Rules, Payroll, Tax % only)."
                 + _tab_bar_csv_excel_hint
                 + _main_tab_bar_db_hint
             ),
@@ -1807,10 +1807,10 @@ class MainWindow(QMainWindow):
             self._customers_tab.open_invoice_by_id(lid)
             return
         if lt == "ap_bill":
-            idx = self._tabs.indexOf(self._vendors_tab)
+            idx = self._tabs.indexOf(self._enter_bills_screen)
             if idx >= 0:
                 self._tabs.setCurrentIndex(idx)
-            self._vendors_tab.open_bill_by_id(lid)
+            self._enter_bills_screen.open_bill_by_id(lid)
             return
         if lt == "ar_payment":
             idx = self._tabs.indexOf(self._customers_tab)
@@ -1845,7 +1845,7 @@ class MainWindow(QMainWindow):
             )
             return
         if lt == "ap_payment":
-            idx = self._tabs.indexOf(self._vendors_tab)
+            idx = self._tabs.indexOf(self._pay_bills_screen)
             if idx >= 0:
                 self._tabs.setCurrentIndex(idx)
             row = conn.execute(
@@ -1872,8 +1872,8 @@ class MainWindow(QMainWindow):
                 "AP payment",
                 f"AP payment #{lid}: {r['payment_date']}  ${float(r['amount']):.2f}  — {r['party_name']}\n"
                 f"Reference: {ref}\n\n"
-                "Export AP payments CSV from this tab for a full list; use Record vendor payment… for new entries.",
-                ok_tip="Close; you are on the Vendors tab.",
+                "Export AP payments CSV from More → Reports or Pay Bills as needed; record new payments on Pay Bills.",
+                ok_tip="Close; you are on the Pay Bills tab.",
             )
             return
         if lt == "payroll_run":

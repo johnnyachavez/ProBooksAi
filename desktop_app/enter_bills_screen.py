@@ -27,6 +27,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from desktop_app.extra_tabs import open_ap_bill_edit_dialog
+from desktop_app.qt_mnemonic import message_box_information_ok
 from probooksai import business
 
 # Light “accounting form” palette (aligned with pay_bills_screen)
@@ -270,6 +272,24 @@ class EnterBillsScreen(QWidget):
     def refresh_vendors(self) -> None:
         """Reload vendor names from the company connection (e.g. after Business hub edits)."""
         self._populate_vendor_combo()
+
+    def open_bill_by_id(self, bill_id: int) -> bool:
+        """Open **Edit bill** for a bank/register link (this tab is the bill workspace)."""
+        if self._ap_conn is None:
+            message_box_information_ok(
+                self,
+                "Bill",
+                "Open a company file to edit bills.",
+                ok_tip="Close; use File → Open company… then try the link again.",
+            )
+            return False
+
+        def _after_save() -> None:
+            self.refresh_vendors()
+
+        return open_ap_bill_edit_dialog(
+            self, self._ap_conn, int(bill_id), after_save=_after_save
+        )
 
     def _on_vendor_changed(self, _index: int) -> None:
         raw = self._vendor.currentData()

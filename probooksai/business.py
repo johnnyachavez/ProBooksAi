@@ -1090,6 +1090,12 @@ def list_vendor_ap_summaries(conn: sqlite3.Connection) -> list[dict]:
             "SELECT MAX(payment_date) FROM ap_payments WHERE vendor_id = ?", (vid,)
         ).fetchone()
         last_pay = (pay_row[0] or "").strip() if pay_row and pay_row[0] else ""
+        if open_bal <= 0.005:
+            ap_status = "Current"
+        elif overdue > 0.005:
+            ap_status = "Overdue"
+        else:
+            ap_status = "Open"
         out.append(
             {
                 "vendor_id": vid,
@@ -1099,6 +1105,7 @@ def list_vendor_ap_summaries(conn: sqlite3.Connection) -> list[dict]:
                 "overdue": round(overdue, 2),
                 "last_bill_date": last_bill_date,
                 "last_payment_date": last_pay,
+                "ap_status": ap_status,
             }
         )
     out.sort(key=lambda x: (x["vendor_name"] or "").lower())
