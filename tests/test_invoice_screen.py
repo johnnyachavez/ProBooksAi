@@ -289,6 +289,68 @@ def test_invoice_screen_suggested_invoice_number_from_company_file(
     db.close()
 
 
+def test_invoice_screen_update_existing_does_not_duplicate_row(
+    qapp: QApplication, tmp_path
+) -> None:
+    """Editing a loaded invoice updates the same row instead of inserting another."""
+    db_path = tmp_path / "invoice_update.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "EditCo")
+    inv_id = business.create_invoice(
+        db._conn,
+        cid,
+        "UP-001",
+        "2024-09-01",
+        lines=[{"description": "A", "qty": 1.0, "rate": 10.0}],
+    )
+    pdf_dir = tmp_path / "invoice_upd_pdf"
+    pdf_dir.mkdir()
+    _INV_PREFS_QS.setValue("invoice_prefs/output_folder", str(pdf_dir))
+    _INV_PREFS_QS.sync()
+    w = InvoiceScreen(ap_conn=db._conn)
+    w._load_invoice_into_form(inv_id)
+    assert w._current_invoice_id == inv_id
+    assert w._inv_number.text() == "UP-001"
+    desc = w._table.cellWidget(0, 2)
+    assert isinstance(desc, QLineEdit)
+    desc.setText("Updated line")
+    QTest.mouseClick(w._btn_save, Qt.MouseButton.LeftButton)
+    qapp.processEvents()
+    rows = business.list_invoices(db._conn)
+    assert len(rows) == 1
+    assert int(rows[0]["id"]) == inv_id
+    assert w._inv_number.text() == "UP-001"
+    assert (pdf_dir / "Invoice-UP-001.pdf").is_file()
+    db.close()
+
+
+def test_invoice_screen_open_invoice_by_id_loads_manual_invoice(qapp: QApplication, tmp_path) -> None:
+    db_path = tmp_path / "invoice_open_id.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "LinkCo")
+    inv_id = business.create_invoice(
+        db._conn,
+        cid,
+        "LK-100",
+        "2024-10-01",
+        memo="PO: P1\nJob: J1",
+        lines=[{"description": "Item", "qty": 2.0, "rate": 5.0}],
+    )
+    w = InvoiceScreen(ap_conn=db._conn)
+    w._invoice_tabs.setCurrentIndex(1)
+    assert w._invoice_tabs.currentIndex() == 1
+    ok = w.open_invoice_by_id(inv_id)
+    assert ok is True
+    assert w._invoice_tabs.currentIndex() == 0
+    assert w._current_invoice_id == inv_id
+    assert w._inv_number.text() == "LK-100"
+    assert w._po.text() == "P1"
+    assert w._job.text() == "J1"
+    db.close()
+
+
 def test_invoice_screen_bill_to_selects_customer(qapp: QApplication, tmp_path) -> None:
     db_path = tmp_path / "invoice_bill_to.db"
     db = BankDatabase(str(db_path))
