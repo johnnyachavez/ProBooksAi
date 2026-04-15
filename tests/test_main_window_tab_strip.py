@@ -88,14 +88,14 @@ def test_accounting_landing_tabs_show_page_titles(qapp: QApplication, tmp_path: 
                 assert any("Subtotal" in t for t in titles)
             elif spec is EnterBillsScreen:
                 assert tbl.columnCount() == 5
-                assert "Bill" in titles
+                assert "Enter Bills" in titles
                 assert "Vendor" in titles
             elif spec is PayBillsScreen:
                 assert tbl.columnCount() == 10
                 assert "Pay Bills" in titles
             else:
                 assert tbl.columnCount() == 6
-                assert "Customer Payment" in titles
+                assert "Receive Payments" in titles
     finally:
         w.close()
 

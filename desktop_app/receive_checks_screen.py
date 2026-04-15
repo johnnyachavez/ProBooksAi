@@ -1,6 +1,6 @@
 """Receive Checks (customer payment) workflow screen — UI only (no database or A/R logic).
 
-Light panel styling matches Pay Bills / Enter Bills AR/AP draft screens.
+Navy-cool form theme matches Invoices, Enter Bills, and Pay Bills (Receive Payments tab).
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ import sqlite3
 from typing import Optional
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -36,19 +37,29 @@ from desktop_app.ar_customer_actions import (
 )
 from desktop_app.flexible_date import configure_qdate_edit_us
 
-_RC_BG = "#f7f9fc"
-_RC_PANEL = "#ffffff"
-_RC_STRIPE = "#e8f2fa"
-_RC_GRID = "#c5d4e6"
-_RC_HEADER = "#dce8f4"
+_RC_BG = "#e4e9f0"
+_RC_PANEL = "#f7f9fc"
+_RC_STRIPE = "#e4ebf4"
+_RC_GRID = "#9eb0c8"
+_RC_HEADER = "#c4d2e4"
 _RC_TEXT = "#1a1a2e"
+_RC_CAPTION = "#4a5568"
 
 
 def _readonly_item(text: str) -> QTableWidgetItem:
     it = QTableWidgetItem(text)
     it.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
-    it.setForeground(Qt.GlobalColor.black)
+    it.setForeground(QColor(_RC_TEXT))
     return it
+
+
+def _receive_caption_label(text: str) -> QLabel:
+    lb = QLabel(text)
+    lb.setStyleSheet(
+        f"color: {_RC_CAPTION}; font-size: 11px; font-weight: 600; "
+        "letter-spacing: 0.03em; background: transparent;"
+    )
+    return lb
 
 
 def _payment_spin() -> QDoubleSpinBox:
@@ -129,24 +140,46 @@ class ReceiveChecksScreen(QWidget):
         play.setContentsMargins(16, 16, 16, 16)
         play.setSpacing(12)
 
-        title = QLabel("Customer Payment")
+        title_row = QHBoxLayout()
+        title = QLabel("Receive Payments")
         title.setStyleSheet(
             f"font-size: 20px; font-weight: 600; color: {_RC_TEXT}; background: transparent;"
         )
-        play.addWidget(title)
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        play.addLayout(title_row)
+
+        sec_pay = _receive_caption_label("Payment details")
+        sec_pay.setToolTip("Customer, amount, method, date, and deposit account (placeholder).")
+        play.addWidget(sec_pay)
 
         # ── Header form ──
         form_frame = QFrame()
+        form_frame.setObjectName("receiveChecksHeaderBand")
         form_frame.setStyleSheet(
-            f"QFrame {{ background-color: {_RC_PANEL}; border: 1px solid {_RC_GRID}; border-radius: 6px; }}"
+            f"QFrame#receiveChecksHeaderBand {{ background-color: {_RC_PANEL}; "
+            f"border: 1px solid {_RC_GRID}; border-radius: 8px; }}"
         )
         form_outer = QHBoxLayout(form_frame)
         form_outer.setContentsMargins(14, 12, 14, 12)
         form_outer.setSpacing(24)
 
+        _combo_ss = (
+            f"QComboBox {{ background: {_RC_PANEL}; border: 1px solid {_RC_GRID}; "
+            f"padding: 4px 8px; color: {_RC_TEXT}; }}"
+        )
+        _line_ss = (
+            f"QLineEdit {{ background: {_RC_PANEL}; border: 1px solid {_RC_GRID}; "
+            f"padding: 4px 8px; color: {_RC_TEXT}; }}"
+        )
+        _date_ss = (
+            f"QDateEdit {{ background: {_RC_PANEL}; border: 1px solid {_RC_GRID}; "
+            f"padding: 2px 6px; color: {_RC_TEXT}; }}"
+        )
+
         left = QGridLayout()
-        left.setHorizontalSpacing(10)
-        left.setVerticalSpacing(8)
+        left.setHorizontalSpacing(12)
+        left.setVerticalSpacing(10)
         left.setColumnStretch(1, 1)
 
         self._customer = QComboBox()
@@ -160,52 +193,61 @@ class ReceiveChecksScreen(QWidget):
         ):
             self._customer.addItem(name)
         self._customer.setMinimumWidth(220)
+        self._customer.setStyleSheet(_combo_ss)
 
         self._payment_amount = _payment_spin()
         self._payment_amount.setToolTip("Total payment amount (UI only).")
 
         self._pay_method = QComboBox()
         self._pay_method.addItems(("Check", "Cash", "Credit Card", "ACH", "Other"))
+        self._pay_method.setStyleSheet(_combo_ss)
 
         self._cust_balance = QLabel("Customer balance: $2,450.00")
-        self._cust_balance.setStyleSheet(f"color: {_RC_TEXT}; font-size: 12px;")
+        self._cust_balance.setStyleSheet(f"color: {_RC_CAPTION}; font-size: 12px;")
         self._cust_balance.setToolTip("Display only (placeholder).")
 
-        left.addWidget(QLabel("Received From"), 0, 0, Qt.AlignmentFlag.AlignRight)
+        left.addWidget(_receive_caption_label("Received From"), 0, 0, Qt.AlignmentFlag.AlignRight)
         left.addWidget(self._customer, 0, 1)
-        left.addWidget(QLabel("Payment Amount"), 1, 0, Qt.AlignmentFlag.AlignRight)
+        left.addWidget(_receive_caption_label("Payment Amount"), 1, 0, Qt.AlignmentFlag.AlignRight)
         left.addWidget(self._payment_amount, 1, 1)
-        left.addWidget(QLabel("Payment Method"), 2, 0, Qt.AlignmentFlag.AlignRight)
+        left.addWidget(_receive_caption_label("Payment Method"), 2, 0, Qt.AlignmentFlag.AlignRight)
         left.addWidget(self._pay_method, 2, 1)
         left.addWidget(self._cust_balance, 3, 0, 1, 2)
 
         right = QGridLayout()
-        right.setHorizontalSpacing(10)
-        right.setVerticalSpacing(8)
+        right.setHorizontalSpacing(12)
+        right.setVerticalSpacing(10)
         right.setColumnStretch(1, 1)
 
         self._pay_date = QDateEdit()
         configure_qdate_edit_us(self._pay_date)
+        self._pay_date.setStyleSheet(_date_ss)
 
         self._check_num = QLineEdit()
         self._check_num.setPlaceholderText("Check #")
+        self._check_num.setStyleSheet(_line_ss)
 
         self._deposit_to = QComboBox()
         self._deposit_to.addItems(
             ("Operating — ****1234", "Payroll — ****5678", "Savings — ****9012")
         )
         self._deposit_to.setMinimumWidth(200)
+        self._deposit_to.setStyleSheet(_combo_ss)
 
-        right.addWidget(QLabel("Date"), 0, 0, Qt.AlignmentFlag.AlignRight)
+        right.addWidget(_receive_caption_label("Date"), 0, 0, Qt.AlignmentFlag.AlignRight)
         right.addWidget(self._pay_date, 0, 1)
-        right.addWidget(QLabel("Check #"), 1, 0, Qt.AlignmentFlag.AlignRight)
+        right.addWidget(_receive_caption_label("Check #"), 1, 0, Qt.AlignmentFlag.AlignRight)
         right.addWidget(self._check_num, 1, 1)
-        right.addWidget(QLabel("Deposit To"), 2, 0, Qt.AlignmentFlag.AlignRight)
+        right.addWidget(_receive_caption_label("Deposit To"), 2, 0, Qt.AlignmentFlag.AlignRight)
         right.addWidget(self._deposit_to, 2, 1)
 
         form_outer.addLayout(left, 1)
         form_outer.addLayout(right, 1)
         play.addWidget(form_frame)
+
+        sec_inv = _receive_caption_label("Open invoices")
+        sec_inv.setToolTip("Allocate payment across invoice lines (placeholder).")
+        play.addWidget(sec_inv)
 
         # ── Invoices table ──
         self._table = QTableWidget(self._N_ROWS, len(self._COLS))
@@ -269,12 +311,23 @@ class ReceiveChecksScreen(QWidget):
 
         play.addWidget(self._table, 1)
 
+        sec_sum = _receive_caption_label("Summary")
+        sec_sum.setToolTip("Totals for the current selection and credit placeholders.")
+        play.addWidget(sec_sum)
+
         # ── Bottom: totals + credits panel ──
         bot = QHBoxLayout()
-        bot.setSpacing(20)
+        bot.setSpacing(16)
 
-        tot_col = QVBoxLayout()
-        tot_col.setSpacing(6)
+        tot_frame = QFrame()
+        tot_frame.setObjectName("receiveChecksTotalsBand")
+        tot_frame.setStyleSheet(
+            f"QFrame#receiveChecksTotalsBand {{ background-color: {_RC_PANEL}; "
+            f"border: 1px solid {_RC_GRID}; border-radius: 8px; }}"
+        )
+        tot_col = QVBoxLayout(tot_frame)
+        tot_col.setContentsMargins(14, 12, 14, 12)
+        tot_col.setSpacing(8)
         self._lbl_total_selected = QLabel("Total selected: 0")
         self._lbl_total_payment = QLabel("Total payment applied: $0.00")
         for lb in (self._lbl_total_selected, self._lbl_total_payment):
@@ -282,19 +335,21 @@ class ReceiveChecksScreen(QWidget):
         tot_col.addWidget(self._lbl_total_selected)
         tot_col.addWidget(self._lbl_total_payment)
         tot_col.addStretch(1)
-        bot.addLayout(tot_col, 0)
+        bot.addWidget(tot_frame, 0)
 
         bot.addStretch(1)
 
         credits = QFrame()
+        credits.setObjectName("receiveChecksCreditsBand")
         credits.setStyleSheet(
-            f"background-color: {_RC_PANEL}; border: 1px solid {_RC_GRID}; border-radius: 6px;"
+            f"QFrame#receiveChecksCreditsBand {{ background-color: {_RC_PANEL}; "
+            f"border: 1px solid {_RC_GRID}; border-radius: 8px; }}"
         )
         cr = QVBoxLayout(credits)
-        cr.setContentsMargins(12, 10, 12, 10)
-        cr.setSpacing(6)
+        cr.setContentsMargins(14, 12, 14, 12)
+        cr.setSpacing(8)
 
-        cr.addWidget(QLabel("Unused Credits"))
+        cr.addWidget(_receive_caption_label("Unused credits"))
         self._lbl_unused_credits = QLabel("$125.00")
         self._lbl_unused_credits.setStyleSheet(
             f"color: {_RC_TEXT}; font-size: 14px; font-weight: 600;"
@@ -305,16 +360,18 @@ class ReceiveChecksScreen(QWidget):
         self._btn_apply_credits = QPushButton("Apply Credits")
         self._btn_apply_credits.setToolTip("Placeholder — no credit application yet.")
         self._btn_apply_credits.clicked.connect(self._on_apply_credits_placeholder)
+        self._btn_apply_credits.setAutoDefault(False)
+        self._btn_apply_credits.setDefault(False)
         cr.addWidget(self._btn_apply_credits)
 
         cr.addSpacing(4)
-        cr.addWidget(QLabel("Amount for Selected Invoices"))
+        cr.addWidget(_receive_caption_label("Amount for selected invoices"))
         self._lbl_amount_selected = QLabel("$0.00")
         self._lbl_amount_selected.setStyleSheet(f"color: {_RC_TEXT}; font-size: 13px;")
         cr.addWidget(self._lbl_amount_selected)
 
         self._lbl_discount_credits = QLabel("Discount and Credits applied: $0.00")
-        self._lbl_discount_credits.setStyleSheet(f"color: {_RC_TEXT}; font-size: 12px;")
+        self._lbl_discount_credits.setStyleSheet(f"color: {_RC_CAPTION}; font-size: 12px;")
         self._lbl_discount_credits.setToolTip("Placeholder totals.")
         cr.addWidget(self._lbl_discount_credits)
 

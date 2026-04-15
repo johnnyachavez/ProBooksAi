@@ -1,6 +1,6 @@
 """Pay Bills workflow screen — UI only (no database or A/P logic).
 
-Light panel styling so the form reads clearly on top of the app dark theme.
+Navy-cool form theme matches Invoices, Enter Bills, and Receive Payments.
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ import random
 from typing import Optional
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -30,18 +31,30 @@ from PySide6.QtWidgets import (
 
 from desktop_app.flexible_date import configure_qdate_edit_us
 
-# Light “accounting form” palette (local to this screen)
-_PAY_BG = "#f7f9fc"
-_PAY_PANEL = "#ffffff"
-_PAY_STRIPE = "#e8f2fa"
-_PAY_GRID = "#c5d4e6"
-_PAY_HEADER = "#dce8f4"
+# Navy-cool form theme (aligned with Invoices / Enter Bills / Receive Payments)
+_PAY_BG = "#e4e9f0"
+_PAY_PANEL = "#f7f9fc"
+_PAY_STRIPE = "#e4ebf4"
+_PAY_GRID = "#9eb0c8"
+_PAY_HEADER = "#c4d2e4"
 _PAY_TEXT = "#1a1a2e"
+_PAY_CAPTION = "#4a5568"
+
+
 def _readonly_item(text: str) -> QTableWidgetItem:
     it = QTableWidgetItem(text)
     it.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
-    it.setForeground(Qt.GlobalColor.black)
+    it.setForeground(QColor(_PAY_TEXT))
     return it
+
+
+def _pay_bills_caption_label(text: str) -> QLabel:
+    lb = QLabel(text)
+    lb.setStyleSheet(
+        f"color: {_PAY_CAPTION}; font-size: 11px; font-weight: 600; "
+        "letter-spacing: 0.03em; background: transparent;"
+    )
+    return lb
 
 
 class PayBillsScreen(QWidget):
@@ -100,45 +113,79 @@ class PayBillsScreen(QWidget):
         self._btn_clear_top = QPushButton("Clear Selection")
         self._btn_clear_top.setToolTip("Uncheck all rows and clear payment fields.")
         self._btn_clear_top.clicked.connect(self._on_clear_selection)
+        for b in (self._btn_pay, self._btn_clear_top):
+            b.setAutoDefault(False)
+            b.setDefault(False)
         title_row.addWidget(self._btn_pay)
         title_row.addWidget(self._btn_clear_top)
         play.addLayout(title_row)
 
-        # Controls row
-        ctrl = QGridLayout()
+        sec_filters = _pay_bills_caption_label("Filters & payment")
+        sec_filters.setToolTip("Narrow the list and set the payment date and bank account (placeholder).")
+        play.addWidget(sec_filters)
+
+        filters_frame = QFrame()
+        filters_frame.setObjectName("payBillsFiltersBand")
+        filters_frame.setStyleSheet(
+            f"QFrame#payBillsFiltersBand {{ background-color: {_PAY_PANEL}; "
+            f"border: 1px solid {_PAY_GRID}; border-radius: 8px; }}"
+        )
+        ctrl = QGridLayout(filters_frame)
+        ctrl.setContentsMargins(14, 12, 14, 12)
         ctrl.setHorizontalSpacing(16)
-        ctrl.setVerticalSpacing(8)
+        ctrl.setVerticalSpacing(10)
+
+        _combo_ss = (
+            f"QComboBox {{ background: {_PAY_PANEL}; border: 1px solid {_PAY_GRID}; "
+            f"padding: 4px 8px; color: {_PAY_TEXT}; }}"
+        )
+        _line_ss = (
+            f"QLineEdit {{ background: {_PAY_PANEL}; border: 1px solid {_PAY_GRID}; "
+            f"padding: 4px 8px; color: {_PAY_TEXT}; }}"
+        )
+        _date_ss = (
+            f"QDateEdit {{ background: {_PAY_PANEL}; border: 1px solid {_PAY_GRID}; "
+            f"padding: 2px 6px; color: {_PAY_TEXT}; }}"
+        )
 
         self._filter = QComboBox()
         self._filter.addItems(["All", "Open", "Overdue"])
         self._filter.setToolTip("Filter bills (placeholder).")
+        self._filter.setStyleSheet(_combo_ss)
 
         self._vendor_filter = QLineEdit()
         self._vendor_filter.setPlaceholderText("Vendor filter…")
         self._vendor_filter.setMinimumWidth(180)
         self._vendor_filter.setToolTip("Optional vendor search (placeholder).")
+        self._vendor_filter.setStyleSheet(_line_ss)
 
         self._pay_date = QDateEdit()
         configure_qdate_edit_us(self._pay_date)
         self._pay_date.setToolTip("Payment date (UI only).")
+        self._pay_date.setStyleSheet(_date_ss)
 
         self._account = QComboBox()
         self._account.addItems(["Operating — ****1234", "Payroll — ****5678", "Savings — ****9012"])
         self._account.setMinimumWidth(200)
         self._account.setToolTip("Bank account (placeholder).")
+        self._account.setStyleSheet(_combo_ss)
 
-        ctrl.addWidget(QLabel("Filter:"), 0, 0)
+        ctrl.addWidget(_pay_bills_caption_label("Filter"), 0, 0)
         ctrl.addWidget(self._filter, 0, 1)
-        ctrl.addWidget(QLabel("Vendor:"), 0, 2)
+        ctrl.addWidget(_pay_bills_caption_label("Vendor"), 0, 2)
         ctrl.addWidget(self._vendor_filter, 0, 3)
-        ctrl.addWidget(QLabel("Payment date:"), 0, 4)
+        ctrl.addWidget(_pay_bills_caption_label("Payment date"), 0, 4)
         ctrl.addWidget(self._pay_date, 0, 5)
-        ctrl.addWidget(QLabel("Account:"), 0, 6)
+        ctrl.addWidget(_pay_bills_caption_label("Account"), 0, 6)
         ctrl.addWidget(self._account, 0, 7)
         for c in range(8):
             ctrl.setColumnStretch(c, 0)
         ctrl.setColumnStretch(7, 1)
-        play.addLayout(ctrl)
+        play.addWidget(filters_frame)
+
+        sec_table = _pay_bills_caption_label("Bills to pay")
+        sec_table.setToolTip("Select rows and enter payment amounts (placeholder — no posting yet).")
+        play.addWidget(sec_table)
 
         # Table
         self._table = QTableWidget(self._N_ROWS, len(self._COLS))
@@ -227,13 +274,19 @@ class PayBillsScreen(QWidget):
 
         play.addWidget(self._table, 1)
 
+        sec_sum = _pay_bills_caption_label("Totals")
+        sec_sum.setToolTip("Count of selected rows and sum of payment amounts.")
+        play.addWidget(sec_sum)
+
         # Summary
         sum_frame = QFrame()
+        sum_frame.setObjectName("payBillsSummaryBand")
         sum_frame.setStyleSheet(
-            f"background-color: {_PAY_PANEL}; border: 1px solid {_PAY_GRID}; border-radius: 6px;"
+            f"QFrame#payBillsSummaryBand {{ background-color: {_PAY_PANEL}; "
+            f"border: 1px solid {_PAY_GRID}; border-radius: 8px; }}"
         )
         sum_lay = QHBoxLayout(sum_frame)
-        sum_lay.setContentsMargins(12, 10, 12, 10)
+        sum_lay.setContentsMargins(14, 12, 14, 12)
         self._lbl_selected = QLabel("Total selected: 0")
         self._lbl_payment_sum = QLabel("Total payment amount: $0.00")
         for lb in (self._lbl_selected, self._lbl_payment_sum):
@@ -245,15 +298,25 @@ class PayBillsScreen(QWidget):
         play.addWidget(sum_frame)
 
         # Bottom actions (duplicate for workflow familiarity)
-        bot = QHBoxLayout()
+        actions_frame = QFrame()
+        actions_frame.setObjectName("payBillsActionsBar")
+        actions_frame.setStyleSheet(
+            f"QFrame#payBillsActionsBar {{ background-color: {_PAY_PANEL}; "
+            f"border: 1px solid {_PAY_GRID}; border-radius: 6px; }}"
+        )
+        bot = QHBoxLayout(actions_frame)
+        bot.setContentsMargins(12, 10, 12, 10)
         bot.addStretch(1)
         self._btn_pay_bot = QPushButton("Pay Selected Bills")
         self._btn_pay_bot.clicked.connect(self._on_pay_selected)
         self._btn_clear_bot = QPushButton("Clear Selection")
         self._btn_clear_bot.clicked.connect(self._on_clear_selection)
+        for b in (self._btn_pay_bot, self._btn_clear_bot):
+            b.setAutoDefault(False)
+            b.setDefault(False)
         bot.addWidget(self._btn_pay_bot)
         bot.addWidget(self._btn_clear_bot)
-        play.addLayout(bot)
+        play.addWidget(actions_frame)
 
         outer.addWidget(page, 1)
         self._refresh_summary()
