@@ -48,7 +48,7 @@ def test_invoice_screen_line_grid_and_headers(qapp: QApplication) -> None:
     labels = [lb.text() for lb in w.findChildren(QLabel)]
     assert "Invoice Number" not in labels
     assert "Invoice Date" in labels
-    t = w.findChild(QTableWidget)
+    t = w.findChild(QTableWidget, "invoiceLinesTable")
     assert t is not None
     assert t.objectName() == "invoiceLinesTable"
     vh = t.verticalHeader()
@@ -86,7 +86,7 @@ def test_invoice_line_table_column_widths_persist_in_qsettings(
     db = BankDatabase(db_path)
     apply_extensions(db._conn)
     w1 = InvoiceScreen(ap_conn=db._conn)
-    t1 = w1.findChild(QTableWidget)
+    t1 = w1.findChild(QTableWidget, "invoiceLinesTable")
     assert t1 is not None
     want = [90, 100, 220, 100, 88, 77, 120]
     mins = list(w1._invoice_col_mins)
@@ -98,7 +98,7 @@ def test_invoice_line_table_column_widths_persist_in_qsettings(
     w1._persist_invoice_line_column_widths()
     _invoice_line_table_qsettings().sync()
     w2 = InvoiceScreen(ap_conn=db._conn)
-    t2 = w2.findChild(QTableWidget)
+    t2 = w2.findChild(QTableWidget, "invoiceLinesTable")
     assert t2 is not None
     w2.show()
     qapp.processEvents()

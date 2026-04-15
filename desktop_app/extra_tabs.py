@@ -82,6 +82,7 @@ from desktop_app.qt_mnemonic import (
     tip_message_box_buttons,
     tip_qdialog_button_box,
 )
+from desktop_app.theme import ar_ap_master_tab_stylesheet
 from desktop_app.table_clipboard import (
     CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
     QTABLE_PLAIN_TEXT_ROLE,
@@ -890,6 +891,8 @@ class RulesTab(QWidget):
 class ARTab(QWidget):
     def __init__(self, conn: sqlite3.Connection, parent=None):
         super().__init__(parent)
+        self.setObjectName("arMasterTab")
+        self.setStyleSheet(ar_ap_master_tab_stylesheet())
         self._conn = conn
         self._customer_summary_by_id: dict[int, dict] = {}
         self._focused_customer_id: int | None = None
@@ -1316,6 +1319,8 @@ class ARTab(QWidget):
 class APTab(QWidget):
     def __init__(self, conn: sqlite3.Connection, parent=None):
         super().__init__(parent)
+        self.setObjectName("apMasterTab")
+        self.setStyleSheet(ar_ap_master_tab_stylesheet())
         self._conn = conn
         self._vendor_summary_by_id: dict[int, dict] = {}
         self._focused_vendor_id: int | None = None

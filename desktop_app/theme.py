@@ -23,6 +23,10 @@ from PySide6.QtWidgets import QApplication
 BG_PRIMARY     = "#1A1A2E"   # main window / panel background
 BG_SECONDARY   = "#16213E"   # alternate rows, groupbox backgrounds
 BG_ELEVATED    = "#0F3460"   # headers, toolbars, selected items
+# Top-level Customers / Vendors: one step darker than BG_PRIMARY / BG_SECONDARY (richer navy body).
+AR_AP_MASTER_BG_PRIMARY = "#13162A"
+AR_AP_MASTER_BG_SECONDARY = "#0E182E"
+AR_AP_MASTER_TABLE_ALT = "#0B1528"
 FG_PRIMARY     = "#E0E0E0"   # default text
 FG_SECONDARY   = "#A0A0B0"   # placeholder / secondary text
 ACCENT         = "#533483"   # accent / highlight colour
@@ -105,6 +109,46 @@ QTableWidget#bankRegisterTable::item {{
 QTableWidget#bankRegisterTable::item:selected {{
     background-color: {SELECTION_BG};
     color: {SELECTION_FG};
+}}
+"""
+
+
+def ar_ap_master_tab_stylesheet() -> str:
+    """Return QSS for top-level **Customers** / **Vendors** tabs (darker panels; same blue table headers)."""
+    return f"""
+QWidget#arMasterTab, QWidget#apMasterTab {{
+    background-color: {AR_AP_MASTER_BG_PRIMARY};
+}}
+QWidget#arMasterTab QGroupBox, QWidget#apMasterTab QGroupBox {{
+    background-color: {AR_AP_MASTER_BG_SECONDARY};
+    border: 1px solid {BORDER};
+    border-radius: 4px;
+}}
+QWidget#arMasterTab QTableWidget, QWidget#apMasterTab QTableWidget {{
+    background-color: {AR_AP_MASTER_BG_PRIMARY};
+    alternate-background-color: {AR_AP_MASTER_TABLE_ALT};
+    color: {FG_PRIMARY};
+    gridline-color: {BORDER};
+    border: 1px solid {BORDER};
+}}
+QWidget#arMasterTab QTableWidget::item:selected,
+QWidget#apMasterTab QTableWidget::item:selected {{
+    background-color: {SELECTION_BG};
+    color: {SELECTION_FG};
+}}
+QWidget#arMasterTab QHeaderView::section,
+QWidget#apMasterTab QHeaderView::section {{
+    background-color: {BG_ELEVATED};
+    color: {FG_PRIMARY};
+    padding: 4px 6px;
+    border: none;
+    border-right: 1px solid {BORDER};
+    border-bottom: 1px solid {BORDER};
+    font-weight: bold;
+}}
+QWidget#arMasterTab QSplitter::handle,
+QWidget#apMasterTab QSplitter::handle {{
+    background-color: {BORDER};
 }}
 """
 

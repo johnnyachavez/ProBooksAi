@@ -1,4 +1,6 @@
-"""Invoice entry workflow screen — line grid and totals; Bill To uses Customer Center data.
+"""Invoice entry workflow screen — intake queue, line grid, and totals; Bill To uses Customer Center data.
+
+**Invoice Intake** (top): stage PDFs, images, and pasted text for future draft creation; does not replace the line grid.
 
 Light panel styling matches other AR/AP draft screens. Line grid uses in-cell widgets
 so editors stay inline (no multiline popup editors). Bill To is wired to
@@ -44,6 +46,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSizePolicy,
+    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -66,6 +69,7 @@ from desktop_app.invoice_preferences import (
     configure_printer_for_invoice_print,
     ensure_invoice_output_folder,
 )
+from desktop_app.invoice_intake_panel import InvoiceIntakePanel
 from desktop_app.invoice_pdf import invoice_html_string, save_invoice_pdf
 from desktop_app.qt_mnemonic import message_box_information_ok
 from probooksai import business
@@ -738,7 +742,17 @@ class InvoiceScreen(QWidget):
         tot.addLayout(tot_col)
         play.addWidget(tot_frame)
 
-        outer.addWidget(page, 1)
+        main_split = QSplitter(Qt.Orientation.Vertical)
+        main_split.setObjectName("invoiceWorkflowSplitter")
+        self._invoice_intake = InvoiceIntakePanel(main_split, invoice_screen=self)
+        main_split.addWidget(self._invoice_intake)
+        main_split.addWidget(page)
+        main_split.setStretchFactor(0, 0)
+        main_split.setStretchFactor(1, 1)
+        main_split.setCollapsible(0, True)
+        main_split.setCollapsible(1, False)
+        main_split.setSizes([280, 680])
+        outer.addWidget(main_split, 1)
 
         self._refresh_browse_state()
 
