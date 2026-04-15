@@ -75,18 +75,17 @@ from desktop_app.ar_customer_actions import (
     open_new_ar_invoice_dialog,
 )
 
-# Light blue-gray theme (one step darker than the prior invoice palette; same family).
-_INV_BG = "#eef2f8"
-_INV_PANEL = "#ffffff"
-_INV_STRIPE = "#dfebf6"
-_INV_GRID = "#b9c8dc"
-_INV_HEADER = "#d0e0ef"
+# Navy-cool form theme (aligned with Pay Bills / Receive Payments; less washed-out than prior invoice).
+_INV_BG = "#e4e9f0"
+_INV_PANEL = "#f7f9fc"
+_INV_STRIPE = "#e4ebf4"
+_INV_GRID = "#9eb0c8"
+_INV_HEADER = "#c4d2e4"
 _INV_TEXT = "#1a1a2e"
-_INV_CAPTION = "#5a6578"
-# Invoice # box (under title): max width; top-right title size. Top four fields (Date, PO, Job, blank): min width
-# only — no max cap so they match the pre-shrink “original” horizontal sizing.
+_INV_CAPTION = "#4a5568"
+# Invoice # box: max width. Title uses same 20px weight as Pay Bills / Receive Payments.
 _INVOICE_TOP_HEADER_FIELD_MAX_WIDTH_PX = 158
-_INVOICE_TITLE_FONT_PX = int(round(20 * 1.5))
+_INVOICE_TITLE_FONT_PX = 20
 _INVOICE_NUMBER_FIELD_MAX_WIDTH_PX = int(round(_INVOICE_TOP_HEADER_FIELD_MAX_WIDTH_PX * 0.75))
 _INVOICE_TOP_FOUR_FIELD_MIN_WIDTH_PX = 158
 # Bill To: ~65% narrower than the old full-stretch right column; body ~20% taller than default (68px).
@@ -373,6 +372,26 @@ class InvoiceScreen(QWidget):
         outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(10)
 
+        ar_tool = QHBoxLayout()
+        ar_tool.setSpacing(8)
+        self._btn_ar_new_inv = QPushButton("New invoice (AR)…")
+        self._btn_ar_new_inv.setToolTip(
+            "Create an invoice using the AR dialog (moved from the Customers tab)."
+        )
+        self._btn_ar_new_inv.clicked.connect(self._on_ar_new_invoice_dialog)
+        self._btn_ar_export_inv = QPushButton("Export invoices CSV…")
+        self._btn_ar_export_inv.setToolTip(
+            "Export invoice headers to CSV (UTF-8 BOM for Excel)."
+        )
+        self._btn_ar_export_inv.clicked.connect(self._on_ar_export_invoices_csv)
+        for b in (self._btn_ar_new_inv, self._btn_ar_export_inv):
+            b.setAutoDefault(False)
+            b.setDefault(False)
+            ar_tool.addWidget(b)
+        ar_tool.addStretch(1)
+        outer.addLayout(ar_tool)
+        self._sync_ar_toolbar_enabled()
+
         page = QFrame()
         page.setObjectName("invoiceLightPanel")
         page.setStyleSheet(
@@ -383,23 +402,15 @@ class InvoiceScreen(QWidget):
         play.setContentsMargins(16, 16, 16, 16)
         play.setSpacing(12)
 
-        # ── Upper-right: Invoice title + invoice # (Bill To stays on header row with date/PO/job) ──
-        top = QHBoxLayout()
-        top.setSpacing(16)
-        top.addStretch(1)
+        # ── Title row (Pay Bills / Receive Payments style: title left, key field right) ──
+        title_row = QHBoxLayout()
+        title_row.setSpacing(12)
         title = QLabel("Invoice")
         title.setStyleSheet(
             f"font-size: {_INVOICE_TITLE_FONT_PX}px; font-weight: 600; color: {_INV_TEXT}; background: transparent;"
         )
-        title.setAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop
-        )
-        title_col = QVBoxLayout()
-        title_col.setSpacing(8)
-        title_col.setAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop
-        )
-        title_col.addWidget(title, 0, Qt.AlignmentFlag.AlignRight)
+        title_row.addWidget(title)
+        title_row.addStretch(1)
         self._inv_number = QLineEdit()
         self._inv_number.setPlaceholderText("INVOICE #")
         self._inv_number.setAlignment(Qt.AlignmentFlag.AlignLeft)
@@ -410,9 +421,8 @@ class InvoiceScreen(QWidget):
             max_width_px=_INVOICE_NUMBER_FIELD_MAX_WIDTH_PX,
             left_align=True,
         )
-        title_col.addWidget(inv_number_box, 0, Qt.AlignmentFlag.AlignRight)
-        top.addLayout(title_col)
-        play.addLayout(top)
+        title_row.addWidget(inv_number_box, 0, Qt.AlignmentFlag.AlignRight)
+        play.addLayout(title_row)
 
         bill_panel, bill_te = build_customer_bill_to_panel(
             self,
@@ -551,6 +561,18 @@ class InvoiceScreen(QWidget):
         if _INVOICE_SHOW_SHIP_TO_UI and self._ship_to is not None:
             top_fields_row.addWidget(self._ship_to[0], 0, Qt.AlignmentFlag.AlignTop)
 
+        header_band = QFrame()
+        header_band.setObjectName("invoiceHeaderBand")
+        header_band.setStyleSheet(
+            f"QFrame#invoiceHeaderBand {{ background-color: {_INV_PANEL}; "
+            f"border: 1px solid {_INV_GRID}; border-radius: 8px; }}"
+        )
+        hb_lay = QVBoxLayout(header_band)
+        hb_lay.setContentsMargins(12, 12, 12, 12)
+        hb_lay.setSpacing(10)
+        hb_lay.addLayout(top_fields_row)
+        play.addWidget(header_band)
+
         # Save/Print: only clicked → persistence; UniqueConnection prevents duplicate slots.
         _uc = Qt.ConnectionType.UniqueConnection
         self._btn_save.clicked.connect(self._on_save_invoice, _uc)
@@ -563,11 +585,17 @@ class InvoiceScreen(QWidget):
         self._btn_reverse.clicked.connect(self._on_reverse_invoice, _uc)
         self._btn_forward.clicked.connect(self._on_forward_invoice, _uc)
 
-        play.addLayout(top_fields_row)
-
         self._update_new_customer_button_state()
 
         self._sync_invoice_number_suggestion()
+
+        line_sec = QLabel("Line items")
+        line_sec.setStyleSheet(
+            f"color: {_INV_CAPTION}; font-size: 11px; font-weight: 600; "
+            "letter-spacing: 0.03em; background: transparent;"
+        )
+        line_sec.setToolTip("Service lines; amounts roll into subtotal, tax, and total below.")
+        play.addWidget(line_sec)
 
         # ── Line items grid ──
         self._table = QTableWidget(self._N_LINE_ROWS, len(self._LINE_COLS))
@@ -711,26 +739,6 @@ class InvoiceScreen(QWidget):
         play.addWidget(tot_frame)
 
         outer.addWidget(page, 1)
-
-        ar_tool = QHBoxLayout()
-        ar_tool.setSpacing(8)
-        self._btn_ar_new_inv = QPushButton("New invoice (AR)…")
-        self._btn_ar_new_inv.setToolTip(
-            "Create an invoice using the AR dialog (moved from the Customers tab)."
-        )
-        self._btn_ar_new_inv.clicked.connect(self._on_ar_new_invoice_dialog)
-        self._btn_ar_export_inv = QPushButton("Export invoices CSV…")
-        self._btn_ar_export_inv.setToolTip(
-            "Export invoice headers to CSV (UTF-8 BOM for Excel)."
-        )
-        self._btn_ar_export_inv.clicked.connect(self._on_ar_export_invoices_csv)
-        for b in (self._btn_ar_new_inv, self._btn_ar_export_inv):
-            b.setAutoDefault(False)
-            b.setDefault(False)
-            ar_tool.addWidget(b)
-        ar_tool.addStretch(1)
-        outer.addLayout(ar_tool)
-        self._sync_ar_toolbar_enabled()
 
         self._refresh_browse_state()
 

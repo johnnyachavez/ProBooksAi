@@ -46,7 +46,7 @@ def test_enter_bills_screen_header_and_line_grid(qapp: QApplication) -> None:
     assert isinstance(t.cellWidget(0, 4), QLineEdit)
 
     labels = [lb.text() for lb in w.findChildren(QLabel)]
-    assert "Bill" in labels
+    assert "Enter Bills" in labels
     assert "Vendor" in labels
     assert "Vendor Address" in labels
     assert "Expenses" not in labels
