@@ -31,6 +31,16 @@ def test_bank_schema_version_includes_gl_profile(db):
     )
 
 
+def test_list_open_bills_for_pay_bills(db):
+    assert business.list_open_bills_for_pay_bills(db._conn) == []
+    vid = business.add_vendor(db._conn, "Vendor X")
+    business.create_bill(db._conn, vid, "2024-05-01", 40.0, vendor_invoice_number="VX-1")
+    rows = business.list_open_bills_for_pay_bills(db._conn)
+    assert len(rows) == 1
+    assert dict(rows[0])["vendor_name"] == "Vendor X"
+    assert int(dict(rows[0])["bill_id"]) >= 1
+
+
 def test_list_invoice_ids_chronological_order(db) -> None:
     assert business.list_invoice_ids_chronological(db._conn) == []
     c1 = business.add_customer(db._conn, "A")

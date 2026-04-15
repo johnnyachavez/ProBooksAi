@@ -110,7 +110,7 @@ def build_accounting_workflow_tabs(
         elif page_title == "Enter Bills":
             widgets.append(EnterBillsScreen(ap_conn=ap_conn))
         elif page_title == "Pay Bills":
-            widgets.append(PayBillsScreen())
+            widgets.append(PayBillsScreen(ap_conn=ap_conn))
         elif page_title == "Receive Checks":
             widgets.append(ReceiveChecksScreen())
         else:

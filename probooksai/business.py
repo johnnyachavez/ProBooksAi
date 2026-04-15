@@ -1044,6 +1044,21 @@ def list_open_bills_for_vendor(conn: sqlite3.Connection, vendor_id: int) -> list
     ).fetchall()
 
 
+def list_open_bills_for_pay_bills(conn: sqlite3.Connection) -> list:
+    """Open AP bills with vendor columns for the Pay Bills tab (``balance_due`` > 0)."""
+    return conn.execute(
+        """
+        SELECT b.id AS bill_id, b.vendor_id, v.name AS vendor_name,
+               b.bill_date, b.due_date, b.vendor_invoice_number,
+               b.balance_due, b.total, b.status
+        FROM bills b
+        JOIN vendors v ON v.id = b.vendor_id
+        WHERE b.balance_due > 0.005
+        ORDER BY COALESCE(NULLIF(TRIM(b.due_date), ''), b.bill_date), b.id
+        """
+    ).fetchall()
+
+
 def list_vendor_ap_summaries(conn: sqlite3.Connection) -> list[dict]:
     """One row per vendor: open AP balance, current vs overdue (by due date), last bill and payment dates.
 

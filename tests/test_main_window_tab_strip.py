@@ -78,20 +78,23 @@ def test_accounting_landing_tabs_show_page_titles(qapp: QApplication, tmp_path: 
             tabs.setCurrentIndex(idx)
             cw = tabs.currentWidget()
             assert isinstance(cw, spec)
-            tbl = cw.findChild(QTableWidget)
-            assert tbl is not None
             titles = [lb.text() for lb in cw.findChildren(QLabel)]
             if spec is InvoiceScreen:
+                tbl = cw.findChild(QTableWidget, "invoiceLinesTable")
+                assert tbl is not None
                 assert tbl.columnCount() == 7
                 assert tbl.objectName() == "invoiceLinesTable"
                 assert "Invoice" in titles
                 assert any("Subtotal" in t for t in titles)
-            elif spec is EnterBillsScreen:
+                continue
+            tbl = cw.findChild(QTableWidget)
+            assert tbl is not None
+            if spec is EnterBillsScreen:
                 assert tbl.columnCount() == 5
                 assert "Enter Bills" in titles
                 assert "Vendor" in titles
             elif spec is PayBillsScreen:
-                assert tbl.columnCount() == 10
+                assert tbl.columnCount() == 7
                 assert "Pay Bills" in titles
             else:
                 assert tbl.columnCount() == 6

@@ -1,6 +1,6 @@
 """Invoice entry workflow screen — intake queue, line grid, and totals; Bill To uses Customer Center data.
 
-**Invoice Intake** (top): stage PDFs, images, and pasted text for future draft creation; does not replace the line grid.
+**Invoice Intake** (sub-tab): stage PDFs, images, and pasted text for future draft creation; **Manual Invoice** sub-tab holds the line grid.
 
 Light panel styling matches other AR/AP draft screens. Line grid uses in-cell widgets
 so editors stay inline (no multiline popup editors). Bill To is wired to
@@ -46,7 +46,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSizePolicy,
-    QSplitter,
+    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -742,17 +742,16 @@ class InvoiceScreen(QWidget):
         tot.addLayout(tot_col)
         play.addWidget(tot_frame)
 
-        main_split = QSplitter(Qt.Orientation.Vertical)
-        main_split.setObjectName("invoiceWorkflowSplitter")
-        self._invoice_intake = InvoiceIntakePanel(main_split, invoice_screen=self)
-        main_split.addWidget(self._invoice_intake)
-        main_split.addWidget(page)
-        main_split.setStretchFactor(0, 0)
-        main_split.setStretchFactor(1, 1)
-        main_split.setCollapsible(0, True)
-        main_split.setCollapsible(1, False)
-        main_split.setSizes([280, 680])
-        outer.addWidget(main_split, 1)
+        self._invoice_tabs = QTabWidget()
+        self._invoice_tabs.setObjectName("invoiceModuleTabs")
+        self._invoice_tabs.setToolTip(
+            "Manual Invoice: full entry workflow. Invoice Intake: stage documents for future drafting."
+        )
+        self._invoice_intake = InvoiceIntakePanel(self._invoice_tabs, invoice_screen=self)
+        self._invoice_tabs.addTab(page, "Manual Invoice")
+        self._invoice_tabs.addTab(self._invoice_intake, "Invoice Intake")
+        self._invoice_tabs.setCurrentIndex(0)
+        outer.addWidget(self._invoice_tabs, 1)
 
         self._refresh_browse_state()
 
