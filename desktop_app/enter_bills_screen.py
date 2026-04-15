@@ -1,6 +1,6 @@
 """Enter Bill workflow screen — UI-focused; vendor list/address from company DB when connected.
 
-Light panel styling matches :class:`PayBillsScreen` / :class:`InvoiceScreen` navy form theme for AR/AP consistency.
+Dark navy styling matches :class:`PayBillsScreen` / :class:`InvoiceScreen` workflow theme (Customers / Vendors AR/AP body).
 """
 
 from __future__ import annotations
@@ -31,14 +31,16 @@ from desktop_app.extra_tabs import open_ap_bill_edit_dialog
 from desktop_app.qt_mnemonic import message_box_information_ok
 from probooksai import business
 
-# Navy-cool form theme (aligned with Invoices / Pay Bills; less washed-out than pure white panels)
-_BILL_BG = "#e4e9f0"
-_BILL_PANEL = "#f7f9fc"
-_BILL_STRIPE = "#e4ebf4"
-_BILL_GRID = "#9eb0c8"
-_BILL_HEADER = "#c4d2e4"
-_BILL_TEXT = "#1a1a2e"
-_BILL_CAPTION = "#4a5568"
+from desktop_app.theme import (
+    WORKFLOW_ALT_ROW as _BILL_STRIPE,
+    WORKFLOW_CAPTION as _BILL_CAPTION,
+    WORKFLOW_GRID as _BILL_GRID,
+    WORKFLOW_HEADER_BG as _BILL_HEADER,
+    WORKFLOW_INPUT_BG,
+    WORKFLOW_PAGE_BG as _BILL_BG,
+    WORKFLOW_PANEL_BG as _BILL_PANEL,
+    WORKFLOW_TEXT as _BILL_TEXT,
+)
 
 
 def _amount_spin() -> QDoubleSpinBox:
@@ -48,7 +50,7 @@ def _amount_spin() -> QDoubleSpinBox:
     s.setPrefix("$ ")
     s.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
     s.setStyleSheet(
-        f"QDoubleSpinBox {{ background: {_BILL_PANEL}; border: 1px solid {_BILL_GRID}; "
+        f"QDoubleSpinBox {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_BILL_GRID}; "
         f"padding: 2px 6px; color: {_BILL_TEXT}; }}"
     )
     return s
@@ -57,7 +59,7 @@ def _amount_spin() -> QDoubleSpinBox:
 def _table_line_edit() -> QLineEdit:
     le = QLineEdit()
     le.setStyleSheet(
-        f"QLineEdit {{ background: {_BILL_PANEL}; border: 1px solid {_BILL_GRID}; "
+        f"QLineEdit {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_BILL_GRID}; "
         f"padding: 2px 6px; color: {_BILL_TEXT}; }}"
     )
     return le
@@ -150,7 +152,7 @@ class EnterBillsScreen(QWidget):
         self._vendor.setEditable(False)
         self._vendor.setMinimumWidth(280)
         self._vendor.setStyleSheet(
-            f"QComboBox {{ background: {_BILL_PANEL}; border: 1px solid {_BILL_GRID}; "
+            f"QComboBox {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_BILL_GRID}; "
             f"padding: 4px 8px; color: {_BILL_TEXT}; }}"
         )
 
@@ -158,7 +160,7 @@ class EnterBillsScreen(QWidget):
         self._address.setPlaceholderText("Vendor Address")
         self._address.setFixedHeight(72)
         self._address.setStyleSheet(
-            f"QPlainTextEdit {{ background: {_BILL_PANEL}; color: {_BILL_TEXT}; "
+            f"QPlainTextEdit {{ background: {WORKFLOW_INPUT_BG}; color: {_BILL_TEXT}; "
             f"border: 1px solid {_BILL_GRID}; border-radius: 4px; padding: 4px; }}"
         )
 
@@ -257,7 +259,7 @@ class EnterBillsScreen(QWidget):
             job_edit = QLineEdit()
             job_edit.setPlaceholderText("Customer:Job")
             job_edit.setStyleSheet(
-                f"QLineEdit {{ background: {_BILL_PANEL}; border: 1px solid {_BILL_GRID}; "
+                f"QLineEdit {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_BILL_GRID}; "
                 f"padding: 2px 4px; color: {_BILL_TEXT}; }}"
             )
             self._table.setCellWidget(row, 4, job_edit)

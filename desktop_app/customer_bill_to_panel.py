@@ -27,10 +27,17 @@ from PySide6.QtWidgets import (
 
 from probooksai import business
 
-# Styling aligned with :class:`desktop_app.invoice_screen.InvoiceScreen` Bill To frame
-_INV_PANEL = "#ffffff"
-_INV_GRID = "#b9c8dc"
-_INV_TEXT = "#1a1a2e"
+from desktop_app.theme import (
+    WORKFLOW_CONTROL_FACE,
+    WORKFLOW_CONTROL_HOVER,
+    WORKFLOW_CONTROL_PRESSED,
+    WORKFLOW_GRID as _INV_GRID,
+    WORKFLOW_INPUT_BG,
+    WORKFLOW_PAGE_BG,
+    WORKFLOW_PANEL_BG as _INV_PANEL,
+    WORKFLOW_STRIP_BTN_OUTLINE,
+    WORKFLOW_TEXT as _INV_TEXT,
+)
 
 
 def format_customer_bill_to_plaintext(customer: dict) -> str:
@@ -85,6 +92,15 @@ class CustomerQuickAddDialog(QDialog):
         self._new_id: int | None = None
         self.setWindowTitle("Add customer")
         self.setMinimumWidth(400)
+        self.setStyleSheet(
+            f"QDialog {{ background-color: {WORKFLOW_PAGE_BG}; }}"
+            f"QLabel {{ color: {_INV_TEXT}; }}"
+            f"QDialog QPushButton {{ background-color: {WORKFLOW_CONTROL_FACE}; color: {_INV_TEXT}; "
+            f"border: 1px solid {WORKFLOW_STRIP_BTN_OUTLINE}; border-radius: 4px; padding: 4px 14px; "
+            f"min-width: 72px; }}"
+            f"QDialog QPushButton:hover {{ background-color: {WORKFLOW_CONTROL_HOVER}; }}"
+            f"QDialog QPushButton:pressed {{ background-color: {WORKFLOW_CONTROL_PRESSED}; }}"
+        )
         self.setToolTip(
             "Save a new customer to the company file; Bill To fills from this record. "
             "Same .db as Business → Customers (File → Backup / Restore, probooks.backup)."
@@ -100,7 +116,7 @@ class CustomerQuickAddDialog(QDialog):
         self._phone = QLineEdit()
         self._email = QLineEdit()
         _ss = (
-            f"QLineEdit, QPlainTextEdit {{ background: {_INV_PANEL}; color: {_INV_TEXT}; "
+            f"QLineEdit, QPlainTextEdit {{ background: {WORKFLOW_INPUT_BG}; color: {_INV_TEXT}; "
             f"border: 1px solid {_INV_GRID}; border-radius: 4px; padding: 4px; }}"
         )
         for w in (self._name, self._contact, self._phone, self._email):
@@ -171,7 +187,7 @@ class CustomerBillToPanel(QFrame):
         lay.setContentsMargins(8, 6, 8, 8)
         lay.setSpacing(4)
         cap = QLabel("Bill To")
-        cap.setStyleSheet(f"color: {_INV_TEXT}; font-size: 12px; font-weight: 600;")
+        cap.setStyleSheet(f"color: {_INV_TEXT}; font-size: 12px; font-weight: 600; background: transparent;")
         lay.addWidget(cap)
 
         row = QHBoxLayout()
@@ -183,7 +199,7 @@ class CustomerBillToPanel(QFrame):
             combo_min_width_px if combo_min_width_px is not None else 200
         )
         self._combo.setStyleSheet(
-            f"QComboBox {{ background: {_INV_PANEL}; border: 1px solid {_INV_GRID}; "
+            f"QComboBox {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_INV_GRID}; "
             f"padding: 4px 8px; color: {_INV_TEXT}; border-radius: 4px; }}"
         )
         le = self._combo.lineEdit()
@@ -198,6 +214,12 @@ class CustomerBillToPanel(QFrame):
         self._btn_new.setToolTip(
             "Add a customer to the company file when no match exists; Bill To fills automatically."
         )
+        self._btn_new.setStyleSheet(
+            f"QPushButton {{ background-color: {WORKFLOW_CONTROL_FACE}; color: {_INV_TEXT}; "
+            f"border: 1px solid {WORKFLOW_STRIP_BTN_OUTLINE}; border-radius: 4px; padding: 4px 10px; }}"
+            f"QPushButton:hover {{ background-color: {WORKFLOW_CONTROL_HOVER}; }}"
+            f"QPushButton:pressed {{ background-color: {WORKFLOW_CONTROL_PRESSED}; }}"
+        )
         self._btn_new.clicked.connect(self._on_new_customer)
         self._btn_new.setVisible(show_new_customer_button)
         row.addWidget(self._combo, 1)
@@ -211,7 +233,7 @@ class CustomerBillToPanel(QFrame):
             bill_plain_height_px if bill_plain_height_px is not None else 68
         )
         self._bill_te.setStyleSheet(
-            f"QPlainTextEdit {{ background: {_INV_PANEL}; color: {_INV_TEXT}; "
+            f"QPlainTextEdit {{ background: {WORKFLOW_INPUT_BG}; color: {_INV_TEXT}; "
             f"border: 1px solid {_INV_GRID}; border-radius: 4px; padding: 4px; }}"
         )
         lay.addWidget(self._bill_te)

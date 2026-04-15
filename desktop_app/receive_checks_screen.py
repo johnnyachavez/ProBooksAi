@@ -1,6 +1,6 @@
 """Receive Checks (customer payment) workflow screen — UI only (no database or A/R logic).
 
-Navy-cool form theme matches Invoices, Enter Bills, and Pay Bills (Receive Payments tab).
+Dark navy workflow theme matches Invoices, Enter Bills, and Pay Bills (Receive Payments tab).
 """
 
 from __future__ import annotations
@@ -36,14 +36,16 @@ from desktop_app.ar_customer_actions import (
     open_record_ar_payment_dialog,
 )
 from desktop_app.flexible_date import configure_qdate_edit_us
-
-_RC_BG = "#e4e9f0"
-_RC_PANEL = "#f7f9fc"
-_RC_STRIPE = "#e4ebf4"
-_RC_GRID = "#9eb0c8"
-_RC_HEADER = "#c4d2e4"
-_RC_TEXT = "#1a1a2e"
-_RC_CAPTION = "#4a5568"
+from desktop_app.theme import (
+    WORKFLOW_ALT_ROW as _RC_STRIPE,
+    WORKFLOW_CAPTION as _RC_CAPTION,
+    WORKFLOW_GRID as _RC_GRID,
+    WORKFLOW_HEADER_BG as _RC_HEADER,
+    WORKFLOW_INPUT_BG,
+    WORKFLOW_PAGE_BG as _RC_BG,
+    WORKFLOW_PANEL_BG as _RC_PANEL,
+    WORKFLOW_TEXT as _RC_TEXT,
+)
 
 
 def _readonly_item(text: str) -> QTableWidgetItem:
@@ -69,7 +71,7 @@ def _payment_spin() -> QDoubleSpinBox:
     s.setPrefix("$ ")
     s.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
     s.setStyleSheet(
-        f"QDoubleSpinBox {{ background: {_RC_PANEL}; border: 1px solid {_RC_GRID}; "
+        f"QDoubleSpinBox {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_RC_GRID}; "
         f"padding: 2px 6px; color: {_RC_TEXT}; }}"
     )
     return s
@@ -165,15 +167,15 @@ class ReceiveChecksScreen(QWidget):
         form_outer.setSpacing(24)
 
         _combo_ss = (
-            f"QComboBox {{ background: {_RC_PANEL}; border: 1px solid {_RC_GRID}; "
+            f"QComboBox {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_RC_GRID}; "
             f"padding: 4px 8px; color: {_RC_TEXT}; }}"
         )
         _line_ss = (
-            f"QLineEdit {{ background: {_RC_PANEL}; border: 1px solid {_RC_GRID}; "
+            f"QLineEdit {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_RC_GRID}; "
             f"padding: 4px 8px; color: {_RC_TEXT}; }}"
         )
         _date_ss = (
-            f"QDateEdit {{ background: {_RC_PANEL}; border: 1px solid {_RC_GRID}; "
+            f"QDateEdit {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_RC_GRID}; "
             f"padding: 2px 6px; color: {_RC_TEXT}; }}"
         )
 

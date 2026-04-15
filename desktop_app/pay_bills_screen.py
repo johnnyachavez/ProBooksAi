@@ -40,17 +40,19 @@ from desktop_app.qt_mnemonic import (
 )
 from probooksai import business
 
+from desktop_app.theme import (
+    WORKFLOW_ALT_ROW as _PAY_STRIPE,
+    WORKFLOW_CAPTION as _PAY_CAPTION,
+    WORKFLOW_GRID as _PAY_GRID,
+    WORKFLOW_HEADER_BG as _PAY_HEADER,
+    WORKFLOW_INPUT_BG,
+    WORKFLOW_PAGE_BG as _PAY_BG,
+    WORKFLOW_PANEL_BG as _PAY_PANEL,
+    WORKFLOW_TEXT as _PAY_TEXT,
+)
+
 if TYPE_CHECKING:
     from probooksai.bank_import import BankDatabase
-
-# Navy-cool form theme (aligned with Invoices / Enter Bills / Receive Payments)
-_PAY_BG = "#e4e9f0"
-_PAY_PANEL = "#f7f9fc"
-_PAY_STRIPE = "#e4ebf4"
-_PAY_GRID = "#9eb0c8"
-_PAY_HEADER = "#c4d2e4"
-_PAY_TEXT = "#1a1a2e"
-_PAY_CAPTION = "#4a5568"
 
 _ROLE_BILL_ID = Qt.ItemDataRole.UserRole
 _ROLE_VENDOR_ID = Qt.ItemDataRole.UserRole + 1
@@ -173,15 +175,15 @@ class PayBillsScreen(QWidget):
         ctrl.setVerticalSpacing(10)
 
         _combo_ss = (
-            f"QComboBox {{ background: {_PAY_PANEL}; border: 1px solid {_PAY_GRID}; "
+            f"QComboBox {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_PAY_GRID}; "
             f"padding: 4px 8px; color: {_PAY_TEXT}; }}"
         )
         _line_ss = (
-            f"QLineEdit {{ background: {_PAY_PANEL}; border: 1px solid {_PAY_GRID}; "
+            f"QLineEdit {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_PAY_GRID}; "
             f"padding: 4px 8px; color: {_PAY_TEXT}; }}"
         )
         _date_ss = (
-            f"QDateEdit {{ background: {_PAY_PANEL}; border: 1px solid {_PAY_GRID}; "
+            f"QDateEdit {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_PAY_GRID}; "
             f"padding: 2px 6px; color: {_PAY_TEXT}; }}"
         )
 
@@ -405,7 +407,7 @@ class PayBillsScreen(QWidget):
             pay_spin.setPrefix("$ ")
             pay_spin.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
             pay_spin.setStyleSheet(
-                f"QDoubleSpinBox {{ background: {_PAY_PANEL}; border: 1px solid {_PAY_GRID}; "
+                f"QDoubleSpinBox {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_PAY_GRID}; "
                 f"padding: 2px 6px; color: {_PAY_TEXT}; }}"
             )
             pay_spin.setToolTip("Amount to apply to this bill on this payment.")

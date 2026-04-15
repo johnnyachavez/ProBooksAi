@@ -29,15 +29,20 @@ from PySide6.QtWidgets import (
 )
 
 from desktop_app.qt_mnemonic import message_box_information_ok
-
-# Match :mod:`desktop_app.invoice_screen` navy form theme (no import — avoids circular dependency).
-_INV_BG = "#e4e9f0"
-_INV_PANEL = "#f7f9fc"
-_INV_STRIPE = "#e4ebf4"
-_INV_GRID = "#9eb0c8"
-_INV_HEADER = "#c4d2e4"
-_INV_TEXT = "#1a1a2e"
-_INV_CAPTION = "#4a5568"
+from desktop_app.theme import (
+    WORKFLOW_ALT_ROW as _INV_STRIPE,
+    WORKFLOW_CAPTION as _INV_CAPTION,
+    WORKFLOW_CONTROL_FACE,
+    WORKFLOW_CONTROL_HOVER,
+    WORKFLOW_CONTROL_PRESSED,
+    WORKFLOW_GRID as _INV_GRID,
+    WORKFLOW_HEADER_BG as _INV_HEADER,
+    WORKFLOW_INPUT_BG,
+    WORKFLOW_PAGE_BG as _INV_BG,
+    WORKFLOW_PANEL_BG as _INV_PANEL,
+    WORKFLOW_STRIP_BTN_OUTLINE,
+    WORKFLOW_TEXT as _INV_TEXT,
+)
 
 _INTAKE_COLS = (
     "Source",
@@ -108,6 +113,11 @@ class InvoiceIntakePanel(QWidget):
         band.setStyleSheet(
             f"QFrame#invoiceIntakeBand {{ background-color: {_INV_BG}; "
             f"border: 1px solid {_INV_GRID}; border-radius: 8px; }}"
+            f"QFrame#invoiceIntakeBand QPushButton {{ background-color: {WORKFLOW_CONTROL_FACE}; "
+            f"color: {_INV_TEXT}; border: 1px solid {WORKFLOW_STRIP_BTN_OUTLINE}; "
+            f"border-radius: 4px; padding: 4px 12px; }}"
+            f"QFrame#invoiceIntakeBand QPushButton:hover {{ background-color: {WORKFLOW_CONTROL_HOVER}; }}"
+            f"QFrame#invoiceIntakeBand QPushButton:pressed {{ background-color: {WORKFLOW_CONTROL_PRESSED}; }}"
         )
         lay = QVBoxLayout(band)
         lay.setContentsMargins(12, 10, 12, 10)
@@ -227,7 +237,7 @@ class InvoiceIntakePanel(QWidget):
         )
         self._txt_extracted.setMinimumHeight(100)
         self._txt_extracted.setStyleSheet(
-            f"QPlainTextEdit {{ background: {_INV_PANEL}; color: {_INV_TEXT}; "
+            f"QPlainTextEdit {{ background: {WORKFLOW_INPUT_BG}; color: {_INV_TEXT}; "
             f"border: 1px solid {_INV_GRID}; border-radius: 4px; padding: 6px; }}"
         )
         rv.addWidget(self._txt_extracted, 1)
@@ -243,7 +253,7 @@ class InvoiceIntakePanel(QWidget):
         self._txt_attachment.setPlaceholderText("File path or clipboard reference will appear here.")
         self._txt_attachment.setFixedHeight(72)
         self._txt_attachment.setStyleSheet(
-            f"QPlainTextEdit {{ background: {_INV_PANEL}; color: {_INV_TEXT}; "
+            f"QPlainTextEdit {{ background: {WORKFLOW_INPUT_BG}; color: {_INV_TEXT}; "
             f"border: 1px solid {_INV_GRID}; border-radius: 4px; padding: 6px; }}"
         )
         rv.addWidget(self._txt_attachment)
@@ -258,7 +268,7 @@ class InvoiceIntakePanel(QWidget):
         self._txt_draft.setReadOnly(True)
         self._txt_draft.setFixedHeight(56)
         self._txt_draft.setStyleSheet(
-            f"QPlainTextEdit {{ background: {_INV_PANEL}; color: {_INV_TEXT}; "
+            f"QPlainTextEdit {{ background: {WORKFLOW_INPUT_BG}; color: {_INV_TEXT}; "
             f"border: 1px solid {_INV_GRID}; border-radius: 4px; padding: 6px; }}"
         )
         rv.addWidget(self._txt_draft)

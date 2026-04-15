@@ -2,7 +2,7 @@
 
 **Invoice Intake** (sub-tab): stage PDFs, images, and pasted text for future draft creation; **Manual Invoice** sub-tab holds the line grid.
 
-Light panel styling matches other AR/AP draft screens. Line grid uses in-cell widgets
+Dark navy panel styling matches Customers / Vendors AR/AP master tabs. Line grid uses in-cell widgets
 so editors stay inline (no multiline popup editors). Bill To is wired to
 ``probooksai.business`` customers when *ap_conn* is set (same source as Business → Customers).
 
@@ -78,15 +78,23 @@ from desktop_app.ar_customer_actions import (
     open_ar_invoice_edit_dialog,
     open_new_ar_invoice_dialog,
 )
+from desktop_app.theme import (
+    DISABLED_FG,
+    WORKFLOW_ALT_ROW as _INV_STRIPE,
+    WORKFLOW_CAPTION as _INV_CAPTION,
+    WORKFLOW_CONTROL_FACE,
+    WORKFLOW_CONTROL_HOVER,
+    WORKFLOW_CONTROL_PRESSED,
+    WORKFLOW_GRID as _INV_GRID,
+    WORKFLOW_HEADER_BG as _INV_HEADER,
+    WORKFLOW_INPUT_BG,
+    WORKFLOW_PAGE_BG as _INV_BG,
+    WORKFLOW_PANEL_BG as _INV_PANEL,
+    WORKFLOW_STRIP_BTN_OUTLINE as _INV_STRIP_ACTION_BTN_OUTLINE,
+    WORKFLOW_TEXT as _INV_TEXT,
+)
 
-# Navy-cool form theme (aligned with Pay Bills / Receive Payments; less washed-out than prior invoice).
-_INV_BG = "#e4e9f0"
-_INV_PANEL = "#f7f9fc"
-_INV_STRIPE = "#e4ebf4"
-_INV_GRID = "#9eb0c8"
-_INV_HEADER = "#c4d2e4"
-_INV_TEXT = "#1a1a2e"
-_INV_CAPTION = "#4a5568"
+# Dark navy workflow theme (aligned with Customers / Vendors AR/AP master tabs).
 # Invoice # box: max width. Title uses same 20px weight as Pay Bills / Receive Payments.
 _INVOICE_TOP_HEADER_FIELD_MAX_WIDTH_PX = 158
 _INVOICE_TITLE_FONT_PX = 20
@@ -103,9 +111,8 @@ _INVOICE_TOP_FOUR_LINE_HEIGHT_PX = max(22, _INVOICE_BILL_TO_TEXT_HEIGHT_PX // 2)
 _TOP_STRIP_RADIUS_PX = 6
 _TOP_STRIP_CAPTION_FONT_PX = 11
 _TOP_STRIP_BODY_FONT_PX = 12
-# Clear Fields / Save / Export PDF / Print / New Customer / Reverse / Forward — per-button outline on white
-# faces (not the outer panel). Dark stroke for strong contrast; same on all six.
-_INV_STRIP_ACTION_BTN_OUTLINE = "#1f2a3d"
+# Clear Fields / Save / Export PDF / Print / New Customer / Reverse / Forward — per-button outline on dark
+# faces (not the outer panel). Same on all six.
 _INV_STRIP_ACTION_BTN_BORDER_W = 4
 
 
@@ -126,7 +133,7 @@ def _top_strip_field_outer_height_px() -> int:
 def _top_strip_line_edit_qss() -> str:
     """Borderless edit inside the outer QFrame (single chrome ring)."""
     return (
-        f"QLineEdit {{ background-color: {_INV_PANEL}; border: none; color: {_INV_TEXT}; "
+        f"QLineEdit {{ background-color: {WORKFLOW_INPUT_BG}; border: none; color: {_INV_TEXT}; "
         f"font-size: {_TOP_STRIP_BODY_FONT_PX}px; padding: 1px 8px; }}"
     )
 
@@ -137,14 +144,14 @@ def _top_strip_action_button_qss() -> str:
     bc = _INV_STRIP_ACTION_BTN_OUTLINE
     r = _TOP_STRIP_RADIUS_PX
     return (
-        f"QPushButton {{ background-color: {_INV_PANEL}; border: {bw}px solid {bc}; "
+        f"QPushButton {{ background-color: {WORKFLOW_CONTROL_FACE}; border: {bw}px solid {bc}; "
         f"border-radius: {r}px; color: {_INV_TEXT}; "
         f"font-size: {_TOP_STRIP_BODY_FONT_PX}px; padding: 0 12px; }}"
-        f"QPushButton:hover {{ background-color: {_INV_STRIPE}; border: {bw}px solid {bc}; "
+        f"QPushButton:hover {{ background-color: {WORKFLOW_CONTROL_HOVER}; border: {bw}px solid {bc}; "
         f"border-radius: {r}px; }}"
-        f"QPushButton:pressed {{ background-color: {_INV_HEADER}; border: {bw}px solid {bc}; "
+        f"QPushButton:pressed {{ background-color: {WORKFLOW_CONTROL_PRESSED}; border: {bw}px solid {bc}; "
         f"border-radius: {r}px; }}"
-        f"QPushButton:disabled {{ color: {_INV_CAPTION}; background-color: {_INV_PANEL}; "
+        f"QPushButton:disabled {{ color: {DISABLED_FG}; background-color: {WORKFLOW_CONTROL_FACE}; "
         f"border: {bw}px solid {bc}; border-radius: {r}px; }}"
     )
 
@@ -180,7 +187,7 @@ def _safe_invoice_pdf_stem(invoice_number: str) -> str:
 def _cell_line() -> QLineEdit:
     le = QLineEdit()
     le.setStyleSheet(
-        f"QLineEdit {{ background: {_INV_PANEL}; border: 1px solid {_INV_GRID}; "
+        f"QLineEdit {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_INV_GRID}; "
         f"padding: 2px 6px; color: {_INV_TEXT}; }}"
     )
     return le
@@ -192,7 +199,7 @@ def _qty_spin() -> QDoubleSpinBox:
     s.setDecimals(2)
     s.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
     s.setStyleSheet(
-        f"QDoubleSpinBox {{ background: {_INV_PANEL}; border: 1px solid {_INV_GRID}; "
+        f"QDoubleSpinBox {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_INV_GRID}; "
         f"padding: 2px 6px; color: {_INV_TEXT}; }}"
     )
     return s
@@ -205,7 +212,7 @@ def _money_spin() -> QDoubleSpinBox:
     s.setPrefix("$ ")
     s.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
     s.setStyleSheet(
-        f"QDoubleSpinBox {{ background: {_INV_PANEL}; border: 1px solid {_INV_GRID}; "
+        f"QDoubleSpinBox {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_INV_GRID}; "
         f"padding: 2px 6px; color: {_INV_TEXT}; }}"
     )
     return s
@@ -295,7 +302,7 @@ class InvoiceScreen(QWidget):
 
     def _line_edit_header_style(self) -> str:
         return (
-            f"QLineEdit {{ background: {_INV_PANEL}; border: 1px solid {_INV_GRID}; "
+            f"QLineEdit {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_INV_GRID}; "
             f"padding: 4px 8px; color: {_INV_TEXT}; }}"
         )
 
