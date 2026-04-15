@@ -1112,6 +1112,73 @@ def list_vendor_ap_summaries(conn: sqlite3.Connection) -> list[dict]:
     return out
 
 
+def list_customer_ar_summaries(conn: sqlite3.Connection) -> list[dict]:
+    """One row per customer: open AR balance, current vs overdue (by due date), last invoice and payment dates.
+
+    Mirrors :func:`list_vendor_ap_summaries` for invoices / ``ar_payments``.
+    """
+    from datetime import date
+
+    today = date.today()
+    customers = list_customers(conn)
+    out: list[dict] = []
+    for c in customers:
+        cid = int(c["id"])
+        name = (c["name"] or "").strip()
+        inv_rows = conn.execute(
+            "SELECT balance_due, due_date FROM invoices WHERE customer_id = ?",
+            (cid,),
+        ).fetchall()
+        open_bal = 0.0
+        current_due = 0.0
+        overdue = 0.0
+        for inv in inv_rows:
+            bal = float(inv["balance_due"] or 0)
+            if bal <= 0.005:
+                continue
+            open_bal += bal
+            due_s = (inv["due_date"] or "").strip()
+            days_past = 0
+            if due_s:
+                try:
+                    dd = date.fromisoformat(due_s)
+                    days_past = (today - dd).days
+                except ValueError:
+                    days_past = 0
+            if days_past <= 0:
+                current_due += bal
+            else:
+                overdue += bal
+        last_inv_row = conn.execute(
+            "SELECT MAX(invoice_date) FROM invoices WHERE customer_id = ?", (cid,)
+        ).fetchone()
+        last_inv_date = (last_inv_row[0] or "").strip() if last_inv_row else ""
+        pay_row = conn.execute(
+            "SELECT MAX(payment_date) FROM ar_payments WHERE customer_id = ?", (cid,)
+        ).fetchone()
+        last_pay = (pay_row[0] or "").strip() if pay_row and pay_row[0] else ""
+        if open_bal <= 0.005:
+            ar_status = "Current"
+        elif overdue > 0.005:
+            ar_status = "Overdue"
+        else:
+            ar_status = "Open"
+        out.append(
+            {
+                "customer_id": cid,
+                "customer_name": name,
+                "open_balance": round(open_bal, 2),
+                "current_due": round(current_due, 2),
+                "overdue": round(overdue, 2),
+                "last_invoice_date": last_inv_date,
+                "last_payment_date": last_pay,
+                "ar_status": ar_status,
+            }
+        )
+    out.sort(key=lambda x: (x["customer_name"] or "").lower())
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Aging (Phases 10 & 13)
 # ---------------------------------------------------------------------------

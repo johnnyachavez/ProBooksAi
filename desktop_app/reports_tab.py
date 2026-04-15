@@ -122,6 +122,12 @@ class ReportsTab(QWidget):
         )
         btn_export.clicked.connect(self._export_csv)
         row.addWidget(btn_export)
+        btn_ar_aging = QPushButton("Export AR aging CSV…")
+        btn_ar_aging.setToolTip(
+            "Export accounts-receivable aging detail to CSV (pick as-of date). UTF-8 BOM for Excel."
+        )
+        btn_ar_aging.clicked.connect(self._export_ar_aging_csv)
+        row.addWidget(btn_ar_aging)
         row.addStretch()
         layout.addLayout(row)
 
@@ -168,6 +174,11 @@ class ReportsTab(QWidget):
             self._show_pl()
         elif self._last_report_kind == "bs":
             self._show_bs()
+
+    def _export_ar_aging_csv(self) -> None:
+        from desktop_app.ar_customer_actions import export_ar_aging_csv
+
+        export_ar_aging_csv(self, self._conn)
 
     def _on_report_context_menu(self, pos):
         idx = self._table.indexAt(pos)

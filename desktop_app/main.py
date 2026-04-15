@@ -937,7 +937,7 @@ class MainWindow(QMainWindow):
         self._invoice_screen = InvoiceScreen(ap_conn=conn)
         self._enter_bills_screen = EnterBillsScreen(ap_conn=conn)
         self._pay_bills_screen = PayBillsScreen()
-        self._receive_payments_screen = ReceiveChecksScreen()
+        self._receive_payments_screen = ReceiveChecksScreen(ap_conn=conn)
 
         self._register_tab = RegisterTab(self._bank_db, self._coa_db, self._gl_db)
         self._bank_tab = BankImportTab(
@@ -1020,8 +1020,8 @@ class MainWindow(QMainWindow):
                 + _main_tab_bar_db_hint
             ),
             (
-                "Customers: accounts receivable — customers, invoices, payments, aging exports (F5). "
-                "Primary AR workspace (Business hub holds Rules, Payroll, Tax % only)."
+                "Customers: customer master (detail + list), balances and activity; export customers CSV (F5). "
+                "Invoices, payments, and AR exports use Invoices, Receive Payments, and Reports (Business hub holds Rules, Payroll, Tax % only)."
                 + _tab_bar_csv_excel_hint
                 + _main_tab_bar_db_hint
             ),
@@ -1801,10 +1801,10 @@ class MainWindow(QMainWindow):
             return
         conn = self._bank_db._conn
         if lt == "ar_invoice":
-            idx = self._tabs.indexOf(self._customers_tab)
+            idx = self._tabs.indexOf(self._invoice_screen)
             if idx >= 0:
                 self._tabs.setCurrentIndex(idx)
-            self._customers_tab.open_invoice_by_id(lid)
+            self._invoice_screen.open_invoice_by_id(lid)
             return
         if lt == "ap_bill":
             idx = self._tabs.indexOf(self._enter_bills_screen)
@@ -1813,7 +1813,7 @@ class MainWindow(QMainWindow):
             self._enter_bills_screen.open_bill_by_id(lid)
             return
         if lt == "ar_payment":
-            idx = self._tabs.indexOf(self._customers_tab)
+            idx = self._tabs.indexOf(self._receive_payments_screen)
             if idx >= 0:
                 self._tabs.setCurrentIndex(idx)
             row = conn.execute(
@@ -1840,8 +1840,8 @@ class MainWindow(QMainWindow):
                 "AR payment",
                 f"AR payment #{lid}: {r['payment_date']}  ${float(r['amount']):.2f}  — {r['party_name']}\n"
                 f"Reference: {ref}\n\n"
-                "Export AR payments CSV from this tab for a full list; use Record customer payment… for new entries.",
-                ok_tip="Close; you are on the Customers tab.",
+                "Export AR payments CSV from More → Reports or Receive Payments as needed; record new payments via Record customer payment… on Receive Payments.",
+                ok_tip="Close; you are on the Receive Payments tab.",
             )
             return
         if lt == "ap_payment":

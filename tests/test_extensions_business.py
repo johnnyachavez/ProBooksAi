@@ -1270,6 +1270,32 @@ def test_list_open_invoices_and_bills_for_party(db):
     assert business.list_open_bills_for_vendor(db._conn, vid) == []
 
 
+def test_list_customer_ar_summaries(db):
+    cid = business.add_customer(db._conn, "Acme")
+    rows = business.list_customer_ar_summaries(db._conn)
+    assert len(rows) == 1
+    assert rows[0]["customer_id"] == cid
+    assert rows[0]["open_balance"] == 0.0
+    assert rows[0]["ar_status"] == "Current"
+    iid = business.create_invoice(
+        db._conn,
+        cid,
+        "I1",
+        "2024-01-10",
+        due_date="2024-01-31",
+        lines=[{"description": "x", "qty": 1, "rate": 100.0}],
+    )
+    rows2 = business.list_customer_ar_summaries(db._conn)
+    r = next(x for x in rows2 if x["customer_id"] == cid)
+    assert r["open_balance"] == 100.0
+    assert r["last_invoice_date"] == "2024-01-10"
+    business.record_ar_payment(db._conn, cid, "2024-01-15", 100.0, [(iid, 100.0)])
+    rows3 = business.list_customer_ar_summaries(db._conn)
+    r3 = next(x for x in rows3 if x["customer_id"] == cid)
+    assert r3["open_balance"] == 0.0
+    assert r3["last_payment_date"] == "2024-01-15"
+
+
 def test_get_update_customer_and_vendor(db):
     cid = business.add_customer(db._conn, "Old", email="a@x.org")
     row = business.get_customer(db._conn, cid)

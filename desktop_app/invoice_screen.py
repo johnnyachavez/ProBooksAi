@@ -65,7 +65,13 @@ from desktop_app.invoice_preferences import (
 )
 from desktop_app.invoice_pdf import save_invoice_pdf
 from desktop_app.invoice_print_html import build_invoice_print_html
+from desktop_app.qt_mnemonic import message_box_information_ok
 from probooksai import business
+from desktop_app.ar_customer_actions import (
+    export_invoices_csv,
+    open_ar_invoice_edit_dialog,
+    open_new_ar_invoice_dialog,
+)
 
 # Light blue-gray theme (one step darker than the prior invoice palette; same family).
 _INV_BG = "#eef2f8"
@@ -265,6 +271,8 @@ class InvoiceScreen(QWidget):
         on = self._ap_conn is not None
         self._btn_new_customer.setEnabled(on)
         self._btn_save.setEnabled(on)
+        if getattr(self, "_btn_ar_new_inv", None) is not None:
+            self._sync_ar_toolbar_enabled()
 
     def _sync_invoice_number_suggestion(self) -> None:
         """Set invoice # to the next system suggestion unless the user overrode it."""
@@ -694,7 +702,66 @@ class InvoiceScreen(QWidget):
 
         outer.addWidget(page, 1)
 
+        ar_tool = QHBoxLayout()
+        ar_tool.setSpacing(8)
+        self._btn_ar_new_inv = QPushButton("New invoice (AR)…")
+        self._btn_ar_new_inv.setToolTip(
+            "Create an invoice using the AR dialog (moved from the Customers tab)."
+        )
+        self._btn_ar_new_inv.clicked.connect(self._on_ar_new_invoice_dialog)
+        self._btn_ar_export_inv = QPushButton("Export invoices CSV…")
+        self._btn_ar_export_inv.setToolTip(
+            "Export invoice headers to CSV (UTF-8 BOM for Excel)."
+        )
+        self._btn_ar_export_inv.clicked.connect(self._on_ar_export_invoices_csv)
+        for b in (self._btn_ar_new_inv, self._btn_ar_export_inv):
+            b.setAutoDefault(False)
+            b.setDefault(False)
+            ar_tool.addWidget(b)
+        ar_tool.addStretch(1)
+        outer.addLayout(ar_tool)
+        self._sync_ar_toolbar_enabled()
+
         self._refresh_browse_state()
+
+    def open_invoice_by_id(self, invoice_id: int) -> bool:
+        """Open the AR **Edit invoice** dialog (bank/register links)."""
+        if self._ap_conn is None:
+            message_box_information_ok(
+                self,
+                "Invoice",
+                "Open a company file to edit invoices.",
+                ok_tip="Close; use File → Open company… then try the link again.",
+            )
+            return False
+
+        def _after() -> None:
+            self._bill_customer_panel.reload_customers()
+            self._sync_invoice_number_suggestion()
+
+        return open_ar_invoice_edit_dialog(
+            self, self._ap_conn, int(invoice_id), after_save=_after
+        )
+
+    def _sync_ar_toolbar_enabled(self) -> None:
+        on = self._ap_conn is not None
+        self._btn_ar_new_inv.setEnabled(on)
+        self._btn_ar_export_inv.setEnabled(on)
+
+    def _on_ar_new_invoice_dialog(self) -> None:
+        if self._ap_conn is None:
+            return
+
+        def _after() -> None:
+            self._bill_customer_panel.reload_customers()
+            self._sync_invoice_number_suggestion()
+
+        open_new_ar_invoice_dialog(self, self._ap_conn, after_save=_after)
+
+    def _on_ar_export_invoices_csv(self) -> None:
+        if self._ap_conn is None:
+            return
+        export_invoices_csv(self, self._ap_conn)
 
     def _invoice_col_minimum_width(self, col: int) -> int:
         """Minimum width from header label metrics (+ section padding)."""

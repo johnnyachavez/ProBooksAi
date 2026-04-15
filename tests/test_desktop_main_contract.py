@@ -4791,7 +4791,7 @@ def test_extra_tabs_business_csv_export_tooltips_append_excel_bom_hint() -> None
     """Business CSV exports and the filtered export scope dialog share one UTF-8 BOM suffix string."""
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
     assert '_CSV_EXCEL_ENCODING_TIP = " UTF-8 with BOM for Excel."' in et
-    assert et.count("_CSV_EXCEL_ENCODING_TIP") == 13
+    assert et.count("_CSV_EXCEL_ENCODING_TIP") == 9
 
 
 def test_extra_tabs_business_main_grids_mention_csv_utf8_bom_for_excel() -> None:
@@ -4837,20 +4837,12 @@ def test_ar_tab_toolbar_buttons_have_tooltips() -> None:
     chunk = et[start:end]
     for needle in (
         "ar_new_cust.setToolTip",
-        "ar_edit_inv.setToolTip",
-        "ar_record_pay.setToolTip",
-        "ar_export_aging.setToolTip",
-        "ar_inv_add_line.setToolTip",
-        "ar_inv_rm_line.setToolTip",
-        "ar_pay_fill_old.setToolTip",
-        "_inv_filter.setToolTip",
-        "cust_filt.setToolTip",
-        "line_tbl.setToolTip",
-        "alloc_tbl.setToolTip",
-        "lbl_ar_inv_filter.setToolTip",
-        "lbl_ar_apply_hdr.setToolTip",
-        "lbl_edit_inv_lines.setToolTip",
-        "_ar_footer.setToolTip",
+        "ar_edit_cust.setToolTip",
+        "ar_export_cust.setToolTip",
+        "detail_box.setToolTip",
+        "split.setToolTip",
+        "self._customer_tbl.setToolTip",
+        "self._d_terms.setToolTip",
     ):
         assert needle in chunk, f"AR tab UI should set tooltip on {needle!r}"
 
@@ -6043,13 +6035,15 @@ def test_register_bank_match_opens_business_navigation_wiring() -> None:
     assert "_wire_register_bank_match_navigation" in main
     assert "_navigate_register_bank_match_link" in main
     assert "self._enter_bills_screen.open_bill_by_id" in main
+    assert "self._invoice_screen.open_invoice_by_id" in main
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
     assert "def navigate_bank_match_link" in et
-    assert "def open_invoice_by_id" in et
     assert "def open_ap_bill_edit_dialog" in et
     assert "def open_payroll_run_by_id" in et
     ebs = (_DESKTOP_APP_DIR / "enter_bills_screen.py").read_text(encoding="utf-8")
     assert "def open_bill_by_id" in ebs
+    inv = (_DESKTOP_APP_DIR / "invoice_screen.py").read_text(encoding="utf-8")
+    assert "def open_invoice_by_id" in inv
 
 
 def test_register_tab_manual_entry_dialog_and_insert_wiring() -> None:

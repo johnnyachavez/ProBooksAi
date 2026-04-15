@@ -6,6 +6,7 @@ Light panel styling matches Pay Bills / Enter Bills AR/AP draft screens.
 from __future__ import annotations
 
 import random
+import sqlite3
 from typing import Optional
 
 from PySide6.QtCore import Qt
@@ -28,6 +29,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from desktop_app.ar_customer_actions import (
+    export_ar_payment_allocations_csv,
+    export_ar_payments_csv,
+    open_record_ar_payment_dialog,
+)
 from desktop_app.flexible_date import configure_qdate_edit_us
 
 _RC_BG = "#f7f9fc"
@@ -71,11 +77,17 @@ class ReceiveChecksScreen(QWidget):
     )
     _N_ROWS = 15
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        *,
+        ap_conn: Optional[sqlite3.Connection] = None,
+    ) -> None:
         super().__init__(parent)
+        self._ap_conn = ap_conn
         self.setToolTip(
-            "Receive Checks (visual draft): apply customer payments to invoices. "
-            "No database or deposit posting yet. Same company .db (File → Backup / Restore, probooks.backup)."
+            "Receive Checks: record customer payments against open invoices when connected. "
+            "Same company .db (File → Backup / Restore, probooks.backup)."
         )
         self._payment_edits: list[QDoubleSpinBox] = []
         self._row_checks: list[QCheckBox] = []
@@ -85,6 +97,27 @@ class ReceiveChecksScreen(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(10)
+
+        ar_row = QHBoxLayout()
+        ar_row.setSpacing(8)
+        self._btn_record_ar = QPushButton("Record customer payment…")
+        self._btn_record_ar.setToolTip(
+            "Record a payment and allocate amounts to open invoices (moved from the Customers tab)."
+        )
+        self._btn_record_ar.clicked.connect(self._on_record_ar_payment)
+        self._btn_export_ar_pay = QPushButton("Export AR payments CSV…")
+        self._btn_export_ar_pay.setToolTip("Export customer payment records to CSV (UTF-8 BOM for Excel).")
+        self._btn_export_ar_pay.clicked.connect(self._on_export_ar_payments)
+        self._btn_export_ar_alloc = QPushButton("Export AR payment allocations CSV…")
+        self._btn_export_ar_alloc.setToolTip("Export how payments were applied to invoices.")
+        self._btn_export_ar_alloc.clicked.connect(self._on_export_ar_allocations)
+        for b in (self._btn_record_ar, self._btn_export_ar_pay, self._btn_export_ar_alloc):
+            b.setAutoDefault(False)
+            b.setDefault(False)
+            ar_row.addWidget(b)
+        ar_row.addStretch(1)
+        outer.addLayout(ar_row)
+        self._sync_ar_toolbar()
 
         page = QFrame()
         page.setObjectName("receiveChecksLightPanel")
@@ -290,6 +323,27 @@ class ReceiveChecksScreen(QWidget):
 
         outer.addWidget(page, 1)
         self._refresh_totals()
+
+    def _sync_ar_toolbar(self) -> None:
+        on = self._ap_conn is not None
+        self._btn_record_ar.setEnabled(on)
+        self._btn_export_ar_pay.setEnabled(on)
+        self._btn_export_ar_alloc.setEnabled(on)
+
+    def _on_record_ar_payment(self) -> None:
+        if self._ap_conn is None:
+            return
+        open_record_ar_payment_dialog(self, self._ap_conn, after_save=None)
+
+    def _on_export_ar_payments(self) -> None:
+        if self._ap_conn is None:
+            return
+        export_ar_payments_csv(self, self._ap_conn)
+
+    def _on_export_ar_allocations(self) -> None:
+        if self._ap_conn is None:
+            return
+        export_ar_payment_allocations_csv(self, self._ap_conn)
 
     def _selected_payment_sum(self) -> tuple[int, float]:
         n = 0

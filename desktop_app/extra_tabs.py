@@ -241,6 +241,7 @@ _AP_PAYMENT_VENDOR_KEY = "business/ap_payment_vendor_id"
 _AR_INVOICE_GRID_FILTER_KEY = "business/ar_invoice_grid_filter"
 _AP_BILL_GRID_FILTER_KEY = "business/ap_bill_grid_filter"
 _AR_INVOICE_HEADER_STATE_KEY = "business/ar_invoice_table_header_state"
+_AR_CUSTOMER_HEADER_STATE_KEY = "business/ar_customer_table_header_state"
 _AP_BILL_HEADER_STATE_KEY = "business/ap_bill_table_header_state"
 _AP_VENDOR_HEADER_STATE_KEY = "business/ap_vendor_table_header_state"
 _RULES_TABLE_HEADER_STATE_KEY = "business/rules_table_header_state"
@@ -890,246 +891,252 @@ class ARTab(QWidget):
     def __init__(self, conn: sqlite3.Connection, parent=None):
         super().__init__(parent)
         self._conn = conn
+        self._customer_summary_by_id: dict[int, dict] = {}
+        self._focused_customer_id: int | None = None
         self.setToolTip(
-            "Accounts receivable: customers, invoices, payments, aging CSV; F5 refreshes lists. "
-            "Print or save-as-PDF for an invoice: Invoice workflow tab → Print… (after Save if needed). "
+            "Accounts receivable: customer master list, balances, and last activity; "
+            "F5 refreshes when Business has focus. "
+            "Toolbar export uses UTF-8 BOM for Excel. "
             "(F5 refreshes when this tab has focus.)"
         )
         lay = QVBoxLayout(self)
         row = QHBoxLayout()
-        ar_new_cust = QPushButton("New customer")
+        ar_new_cust = QPushButton("New Customer")
         ar_new_cust.setToolTip("Create a new customer record.")
         ar_new_cust.clicked.connect(self._new_cust)
         row.addWidget(ar_new_cust)
-        ar_edit_cust = QPushButton("Edit customer…")
+        ar_edit_cust = QPushButton("Edit Customer…")
         ar_edit_cust.setToolTip("Choose a customer and edit name, contact, and notes.")
         ar_edit_cust.clicked.connect(self._edit_cust)
         row.addWidget(ar_edit_cust)
-        ar_new_inv = QPushButton("New invoice")
-        ar_new_inv.setToolTip("Create a new invoice (add a customer first if the list is empty).")
-        ar_new_inv.clicked.connect(self._new_inv)
-        row.addWidget(ar_new_inv)
-        ar_edit_inv = QPushButton("Edit selected invoice…")
-        ar_edit_inv.setToolTip(
-            "Edit the selected invoice. Double-click a row or press Enter for the same."
-        )
-        ar_edit_inv.clicked.connect(self._edit_inv)
-        row.addWidget(ar_edit_inv)
-        ar_record_pay = QPushButton("Record customer payment…")
-        ar_record_pay.setToolTip("Record a payment and allocate amounts to open invoices.")
-        ar_record_pay.clicked.connect(self._record_ar_payment)
-        row.addWidget(ar_record_pay)
-        ar_export_aging = QPushButton("Export AR aging CSV")
-        ar_export_aging.setToolTip(
-            "Export accounts-receivable aging summary to CSV." + _CSV_EXCEL_ENCODING_TIP
-        )
-        ar_export_aging.clicked.connect(self._export_aging)
-        row.addWidget(ar_export_aging)
-        ar_export_cust = QPushButton("Export customers CSV…")
+        ar_export_cust = QPushButton("Export Customers CSV…")
         ar_export_cust.setToolTip("Export all customers to CSV." + _CSV_EXCEL_ENCODING_TIP)
         ar_export_cust.clicked.connect(self._export_customers)
         row.addWidget(ar_export_cust)
-        ar_export_inv = QPushButton("Export invoices CSV…")
-        ar_export_inv.setToolTip("Export invoice headers to CSV." + _CSV_EXCEL_ENCODING_TIP)
-        ar_export_inv.clicked.connect(self._export_invoices)
-        row.addWidget(ar_export_inv)
-        ar_export_payments = QPushButton("Export AR payments CSV…")
-        ar_export_payments.setToolTip(
-            "Export customer payment records to CSV." + _CSV_EXCEL_ENCODING_TIP
-        )
-        ar_export_payments.clicked.connect(self._export_ar_payments)
-        row.addWidget(ar_export_payments)
-        ar_export_alloc = QPushButton("Export AR payment allocations CSV…")
-        ar_export_alloc.setToolTip(
-            "Export how payments were applied to invoices." + _CSV_EXCEL_ENCODING_TIP
-        )
-        ar_export_alloc.clicked.connect(self._export_ar_allocations)
-        row.addWidget(ar_export_alloc)
-        # Toolbar: no invoice PDF/file dialog here — only Invoice workflow tab → Print… (QPrintDialog).
-        for b in (
-            ar_new_cust,
-            ar_edit_cust,
-            ar_new_inv,
-            ar_edit_inv,
-            ar_record_pay,
-            ar_export_aging,
-            ar_export_cust,
-            ar_export_inv,
-            ar_export_payments,
-            ar_export_alloc,
-        ):
-            b.setAutoDefault(False)
-            b.setDefault(False)
         row.addStretch()
         lay.addLayout(row)
-        fil = QHBoxLayout()
-        lbl_ar_inv_filter = QLabel("Filter:")
-        lbl_ar_inv_filter.setToolTip(
-            "Prompt for the invoice list filter; type in the field to the right (words must all match a row)."
+
+        split = QSplitter(Qt.Orientation.Vertical)
+        split.setToolTip("Drag to resize selected-customer detail vs customer list.")
+
+        detail_box = QGroupBox("Selected Customer")
+        detail_box.setToolTip(
+            "Contact fields from the customer master record; balances from open invoices and payments."
         )
-        fil.addWidget(lbl_ar_inv_filter)
-        self._inv_filter = QLineEdit()
-        _saved_ar_filt = QSettings().value(_AR_INVOICE_GRID_FILTER_KEY, "")
-        if isinstance(_saved_ar_filt, str) and _saved_ar_filt:
-            self._inv_filter.setText(_saved_ar_filt)
-        self._inv_filter.setPlaceholderText(
-            "Customer, invoice #, memo, dates, status, subtotal, tax, totals, id (words must all match)…"
+        df = QFormLayout(detail_box)
+        self._d_name = QLabel("—")
+        self._d_address = QLabel("—")
+        self._d_address.setWordWrap(True)
+        self._d_phone = QLabel("—")
+        self._d_email = QLabel("—")
+        self._d_terms = QLabel("—")
+        self._d_terms.setToolTip(
+            "Payment terms are not stored separately yet; describe them in Notes if needed."
         )
-        self._inv_filter.setToolTip(
-            "Narrow the invoice grid: every word you type must appear somewhere in the row’s "
-            "visible text (see placeholder). The filter is saved and restored per company."
+        self._d_open_bal = QLabel("—")
+        self._d_cur_due = QLabel("—")
+        self._d_overdue = QLabel("—")
+        self._d_last_inv = QLabel("—")
+        self._d_last_pay = QLabel("—")
+        self._d_notes = QLabel("—")
+        self._d_notes.setWordWrap(True)
+        df.addRow("Customer Name", self._d_name)
+        df.addRow("Address", self._d_address)
+        df.addRow("Phone", self._d_phone)
+        df.addRow("Email", self._d_email)
+        df.addRow("Terms", self._d_terms)
+        df.addRow("Open Balance", self._d_open_bal)
+        df.addRow("Current Due", self._d_cur_due)
+        df.addRow("Overdue", self._d_overdue)
+        df.addRow("Last Invoice Date", self._d_last_inv)
+        df.addRow("Last Payment Date", self._d_last_pay)
+        df.addRow("Notes", self._d_notes)
+        split.addWidget(detail_box)
+
+        list_box = QGroupBox("Customers")
+        list_box.setToolTip("Click a row to show that customer in the detail card above.")
+        lb_lay = QVBoxLayout(list_box)
+        self._customer_tbl = QTableWidget()
+        self._customer_tbl.setColumnCount(7)
+        self._customer_tbl.setHorizontalHeaderLabels(
+            [
+                "Customer",
+                "Open Balance",
+                "Current Due",
+                "Overdue",
+                "Last Invoice Date",
+                "Last Payment Date",
+                "Status",
+            ]
         )
-        self._inv_filter.setClearButtonEnabled(True)
-        self._inv_filter.textChanged.connect(self._persist_ar_invoice_filter_and_refresh)
-        fil.addWidget(self._inv_filter)
-        lay.addLayout(fil)
-        _wire_find_focuses_line_edit(self, self._inv_filter)
-        self._tbl = QTableWidget()
-        self._tbl.setColumnCount(8)
-        self._tbl.setHorizontalHeaderLabels(
-            ["#", "Customer", "Invoice #", "Date", "Due", "Total", "Balance", "Status"]
-        )
-        self._tbl.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self._tbl.setSortingEnabled(True)
-        self._tbl.cellDoubleClicked.connect(self._on_invoice_row_double_clicked)
-        _wire_enter_opens_edit(self._tbl, self._edit_inv)
-        self._tbl.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self._tbl.customContextMenuRequested.connect(self._on_invoice_context_menu)
-        self._tbl.setToolTip(
-            "Open invoices (AR). Right-click for Keyboard shortcuts… (empty area OK). "
-            "F5 refreshes when Business has focus. "
+        self._customer_tbl.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self._customer_tbl.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._customer_tbl.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self._customer_tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._customer_tbl.setSortingEnabled(True)
+        self._customer_tbl.cellClicked.connect(self._on_customer_row_clicked)
+        self._customer_tbl.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._customer_tbl.customContextMenuRequested.connect(self._on_customer_context_menu)
+        self._customer_tbl.setToolTip(
+            "Customer master snapshot; click a row to update the detail card. F5 refreshes. "
             "CSV exports (toolbar) use UTF-8 BOM for Excel."
         )
-        lay.addWidget(self._tbl)
-        self._ar_footer = QLabel()
-        self._ar_footer.setStyleSheet("font-weight: bold;")
-        self._ar_footer.setToolTip(
-            "Footer summary for the invoice list (count and dollar totals; reflects the active filter)."
-        )
-        lay.addWidget(self._ar_footer)
+        lb_lay.addWidget(self._customer_tbl)
+        split.addWidget(list_box)
+        split.setStretchFactor(0, 1)
+        split.setStretchFactor(1, 2)
+        lay.addWidget(split, 1)
         self._refresh()
 
     def persist_header_state(self) -> None:
         QSettings().setValue(
-            _AR_INVOICE_HEADER_STATE_KEY,
-            self._tbl.horizontalHeader().saveState(),
+            _AR_CUSTOMER_HEADER_STATE_KEY,
+            self._customer_tbl.horizontalHeader().saveState(),
         )
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
-        raw = QSettings().value(_AR_INVOICE_HEADER_STATE_KEY)
+        raw = QSettings().value(_AR_CUSTOMER_HEADER_STATE_KEY)
         if raw:
-            self._tbl.horizontalHeader().restoreState(raw)
+            self._customer_tbl.horizontalHeader().restoreState(raw)
 
     def hideEvent(self, event: QHideEvent) -> None:
         self.persist_header_state()
         super().hideEvent(event)
 
-    def open_invoice_by_id(self, invoice_id: int) -> bool:
-        """Clear the invoice filter, select the row, and open Edit invoice (returns False if not listed)."""
-        iid = int(invoice_id)
-        self._inv_filter.blockSignals(True)
-        self._inv_filter.clear()
-        self._inv_filter.blockSignals(False)
-        QSettings().setValue(_AR_INVOICE_GRID_FILTER_KEY, "")
-        self._refresh()
-        for row in range(self._tbl.rowCount()):
-            if _table_row_entity_id(self._tbl, row) == iid:
-                self._tbl.selectRow(row)
-                self._tbl.setFocus()
-                self._edit_inv()
-                return True
-        message_box_information_ok(
-            self,
-            "Invoice",
-            f"Invoice #{iid} is not in the list (removed or different company).",
-            ok_tip="Close; check the **Customers** tab invoice list or the bank link.",
-        )
-        return False
-
-    def _persist_ar_invoice_filter_and_refresh(self) -> None:
-        QSettings().setValue(_AR_INVOICE_GRID_FILTER_KEY, self._inv_filter.text())
-        self._refresh()
-
-    def _refresh(self):
-        all_rows = business.list_invoices(self._conn)
-        rows = business_list_filter.filter_business_rows(
-            all_rows, self._inv_filter.text(), business_list_filter.AR_INVOICE_FILTER_KEYS
-        )
-        packed = [
-            (rid, r)
-            for r in rows
-            if (rid := coerce_combo_int_id(r["id"])) is not None
-        ]
-        self._tbl.setSortingEnabled(False)
-        self._tbl.setRowCount(len(packed))
-        for i, (rid, r) in enumerate(packed):
-            id_it = _IntSortTableItem(str(rid), rid)
-            id_it.setData(Qt.ItemDataRole.UserRole, rid)
-            self._tbl.setItem(i, 0, id_it)
-            self._tbl.setItem(i, 1, plain_display_table_item(r["customer_name"] or ""))
-            self._tbl.setItem(i, 2, plain_display_table_item(r["invoice_number"] or ""))
-            self._tbl.setItem(i, 3, plain_display_table_item(r["invoice_date"] or ""))
-            self._tbl.setItem(i, 4, plain_display_table_item(r["due_date"] or ""))
-            tot = float(r["total"] or 0)
-            bal = float(r["balance_due"] or 0)
-            self._tbl.setItem(i, 5, _FloatSortTableItem(f"{tot:.2f}", tot))
-            self._tbl.setItem(i, 6, _FloatSortTableItem(f"{bal:.2f}", bal))
-            self._tbl.setItem(i, 7, plain_display_table_item(r["status"] or ""))
-        self._tbl.setSortingEnabled(True)
-        n = len(rows)
-        sum_total = sum(float(r["total"] or 0) for r in rows)
-        sum_bal = sum(float(r["balance_due"] or 0) for r in rows)
-        filt = len(all_rows) - n
-        extra = f" ({filt} hidden by filter)" if filt else ""
-        self._ar_footer.setText(
-            f"{n} invoice(s){extra} · Invoice total: {sum_total:,.2f} · Balance due: {sum_bal:,.2f}"
-        )
-
-    def _on_invoice_row_double_clicked(self, row: int, _col: int) -> None:
+    def _on_customer_row_clicked(self, row: int, _col: int) -> None:
         if row < 0:
             return
-        self._tbl.selectRow(row)
-        self._edit_inv()
+        it = self._customer_tbl.item(row, 0)
+        if it is None:
+            return
+        cid = coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole))
+        if cid is None:
+            return
+        self._focused_customer_id = cid
+        self._apply_detail_from_focus()
 
-    def _on_invoice_context_menu(self, pos) -> None:
-        idx = self._tbl.indexAt(pos)
+    def _on_customer_context_menu(self, pos) -> None:
+        idx = self._customer_tbl.indexAt(pos)
         m = QMenu(self)
         act_keys = m.addAction(
             "Keyboard shortcuts…",
             lambda: show_business_keyboard_shortcuts_dialog(self),
         )
         act_keys.setToolTip(
-            "Same summary as Help → Business shortcuts… (F5, Invoices AR, payments). "
+            "Same summary as Help → Business shortcuts… (F5, Customers grid). "
             + VIEW_BANK_REGISTER_KEYS_TOOLTIP
             + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
         if not idx.isValid():
-            m.exec(self._tbl.viewport().mapToGlobal(pos))
+            m.exec(self._customer_tbl.viewport().mapToGlobal(pos))
             return
         row = idx.row()
-        if _table_row_entity_id(self._tbl, row) is None:
-            m.exec(self._tbl.viewport().mapToGlobal(pos))
+        it = self._customer_tbl.item(row, 0)
+        if it is None or coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole)) is None:
+            m.exec(self._customer_tbl.viewport().mapToGlobal(pos))
             return
         m.addSeparator()
-        act_edit = m.addAction("Edit…", lambda r=row: (self._tbl.selectRow(r), self._edit_inv()))
-        act_edit.setToolTip("Edit this invoice (not allowed when payments are applied).")
-        act_invno = m.addAction(
-            "Copy invoice #",
-            lambda r=row: QGuiApplication.clipboard().setText(
-                table_cell_clipboard_text(self._tbl, r, 2).strip()
-            ),
+        act_copy = m.addAction(
+            "Copy row", lambda r=row: copy_table_row_as_tsv(self._customer_tbl, r)
         )
-        act_invno.setToolTip(
-            "Copy the invoice number cell to the clipboard. "
-            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
-        )
-        act_copy = m.addAction("Copy row", lambda r=row: copy_table_row_as_tsv(self._tbl, r))
         act_copy.setToolTip(
-            "Copy this invoice row as tab-separated text for pasting into a spreadsheet or editor. "
+            "Copy this customer row as tab-separated text for pasting into a spreadsheet or editor. "
             + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
-        m.exec(self._tbl.viewport().mapToGlobal(pos))
+        m.exec(self._customer_tbl.viewport().mapToGlobal(pos))
+
+    def _apply_detail_from_focus(self) -> None:
+        if self._focused_customer_id is None:
+            self._clear_detail_card()
+            return
+        v = business.get_customer(self._conn, self._focused_customer_id)
+        summ = self._customer_summary_by_id.get(self._focused_customer_id)
+        if v is None:
+            self._clear_detail_card()
+            return
+        d = dict(v)
+        self._d_name.setText(escape_ampersand_for_qt(d.get("name") or "—"))
+        addr = (d.get("address") or "").strip()
+        self._d_address.setText(escape_ampersand_for_qt(addr) if addr else "—")
+        self._d_phone.setText(escape_ampersand_for_qt(d.get("phone") or "") or "—")
+        self._d_email.setText(escape_ampersand_for_qt(d.get("email") or "") or "—")
+        self._d_terms.setText("—")
+        notes = (d.get("notes") or "").strip()
+        self._d_notes.setText(escape_ampersand_for_qt(notes) if notes else "—")
+        if summ is None:
+            self._d_open_bal.setText("—")
+            self._d_cur_due.setText("—")
+            self._d_overdue.setText("—")
+            self._d_last_inv.setText("—")
+            self._d_last_pay.setText("—")
+            return
+        self._d_open_bal.setText(f"{float(summ['open_balance']):,.2f}")
+        self._d_cur_due.setText(f"{float(summ['current_due']):,.2f}")
+        self._d_overdue.setText(f"{float(summ['overdue']):,.2f}")
+        self._d_last_inv.setText(summ.get("last_invoice_date") or "—")
+        self._d_last_pay.setText(summ.get("last_payment_date") or "—")
+
+    def _clear_detail_card(self) -> None:
+        for w in (
+            self._d_name,
+            self._d_address,
+            self._d_phone,
+            self._d_email,
+            self._d_terms,
+            self._d_open_bal,
+            self._d_cur_due,
+            self._d_overdue,
+            self._d_last_inv,
+            self._d_last_pay,
+            self._d_notes,
+        ):
+            w.setText("—")
+
+    def _refresh(self) -> None:
+        rows = business.list_customer_ar_summaries(self._conn)
+        self._customer_summary_by_id = {int(r["customer_id"]): r for r in rows}
+        self._customer_tbl.setSortingEnabled(False)
+        self._customer_tbl.setRowCount(len(rows))
+        for i, r in enumerate(rows):
+            cid = int(r["customer_id"])
+            nm = r["customer_name"] or ""
+            it0 = QTableWidgetItem(escape_ampersand_for_qt(nm))
+            it0.setData(Qt.ItemDataRole.UserRole, cid)
+            self._customer_tbl.setItem(i, 0, it0)
+            ob = float(r["open_balance"] or 0)
+            cd = float(r["current_due"] or 0)
+            ov = float(r["overdue"] or 0)
+            self._customer_tbl.setItem(i, 1, _FloatSortTableItem(f"{ob:.2f}", ob))
+            self._customer_tbl.setItem(i, 2, _FloatSortTableItem(f"{cd:.2f}", cd))
+            self._customer_tbl.setItem(i, 3, _FloatSortTableItem(f"{ov:.2f}", ov))
+            self._customer_tbl.setItem(
+                i, 4, plain_display_table_item(r["last_invoice_date"] or "")
+            )
+            self._customer_tbl.setItem(
+                i, 5, plain_display_table_item(r["last_payment_date"] or "")
+            )
+            self._customer_tbl.setItem(
+                i, 6, plain_display_table_item(r.get("ar_status") or "")
+            )
+        self._customer_tbl.setSortingEnabled(True)
+        ids = {int(r["customer_id"]) for r in rows}
+        if self._focused_customer_id is not None and self._focused_customer_id not in ids:
+            self._focused_customer_id = None
+        if self._focused_customer_id is None and rows:
+            self._focused_customer_id = int(rows[0]["customer_id"])
+        if self._focused_customer_id is not None:
+            for row in range(self._customer_tbl.rowCount()):
+                it = self._customer_tbl.item(row, 0)
+                if it is None:
+                    continue
+                if coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole)) == self._focused_customer_id:
+                    self._customer_tbl.selectRow(row)
+                    break
+            self._apply_detail_from_focus()
+        else:
+            self._customer_tbl.clearSelection()
+            self._clear_detail_card()
 
     def _new_cust(self):
         d = QDialog(self)
@@ -1183,7 +1190,7 @@ class ARTab(QWidget):
                 self,
                 "Customers",
                 "No customers to edit.",
-                ok_tip="Close; use New customer first.",
+                ok_tip="Close; use New Customer first.",
             )
             return
         d = QDialog(self)
@@ -1224,7 +1231,10 @@ class ARTab(QWidget):
 
         def sync_customer_combo() -> None:
             _sync_filtered_entity_combo(
-                custs, filt.text(), cb, business_list_filter.CUSTOMER_ENTITY_KEYS
+                custs,
+                filt.text(),
+                cb,
+                business_list_filter.CUSTOMER_ENTITY_KEYS,
             )
             load_customer()
 
@@ -1276,582 +1286,6 @@ class ARTab(QWidget):
             return
         self._refresh()
 
-    def _new_inv(self):
-        custs = business.list_customers(self._conn)
-        if not custs:
-            message_box_information_ok(
-                self,
-                "Customers",
-                "Add a customer first.",
-                ok_tip="Close; use New customer, then create the invoice.",
-            )
-            return
-        d = QDialog(self)
-        d.setWindowTitle("Invoice")
-        d.setToolTip(
-            "Create an invoice with header fields, one starter line, and tax percent for this customer."
-        )
-        f = QFormLayout(d)
-        cust_filt = QLineEdit()
-        cust_filt.setPlaceholderText("Filter customers by name, email, phone…")
-        cust_filt.setClearButtonEnabled(True)
-        cust_filt.setToolTip("Narrow the customer list; clear to show all again.")
-        cb = QComboBox()
-        cb.setToolTip("Customer for this invoice (required).")
-
-        def sync_new_inv_customers() -> None:
-            _sync_filtered_entity_combo(
-                custs, cust_filt.text(), cb, business_list_filter.CUSTOMER_ENTITY_KEYS
-            )
-
-        cust_filt.textChanged.connect(sync_new_inv_customers)
-        f.addRow("Filter list", cust_filt)
-        f.addRow("Customer", cb)
-        sync_new_inv_customers()
-        _restore_entity_combo(cb, _NEW_INVOICE_CUSTOMER_KEY)
-        invno = QLineEdit()
-        invno.setToolTip("Unique invoice number for this customer (required).")
-        idate = QDateEdit()
-        configure_qdate_edit_us(idate)
-        idate.setDate(QDate.currentDate())
-        idate.setToolTip("Invoice date.")
-        due_e = QLineEdit()
-        due_e.setToolTip("Due date as text if you track it (optional).")
-        attach_line_edit_us_date_normalization(due_e)
-        memo_e = QLineEdit()
-        memo_e.setToolTip("Header memo on the invoice (optional).")
-        rate = QDoubleSpinBox()
-        rate.setRange(0, 9_999_999)
-        rate.setDecimals(2)
-        rate.setToolTip("Amount for the single starter line (Services × 1).")
-        tax = QDoubleSpinBox()
-        tax.setRange(0, 100)
-        tax.setDecimals(2)
-        tax.setValue(float(business.get_setting(self._conn, "default_tax_rate_pct", "0") or 0))
-        tax.setToolTip("Tax percent applied to this new invoice.")
-        f.addRow("Invoice # *", invno)
-        f.addRow("Date", idate)
-        f.addRow("Due date (optional)", due_e)
-        f.addRow("Memo", memo_e)
-        f.addRow("Line amount", rate)
-        f.addRow("Tax %", tax)
-        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        _tip_dialog_ok_cancel(bb, "Create the invoice with one starter line and these header fields.")
-        bb.accepted.connect(d.accept)
-        bb.rejected.connect(d.reject)
-        f.addRow(bb)
-        if d.exec() != QDialog.DialogCode.Accepted:
-            return
-        if not invno.text().strip():
-            return
-        cust_id = coerce_combo_int_id(cb.currentData())
-        if cust_id is None:
-            message_box_warning_ok(
-                self,
-                "Invoice",
-                "Select a customer (try clearing the filter).",
-                ok_tip="Close; pick a customer or clear the customer filter.",
-            )
-            return
-        try:
-            business.create_invoice(
-                self._conn,
-                cust_id,
-                invno.text().strip(),
-                idate.date().toString("yyyy-MM-dd"),
-                due_date=(line_edit_to_iso_or_raw(due_e) or ""),
-                memo=memo_e.text().strip(),
-                lines=[{"description": "Services", "qty": 1, "rate": rate.value()}],
-                tax_rate_pct=tax.value(),
-            )
-        except sqlite3.IntegrityError:
-            message_box_warning_ok(
-                self,
-                "Duplicate",
-                "Invoice number already exists.",
-                ok_tip="Close; choose a different invoice number for this customer.",
-            )
-            return
-        _save_entity_combo(cb, _NEW_INVOICE_CUSTOMER_KEY)
-        self._refresh()
-
-    def _edit_inv(self):
-        r = self._tbl.currentRow()
-        inv_id = _table_row_entity_id(self._tbl, r)
-        if inv_id is None:
-            message_box_information_ok(
-                self,
-                "Invoice",
-                "Select an invoice row.",
-                ok_tip="Close; click an invoice, then Edit invoice again.",
-            )
-            return
-        if business.invoice_has_payment_allocations(self._conn, inv_id):
-            message_box_information_ok(
-                self,
-                "Invoice",
-                "This invoice has payments applied and cannot be edited.",
-                ok_tip="Close; void or adjust payments in AR before editing this invoice.",
-            )
-            return
-        inv, line_rows = business.get_invoice_detail(self._conn, inv_id)
-        if inv is None:
-            self._refresh()
-            return
-        custs = business.list_customers(self._conn)
-        if not custs:
-            return
-        d = QDialog(self)
-        d.setWindowTitle("Edit invoice")
-        d.setToolTip(
-            "Edit invoice header, customer, line items, and tax rate (not allowed when payments are applied)."
-        )
-        outer = QVBoxLayout(d)
-        f = QFormLayout()
-        inv_cust_id = coerce_combo_int_id(inv["customer_id"])
-        if inv_cust_id is None:
-            self._refresh()
-            return
-        ensure_cust = frozenset({inv_cust_id})
-        cust_filt = QLineEdit()
-        cust_filt.setPlaceholderText("Filter customers (current invoice customer always listed)…")
-        cust_filt.setClearButtonEnabled(True)
-        cust_filt.setToolTip("Narrow the customer list; the invoice’s customer stays available.")
-        cb = QComboBox()
-        cb.setToolTip("Customer on this invoice.")
-
-        def sync_edit_inv_customers() -> None:
-            _sync_filtered_entity_combo(
-                custs,
-                cust_filt.text(),
-                cb,
-                business_list_filter.CUSTOMER_ENTITY_KEYS,
-                always_include_ids=ensure_cust,
-            )
-
-        cust_filt.textChanged.connect(sync_edit_inv_customers)
-        f.addRow("Filter list", cust_filt)
-        f.addRow("Customer", cb)
-        sync_edit_inv_customers()
-        idx = combo_index_for_int_user_data(cb, inv_cust_id)
-        cb.setCurrentIndex(idx if idx is not None else 0)
-        invno = QLineEdit(inv["invoice_number"] or "")
-        invno.setToolTip("Unique invoice number (required).")
-        idate = QDateEdit()
-        configure_qdate_edit_us(idate)
-        qd = QDate.fromString(inv["invoice_date"] or "", "yyyy-MM-dd")
-        idate.setDate(qd if qd.isValid() else QDate.currentDate())
-        idate.setToolTip("Invoice date.")
-        due_e = QLineEdit(format_iso_to_us_display(inv["due_date"] or ""))
-        due_e.setToolTip("Due date as text if you track it (optional).")
-        attach_line_edit_us_date_normalization(due_e)
-        memo_e = QLineEdit(inv["memo"] or "")
-        memo_e.setToolTip("Header memo on the invoice (optional).")
-        sub = float(inv["subtotal"] or 0)
-        tax_amt = float(inv["tax_total"] or 0)
-        tax_pct = (100.0 * tax_amt / sub) if sub > 0 else 0.0
-        tax = QDoubleSpinBox()
-        tax.setRange(0, 100)
-        tax.setDecimals(4)
-        tax.setValue(tax_pct)
-        tax.setToolTip("Tax percent for this invoice (lines × rate; tax recomputed on save).")
-        f.addRow("Customer", cb)
-        f.addRow("Invoice # *", invno)
-        f.addRow("Date", idate)
-        f.addRow("Due date (optional)", due_e)
-        f.addRow("Memo", memo_e)
-        f.addRow("Tax %", tax)
-        outer.addLayout(f)
-        lbl_edit_inv_lines = QLabel("Line items (description, qty, rate)")
-        lbl_edit_inv_lines.setToolTip(
-            "Invoice lines below: edit description, quantity, and rate; use Add/Remove line as needed."
-        )
-        outer.addWidget(lbl_edit_inv_lines)
-        line_tbl = QTableWidget()
-        line_tbl.setToolTip(
-            "Edit line description, quantity, and unit rate. Right-click a row to copy as TSV."
-        )
-        line_tbl.setColumnCount(3)
-        line_tbl.setHorizontalHeaderLabels(["Description", "Qty", "Rate"])
-        line_tbl.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        rate_align = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-
-        def _edit_inv_rate_item(rate: float) -> QTableWidgetItem:
-            x = float(rate)
-            disp = f"{x:,.2f}"
-            it = _FloatSortTableItem(disp, x)
-            it.setTextAlignment(rate_align)
-            return it
-
-        nlines = max(1, len(line_rows))
-        line_tbl.setRowCount(nlines)
-        for i, ln in enumerate(line_rows):
-            line_tbl.setItem(
-                i, 0, plain_display_table_item(str(ln["description"] or ""))
-            )
-            line_tbl.setItem(i, 1, plain_display_table_item(str(ln["qty"])))
-            line_tbl.setItem(i, 2, _edit_inv_rate_item(float(ln["rate"])))
-        if not line_rows:
-            line_tbl.setItem(0, 0, plain_display_table_item("Services"))
-            line_tbl.setItem(0, 1, plain_display_table_item("1"))
-            line_tbl.setItem(0, 2, _edit_inv_rate_item(0.0))
-        _attach_table_copy_row_menu(line_tbl, d)
-        outer.addWidget(line_tbl)
-        btn_row = QHBoxLayout()
-
-        def add_line():
-            line_tbl.insertRow(line_tbl.rowCount())
-            r = line_tbl.rowCount() - 1
-            line_tbl.setItem(r, 0, plain_display_table_item(""))
-            line_tbl.setItem(r, 1, plain_display_table_item(""))
-            line_tbl.setItem(r, 2, _edit_inv_rate_item(0.0))
-
-        def del_line():
-            if line_tbl.rowCount() <= 1:
-                return
-            line_tbl.removeRow(line_tbl.currentRow() if line_tbl.currentRow() >= 0 else line_tbl.rowCount() - 1)
-
-        ar_inv_add_line = QPushButton("Add line")
-        ar_inv_add_line.setToolTip("Add another line item row to this invoice.")
-        ar_inv_add_line.clicked.connect(add_line)
-        ar_inv_rm_line = QPushButton("Remove line")
-        ar_inv_rm_line.setToolTip(
-            "Remove the selected line, or the last line if none is selected (one line always remains)."
-        )
-        ar_inv_rm_line.clicked.connect(del_line)
-        btn_row.addWidget(ar_inv_add_line)
-        btn_row.addWidget(ar_inv_rm_line)
-        btn_row.addStretch()
-        outer.addLayout(btn_row)
-        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        _tip_dialog_ok_cancel(bb, "Save invoice header, line items, and tax rate.")
-        bb.accepted.connect(d.accept)
-        bb.rejected.connect(d.reject)
-        outer.addWidget(bb)
-        if d.exec() != QDialog.DialogCode.Accepted:
-            return
-        if not invno.text().strip():
-            return
-        lines_out: list[dict] = []
-        for row_i in range(line_tbl.rowCount()):
-            desc = table_cell_clipboard_text(line_tbl, row_i, 0).strip()
-            qtxt = table_cell_clipboard_text(line_tbl, row_i, 1).strip() or "1"
-            rtx = table_cell_clipboard_text(line_tbl, row_i, 2).strip() or "0"
-            try:
-                qv = float(qtxt)
-                rv = float(rtx.replace(",", ""))
-            except ValueError:
-                message_box_warning_ok(
-                    self,
-                    "Invoice",
-                    "Invalid qty or rate on a line.",
-                    ok_tip="Close; enter numeric qty and rate for each line.",
-                )
-                return
-            if not desc and qv == 0 and rv == 0:
-                continue
-            lines_out.append({"description": desc or "Line", "qty": qv, "rate": rv})
-        if not lines_out:
-            message_box_warning_ok(
-                self,
-                "Invoice",
-                "Add at least one line with an amount.",
-                ok_tip="Close; ensure at least one line has qty × rate > 0.",
-            )
-            return
-        new_cust = coerce_combo_int_id(cb.currentData())
-        if new_cust is None:
-            message_box_warning_ok(
-                self,
-                "Invoice",
-                "Select a customer (try clearing the filter).",
-                ok_tip="Close; pick a customer or clear the customer filter.",
-            )
-            return
-        try:
-            business.update_invoice(
-                self._conn,
-                inv_id,
-                new_cust,
-                invno.text().strip(),
-                idate.date().toString("yyyy-MM-dd"),
-                due_date=(line_edit_to_iso_or_raw(due_e) or ""),
-                memo=memo_e.text().strip(),
-                lines=lines_out,
-                tax_rate_pct=tax.value(),
-            )
-        except ValueError as exc:
-            message_box_warning_ok(
-                self,
-                "Invoice",
-                escape_ampersand_for_qt(str(exc)),
-                ok_tip="Close; fix the issue described and save again.",
-            )
-            return
-        except sqlite3.IntegrityError:
-            message_box_warning_ok(
-                self,
-                "Duplicate",
-                "Invoice number already exists.",
-                ok_tip="Close; choose another invoice number.",
-            )
-            return
-        self._refresh()
-
-    def _record_ar_payment(self):
-        custs = business.list_customers(self._conn)
-        if not custs:
-            message_box_information_ok(
-                self,
-                "AR payment",
-                "Add a customer first.",
-                ok_tip="Close; create a customer before recording payments.",
-            )
-            return
-        d = QDialog(self)
-        d.setWindowTitle("Record customer payment")
-        d.setToolTip(
-            "Enter payment details and allocate amounts to open invoices; Apply column must sum to the payment."
-        )
-        d.setMinimumWidth(540)
-        outer = QVBoxLayout(d)
-        form = QFormLayout()
-        cust_filt = QLineEdit()
-        cust_filt.setPlaceholderText("Filter customers by name, email, phone…")
-        cust_filt.setClearButtonEnabled(True)
-        cust_filt.setToolTip("Narrow the customer list; clear to show all again.")
-        cust_cb = QComboBox()
-        cust_cb.setToolTip("Customer who paid (open invoices load below).")
-        form.addRow("Filter list", cust_filt)
-        form.addRow("Customer", cust_cb)
-        pdate = QDateEdit()
-        configure_qdate_edit_us(pdate)
-        pdate.setDate(QDate.currentDate())
-        pdate.setToolTip("Date the payment was received.")
-        pay_amt = QDoubleSpinBox()
-        pay_amt.setRange(0.01, 99_999_999.99)
-        pay_amt.setDecimals(2)
-        pay_amt.setToolTip("Total payment amount; sum of Apply column must match.")
-        method_e = QLineEdit()
-        method_e.setToolTip("e.g. Check, ACH, card (optional).")
-        ref_e = QLineEdit()
-        ref_e.setToolTip("Check number, confirmation id, or bank reference (optional).")
-        memo_e = QLineEdit()
-        memo_e.setToolTip("Note stored on the payment (optional).")
-        bank_cb = QComboBox()
-        bank_cb.setToolTip("Bank account where the deposit was recorded, if any.")
-        bank_cb.addItem("(None)")
-        try:
-            banks = self._conn.execute(
-                "SELECT id, name FROM bank_accounts WHERE is_active = 1 ORDER BY name"
-            ).fetchall()
-        except sqlite3.OperationalError:
-            banks = []
-        for b in banks:
-            bid = coerce_combo_int_id(b["id"])
-            if bid is None:
-                continue
-            bank_cb.addItem(escape_ampersand_for_qt(b["name"] or ""), bid)
-        _restore_payment_bank_combo(bank_cb, _AR_PAYMENT_BANK_KEY)
-        form.addRow("Payment date", pdate)
-        form.addRow("Amount *", pay_amt)
-        form.addRow("Deposit to bank", bank_cb)
-        form.addRow("Method", method_e)
-        form.addRow("Reference #", ref_e)
-        form.addRow("Memo", memo_e)
-        outer.addLayout(form)
-        lbl_ar_apply_hdr = QLabel("Apply to open invoices:")
-        lbl_ar_apply_hdr.setToolTip(
-            "Allocate this payment across unpaid invoices for the customer (table below)."
-        )
-        outer.addWidget(lbl_ar_apply_hdr)
-        hint = QLabel('Sum of "Apply" must equal the payment amount.')
-        hint.setStyleSheet("color: palette(mid);")
-        hint.setToolTip(
-            "The total in the Apply column must match the payment amount exactly (within penny rounding)."
-        )
-        outer.addWidget(hint)
-        alloc_tbl = QTableWidget()
-        alloc_tbl.setColumnCount(4)
-        alloc_tbl.setHorizontalHeaderLabels(["Invoice #", "Date", "Balance", "Apply"])
-        alloc_tbl.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        alloc_tbl.setToolTip(
-            "Open invoices for the selected customer. Enter Apply amounts; they must sum to the payment."
-        )
-
-        def rebuild_ar_alloc_table(_idx: int | None = None) -> None:
-            cid = coerce_combo_int_id(cust_cb.currentData())
-            alloc_tbl.setSortingEnabled(False)
-            alloc_tbl.setRowCount(0)
-            if cid is None:
-                alloc_tbl.setSortingEnabled(True)
-                return
-            opens = business.list_open_invoices_for_customer(self._conn, cid)
-            open_packed = [
-                (iid, r)
-                for r in opens
-                if (iid := coerce_combo_int_id(r["id"])) is not None
-            ]
-            alloc_tbl.setRowCount(len(open_packed))
-            align_rc = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-            for i, (iid, r) in enumerate(open_packed):
-                it0 = plain_display_table_item(r["invoice_number"] or "")
-                it0.setData(Qt.ItemDataRole.UserRole, iid)
-                alloc_tbl.setItem(i, 0, it0)
-                alloc_tbl.setItem(
-                    i, 1, plain_display_table_item(r["invoice_date"] or "")
-                )
-                bal = float(r["balance_due"])
-                bal_it = _FloatSortTableItem(f"{bal:,.2f}", bal)
-                bal_it.setTextAlignment(align_rc)
-                alloc_tbl.setItem(i, 2, bal_it)
-                sp = QDoubleSpinBox()
-                sp.setRange(0, float(r["balance_due"]))
-                sp.setDecimals(2)
-                alloc_tbl.setCellWidget(i, 3, sp)
-            alloc_tbl.setSortingEnabled(True)
-
-        def sync_ar_payment_customers() -> None:
-            _sync_filtered_entity_combo(
-                custs, cust_filt.text(), cust_cb, business_list_filter.CUSTOMER_ENTITY_KEYS
-            )
-            rebuild_ar_alloc_table()
-
-        def apply_oldest_first() -> None:
-            remaining = round(pay_amt.value(), 2)
-            for row in range(alloc_tbl.rowCount()):
-                w = alloc_tbl.cellWidget(row, 3)
-                if not isinstance(w, QDoubleSpinBox):
-                    continue
-                cap = round(float(w.maximum()), 2)
-                use = min(remaining, cap)
-                w.setValue(use)
-                remaining = round(remaining - use, 2)
-                if remaining <= 0.001:
-                    break
-
-        cust_filt.textChanged.connect(sync_ar_payment_customers)
-        cust_cb.currentIndexChanged.connect(rebuild_ar_alloc_table)
-        sync_ar_payment_customers()
-        _restore_entity_combo(cust_cb, _AR_PAYMENT_CUSTOMER_KEY)
-        auto_row = QHBoxLayout()
-        ar_pay_fill_old = QPushButton("Fill oldest first")
-        ar_pay_fill_old.setToolTip(
-            "Fill Apply from the oldest open invoice upward until the payment amount is used."
-        )
-        ar_pay_fill_old.clicked.connect(apply_oldest_first)
-        auto_row.addWidget(ar_pay_fill_old)
-        auto_row.addStretch()
-        outer.addLayout(auto_row)
-        _attach_table_copy_row_menu(alloc_tbl, d)
-        outer.addWidget(alloc_tbl)
-        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        _tip_dialog_ok_cancel(
-            bb,
-            "Record the payment and apply amounts to open invoices (totals must match).",
-        )
-        bb.accepted.connect(d.accept)
-        bb.rejected.connect(d.reject)
-        outer.addWidget(bb)
-        if d.exec() != QDialog.DialogCode.Accepted:
-            return
-        cid = coerce_combo_int_id(cust_cb.currentData())
-        if cid is None:
-            message_box_warning_ok(
-                self,
-                "AR payment",
-                "Select a customer (try clearing the filter).",
-                ok_tip="Close; pick a customer or clear the filter.",
-            )
-            return
-        amt = round(pay_amt.value(), 2)
-        allocs: list[tuple[int, float]] = []
-        for row in range(alloc_tbl.rowCount()):
-            it = alloc_tbl.item(row, 0)
-            w = alloc_tbl.cellWidget(row, 3)
-            if it is None or not isinstance(w, QDoubleSpinBox):
-                continue
-            v = round(w.value(), 2)
-            if v <= 0.005:
-                continue
-            iid = coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole))
-            if iid is None:
-                continue
-            allocs.append((iid, v))
-        if not allocs:
-            message_box_warning_ok(
-                self,
-                "AR payment",
-                "Enter an amount in Apply for at least one invoice.",
-                ok_tip="Close; type Apply amounts in the table for open invoices.",
-            )
-            return
-        applied = round(sum(a for _, a in allocs), 2)
-        if abs(applied - amt) > 0.02:
-            message_box_warning_ok(
-                self,
-                "AR payment",
-                f"Apply amounts ({applied:.2f}) must equal payment amount ({amt:.2f}).",
-                ok_tip="Close; adjust Apply so the total matches the payment amount.",
-            )
-            return
-        bidx = bank_cb.currentIndex()
-        bank_account_id = (
-            coerce_combo_int_id(bank_cb.itemData(bidx)) if bidx > 0 else None
-        )
-        business.record_ar_payment(
-            self._conn,
-            cid,
-            pdate.date().toString("yyyy-MM-dd"),
-            amt,
-            allocs,
-            bank_account_id=bank_account_id,
-            method=method_e.text().strip(),
-            reference=ref_e.text().strip(),
-            memo=memo_e.text().strip(),
-        )
-        _save_entity_combo(cust_cb, _AR_PAYMENT_CUSTOMER_KEY)
-        _save_payment_bank_choice(bank_cb, _AR_PAYMENT_BANK_KEY)
-        self._refresh()
-        message_box_information_ok(
-            self,
-            "AR payment",
-            "Payment recorded.",
-            ok_tip="Close; allocations and balances are updated.",
-        )
-
-    def _export_aging(self):
-        as_of = _prompt_as_of_date(self, "Export AR aging")
-        if as_of is None:
-            return
-        path, _ = QFileDialog.getSaveFileName(self, "AR aging", "", "CSV (*.csv)")
-        if not path:
-            return
-        data = business.ar_aging_buckets(self._conn, as_of)[0]
-        with open(path, "w", newline="", encoding="utf-8-sig") as fp:
-            w = csv.writer(fp)
-            w.writerow(
-                ["Customer", "Invoice id", "Balance", "Bucket", "Days past due", "As of"]
-            )
-            for ln in data["lines"]:
-                w.writerow(
-                    [
-                        ln["customer"],
-                        ln["invoice_id"],
-                        f"{ln['balance']:.2f}",
-                        ln["bucket"],
-                        ln.get("days_past_due", ""),
-                        as_of,
-                    ]
-                )
-            _append_aging_bucket_totals_csv(w, data["buckets"], as_of)
-        message_box_information_ok(
-            self,
-            "Export",
-            f"Wrote {escape_ampersand_for_qt(path)}\n(As of {as_of})",
-            ok_tip="Close; open the aging CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
-        )
-
     def _export_customers(self):
         path, _ = QFileDialog.getSaveFileName(
             self, "Export customers", "customers.csv", "CSV (*.csv)"
@@ -1877,110 +1311,6 @@ class ARTab(QWidget):
             ok_tip="Close; open the CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
         )
 
-    def _export_invoices(self):
-        filt = self._inv_filter.text().strip()
-        all_rows = business.list_invoices(self._conn)
-        filtered = business_list_filter.filter_business_rows(
-            all_rows, filt, business_list_filter.AR_INVOICE_FILTER_KEYS
-        )
-        vis_ids = [
-            iid
-            for r in filtered
-            if (iid := coerce_combo_int_id(r["id"])) is not None
-        ]
-        scope = _prompt_list_csv_export_scope(self, "invoices", bool(filt), vis_ids)
-        if scope is None:
-            return
-        invoice_ids = None if scope == "all" else scope
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Export invoices", "invoices.csv", "CSV (*.csv)"
-        )
-        if not path:
-            return
-        if not path.lower().endswith(".csv"):
-            path += ".csv"
-        try:
-            n = business.write_invoices_csv(
-                self._conn, path, invoice_ids=invoice_ids
-            )
-        except OSError as exc:
-            message_box_critical_ok(
-                self,
-                "Export failed",
-                escape_ampersand_for_qt(str(exc)),
-                ok_tip="Close; check path, permissions, and disk space.",
-            )
-            return
-        message_box_information_ok(
-            self,
-            "Export",
-            f"Exported {n} invoice(s) to {escape_ampersand_for_qt(path)}",
-            ok_tip="Close; open the CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
-        )
-
-    def _export_ar_payments(self):
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Export AR payments", "ar_payments.csv", "CSV (*.csv)"
-        )
-        if not path:
-            return
-        if not path.lower().endswith(".csv"):
-            path += ".csv"
-        try:
-            n = business.write_ar_payments_csv(self._conn, path)
-        except OSError as exc:
-            message_box_critical_ok(
-                self,
-                "Export failed",
-                escape_ampersand_for_qt(str(exc)),
-                ok_tip="Close; check path, permissions, and disk space.",
-            )
-            return
-        except sqlite3.OperationalError as exc:
-            message_box_critical_ok(
-                self,
-                "Export failed",
-                escape_ampersand_for_qt(
-                    str(exc)
-                    + "\n\nRestart the app to apply the latest database upgrade."
-                ),
-                ok_tip="Close; restart ProBooks+ai after upgrades, then export again.",
-            )
-            return
-        message_box_information_ok(
-            self,
-            "Export",
-            f"Exported {n} payment(s) to {escape_ampersand_for_qt(path)}",
-            ok_tip="Close; open the CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
-        )
-
-    def _export_ar_allocations(self):
-        path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Export AR payment allocations",
-            "ar_payment_allocations.csv",
-            "CSV (*.csv)",
-        )
-        if not path:
-            return
-        if not path.lower().endswith(".csv"):
-            path += ".csv"
-        try:
-            n = business.write_ar_payment_allocations_csv(self._conn, path)
-        except OSError as exc:
-            message_box_critical_ok(
-                self,
-                "Export failed",
-                escape_ampersand_for_qt(str(exc)),
-                ok_tip="Close; check path, permissions, and disk space.",
-            )
-            return
-        message_box_information_ok(
-            self,
-            "Export",
-            f"Exported {n} allocation row(s) to {escape_ampersand_for_qt(path)}",
-            ok_tip="Close; open the CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
-        )
 
 
 class APTab(QWidget):
