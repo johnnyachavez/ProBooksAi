@@ -760,6 +760,21 @@ def list_open_invoices_for_customer(
     ).fetchall()
 
 
+def list_open_invoices_for_receive_payments(conn: sqlite3.Connection) -> list:
+    """Open AR invoices with customer columns for the Receive Payments tab (``balance_due`` > 0)."""
+    return conn.execute(
+        """
+        SELECT i.id AS invoice_id, i.customer_id, c.name AS customer_name,
+               i.invoice_number, i.invoice_date, i.due_date,
+               i.balance_due, i.total, i.status
+        FROM invoices i
+        JOIN customers c ON c.id = i.customer_id
+        WHERE i.balance_due > 0.005
+        ORDER BY c.name, COALESCE(NULLIF(TRIM(i.due_date), ''), i.invoice_date), i.id
+        """
+    ).fetchall()
+
+
 # ---------------------------------------------------------------------------
 # Vendors & bills (Phase 11)
 # ---------------------------------------------------------------------------

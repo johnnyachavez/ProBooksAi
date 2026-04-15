@@ -1,13 +1,18 @@
-"""Receive Checks screen — structure only (no DB)."""
+"""Receive Payments screen — structure and A/R data wiring."""
 
 from __future__ import annotations
 
 import sys
+from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from PySide6.QtWidgets import QApplication, QCheckBox, QDoubleSpinBox, QPushButton, QTableWidget
 
 from desktop_app.receive_checks_screen import ReceiveChecksScreen
+from probooksai import business
+from probooksai.bank_import import BankDatabase
+from probooksai.extensions_schema import apply_extensions
 
 
 @pytest.fixture
@@ -18,35 +23,134 @@ def qapp() -> QApplication:
     return app
 
 
-def test_receive_checks_screen_table_and_header(qapp: QApplication) -> None:
+@pytest.fixture
+def db(tmp_path: Path) -> BankDatabase:
+    b = BankDatabase(db_path=str(tmp_path / "rcv.db"))
+    apply_extensions(b._conn)
+    yield b
+    b.close()
+
+
+def test_receive_checks_screen_table_headers(qapp: QApplication) -> None:
     w = ReceiveChecksScreen()
-    t = w.findChild(QTableWidget)
+    t = w.findChild(QTableWidget, "receiveChecksTable")
     assert t is not None
-    assert t.objectName() == "receiveChecksTable"
-    assert t.columnCount() == 6
-    assert t.rowCount() == ReceiveChecksScreen._N_ROWS
-    assert t.horizontalHeaderItem(1).text() == "Date"
-    assert t.horizontalHeaderItem(2).text() == "Number"
-    assert t.horizontalHeaderItem(5).text() == "Payment"
-    assert isinstance(t.cellWidget(0, 0), QCheckBox)
-    assert isinstance(t.cellWidget(0, 5), QDoubleSpinBox)
+    assert t.columnCount() == 7
+    assert t.horizontalHeaderItem(1).text() == "Customer"
+    assert t.horizontalHeaderItem(2).text() == "Invoice Date"
+    assert t.horizontalHeaderItem(3).text() == "Due Date"
+    assert t.horizontalHeaderItem(4).text() == "Invoice #"
+    assert t.horizontalHeaderItem(5).text() == "Open Balance"
+    assert t.horizontalHeaderItem(6).text() == "Amount to Apply"
 
 
-def test_receive_checks_totals_update_when_checked(qapp: QApplication) -> None:
-    w = ReceiveChecksScreen()
-    t = w.findChild(QTableWidget)
+def test_receive_checks_loads_open_invoice_row(
+    qapp: QApplication, db: BankDatabase
+) -> None:
+    cid = business.add_customer(db._conn, "PayCo")
+    business.create_invoice(
+        db._conn,
+        cid,
+        "INV-R1",
+        "2024-06-01",
+        due_date="2024-06-15",
+        lines=[{"description": "Work", "qty": 1, "rate": 100.0}],
+    )
+    w = ReceiveChecksScreen(ap_conn=db._conn, bank_db=db)
+    t = w.findChild(QTableWidget, "receiveChecksTable")
+    assert t is not None
+    assert t.rowCount() == 1
+    assert t.item(0, 1).text() == "PayCo"
+    assert "INV-R1" in (t.item(0, 4).text() or "")
+    spin = t.cellWidget(0, 6)
+    assert isinstance(spin, QDoubleSpinBox)
+    assert spin.maximum() == pytest.approx(100.0)
+
+
+def test_receive_checks_totals_update_when_checked(
+    qapp: QApplication, db: BankDatabase
+) -> None:
+    cid = business.add_customer(db._conn, "PayCo2")
+    business.create_invoice(
+        db._conn,
+        cid,
+        "INV-R2",
+        "2024-06-01",
+        lines=[{"description": "Work", "qty": 1, "rate": 50.0}],
+    )
+    w = ReceiveChecksScreen(ap_conn=db._conn, bank_db=db)
+    t = w.findChild(QTableWidget, "receiveChecksTable")
     assert t is not None
     cb = t.cellWidget(0, 0)
-    spin = t.cellWidget(0, 5)
+    spin = t.cellWidget(0, 6)
     assert isinstance(cb, QCheckBox)
     assert isinstance(spin, QDoubleSpinBox)
     cb.setChecked(True)
-    spin.setValue(100.0)
+    spin.setValue(25.0)
     assert "1" in w._lbl_total_selected.text()
-    assert "100" in w._lbl_total_payment.text().replace(",", "")
+    assert "25" in w._lbl_total_payment.text().replace(",", "")
 
 
 def test_receive_checks_apply_credits_button_present(qapp: QApplication) -> None:
     w = ReceiveChecksScreen()
     texts = [b.text() for b in w.findChildren(QPushButton)]
     assert "Apply Credits" in texts
+
+
+def test_list_open_invoices_for_receive_payments(db: BankDatabase) -> None:
+    cid = business.add_customer(db._conn, "ListCo")
+    business.create_invoice(
+        db._conn,
+        cid,
+        "INV-L",
+        "2024-07-01",
+        lines=[{"description": "x", "qty": 1, "rate": 10.0}],
+    )
+    rows = business.list_open_invoices_for_receive_payments(db._conn)
+    assert len(rows) == 1
+    assert rows[0]["customer_name"] == "ListCo"
+    assert int(rows[0]["invoice_id"]) >= 1
+
+
+def test_receive_payment_post_reduces_balance(qapp: QApplication, db: BankDatabase) -> None:
+    aid = db.add_bank_account("Checking")
+    cid = business.add_customer(db._conn, "PostCo")
+    inv_id = business.create_invoice(
+        db._conn,
+        cid,
+        "INV-P",
+        "2024-08-01",
+        lines=[{"description": "Work", "qty": 1, "rate": 40.0}],
+    )
+    w = ReceiveChecksScreen(ap_conn=db._conn, bank_db=db)
+    t = w.findChild(QTableWidget, "receiveChecksTable")
+    assert t is not None
+    assert t.rowCount() == 1
+    cb = t.cellWidget(0, 0)
+    spin = t.cellWidget(0, 6)
+    assert isinstance(cb, QCheckBox)
+    assert isinstance(spin, QDoubleSpinBox)
+    cb.setChecked(True)
+    spin.setValue(40.0)
+    assert w._deposit_to.count() >= 2
+    w._deposit_to.setCurrentIndex(1)
+    with patch("desktop_app.receive_checks_screen.message_box_information_ok"):
+        w._on_post_payment()
+    row = db._conn.execute(
+        "SELECT balance_due, status FROM invoices WHERE id = ?", (inv_id,)
+    ).fetchone()
+    assert float(row["balance_due"]) == pytest.approx(0.0)
+    pid = int(
+        db._conn.execute("SELECT id FROM ar_payments ORDER BY id DESC LIMIT 1").fetchone()["id"]
+    )
+    tid = int(
+        db._conn.execute(
+            "SELECT id FROM bank_transactions WHERE bank_account_id = ? ORDER BY id DESC LIMIT 1",
+            (aid,),
+        ).fetchone()["id"]
+    )
+    bt = db._conn.execute(
+        "SELECT amount FROM bank_transactions WHERE id = ?", (tid,)
+    ).fetchone()
+    assert float(bt["amount"]) == pytest.approx(40.0)
+    assert business.bank_match_link_for_navigation(db._conn, tid) == ("ar_payment", pid)

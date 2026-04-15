@@ -97,7 +97,7 @@ def test_accounting_landing_tabs_show_page_titles(qapp: QApplication, tmp_path: 
                 assert tbl.columnCount() == 7
                 assert "Pay Bills" in titles
             else:
-                assert tbl.columnCount() == 6
+                assert tbl.columnCount() == 7
                 assert "Receive Payments" in titles
     finally:
         w.close()

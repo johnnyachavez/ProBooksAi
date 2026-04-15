@@ -951,7 +951,9 @@ class MainWindow(QMainWindow):
         self._pay_bills_screen = PayBillsScreen(
             ap_conn=conn, bank_db=self._bank_db
         )
-        self._receive_payments_screen = ReceiveChecksScreen(ap_conn=conn)
+        self._receive_payments_screen = ReceiveChecksScreen(
+            ap_conn=conn, bank_db=self._bank_db
+        )
 
         self._register_tab = RegisterTab(self._bank_db, self._coa_db, self._gl_db)
         self._bank_tab = BankImportTab(

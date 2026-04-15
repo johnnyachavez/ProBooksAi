@@ -1,15 +1,15 @@
-"""Receive Checks (customer payment) workflow screen — UI only (no database or A/R logic).
+"""Receive Payments workflow — open A/R invoices from the company file; post via :func:`probooksai.business.record_ar_payment`.
 
-Dark navy workflow theme matches Invoices, Enter Bills, and Pay Bills (Receive Payments tab).
+Optional bank line: when a bank account is chosen, inserts a matching register deposit and links it to each AR payment.
 """
 
 from __future__ import annotations
 
-import random
 import sqlite3
-from typing import Optional
+from collections import defaultdict
+from typing import TYPE_CHECKING, Optional
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QDate, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -30,12 +30,20 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from desktop_app.flexible_date import configure_qdate_edit_us, format_iso_to_us_display
+from desktop_app.qt_combo_ids import coerce_combo_int_id
+from desktop_app.qt_mnemonic import (
+    message_box_critical_ok,
+    message_box_information_ok,
+    message_box_warning_ok,
+)
+from probooksai import business
+
 from desktop_app.ar_customer_actions import (
     export_ar_payment_allocations_csv,
     export_ar_payments_csv,
     open_record_ar_payment_dialog,
 )
-from desktop_app.flexible_date import configure_qdate_edit_us
 from desktop_app.theme import (
     WORKFLOW_ALT_ROW as _RC_STRIPE,
     WORKFLOW_CAPTION as _RC_CAPTION,
@@ -46,6 +54,12 @@ from desktop_app.theme import (
     WORKFLOW_PANEL_BG as _RC_PANEL,
     WORKFLOW_TEXT as _RC_TEXT,
 )
+
+if TYPE_CHECKING:
+    from probooksai.bank_import import BankDatabase
+
+_ROLE_INVOICE_ID = Qt.ItemDataRole.UserRole
+_ROLE_CUSTOMER_ID = Qt.ItemDataRole.UserRole + 1
 
 
 def _readonly_item(text: str) -> QTableWidgetItem:
@@ -78,33 +92,38 @@ def _payment_spin() -> QDoubleSpinBox:
 
 
 class ReceiveChecksScreen(QWidget):
-    """Customer payment header, open invoices grid, totals and credits panel (A/R draft)."""
+    """Customer payment header, open invoices from the company DB, post AR + optional bank deposit."""
 
     _COLS = (
         "",  # checkbox
-        "Date",
-        "Number",
-        "Original Amount",
-        "Amount Due",
-        "Payment",
+        "Customer",
+        "Invoice Date",
+        "Due Date",
+        "Invoice #",
+        "Open Balance",
+        "Amount to Apply",
     )
-    _N_ROWS = 15
 
     def __init__(
         self,
         parent: Optional[QWidget] = None,
         *,
         ap_conn: Optional[sqlite3.Connection] = None,
+        bank_db: Optional["BankDatabase"] = None,
     ) -> None:
         super().__init__(parent)
         self._ap_conn = ap_conn
+        self._bank_db = bank_db
+        self._cached_invoices: list = []
+        self._row_checks: list[QCheckBox] = []
+        self._payment_edits: list[QDoubleSpinBox] = []
         self.setToolTip(
-            "Receive Checks: record customer payments against open invoices when connected. "
+            "Receive Payments: record customer payments against open invoices from your company file. "
             "Same company .db (File → Backup / Restore, probooks.backup)."
         )
-        self._payment_edits: list[QDoubleSpinBox] = []
-        self._row_checks: list[QCheckBox] = []
         self._build_ui()
+        self._load_bank_accounts_combo()
+        self._load_invoices_from_db()
 
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self)
@@ -115,7 +134,7 @@ class ReceiveChecksScreen(QWidget):
         ar_row.setSpacing(8)
         self._btn_record_ar = QPushButton("Record customer payment…")
         self._btn_record_ar.setToolTip(
-            "Record a payment and allocate amounts to open invoices (moved from the Customers tab)."
+            "Open the AR payment dialog (alternative to posting from the grid below)."
         )
         self._btn_record_ar.clicked.connect(self._on_record_ar_payment)
         self._btn_export_ar_pay = QPushButton("Export AR payments CSV…")
@@ -127,10 +146,11 @@ class ReceiveChecksScreen(QWidget):
         for b in (self._btn_record_ar, self._btn_export_ar_pay, self._btn_export_ar_alloc):
             b.setAutoDefault(False)
             b.setDefault(False)
-            ar_row.addWidget(b)
+        ar_row.addWidget(self._btn_record_ar)
+        ar_row.addWidget(self._btn_export_ar_pay)
+        ar_row.addWidget(self._btn_export_ar_alloc)
         ar_row.addStretch(1)
         outer.addLayout(ar_row)
-        self._sync_ar_toolbar()
 
         page = QFrame()
         page.setObjectName("receiveChecksLightPanel")
@@ -149,10 +169,23 @@ class ReceiveChecksScreen(QWidget):
         )
         title_row.addWidget(title)
         title_row.addStretch(1)
+        self._btn_post = QPushButton("Post payment")
+        self._btn_post.setToolTip(
+            "Record AR payment(s) for checked rows with amounts; optional bank deposit when an account is selected."
+        )
+        self._btn_post.clicked.connect(self._on_post_payment)
+        self._btn_refresh = QPushButton("Refresh")
+        self._btn_refresh.setToolTip("Reload open invoices from the company database.")
+        self._btn_refresh.clicked.connect(self._load_invoices_from_db)
+        for b in (self._btn_post, self._btn_refresh):
+            b.setAutoDefault(False)
+            b.setDefault(False)
+        title_row.addWidget(self._btn_post)
+        title_row.addWidget(self._btn_refresh)
         play.addLayout(title_row)
 
         sec_pay = _receive_caption_label("Payment details")
-        sec_pay.setToolTip("Customer, amount, method, date, and deposit account (placeholder).")
+        sec_pay.setToolTip("Payment date, deposit account, method, and reference for posting.")
         play.addWidget(sec_pay)
 
         # ── Header form ──
@@ -184,37 +217,27 @@ class ReceiveChecksScreen(QWidget):
         left.setVerticalSpacing(10)
         left.setColumnStretch(1, 1)
 
-        self._customer = QComboBox()
-        self._customer.addItem("")
-        for name in (
-            "Fabrikam Retail",
-            "Adventure Works",
-            "Northwind Traders",
-            "Contoso Ltd.",
-            "Wide World Importers",
-        ):
-            self._customer.addItem(name)
-        self._customer.setMinimumWidth(220)
-        self._customer.setStyleSheet(_combo_ss)
-
-        self._payment_amount = _payment_spin()
-        self._payment_amount.setToolTip("Total payment amount (UI only).")
+        self._customer_filter = QComboBox()
+        self._customer_filter.setMinimumWidth(220)
+        self._customer_filter.setStyleSheet(_combo_ss)
+        self._customer_filter.setToolTip(
+            "Limit the invoice list to one customer, or show all open invoices."
+        )
+        self._customer_filter.currentIndexChanged.connect(self._rebuild_table)
 
         self._pay_method = QComboBox()
         self._pay_method.addItems(("Check", "Cash", "Credit Card", "ACH", "Other"))
         self._pay_method.setStyleSheet(_combo_ss)
 
-        self._cust_balance = QLabel("Customer balance: $2,450.00")
+        self._cust_balance = QLabel("Customer open balance: —")
         self._cust_balance.setStyleSheet(f"color: {_RC_CAPTION}; font-size: 12px;")
-        self._cust_balance.setToolTip("Display only (placeholder).")
+        self._cust_balance.setToolTip("Sum of open balance for the invoices shown in the table (after filter).")
 
-        left.addWidget(_receive_caption_label("Received From"), 0, 0, Qt.AlignmentFlag.AlignRight)
-        left.addWidget(self._customer, 0, 1)
-        left.addWidget(_receive_caption_label("Payment Amount"), 1, 0, Qt.AlignmentFlag.AlignRight)
-        left.addWidget(self._payment_amount, 1, 1)
-        left.addWidget(_receive_caption_label("Payment Method"), 2, 0, Qt.AlignmentFlag.AlignRight)
-        left.addWidget(self._pay_method, 2, 1)
-        left.addWidget(self._cust_balance, 3, 0, 1, 2)
+        left.addWidget(_receive_caption_label("Show customer"), 0, 0, Qt.AlignmentFlag.AlignRight)
+        left.addWidget(self._customer_filter, 0, 1)
+        left.addWidget(_receive_caption_label("Payment Method"), 1, 0, Qt.AlignmentFlag.AlignRight)
+        left.addWidget(self._pay_method, 1, 1)
+        left.addWidget(self._cust_balance, 2, 0, 1, 2)
 
         right = QGridLayout()
         right.setHorizontalSpacing(12)
@@ -223,24 +246,25 @@ class ReceiveChecksScreen(QWidget):
 
         self._pay_date = QDateEdit()
         configure_qdate_edit_us(self._pay_date)
+        self._pay_date.setDate(QDate.currentDate())
         self._pay_date.setStyleSheet(_date_ss)
 
         self._check_num = QLineEdit()
-        self._check_num.setPlaceholderText("Check #")
+        self._check_num.setPlaceholderText("Check # / reference")
         self._check_num.setStyleSheet(_line_ss)
 
         self._deposit_to = QComboBox()
-        self._deposit_to.addItems(
-            ("Operating — ****1234", "Payroll — ****5678", "Savings — ****9012")
-        )
         self._deposit_to.setMinimumWidth(200)
         self._deposit_to.setStyleSheet(_combo_ss)
+        self._deposit_to.setToolTip(
+            "Bank account for the deposit line on the register (optional). Choose “(None)” for AR only."
+        )
 
-        right.addWidget(_receive_caption_label("Date"), 0, 0, Qt.AlignmentFlag.AlignRight)
+        right.addWidget(_receive_caption_label("Payment date"), 0, 0, Qt.AlignmentFlag.AlignRight)
         right.addWidget(self._pay_date, 0, 1)
-        right.addWidget(_receive_caption_label("Check #"), 1, 0, Qt.AlignmentFlag.AlignRight)
+        right.addWidget(_receive_caption_label("Reference #"), 1, 0, Qt.AlignmentFlag.AlignRight)
         right.addWidget(self._check_num, 1, 1)
-        right.addWidget(_receive_caption_label("Deposit To"), 2, 0, Qt.AlignmentFlag.AlignRight)
+        right.addWidget(_receive_caption_label("Deposit to"), 2, 0, Qt.AlignmentFlag.AlignRight)
         right.addWidget(self._deposit_to, 2, 1)
 
         form_outer.addLayout(left, 1)
@@ -248,11 +272,11 @@ class ReceiveChecksScreen(QWidget):
         play.addWidget(form_frame)
 
         sec_inv = _receive_caption_label("Open invoices")
-        sec_inv.setToolTip("Allocate payment across invoice lines (placeholder).")
+        sec_inv.setToolTip("Check invoices and enter amounts to apply; post records payment and updates balances.")
         play.addWidget(sec_inv)
 
         # ── Invoices table ──
-        self._table = QTableWidget(self._N_ROWS, len(self._COLS))
+        self._table = QTableWidget(0, len(self._COLS))
         self._table.setObjectName("receiveChecksTable")
         self._table.setHorizontalHeaderLabels(self._COLS)
         self._table.verticalHeader().setVisible(True)
@@ -260,12 +284,10 @@ class ReceiveChecksScreen(QWidget):
         self._table.setShowGrid(True)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self._table.horizontalHeader().setStretchLastSection(True)
-        self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        for col in (0, 1, 3, 4, 5):
-            self._table.horizontalHeader().setSectionResizeMode(
-                col, QHeaderView.ResizeMode.ResizeToContents
-            )
+        hh = self._table.horizontalHeader()
+        hh.setStretchLastSection(True)
+        for col in range(1, len(self._COLS) - 1):
+            hh.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
 
         self._table.setStyleSheet(
             f"QTableWidget#receiveChecksTable {{"
@@ -283,38 +305,10 @@ class ReceiveChecksScreen(QWidget):
             " }}"
         )
 
-        rng = random.Random(17)
-        for row in range(self._N_ROWS):
-            cb = QCheckBox()
-            cb.setStyleSheet("background: transparent; margin-left: 8px;")
-            self._table.setCellWidget(row, 0, cb)
-            self._row_checks.append(cb)
-
-            inv_date = f"2025-{1 + (row % 11):02d}-{(row % 27) + 1:02d}"
-            inv_no = f"INV-{1200 + row}"
-            orig = 200.0 + rng.randint(0, 4000) + rng.random()
-            due = orig * (0.2 + 0.7 * rng.random())
-            orig_s = f"{orig:,.2f}"
-            due_s = f"{due:,.2f}"
-
-            self._table.setItem(row, 1, _readonly_item(inv_date))
-            self._table.setItem(row, 2, _readonly_item(inv_no))
-            self._table.setItem(row, 3, _readonly_item(orig_s))
-            self._table.setItem(row, 4, _readonly_item(due_s))
-
-            pay_spin = _payment_spin()
-            pay_spin.setValue(0.0)
-            pay_spin.setToolTip("Payment to apply to this invoice (UI only).")
-            self._table.setCellWidget(row, 5, pay_spin)
-            self._payment_edits.append(pay_spin)
-
-            cb.stateChanged.connect(lambda *_: self._refresh_totals())
-            pay_spin.valueChanged.connect(lambda *_: self._refresh_totals())
-
         play.addWidget(self._table, 1)
 
         sec_sum = _receive_caption_label("Summary")
-        sec_sum.setToolTip("Totals for the current selection and credit placeholders.")
+        sec_sum.setToolTip("Totals for checked rows with apply amounts.")
         play.addWidget(sec_sum)
 
         # ── Bottom: totals + credits panel ──
@@ -330,8 +324,8 @@ class ReceiveChecksScreen(QWidget):
         tot_col = QVBoxLayout(tot_frame)
         tot_col.setContentsMargins(14, 12, 14, 12)
         tot_col.setSpacing(8)
-        self._lbl_total_selected = QLabel("Total selected: 0")
-        self._lbl_total_payment = QLabel("Total payment applied: $0.00")
+        self._lbl_total_selected = QLabel("Invoices with payment: 0")
+        self._lbl_total_payment = QLabel("Total amount to apply: $0.00")
         for lb in (self._lbl_total_selected, self._lbl_total_payment):
             lb.setStyleSheet(f"color: {_RC_TEXT}; font-size: 13px;")
         tot_col.addWidget(self._lbl_total_selected)
@@ -352,18 +346,19 @@ class ReceiveChecksScreen(QWidget):
         cr.setSpacing(8)
 
         cr.addWidget(_receive_caption_label("Unused credits"))
-        self._lbl_unused_credits = QLabel("$125.00")
+        self._lbl_unused_credits = QLabel("—")
         self._lbl_unused_credits.setStyleSheet(
             f"color: {_RC_TEXT}; font-size: 14px; font-weight: 600;"
         )
-        self._lbl_unused_credits.setToolTip("Placeholder — not wired to A/R credits yet.")
+        self._lbl_unused_credits.setToolTip("Not wired to A/R credits in this release.")
         cr.addWidget(self._lbl_unused_credits)
 
         self._btn_apply_credits = QPushButton("Apply Credits")
-        self._btn_apply_credits.setToolTip("Placeholder — no credit application yet.")
+        self._btn_apply_credits.setToolTip("Not implemented yet.")
         self._btn_apply_credits.clicked.connect(self._on_apply_credits_placeholder)
         self._btn_apply_credits.setAutoDefault(False)
         self._btn_apply_credits.setDefault(False)
+        self._btn_apply_credits.setEnabled(False)
         cr.addWidget(self._btn_apply_credits)
 
         cr.addSpacing(4)
@@ -372,15 +367,135 @@ class ReceiveChecksScreen(QWidget):
         self._lbl_amount_selected.setStyleSheet(f"color: {_RC_TEXT}; font-size: 13px;")
         cr.addWidget(self._lbl_amount_selected)
 
-        self._lbl_discount_credits = QLabel("Discount and Credits applied: $0.00")
+        self._lbl_discount_credits = QLabel("Discount and credits applied: $0.00")
         self._lbl_discount_credits.setStyleSheet(f"color: {_RC_CAPTION}; font-size: 12px;")
-        self._lbl_discount_credits.setToolTip("Placeholder totals.")
+        self._lbl_discount_credits.setToolTip("Placeholder — not wired.")
         cr.addWidget(self._lbl_discount_credits)
 
         bot.addWidget(credits, 0)
         play.addLayout(bot)
 
         outer.addWidget(page, 1)
+        self._sync_ar_toolbar()
+        self._refresh_totals()
+
+    def _load_bank_accounts_combo(self) -> None:
+        self._deposit_to.blockSignals(True)
+        self._deposit_to.clear()
+        self._deposit_to.addItem("(None)", None)
+        if self._ap_conn is not None:
+            try:
+                rows = self._ap_conn.execute(
+                    "SELECT id, name FROM bank_accounts WHERE is_active = 1 ORDER BY name"
+                ).fetchall()
+            except sqlite3.Error:
+                rows = []
+            for r in rows:
+                bid = coerce_combo_int_id(r["id"])
+                if bid is None:
+                    continue
+                name = (r["name"] or "").strip() or f"Account #{bid}"
+                self._deposit_to.addItem(name, bid)
+        self._deposit_to.blockSignals(False)
+
+    def _populate_customer_filter(self) -> None:
+        self._customer_filter.blockSignals(True)
+        self._customer_filter.clear()
+        self._customer_filter.addItem("All customers", None)
+        if self._ap_conn is not None:
+            try:
+                for r in business.list_customers(self._ap_conn):
+                    cid = coerce_combo_int_id(r["id"])
+                    if cid is None:
+                        continue
+                    name = (dict(r).get("name") or "").strip() or f"Customer #{cid}"
+                    self._customer_filter.addItem(name, cid)
+            except sqlite3.Error:
+                pass
+        self._customer_filter.blockSignals(False)
+
+    def _invoice_passes_filter(self, d: dict) -> bool:
+        fcid = coerce_combo_int_id(self._customer_filter.currentData())
+        if fcid is None:
+            return True
+        return int(d.get("customer_id") or 0) == fcid
+
+    def _update_cust_balance_label(self, visible_rows: list[dict]) -> None:
+        s = sum(float(r.get("balance_due") or 0.0) for r in visible_rows)
+        self._cust_balance.setText(f"Customer open balance (shown): ${s:,.2f}")
+
+    def _load_invoices_from_db(self) -> None:
+        self._cached_invoices = []
+        self._populate_customer_filter()
+        if self._ap_conn is None:
+            self._rebuild_table()
+            return
+        try:
+            self._cached_invoices = list(
+                business.list_open_invoices_for_receive_payments(self._ap_conn)
+            )
+        except sqlite3.Error:
+            self._cached_invoices = []
+        self._rebuild_table()
+
+    def _rebuild_table(self) -> None:
+        self._row_checks.clear()
+        self._payment_edits.clear()
+        self._table.setRowCount(0)
+        if self._ap_conn is None:
+            self._cust_balance.setText("Customer open balance: —")
+            self._refresh_totals()
+            return
+        visible: list[dict] = []
+        for r in self._cached_invoices:
+            d = dict(r)
+            if self._invoice_passes_filter(d):
+                visible.append(d)
+        self._update_cust_balance_label(visible)
+        self._table.setRowCount(len(visible))
+        for i, d in enumerate(visible):
+            iid = int(d["invoice_id"])
+            cid = int(d["customer_id"])
+            bal = float(d["balance_due"] or 0.0)
+
+            cb = QCheckBox()
+            cb.setStyleSheet("background: transparent; margin-left: 8px;")
+            self._table.setCellWidget(i, 0, cb)
+            self._row_checks.append(cb)
+
+            cust_it = _readonly_item((d.get("customer_name") or "").strip() or "—")
+            cust_it.setData(_ROLE_CUSTOMER_ID, cid)
+            self._table.setItem(i, 1, cust_it)
+
+            inv_dt = (d.get("invoice_date") or "").strip()
+            self._table.setItem(
+                i,
+                2,
+                _readonly_item(format_iso_to_us_display(inv_dt) if inv_dt else "—"),
+            )
+            due_raw = (d.get("due_date") or "").strip()
+            self._table.setItem(
+                i,
+                3,
+                _readonly_item(format_iso_to_us_display(due_raw) if due_raw else "—"),
+            )
+
+            num_it = _readonly_item((d.get("invoice_number") or "").strip() or "—")
+            num_it.setData(_ROLE_INVOICE_ID, iid)
+            self._table.setItem(i, 4, num_it)
+
+            self._table.setItem(i, 5, _readonly_item(f"{bal:,.2f}"))
+
+            pay_spin = _payment_spin()
+            pay_spin.setRange(0.0, max(0.0, bal))
+            pay_spin.setValue(0.0)
+            pay_spin.setToolTip("Amount to apply to this invoice on this payment.")
+            self._table.setCellWidget(i, 6, pay_spin)
+            self._payment_edits.append(pay_spin)
+
+            cb.stateChanged.connect(lambda *_: self._refresh_totals())
+            pay_spin.valueChanged.connect(lambda *_: self._refresh_totals())
+
         self._refresh_totals()
 
     def _sync_ar_toolbar(self) -> None:
@@ -388,11 +503,13 @@ class ReceiveChecksScreen(QWidget):
         self._btn_record_ar.setEnabled(on)
         self._btn_export_ar_pay.setEnabled(on)
         self._btn_export_ar_alloc.setEnabled(on)
+        self._btn_post.setEnabled(on)
+        self._btn_refresh.setEnabled(on)
 
     def _on_record_ar_payment(self) -> None:
         if self._ap_conn is None:
             return
-        open_record_ar_payment_dialog(self, self._ap_conn, after_save=None)
+        open_record_ar_payment_dialog(self, self._ap_conn, after_save=self._load_invoices_from_db)
 
     def _on_export_ar_payments(self) -> None:
         if self._ap_conn is None:
@@ -415,9 +532,142 @@ class ReceiveChecksScreen(QWidget):
 
     def _refresh_totals(self) -> None:
         n, total = self._selected_payment_sum()
-        self._lbl_total_selected.setText(f"Total selected: {n}")
-        self._lbl_total_payment.setText(f"Total payment applied: ${total:,.2f}")
+        self._lbl_total_selected.setText(f"Invoices with payment: {n}")
+        self._lbl_total_payment.setText(f"Total amount to apply: ${total:,.2f}")
         self._lbl_amount_selected.setText(f"${total:,.2f}")
 
     def _on_apply_credits_placeholder(self) -> None:
-        print("[Receive Checks] Apply Credits (placeholder)")
+        pass
+
+    def _on_post_payment(self) -> None:
+        if self._ap_conn is None:
+            message_box_information_ok(
+                self,
+                "Receive Payments",
+                "Open a company database to post payments.",
+                ok_tip="Close; use File → Open company… then try again.",
+            )
+            return
+        payment_date = self._pay_date.date().toString("yyyy-MM-dd")
+        ref = self._check_num.text().strip()
+        method = self._pay_method.currentText().strip()
+        bidx = self._deposit_to.currentIndex()
+        bank_account_id: Optional[int] = None
+        if bidx > 0:
+            bank_account_id = coerce_combo_int_id(self._deposit_to.itemData(bidx))
+
+        by_customer: dict[int, list[tuple[int, float]]] = defaultdict(list)
+        for row, (cb, sp) in enumerate(zip(self._row_checks, self._payment_edits)):
+            if not cb.isChecked():
+                continue
+            amt = round(sp.value(), 2)
+            if amt <= 0.005:
+                continue
+            num_it = self._table.item(row, 4)
+            cust_it = self._table.item(row, 1)
+            if num_it is None or cust_it is None:
+                continue
+            iid = coerce_combo_int_id(num_it.data(_ROLE_INVOICE_ID))
+            cid = coerce_combo_int_id(cust_it.data(_ROLE_CUSTOMER_ID))
+            if iid is None or cid is None:
+                continue
+            by_customer[cid].append((iid, amt))
+
+        if not by_customer:
+            message_box_warning_ok(
+                self,
+                "Receive Payments",
+                "Select at least one invoice and enter an amount to apply.",
+                ok_tip="Check a row and set Amount to apply, then try again.",
+            )
+            return
+
+        conn = self._ap_conn
+        for cid, allocs in by_customer.items():
+            for iid, amt in allocs:
+                row = conn.execute(
+                    "SELECT balance_due FROM invoices WHERE id = ?", (iid,)
+                ).fetchone()
+                if row is None:
+                    message_box_warning_ok(
+                        self,
+                        "Receive Payments",
+                        f"Invoice #{iid} is no longer in the database. Refresh and try again.",
+                        ok_tip="Use Refresh, then re-enter amounts.",
+                    )
+                    return
+                bal = float(row["balance_due"] or 0.0)
+                if amt > bal + 0.02:
+                    message_box_warning_ok(
+                        self,
+                        "Receive Payments",
+                        f"Apply amount for invoice #{iid} exceeds open balance ({bal:,.2f}).",
+                        ok_tip="Lower the amount or refresh the list.",
+                    )
+                    return
+
+        bank_db = self._bank_db
+        posted = 0
+        bank_errors: list[str] = []
+
+        for cid, allocs in sorted(by_customer.items()):
+            total = round(sum(a for _, a in allocs), 2)
+            if total <= 0.005:
+                continue
+            crow = conn.execute(
+                "SELECT name FROM customers WHERE id = ?", (cid,)
+            ).fetchone()
+            cname = (crow["name"] if crow else "").strip() or f"Customer #{cid}"
+            try:
+                pid = business.record_ar_payment(
+                    conn,
+                    cid,
+                    payment_date,
+                    total,
+                    allocs,
+                    bank_account_id=bank_account_id,
+                    method=method,
+                    reference=ref,
+                    memo="",
+                )
+            except (sqlite3.Error, ValueError, TypeError) as exc:
+                message_box_critical_ok(
+                    self,
+                    "Receive Payments",
+                    f"Could not record payment for {cname}: {exc}",
+                    ok_tip="Close; check amounts and try again.",
+                )
+                return
+            posted += 1
+
+            if bank_account_id is not None and bank_db is not None:
+                try:
+                    tid = bank_db.insert_manual_transaction(
+                        bank_account_id,
+                        payment_date,
+                        total,
+                        description=f"AR payment #{pid} — {cname}",
+                        ref_number=ref,
+                        memo="Receive Payments",
+                    )
+                    business.link_bank_transaction(conn, tid, "ar_payment", int(pid))
+                except (sqlite3.Error, OSError, ValueError, TypeError) as exc:
+                    bank_errors.append(f"{cname}: {exc}")
+
+        self._load_invoices_from_db()
+
+        if bank_errors:
+            message_box_warning_ok(
+                self,
+                "Receive Payments",
+                "AR payment(s) saved, but the bank register line failed for: "
+                + "; ".join(bank_errors),
+                ok_tip="Add a matching bank transaction manually or fix the error and retry.",
+            )
+        else:
+            message_box_information_ok(
+                self,
+                "Receive Payments",
+                f"Posted {posted} payment(s). Open balances were updated.",
+                ok_tip="Close; use Refresh or revisit the tab to reload invoices.",
+            )
