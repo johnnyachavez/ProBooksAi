@@ -39,6 +39,32 @@ def qapp() -> QApplication:
     return app
 
 
+def test_invoice_screen_footer_recalcs_from_rate_qty(qapp: QApplication, tmp_path) -> None:
+    """Subtotal/tax/total labels follow Rate×Qty and default tax % (live, before Save)."""
+    db_path = tmp_path / "invoice_footer.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    business.set_setting(db._conn, "default_tax_rate_pct", "10")
+    w = InvoiceScreen(ap_conn=db._conn)
+    desc = w._table.cellWidget(0, 2)
+    assert isinstance(desc, QLineEdit)
+    desc.setText("Work")
+    rate = w._table.cellWidget(0, 4)
+    assert isinstance(rate, QDoubleSpinBox)
+    qty = w._table.cellWidget(0, 5)
+    assert isinstance(qty, QDoubleSpinBox)
+    rate.setValue(100.0)
+    qty.setValue(2.0)
+    qapp.processEvents()
+    assert "200.00" in w._lbl_sub.text().replace(",", "")
+    assert "20.00" in w._lbl_tax.text().replace(",", "")
+    assert "220.00" in w._lbl_total.text().replace(",", "")
+    tot = w._table.cellWidget(0, 6)
+    assert isinstance(tot, QDoubleSpinBox)
+    assert abs(tot.value() - 200.0) < 0.01
+    db.close()
+
+
 def test_invoice_screen_line_grid_and_headers(qapp: QApplication) -> None:
     w = InvoiceScreen()
     assert isinstance(w._date, QLineEdit)

@@ -217,6 +217,14 @@ def _money_spin() -> QDoubleSpinBox:
     return s
 
 
+def _line_total_spin() -> QDoubleSpinBox:
+    """Line **Total** column: derived from Rate × Qty (matches persisted ``invoice_lines.line_total``)."""
+    s = _money_spin()
+    s.setReadOnly(True)
+    s.setToolTip("Rate × quantity — same value saved on the invoice line.")
+    return s
+
+
 class InvoiceScreen(QWidget):
     """Manual Invoice: header, line grid, totals; persists to ``invoices`` / ``invoice_lines`` when connected."""
 
@@ -243,6 +251,8 @@ class InvoiceScreen(QWidget):
         self._browse_index: int | None = None
         # ``None`` = new draft; when set, Save/Export/Print updates this invoice via ``business.update_invoice``.
         self._current_invoice_id: int | None = None
+        # Block line grid valueChanged/textChanged while loading or clearing (avoids footer flicker).
+        self._suppress_invoice_line_recalc: bool = False
         # Memo text from DB when loading (no longer a visible header box after removing blank field).
         self._invoice_memo_notes: str = ""
         # Set True only inside Print click handler while QPrintDialog may run (blocks stray callers).
@@ -700,9 +710,11 @@ class InvoiceScreen(QWidget):
             qty.setValue(0.0)
             self._table.setCellWidget(row, 5, qty)
 
-            total = _money_spin()
+            total = _line_total_spin()
             total.setValue(0.0)
             self._table.setCellWidget(row, 6, total)
+
+        self._wire_invoice_line_recalc()
 
         # Column widths: content-based default unless QSettings has saved widths for this company file.
         self._table.resizeColumnsToContents()
@@ -1010,19 +1022,93 @@ class InvoiceScreen(QWidget):
         self._btn_forward.setEnabled(has_db and has_any)
 
     def _clear_line_grid(self) -> None:
-        for r in range(self._N_LINE_ROWS):
-            for c in range(len(self._LINE_COLS)):
-                w = self._table.cellWidget(r, c)
-                if isinstance(w, QLineEdit):
-                    w.clear()
-                elif isinstance(w, QDoubleSpinBox):
-                    w.setValue(0.0)
-        self._set_totals_labels(0.0, 0.0, 0.0)
+        self._suppress_invoice_line_recalc = True
+        try:
+            for r in range(self._N_LINE_ROWS):
+                for c in range(len(self._LINE_COLS)):
+                    w = self._table.cellWidget(r, c)
+                    if isinstance(w, QLineEdit):
+                        w.clear()
+                    elif isinstance(w, QDoubleSpinBox):
+                        w.setValue(0.0)
+        finally:
+            self._suppress_invoice_line_recalc = False
+        self._recalc_invoice_footer_from_grid()
 
     def _set_totals_labels(self, subtotal: float, tax: float, total: float) -> None:
         self._lbl_sub.setText(f"Subtotal: ${subtotal:,.2f}")
         self._lbl_tax.setText(f"Tax: ${tax:,.2f}")
         self._lbl_total.setText(f"Total: ${total:,.2f}")
+
+    def _invoice_tax_rate_pct(self) -> float:
+        """Company default sales tax % (Business hub Tax %); used for Save totals and live footer."""
+        conn = self._ap_conn
+        if conn is None:
+            return 0.0
+        raw = business.get_setting(conn, "default_tax_rate_pct", "0") or "0"
+        try:
+            return float(raw)
+        except ValueError:
+            return 0.0
+
+    def _wire_invoice_line_recalc(self) -> None:
+        """Keep line Totals and footer Subtotal/Tax/Total aligned with Rate×Qty and :meth:`_collect_invoice_lines`."""
+        for row in range(self._N_LINE_ROWS):
+            rate_w = self._table.cellWidget(row, 4)
+            qty_w = self._table.cellWidget(row, 5)
+            if isinstance(rate_w, QDoubleSpinBox):
+                rate_w.valueChanged.connect(
+                    lambda _v, r=row: self._on_invoice_line_rate_qty_changed(r)
+                )
+            if isinstance(qty_w, QDoubleSpinBox):
+                qty_w.valueChanged.connect(
+                    lambda _v, r=row: self._on_invoice_line_rate_qty_changed(r)
+                )
+            for col in range(4):
+                w = self._table.cellWidget(row, col)
+                if isinstance(w, QLineEdit):
+                    w.textChanged.connect(
+                        lambda _t, r=row: self._on_invoice_line_text_changed(r)
+                    )
+
+    def _on_invoice_line_rate_qty_changed(self, row: int) -> None:
+        if self._suppress_invoice_line_recalc:
+            return
+        self._sync_invoice_line_row_total(row)
+        self._recalc_invoice_footer_from_grid()
+
+    def _on_invoice_line_text_changed(self, _row: int) -> None:
+        if self._suppress_invoice_line_recalc:
+            return
+        self._recalc_invoice_footer_from_grid()
+
+    def _sync_invoice_line_row_total(self, row: int) -> None:
+        if row < 0 or row >= self._N_LINE_ROWS:
+            return
+        rate_w = self._table.cellWidget(row, 4)
+        qty_w = self._table.cellWidget(row, 5)
+        tot_w = self._table.cellWidget(row, 6)
+        if not isinstance(rate_w, QDoubleSpinBox) or not isinstance(qty_w, QDoubleSpinBox):
+            return
+        if not isinstance(tot_w, QDoubleSpinBox):
+            return
+        lt = round(float(rate_w.value()) * float(qty_w.value()), 2)
+        tot_w.blockSignals(True)
+        tot_w.setValue(lt)
+        tot_w.blockSignals(False)
+
+    def _recalc_invoice_footer_from_grid(self) -> None:
+        """Subtotal/tax/total from current lines + default tax % (matches :func:`business.create_invoice`)."""
+        if self._suppress_invoice_line_recalc:
+            return
+        lines = self._collect_invoice_lines()
+        sub = 0.0
+        for ln in lines:
+            sub += round(float(ln.get("qty", 0.0)) * float(ln.get("rate", 0.0)), 2)
+        tax_pct = self._invoice_tax_rate_pct()
+        tax = round(sub * (tax_pct / 100.0), 2) if tax_pct else 0.0
+        total = round(sub + tax, 2)
+        self._set_totals_labels(sub, tax, total)
 
     def _on_clear_fields(self) -> None:
         self._current_invoice_id = None
@@ -1082,62 +1168,61 @@ class InvoiceScreen(QWidget):
         else:
             self._bill_customer_panel.select_customer_by_id(cid)
         self._clear_line_grid()
-        for i, ln in enumerate(lines):
-            if i >= self._N_LINE_ROWS:
-                break
-            row = dict(ln)
-            dt_w = self._table.cellWidget(i, 0)
-            code_w = self._table.cellWidget(i, 1)
-            desc_w = self._table.cellWidget(i, 2)
-            bol_w = self._table.cellWidget(i, 3)
-            rate_w = self._table.cellWidget(i, 4)
-            qty_w = self._table.cellWidget(i, 5)
-            tot_w = self._table.cellWidget(i, 6)
-            raw_desc = (row.get("description") or "").strip()
-            if isinstance(dt_w, QLineEdit):
-                dt_w.clear()
-            if isinstance(code_w, QLineEdit):
-                code_w.clear()
-            if isinstance(bol_w, QLineEdit):
-                bol_w.clear()
-            if isinstance(desc_w, QLineEdit):
-                desc_w.clear()
-            if raw_desc and " — " in raw_desc:
-                parts = [p.strip() for p in raw_desc.split(" — ")]
-                if len(parts) == 2 and isinstance(dt_w, QLineEdit) and isinstance(
-                    code_w, QLineEdit
-                ):
-                    dt_w.setText(parts[0])
-                    code_w.setText(parts[1])
-                elif len(parts) == 3:
-                    if isinstance(dt_w, QLineEdit):
+        self._suppress_invoice_line_recalc = True
+        try:
+            for i, ln in enumerate(lines):
+                if i >= self._N_LINE_ROWS:
+                    break
+                row = dict(ln)
+                dt_w = self._table.cellWidget(i, 0)
+                code_w = self._table.cellWidget(i, 1)
+                desc_w = self._table.cellWidget(i, 2)
+                bol_w = self._table.cellWidget(i, 3)
+                rate_w = self._table.cellWidget(i, 4)
+                qty_w = self._table.cellWidget(i, 5)
+                raw_desc = (row.get("description") or "").strip()
+                if isinstance(dt_w, QLineEdit):
+                    dt_w.clear()
+                if isinstance(code_w, QLineEdit):
+                    code_w.clear()
+                if isinstance(bol_w, QLineEdit):
+                    bol_w.clear()
+                if isinstance(desc_w, QLineEdit):
+                    desc_w.clear()
+                if raw_desc and " — " in raw_desc:
+                    parts = [p.strip() for p in raw_desc.split(" — ")]
+                    if len(parts) == 2 and isinstance(dt_w, QLineEdit) and isinstance(
+                        code_w, QLineEdit
+                    ):
                         dt_w.setText(parts[0])
-                    if isinstance(code_w, QLineEdit):
                         code_w.setText(parts[1])
-                    if isinstance(desc_w, QLineEdit):
-                        desc_w.setText(parts[2])
-                elif len(parts) >= 4:
-                    if isinstance(dt_w, QLineEdit):
-                        dt_w.setText(parts[0])
-                    if isinstance(code_w, QLineEdit):
-                        code_w.setText(parts[1])
-                    if isinstance(desc_w, QLineEdit):
-                        desc_w.setText(parts[2])
-                    if isinstance(bol_w, QLineEdit):
-                        bol_w.setText(parts[3])
-            elif isinstance(desc_w, QLineEdit):
-                desc_w.setText(raw_desc)
-            if isinstance(rate_w, QDoubleSpinBox):
-                rate_w.setValue(float(row.get("rate") or 0.0))
-            if isinstance(qty_w, QDoubleSpinBox):
-                qty_w.setValue(float(row.get("qty") or 0.0))
-            if isinstance(tot_w, QDoubleSpinBox):
-                tot_w.setValue(float(row.get("line_total") or 0.0))
-        self._set_totals_labels(
-            float(d.get("subtotal") or 0.0),
-            float(d.get("tax_total") or 0.0),
-            float(d.get("total") or 0.0),
-        )
+                    elif len(parts) == 3:
+                        if isinstance(dt_w, QLineEdit):
+                            dt_w.setText(parts[0])
+                        if isinstance(code_w, QLineEdit):
+                            code_w.setText(parts[1])
+                        if isinstance(desc_w, QLineEdit):
+                            desc_w.setText(parts[2])
+                    elif len(parts) >= 4:
+                        if isinstance(dt_w, QLineEdit):
+                            dt_w.setText(parts[0])
+                        if isinstance(code_w, QLineEdit):
+                            code_w.setText(parts[1])
+                        if isinstance(desc_w, QLineEdit):
+                            desc_w.setText(parts[2])
+                        if isinstance(bol_w, QLineEdit):
+                            bol_w.setText(parts[3])
+                elif isinstance(desc_w, QLineEdit):
+                    desc_w.setText(raw_desc)
+                if isinstance(rate_w, QDoubleSpinBox):
+                    rate_w.setValue(float(row.get("rate") or 0.0))
+                if isinstance(qty_w, QDoubleSpinBox):
+                    qty_w.setValue(float(row.get("qty") or 0.0))
+        finally:
+            self._suppress_invoice_line_recalc = False
+        for r in range(self._N_LINE_ROWS):
+            self._sync_invoice_line_row_total(r)
+        self._recalc_invoice_footer_from_grid()
         self._current_invoice_id = invoice_id
 
     def _split_memo_po_job(self, memo: str) -> tuple[str, str, str]:
@@ -1277,6 +1362,7 @@ class InvoiceScreen(QWidget):
         lines = self._collect_invoice_lines()
         conn = self._ap_conn
         edit_id = self._current_invoice_id
+        tax_pct = self._invoice_tax_rate_pct()
         try:
             if edit_id is not None:
                 due_s = ""
@@ -1294,6 +1380,7 @@ class InvoiceScreen(QWidget):
                     due_date=due_s,
                     memo=memo,
                     lines=lines,
+                    tax_rate_pct=tax_pct,
                 )
                 return True, "", edit_id
             inv_id = business.create_invoice(
@@ -1304,6 +1391,7 @@ class InvoiceScreen(QWidget):
                 due_date="",
                 memo=memo,
                 lines=lines,
+                tax_rate_pct=tax_pct,
             )
         except ValueError as exc:
             return False, str(exc), None
