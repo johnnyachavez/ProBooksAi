@@ -16,10 +16,6 @@ import calendar
 import re
 from typing import Optional
 
-from PySide6.QtCore import QDate
-from PySide6.QtWidgets import QDateEdit, QLineEdit, QWidget
-
-
 def _days_in_month(year: int, month: int) -> int:
     return calendar.monthrange(year, month)[1]
 
@@ -41,6 +37,8 @@ def expand_two_digit_year(yy: int) -> int:
 
 def parse_flexible_date_to_ymd(text: str) -> Optional[tuple[int, int, int]]:
     """Parse common US date shapes into ``(year, month, day)`` or return ``None`` if invalid."""
+    from PySide6.QtCore import QDate
+
     s = (text or "").strip()
     if not s:
         return None
@@ -146,6 +144,7 @@ def configure_qdate_edit_us(w: QDateEdit) -> None:
     :func:`parse_flexible_date_to_ymd` and applies the resulting ``QDate`` so the field
     redisplays normalized **MM/DD/YYYY**.
     """
+    from PySide6.QtCore import QDate
     w.setCalendarPopup(False)
     w.setDisplayFormat("MM/dd/yyyy")
     le = w.lineEdit()
@@ -167,6 +166,8 @@ def configure_qdate_edit_us(w: QDateEdit) -> None:
 
 def create_app_date_edit(parent: Optional[QWidget] = None) -> QDateEdit:
     """Return a new ``QDateEdit`` with :func:`configure_qdate_edit_us` applied (for new UI)."""
+    from PySide6.QtWidgets import QDateEdit
+
     w = QDateEdit(parent)
     configure_qdate_edit_us(w)
     return w

@@ -18,9 +18,6 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from PySide6.QtGui import QTextDocument
-from PySide6.QtPrintSupport import QPrinter
-
 from desktop_app.flexible_date import format_iso_to_us_display
 from desktop_app.invoice_print_html import (
     build_invoice_print_html,
@@ -138,6 +135,8 @@ def save_invoice_pdf(conn: sqlite3.Connection, invoice_id: int, file_path: str) 
     to exist before constructing QPrinter. In CLI/subprocess contexts (like pytest),
     there usually isn't one yet, so we create it if needed.
     """
+    from PySide6.QtGui import QTextDocument
+    from PySide6.QtPrintSupport import QPrinter
     from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance()
