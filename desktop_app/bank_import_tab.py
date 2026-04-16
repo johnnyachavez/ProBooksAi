@@ -2,7 +2,8 @@
 desktop_app.bank_import_tab
 ============================
 **Architecture:** This tab owns **bank account** setup, **import batches**, **CSV/PDF** intake,
-and **statement reconciliation**. The **Bank register** tab is the primary grid for working
+**raw statement text** staging (review-only grid; no import), and **statement reconciliation**.
+The **Bank register** tab is the primary grid for working
 existing **bank_transactions** (COA, cleared, GL posting, payment links). The right-hand
 **register preview** is a batch-scoped, register-styled readout of imported rows—not a second
 full register.
@@ -60,6 +61,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMainWindow,
     QMenu,
     QMessageBox,
     QPlainTextEdit,
@@ -76,6 +78,10 @@ from probooksai import business
 from probooksai.bank_import import ACCOUNT_TYPES, BANK_CSV_READ_ENCODING, BankDatabase
 from probooksai.coa_db import COADatabase
 
+from desktop_app.bank_statement_text_parse import (
+    format_amount_cell,
+    parse_bank_statement_text,
+)
 from desktop_app.audit_dialog import show_entity_audit_history
 from desktop_app.qt_combo_ids import (
     coerce_combo_int_id,
@@ -153,7 +159,8 @@ def _bank_import_keyboard_shortcuts_help_text() -> str:
         "**Import CSV\u2026** and **Import PDF\u2026** reopen the last folder you picked a bank file from, "
         "or the last CSV export folder if you have not imported yet. "
         "**Import CSV\u2026** reads UTF-8 with optional BOM (typical Excel bank exports). "
-        "**Paste bank CSV** + **Import pasted CSV\u2026** runs the same import using text from the clipboard.\n\n"
+        "**Paste bank CSV** + **Import pasted CSV\u2026** runs the same import using text from the clipboard. "
+        "**Paste raw statement text** + **Parse to review rows** fills a staging grid only (does not import or post).\n\n"
         "**Line Reconciliation (AI)** (lower panel): **Run extract & compare** "
         "fills the **Bank register** **Match** column statement overlay for the same bank account and "
         "switches the main window to **Bank register** and turns on reconciliation overlay there. "
@@ -1212,7 +1219,8 @@ class BankImportTab(QWidget):
 
         intake_intro = QLabel(
             "<b>Bring in statements</b> — pick the bank account, then <b>Import CSV</b>, <b>Import PDF</b>, "
-            "or <b>paste</b> bank-export text below. Formats and mapping are unchanged."
+            "<b>paste CSV</b> (same wizard as file import), or <b>paste raw statement text</b> for a separate "
+            "staging review (no import). Formats and mapping for CSV/PDF are unchanged."
         )
         intake_intro.setTextFormat(Qt.TextFormat.RichText)
         intake_intro.setWordWrap(True)
@@ -1311,6 +1319,77 @@ class BankImportTab(QWidget):
         paste_row.addStretch()
         paste_lay.addLayout(paste_row)
         intake_lay.addWidget(paste_box)
+
+        raw_box = QGroupBox("Paste raw statement text")
+        raw_box.setToolTip(
+            "Paste copied bank or card statement text (not CSV-shaped). "
+            "Parse to review rows stages Date, Description, Amount, and flags unclear lines as Needs Review. "
+            "Does not import or post to Bank Register — use Import CSV / PDF for that."
+        )
+        raw_lay = QVBoxLayout(raw_box)
+        raw_lay.setSpacing(6)
+        raw_hint = QLabel(
+            "For messy copy/paste from web or PDF: dates, payees, and amounts when recognizable. "
+            "<b>Parse to review rows</b> fills the table below for you to check — staging only."
+        )
+        raw_hint.setTextFormat(Qt.TextFormat.RichText)
+        raw_hint.setWordWrap(True)
+        raw_hint.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        raw_lay.addWidget(raw_hint)
+        self._paste_raw_statement_edit = QPlainTextEdit()
+        self._paste_raw_statement_edit.setPlaceholderText(
+            "Paste raw statement lines here (not the CSV block above), then Parse to review rows…"
+        )
+        self._paste_raw_statement_edit.setFixedHeight(90)
+        self._paste_raw_statement_edit.setToolTip(
+            "Any bank- or card-style text: one transaction per line when possible. "
+            "Separate from the CSV paste box so column mapping is unchanged for CSV imports."
+        )
+        raw_lay.addWidget(self._paste_raw_statement_edit)
+        raw_btn_row = QHBoxLayout()
+        self._btn_parse_raw_statement = QPushButton("Parse to review rows")
+        self._btn_parse_raw_statement.setToolTip(
+            "Run heuristics on the text above and fill the review grid. Does not write to the database."
+        )
+        self._btn_parse_raw_statement.clicked.connect(self._on_parse_raw_statement_text)
+        self._btn_clear_raw_review = QPushButton("Clear review")
+        self._btn_clear_raw_review.setToolTip("Clear the review table and the raw paste box.")
+        self._btn_clear_raw_review.clicked.connect(self._on_clear_raw_statement_review)
+        for _br in (self._btn_parse_raw_statement, self._btn_clear_raw_review):
+            _br.setAutoDefault(False)
+            _br.setDefault(False)
+        raw_btn_row.addWidget(self._btn_parse_raw_statement)
+        raw_btn_row.addWidget(self._btn_clear_raw_review)
+        raw_btn_row.addStretch()
+        raw_lay.addLayout(raw_btn_row)
+        self._raw_statement_review_table = QTableWidget(0, 5)
+        self._raw_statement_review_table.setObjectName("rawStatementReviewTable")
+        self._raw_statement_review_table.setHorizontalHeaderLabels(
+            ["Date", "Description / Payee", "Amount", "Type / Status", "Notes"]
+        )
+        self._raw_statement_review_table.setEditTriggers(
+            QAbstractItemView.EditTrigger.NoEditTriggers
+        )
+        self._raw_statement_review_table.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        self._raw_statement_review_table.setAlternatingRowColors(True)
+        self._raw_statement_review_table.verticalHeader().setVisible(False)
+        self._raw_statement_review_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Stretch
+        )
+        for col in (0, 2, 3, 4):
+            self._raw_statement_review_table.horizontalHeader().setSectionResizeMode(
+                col, QHeaderView.ResizeMode.ResizeToContents
+            )
+        self._raw_statement_review_table.setMinimumHeight(140)
+        self._raw_statement_review_table.setToolTip(
+            "Staged rows from raw statement paste — review before using Import CSV/PDF for the register. "
+            "Needs Review highlights uncertain lines."
+        )
+        raw_lay.addWidget(self._raw_statement_review_table)
+        intake_lay.addWidget(raw_box)
+
         outer.addWidget(intake_gb)
 
         review_gb = QGroupBox("Review & match")
@@ -2146,6 +2225,58 @@ class BankImportTab(QWidget):
             )
             return
         self._run_csv_import_wizard(content, "(pasted).csv")
+
+    def _on_parse_raw_statement_text(self) -> None:
+        text = self._paste_raw_statement_edit.toPlainText()
+        if not (text or "").strip():
+            message_box_information_ok(
+                self,
+                "Nothing to parse",
+                "Paste raw statement text first, then try again.",
+                ok_tip="Close; use the raw statement box (not the CSV paste area above).",
+            )
+            return
+        rows = parse_bank_statement_text(text)
+        t = self._raw_statement_review_table
+        t.setSortingEnabled(False)
+        t.setRowCount(len(rows))
+        review_bg = QColor(70, 52, 28, 90)
+        for i, pr in enumerate(rows):
+            date_it = QTableWidgetItem(pr.date_display or "—")
+            desc_it = QTableWidgetItem(pr.description or "—")
+            amt_it = QTableWidgetItem(format_amount_cell(pr.amount))
+            status_it = QTableWidgetItem(pr.type_status or "—")
+            notes_it = QTableWidgetItem(pr.notes or "—")
+            for it in (date_it, desc_it, amt_it, status_it, notes_it):
+                it.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
+            if pr.type_status.strip().startswith("Needs Review"):
+                for it in (date_it, desc_it, amt_it, status_it, notes_it):
+                    it.setBackground(review_bg)
+            tip = (pr.notes or "").strip()
+            if tip and tip != "—":
+                for it in (date_it, desc_it, amt_it, status_it, notes_it):
+                    it.setToolTip(tip)
+            t.setItem(i, 0, date_it)
+            t.setItem(i, 1, desc_it)
+            t.setItem(i, 2, amt_it)
+            t.setItem(i, 3, status_it)
+            t.setItem(i, 4, notes_it)
+        t.setSortingEnabled(False)
+        w: QWidget | None = self
+        while w is not None:
+            if isinstance(w, QMainWindow):
+                sb = w.statusBar()
+                if sb is not None:
+                    sb.showMessage(
+                        f"Staged {len(rows)} row(s) from raw statement text (review only; not imported).",
+                        6000,
+                    )
+                    break
+            w = w.parentWidget()
+
+    def _on_clear_raw_statement_review(self) -> None:
+        self._paste_raw_statement_edit.clear()
+        self._raw_statement_review_table.setRowCount(0)
 
     def _run_csv_import_wizard(self, content: str, filename: str) -> None:
         """Shared path for file import and pasted CSV: map columns, statement period, background import."""
