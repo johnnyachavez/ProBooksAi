@@ -853,6 +853,59 @@ def write_vendors_csv(conn: sqlite3.Connection, path: str) -> int:
     return n
 
 
+def _sum_bill_expense_line_amounts(lines: list[dict]) -> float:
+    s = 0.0
+    for ln in lines:
+        s += round(float(ln.get("amount", 0) or 0), 2)
+    return round(s, 2)
+
+
+def _replace_bill_expense_lines(
+    conn: sqlite3.Connection, bill_id: int, lines: list[dict]
+) -> None:
+    """Replace expense lines for a bill (caller commits)."""
+    conn.execute("DELETE FROM bill_expense_lines WHERE bill_id = ?", (bill_id,))
+    for i, ln in enumerate(lines):
+        conn.execute(
+            """
+            INSERT INTO bill_expense_lines (
+                bill_id, line_date, ticket_ref, amount, memo, customer_job, sort_order
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                bill_id,
+                (ln.get("line_date") or "").strip(),
+                (ln.get("ticket_ref") or "").strip(),
+                round(float(ln.get("amount", 0) or 0), 2),
+                (ln.get("memo") or "").strip(),
+                (ln.get("customer_job") or "").strip(),
+                i,
+            ),
+        )
+
+
+def list_bill_expense_lines(conn: sqlite3.Connection, bill_id: int) -> list:
+    return conn.execute(
+        """
+        SELECT * FROM bill_expense_lines
+        WHERE bill_id = ?
+        ORDER BY sort_order, id
+        """,
+        (bill_id,),
+    ).fetchall()
+
+
+def get_bill_detail(
+    conn: sqlite3.Connection, bill_id: int
+) -> tuple[Optional[sqlite3.Row], list]:
+    """Bill header row and expense lines (may be empty for legacy header-only bills)."""
+    b = get_bill(conn, bill_id)
+    if b is None:
+        return None, []
+    lines = list_bill_expense_lines(conn, bill_id)
+    return b, list(lines)
+
+
 def create_bill(
     conn: sqlite3.Connection,
     vendor_id: int,
@@ -862,8 +915,12 @@ def create_bill(
     due_date: str = "",
     memo: str = "",
     attachment_path: str = "",
+    expense_lines: Optional[list[dict]] = None,
 ) -> int:
-    total = round(float(total), 2)
+    if expense_lines is not None:
+        total = _sum_bill_expense_line_amounts(expense_lines)
+    else:
+        total = round(float(total), 2)
     cur = conn.execute(
         """
         INSERT INTO bills (
@@ -883,8 +940,11 @@ def create_bill(
             _now(),
         ),
     )
+    bid = cur.lastrowid
+    if expense_lines is not None:
+        _replace_bill_expense_lines(conn, bid, expense_lines)
     conn.commit()
-    return cur.lastrowid
+    return bid
 
 
 def get_bill(conn: sqlite3.Connection, bill_id: int) -> Optional[sqlite3.Row]:
@@ -909,13 +969,20 @@ def update_bill(
     due_date: str = "",
     memo: str = "",
     attachment_path: str = "",
+    expense_lines: Optional[list[dict]] = None,
 ) -> None:
-    """Update bill header amounts. Raises ``ValueError`` if any AP payment applies."""
+    """Update bill header amounts. Raises ``ValueError`` if any AP payment applies.
+
+    When *expense_lines* is not ``None``, *total* is derived from line amounts and lines are replaced.
+    """
     if bill_has_payment_allocations(conn, bill_id):
         raise ValueError("Cannot edit a bill that has payments applied.")
     if get_bill(conn, bill_id) is None:
         raise ValueError("Bill not found.")
-    total = round(float(total), 2)
+    if expense_lines is not None:
+        total = _sum_bill_expense_line_amounts(expense_lines)
+    else:
+        total = round(float(total), 2)
     conn.execute(
         """
         UPDATE bills SET
@@ -935,6 +1002,8 @@ def update_bill(
             bill_id,
         ),
     )
+    if expense_lines is not None:
+        _replace_bill_expense_lines(conn, bill_id, expense_lines)
     conn.commit()
 
 

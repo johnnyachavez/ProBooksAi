@@ -1,10 +1,12 @@
-"""Enter Bills screen — structure and vendor autofill (when DB connected)."""
+"""Enter Bills screen — structure, vendor autofill, and A/P bill persistence."""
 
 from __future__ import annotations
 
 import sys
 
 import pytest
+from PySide6.QtTest import QTest
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication,
     QDoubleSpinBox,
@@ -49,6 +51,8 @@ def test_enter_bills_screen_header_and_line_grid(qapp: QApplication) -> None:
     assert "Enter Bills" in labels
     assert "Vendor" in labels
     assert "Vendor Address" in labels
+    assert "Bill date" in labels
+    assert "Vendor invoice #" in labels
     assert "Expenses" not in labels
 
     btns = [b.text() for b in w.findChildren(QPushButton)]
@@ -104,4 +108,116 @@ def test_enter_bills_vendor_selection_fills_address(qapp: QApplication, tmp_path
     assert "555-0100" in text
     w._vendor.setCurrentIndex(0)
     assert w._address.toPlainText().strip() == ""
+    db.close()
+
+
+def test_enter_bills_save_persists_bill_and_expense_lines(
+    qapp: QApplication, tmp_path
+) -> None:
+    db_path = tmp_path / "enter_bills_save.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    vid = business.add_vendor(db._conn, "SuppCo")
+    w = EnterBillsScreen(ap_conn=db._conn)
+    w._vendor.setCurrentIndex(1)
+    w._vendor_inv.setText("INV-900")
+    dt = w._table.cellWidget(0, 0)
+    assert isinstance(dt, QLineEdit)
+    dt.setText("01/15/2025")
+    tk = w._table.cellWidget(0, 1)
+    assert isinstance(tk, QLineEdit)
+    tk.setText("TK-1")
+    amt = w._table.cellWidget(0, 2)
+    assert isinstance(amt, QDoubleSpinBox)
+    amt.setValue(42.5)
+    memo = w._table.item(0, 3)
+    assert memo is not None
+    memo.setText("Fuel")
+    job = w._table.cellWidget(0, 4)
+    assert isinstance(job, QLineEdit)
+    job.setText("Job:A")
+    QTest.mouseClick(w._btn_save_new, Qt.MouseButton.LeftButton)
+    qapp.processEvents()
+    rows = business.list_bills(db._conn)
+    assert len(rows) == 1
+    bid = int(rows[0]["id"])
+    assert float(rows[0]["total"]) == 42.5
+    assert (rows[0]["vendor_invoice_number"] or "").strip() == "INV-900"
+    el = business.list_bill_expense_lines(db._conn, bid)
+    assert len(el) == 1
+    assert abs(float(el[0]["amount"]) - 42.5) < 0.01
+    assert "Fuel" in (el[0]["memo"] or "")
+    assert w._current_bill_id is None
+    db.close()
+
+
+def test_enter_bills_open_bill_by_id_loads_form(qapp: QApplication, tmp_path) -> None:
+    db_path = tmp_path / "enter_bills_open.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    vid = business.add_vendor(db._conn, "VOpen")
+    lines = [
+        {
+            "line_date": "2025-02-01",
+            "ticket_ref": "R1",
+            "amount": 10.0,
+            "memo": "m1",
+            "customer_job": "C:J",
+        }
+    ]
+    bid = business.create_bill(
+        db._conn,
+        vid,
+        "2025-02-01",
+        0.0,
+        vendor_invoice_number="B-REF",
+        memo="hdr",
+        expense_lines=lines,
+    )
+    w = EnterBillsScreen(ap_conn=db._conn)
+    ok = w.open_bill_by_id(bid)
+    assert ok is True
+    assert w._current_bill_id == bid
+    assert w._vendor_inv.text() == "B-REF"
+    assert w._header_memo.text() == "hdr"
+    assert (w._table.cellWidget(0, 1).text() or "").strip() == "R1"
+    assert abs(w._table.cellWidget(0, 2).value() - 10.0) < 0.01
+    db.close()
+
+
+def test_enter_bills_edit_resaves_same_bill(qapp: QApplication, tmp_path) -> None:
+    db_path = tmp_path / "enter_bills_edit.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    vid = business.add_vendor(db._conn, "VEdit")
+    bid = business.create_bill(
+        db._conn,
+        vid,
+        "2025-03-01",
+        0.0,
+        vendor_invoice_number="E-1",
+        expense_lines=[
+            {
+                "line_date": "",
+                "ticket_ref": "",
+                "amount": 25.0,
+                "memo": "Line",
+                "customer_job": "",
+            }
+        ],
+    )
+    w = EnterBillsScreen(ap_conn=db._conn)
+    assert w.open_bill_by_id(bid)
+    amt = w._table.cellWidget(0, 2)
+    assert isinstance(amt, QDoubleSpinBox)
+    amt.setValue(99.0)
+    QTest.mouseClick(w._btn_save_close, Qt.MouseButton.LeftButton)
+    qapp.processEvents()
+    assert len(business.list_bills(db._conn)) == 1
+    b = business.get_bill(db._conn, bid)
+    assert b is not None
+    assert float(b["total"]) == 99.0
+    el = business.list_bill_expense_lines(db._conn, bid)
+    assert len(el) == 1
+    assert float(el[0]["amount"]) == 99.0
     db.close()
