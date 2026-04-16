@@ -26,6 +26,7 @@ def test_parse_invoice_memo_po_job_footer() -> None:
 
 def test_build_invoice_print_html_structure_and_escaping() -> None:
     html = build_invoice_print_html(
+        company_block_plain="Sender & Co.\n123 Road",
         invoice_date="01/02/2026",
         invoice_number="99",
         bill_to_plain="A & B\nLine",
@@ -43,9 +44,12 @@ def test_build_invoice_print_html_structure_and_escaping() -> None:
     assert "NAME/JOB#" in html
     assert "Balance Due" in html
     assert "BILL TO" in html
+    assert "Sender &amp; Co." in html
+    assert "123 Road" in html
     assert "A &amp; B" in html
     assert "Note &lt;tag&gt;" in html
     assert "desc &amp; co" in html
     assert "<tag>" not in html
+    assert "colgroup" in html
     # Padded blank row when min_body_rows > data rows
     assert html.count("<tr>") >= 4

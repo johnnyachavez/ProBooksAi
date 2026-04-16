@@ -1319,7 +1319,7 @@ class InvoiceScreen(QWidget):
                     "rate": rate,
                 }
             )
-        return rows or [{"description": "Service", "qty": 1.0, "rate": 0.0}]
+        return rows
 
     def _invoice_feedback_message(self, msg: str) -> None:
         """Non-modal save/print validation feedback (replaces QMessageBox — avoids interrupting typing).
@@ -1340,26 +1340,59 @@ class InvoiceScreen(QWidget):
                     return
             w = w.parentWidget()
 
+    @staticmethod
+    def _line_extended_amount(ln: dict) -> float:
+        return round(float(ln.get("qty", 0.0)) * float(ln.get("rate", 0.0)), 2)
+
+    def _invoice_line_validation_error(self, lines: list[dict]) -> str | None:
+        """Return a user-facing message if lines are not pilot-ready, else ``None``."""
+        if not lines:
+            return (
+                "Add at least one invoice line with a non-zero dollar amount before saving, printing, "
+                "or exporting PDF. Set Rate and Quantity on a line so the line total is not $0.00."
+            )
+        if not any(abs(self._line_extended_amount(ln)) >= 0.01 for ln in lines):
+            return (
+                "At least one invoice line must have a non-zero amount. Enter Rate and Quantity "
+                "(or adjust lines that show $0.00) before saving, printing, or exporting PDF."
+            )
+        return None
+
     def _try_persist_invoice(self) -> tuple[bool, str, int | None]:
         """Create or update the current invoice row. Returns ``(ok, message, invoice_id)``.
 
         Silent DB only — no PDF or print UI here. Call only from Save/Print click paths.
         """
         if self._ap_conn is None:
-            return False, "Connect a company file to save invoices.", None
+            return (
+                False,
+                "Open a company file (File → Open company…) before saving, printing, or exporting PDF.",
+                None,
+            )
         cid = self.selected_bill_to_customer_id()
         if cid is None:
-            return False, "Select a customer in Bill To before saving or printing.", None
+            return (
+                False,
+                "Select a customer in Bill To before saving, printing, or exporting PDF.",
+                None,
+            )
         num = self._inv_number.text().strip()
         if not num:
-            return False, "Enter an invoice number.", None
+            return False, "Enter an invoice number before saving, printing, or exporting PDF.", None
         ymd = parse_flexible_date_to_ymd(self._date.text().strip())
         if ymd is None:
-            return False, "Enter a valid invoice date.", None
+            return (
+                False,
+                "Enter a valid invoice date (for example MM/DD/YYYY) before saving, printing, or exporting PDF.",
+                None,
+            )
         y, m, d = ymd
         iso_date = f"{y:04d}-{m:02d}-{d:02d}"
         memo = self._build_invoice_memo()
         lines = self._collect_invoice_lines()
+        line_err = self._invoice_line_validation_error(lines)
+        if line_err is not None:
+            return False, line_err, None
         conn = self._ap_conn
         edit_id = self._current_invoice_id
         tax_pct = self._invoice_tax_rate_pct()
@@ -1400,12 +1433,22 @@ class InvoiceScreen(QWidget):
             if "UNIQUE" in err:
                 return (
                     False,
-                    "That invoice number is already in use. Enter a different number.",
+                    "That invoice number is already in use. Enter a different invoice number.",
                     None,
                 )
-            return False, str(exc), None
+            _LOG.warning("Invoice save integrity error: %s", exc)
+            return (
+                False,
+                "Could not save the invoice (data conflict). Check the invoice number and try again.",
+                None,
+            )
         except sqlite3.Error as exc:
-            return False, str(exc), None
+            _LOG.warning("Invoice save database error: %s", exc)
+            return (
+                False,
+                "Could not save the invoice to the company file. Check that the file is writable and not locked.",
+                None,
+            )
         return True, "", inv_id
 
     def _save_invoice_data_only(self) -> tuple[bool, str, int | None]:
@@ -1433,11 +1476,12 @@ class InvoiceScreen(QWidget):
             save_invoice_pdf(self._ap_conn, inv_id, pdf_path)
         except OSError as exc:
             self._invoice_feedback_message(
-                f"Invoice saved, but the PDF could not be written: {exc}"
+                f"Invoice was saved, but the PDF could not be written ({exc}). "
+                "Check folder permissions and disk space."
             )
         except Exception as exc:  # noqa: BLE001
             self._invoice_feedback_message(
-                f"Invoice saved, but PDF export failed: {exc}"
+                f"Invoice was saved, but building the PDF failed: {exc}"
             )
         self._refresh_browse_state()
         if was_new:
@@ -1449,7 +1493,9 @@ class InvoiceScreen(QWidget):
         if self.sender() is not self._btn_export_pdf:
             return
         if self._ap_conn is None:
-            self._invoice_feedback_message("Connect a company file to export a PDF.")
+            self._invoice_feedback_message(
+                "Open a company file before exporting PDF (File → Open company…)."
+            )
             return
         was_new = self._current_invoice_id is None
         ok, msg, inv_id = self._save_invoice_data_only()
@@ -1473,12 +1519,13 @@ class InvoiceScreen(QWidget):
             save_invoice_pdf(self._ap_conn, inv_id, path)
         except OSError as exc:
             self._invoice_feedback_message(
-                f"Invoice saved, but the PDF could not be written: {exc}"
+                f"Invoice was saved, but the PDF could not be written ({exc}). "
+                "Check folder permissions and disk space."
             )
             return
         except Exception as exc:  # noqa: BLE001
             self._invoice_feedback_message(
-                f"Invoice saved, but PDF export failed: {exc}"
+                f"Invoice was saved, but building the PDF failed: {exc}"
             )
             return
         self._refresh_browse_state()
@@ -1498,7 +1545,7 @@ class InvoiceScreen(QWidget):
             doc.setHtml(invoice_html_string(self._ap_conn, inv_id))
         except Exception as exc:  # noqa: BLE001 — show any render issue
             self._invoice_feedback_message(
-                f"Could not prepare the invoice for printing: {exc}"
+                f"Could not prepare the invoice for printing. Save succeeded; fix data or try again. ({exc})"
             )
             return
         printer = QPrinter(QPrinter.PrinterMode.HighResolution)
@@ -1516,7 +1563,9 @@ class InvoiceScreen(QWidget):
         if self.sender() is not self._btn_print:
             return
         if self._ap_conn is None:
-            self._invoice_feedback_message("Connect a company file to print invoices.")
+            self._invoice_feedback_message(
+                "Open a company file before printing (File → Open company…)."
+            )
             return
         was_new = self._current_invoice_id is None
         self._invoice_print_dialog_armed = True

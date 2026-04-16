@@ -403,6 +403,85 @@ def test_invoice_screen_bill_to_selects_customer(qapp: QApplication, tmp_path) -
     db.close()
 
 
+def test_invoice_validation_rejects_empty_and_zero_amount_lines(
+    qapp: QApplication, tmp_path
+) -> None:
+    """Pilot: cannot save without at least one line with non-zero rate×qty."""
+    db_path = tmp_path / "invoice_val_lines.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "ValCo")
+    w = InvoiceScreen(ap_conn=db._conn)
+    w._bill_customer_panel.select_customer_by_id(cid)
+    w._inv_number.setText("88001")
+    ok, msg, iid = w._try_persist_invoice()
+    assert ok is False
+    assert iid is None
+    assert "line" in msg.lower() and ("amount" in msg.lower() or "non-zero" in msg.lower())
+
+    desc = w._table.cellWidget(0, 2)
+    assert isinstance(desc, QLineEdit)
+    desc.setText("Description only")
+    ok2, msg2, _ = w._try_persist_invoice()
+    assert ok2 is False
+    assert "non-zero" in msg2.lower()
+    db.close()
+
+
+def test_invoice_pilot_smoke_save_reload_nav_open_by_id(
+    qapp: QApplication, tmp_path
+) -> None:
+    """Create → save → reload → forward → open_invoice_by_id still works after validation rules."""
+    db_path = tmp_path / "invoice_pilot_smoke.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    pdf_dir = tmp_path / "invoice_pilot_pdf"
+    pdf_dir.mkdir()
+    _INV_PREFS_QS.setValue("invoice_prefs/output_folder", str(pdf_dir))
+    _INV_PREFS_QS.sync()
+    cid = business.add_customer(db._conn, "PilotCo")
+    w = InvoiceScreen(ap_conn=db._conn)
+    w._bill_customer_panel.select_customer_by_id(cid)
+    w._inv_number.setText("91050")
+    desc = w._table.cellWidget(0, 2)
+    assert isinstance(desc, QLineEdit)
+    desc.setText("Pilot line")
+    rate = w._table.cellWidget(0, 4)
+    assert isinstance(rate, QDoubleSpinBox)
+    rate.setValue(25.0)
+    qty = w._table.cellWidget(0, 5)
+    assert isinstance(qty, QDoubleSpinBox)
+    qty.setValue(1.0)
+    QTest.mouseClick(w._btn_save, Qt.MouseButton.LeftButton)
+    qapp.processEvents()
+    invs = business.list_invoices(db._conn)
+    assert len(invs) == 1
+    inv_id = int(invs[0]["id"])
+    w._go_to_new_invoice_draft()
+    w._on_forward_invoice()
+    assert w._current_invoice_id == inv_id
+    assert w._inv_number.text() == "91050"
+    w._go_to_new_invoice_draft()
+    assert w.open_invoice_by_id(inv_id) is True
+    assert w._current_invoice_id == inv_id
+    with patch(
+        "desktop_app.invoice_screen.configure_printer_for_invoice_print",
+        return_value=True,
+    ):
+        with patch.object(QTextDocument, "print_", lambda self, p: None):
+            QTest.mouseClick(w._btn_print, Qt.MouseButton.LeftButton)
+            qapp.processEvents()
+    out = tmp_path / "pilot_exp.pdf"
+    with patch(
+        "desktop_app.invoice_screen.QFileDialog.getSaveFileName",
+        return_value=(str(out), "PDF files (*.pdf)"),
+    ):
+        QTest.mouseClick(w._btn_export_pdf, Qt.MouseButton.LeftButton)
+        qapp.processEvents()
+    assert out.is_file()
+    db.close()
+
+
 def test_invoice_save_and_print_handlers_require_real_button_sender(
     qapp: QApplication, tmp_path
 ) -> None:

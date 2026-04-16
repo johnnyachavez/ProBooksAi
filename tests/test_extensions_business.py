@@ -1128,6 +1128,25 @@ def test_save_invoice_pdf_smoke(db, tmp_path):
     assert out.is_file() and out.stat().st_size > 400
 
 
+def test_invoice_html_string_uses_company_settings_letterhead(db) -> None:
+    """Live invoice HTML pulls sender block from company_settings (not hardcoded)."""
+    from desktop_app.invoice_pdf import invoice_html_string
+
+    cid = business.add_customer(db._conn, "Cust LLC", address="1 Oak St")
+    iid = business.create_invoice(
+        db._conn,
+        cid,
+        "L-H-1",
+        "2024-06-01",
+        lines=[{"description": "Line", "qty": 1, "rate": 10.0}],
+        tax_rate_pct=0,
+    )
+    business.set_setting(db._conn, "invoice_company_name", "SettingsCo & Sons")
+    db._conn.commit()
+    html = invoice_html_string(db._conn, iid)
+    assert "SettingsCo &amp; Sons" in html
+
+
 def test_write_ar_and_ap_payments_csv(db, tmp_path):
     cid = business.add_customer(db._conn, "PayerCo")
     vid = business.add_vendor(db._conn, "PayeeCo")

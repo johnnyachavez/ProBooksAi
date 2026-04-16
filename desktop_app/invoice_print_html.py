@@ -53,7 +53,22 @@ def _company_html(plain: str) -> str:
     t = (plain or "").strip()
     if not t:
         return "&#160;"
-    return _he(t).replace("\n", "<br/>")
+    lines = [ln.strip() for ln in t.splitlines() if ln.strip()]
+    if not lines:
+        return "&#160;"
+    first = _he(lines[0])
+    if len(lines) == 1:
+        return (
+            '<div style="font-weight:700;font-size:11pt;letter-spacing:0.02em;line-height:1.25;">'
+            f"{first}</div>"
+        )
+    rest = "<br/>".join(_he(x) for x in lines[1:])
+    return (
+        '<div style="font-weight:700;font-size:11pt;letter-spacing:0.02em;line-height:1.25;">'
+        f"{first}</div>"
+        '<div style="font-size:10pt;line-height:1.35;margin-top:3px;">'
+        f"{rest}</div>"
+    )
 
 
 def _footer_html(plain: str) -> str:
@@ -103,9 +118,10 @@ def build_invoice_print_html(
         body_html.append(
             "<tr>"
             + "".join(
-                f'<td style="text-align:left; vertical-align:top;">{c}</td>'
+                f'<td style="text-align:left;vertical-align:top;padding:3px 4px;">{c}</td>'
                 if j < 4
-                else f'<td style="text-align:right; vertical-align:top;">{c}</td>'
+                else f'<td style="text-align:right;vertical-align:top;padding:3px 4px;'
+                f'font-variant-numeric:tabular-nums;">{c}</td>'
                 for j, c in enumerate(cells)
             )
             + "</tr>"
@@ -119,95 +135,107 @@ def build_invoice_print_html(
 
     parts = [
         "<html><head><meta charset=\"utf-8\"/></head><body "
-        "style=\"margin:0.4in; font-family: Arial, Helvetica, sans-serif; "
+        "style=\"margin:0.5in; font-family: Arial, Helvetica, sans-serif; "
         "font-size:10pt; color:#000;\">",
         # Top: company (left) + Invoice title / date / number (right)
         "<table width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border:none;\">",
         "<tr>",
-        '<td width="58%" valign="top" style="border:none; padding:0 10px 0 0;">',
+        '<td width="55%" valign="top" style="border:none; padding:0 12px 0 0;">',
         '<table width="100%" cellspacing="0" cellpadding="8" '
         'style="border:1px solid #000; border-collapse:collapse;">',
-        f'<tr><td valign="top" style="min-height:80px;">{_company_html(company_block_plain)}</td></tr>',
+        f'<tr><td valign="top" style="min-height:88px;">{_company_html(company_block_plain)}</td></tr>',
         "</table>",
         "</td>",
-        '<td width="42%" valign="top" style="border:none; padding:0;">',
-        '<div style="font-size:20pt; font-weight:bold; text-align:right; letter-spacing:0.02em;">'
-        "Invoice</div>",
-        '<table width="100%" cellspacing="0" cellpadding="5" '
-        'style="border:2px solid #000; border-collapse:collapse; margin-top:6px;">',
+        '<td width="45%" valign="top" style="border:none; padding:0;">',
+        '<div style="font-size:20pt; font-weight:bold; text-align:right; letter-spacing:0.02em; '
+        'line-height:1.1;margin-bottom:6px;">Invoice</div>',
+        '<table width="100%" cellspacing="0" cellpadding="0" '
+        'style="border:2px solid #000; border-collapse:collapse; margin-top:2px;">',
         "<tr>",
-        '<th style="text-align:center; font-weight:bold; border:1px solid #000; width:50%;">Date</th>',
-        '<th style="text-align:center; font-weight:bold; border:1px solid #000; width:50%;">'
-        "Invoice #</th>",
+        '<th style="text-align:center; font-weight:bold; border:1px solid #000; width:50%; '
+        'background:#f0f0f0; font-size:8pt; padding:4px 6px;">DATE</th>',
+        '<th style="text-align:center; font-weight:bold; border:1px solid #000; width:50%; '
+        'background:#f0f0f0; font-size:8pt; padding:4px 6px;">INVOICE #</th>',
         "</tr>",
         "<tr>",
-        f'<td style="text-align:center; border:1px solid #000;">{inv_d}</td>',
-        f'<td style="text-align:center; border:1px solid #000;">{inv_n}</td>',
+        f'<td style="text-align:center; border:1px solid #000; padding:5px 8px;">{inv_d}</td>',
+        f'<td style="text-align:center; border:1px solid #000; padding:5px 8px;">{inv_n}</td>',
         "</tr>",
         "</table>",
         "</td>",
         "</tr>",
         "</table>",
         # Bill To + PO / Job
-        '<table width="100%" cellspacing="0" cellpadding="0" style="border:none; margin-top:12px;">',
+        '<table width="100%" cellspacing="0" cellpadding="0" style="border:none; margin-top:14px;">',
         "<tr>",
-        '<td width="48%" valign="top" style="border:none; padding:0;">',
+        '<td width="50%" valign="top" style="border:none; padding:0;">',
         '<table width="100%" cellspacing="0" cellpadding="0" '
         'style="border:1px solid #000; border-collapse:collapse;">',
-        '<tr><th style="text-align:left; padding:5px 8px; font-weight:bold; border-bottom:1px solid #000;">'
-        "BILL TO</th></tr>",
-        '<tr><td valign="top" style="padding:8px; min-height:64px;">'
+        '<tr><th style="text-align:left; padding:5px 8px; font-weight:bold; border-bottom:1px solid #000; '
+        'background:#f0f0f0; font-size:8pt;">BILL TO</th></tr>',
+        '<tr><td valign="top" style="padding:8px; min-height:72px;line-height:1.35;">'
         f"{_bill_to_html(bill_to_plain)}</td></tr>",
         "</table>",
         "</td>",
-        '<td width="4%" style="border:none;">&#160;</td>',
+        '<td width="2%" style="border:none;">&#160;</td>',
         '<td width="48%" valign="top" style="border:none; padding:0;">',
         '<table width="100%" cellspacing="0" cellpadding="0" '
-        'style="border:2px solid #000; border-collapse:collapse;">',
+        'style="border:1px solid #000; border-collapse:collapse;">',
         "<tr>",
-        '<th style="text-align:center; font-weight:bold; padding:5px; border:1px solid #000; width:50%;">'
-        "PO/CONTRACT#</th>",
-        '<th style="text-align:center; font-weight:bold; padding:5px; border:1px solid #000; width:50%;">'
-        "NAME/JOB#</th>",
+        '<th style="text-align:center; font-weight:bold; padding:4px 6px; border:1px solid #000; '
+        'width:50%; background:#f0f0f0; font-size:8pt;">PO/CONTRACT#</th>',
+        '<th style="text-align:center; font-weight:bold; padding:4px 6px; border:1px solid #000; '
+        'width:50%; background:#f0f0f0; font-size:8pt;">NAME/JOB#</th>',
         "</tr>",
         "<tr>",
-        f'<td valign="top" style="padding:8px; border:1px solid #000;">{po}</td>',
-        f'<td valign="top" style="padding:8px; border:1px solid #000;">{nj}</td>',
+        f'<td valign="top" style="padding:8px; border:1px solid #000; min-height:44px;">{po}</td>',
+        f'<td valign="top" style="padding:8px; border:1px solid #000; min-height:44px;">{nj}</td>',
         "</tr>",
         "</table>",
         "</td>",
         "</tr>",
         "</table>",
-        # Line grid
-        '<table width="100%" cellspacing="0" cellpadding="4" '
-        'style="border-collapse:collapse; margin-top:12px; border:1px solid #000;">',
+        # Line grid (column widths aligned with static invoice.html template)
+        '<table width="100%" cellspacing="0" cellpadding="0" '
+        'style="border-collapse:collapse; margin-top:14px; border:1px solid #000; '
+        'table-layout:fixed;">',
+        "<colgroup>",
+        '<col style="width:11%;"/><col style="width:9%;"/><col style="width:28%;"/>',
+        '<col style="width:11%;"/><col style="width:12%;"/><col style="width:9%;"/>',
+        '<col style="width:12%;"/>',
+        "</colgroup>",
         "<thead><tr>",
-        '<th style="text-align:center; font-weight:bold; border:1px solid #000;">Serviced On</th>',
-        '<th style="text-align:center; font-weight:bold; border:1px solid #000;">JL #</th>',
-        '<th style="text-align:center; font-weight:bold; border:1px solid #000;">Description</th>',
-        '<th style="text-align:center; font-weight:bold; border:1px solid #000;">BOL#</th>',
-        '<th style="text-align:center; font-weight:bold; border:1px solid #000;">Rate</th>',
-        '<th style="text-align:center; font-weight:bold; border:1px solid #000;">Quantity</th>',
-        '<th style="text-align:center; font-weight:bold; border:1px solid #000;">Amount</th>',
+        '<th style="text-align:center; font-weight:bold; border:1px solid #000; background:#f0f0f0; '
+        'font-size:8pt; text-transform:uppercase; padding:5px 3px;">Serviced On</th>',
+        '<th style="text-align:center; font-weight:bold; border:1px solid #000; background:#f0f0f0; '
+        'font-size:8pt; text-transform:uppercase; padding:5px 3px;">JL #</th>',
+        '<th style="text-align:center; font-weight:bold; border:1px solid #000; background:#f0f0f0; '
+        'font-size:8pt; text-transform:uppercase; padding:5px 3px;">Description</th>',
+        '<th style="text-align:center; font-weight:bold; border:1px solid #000; background:#f0f0f0; '
+        'font-size:8pt; text-transform:uppercase; padding:5px 3px;">BOL#</th>',
+        '<th style="text-align:center; font-weight:bold; border:1px solid #000; background:#f0f0f0; '
+        'font-size:8pt; text-transform:uppercase; padding:5px 3px;">Rate</th>',
+        '<th style="text-align:center; font-weight:bold; border:1px solid #000; background:#f0f0f0; '
+        'font-size:8pt; text-transform:uppercase; padding:5px 3px;">Quantity</th>',
+        '<th style="text-align:center; font-weight:bold; border:1px solid #000; background:#f0f0f0; '
+        'font-size:8pt; text-transform:uppercase; padding:5px 3px;">Amount</th>',
         "</tr></thead><tbody>",
         *body_html,
-        # Balance due (right block under numeric columns)
+        # Balance due — label in column 6, amount in column 7 (matches static template)
         "<tr>",
-        '<td colspan="4" style="border:1px solid #000; border-top:2px solid #000;">&#160;</td>',
-        '<td colspan="3" style="border:2px solid #000; padding:10px 12px; '
-        'border-top:2px solid #000; vertical-align:middle;">',
-        '<table width="100%" cellspacing="0" cellpadding="0" style="border:none;">',
-        "<tr>",
-        '<td style="border:none; font-size:13pt; font-weight:bold;">Balance Due</td>',
-        f'<td style="border:none; font-size:13pt; font-weight:bold; text-align:right;">{bal}</td>',
-        "</tr>",
-        "</table>",
-        "</td>",
+        '<td colspan="5" style="border:1px solid #000; border-top:2px solid #000;">&#160;</td>',
+        '<td style="border:2px solid #000; border-top:2px solid #000; font-weight:700; '
+        'text-align:right; text-transform:uppercase; font-size:9pt; padding:8px 6px; '
+        'vertical-align:middle;">Balance Due</td>',
+        f'<td style="border:2px solid #000; border-top:2px solid #000; font-weight:700; '
+        f'text-align:right; font-size:12pt; padding:8px 6px; vertical-align:middle; '
+        f'font-variant-numeric:tabular-nums;">{bal}</td>',
         "</tr>",
         "</tbody></table>",
         # Footer
-        '<table width="100%" cellspacing="0" cellpadding="0" style="border:none; margin-top:16px;">',
-        '<tr><td valign="top" style="border:none; min-height:36px; padding:4px 0;">'
+        '<table width="100%" cellspacing="0" cellpadding="0" style="border:none; margin-top:18px;">',
+        '<tr><td valign="top" style="border:none; border-top:1px solid #ccc; min-height:32px; '
+        'padding:8px 0 4px 0; font-size:9.5pt; line-height:1.35; color:#222;">'
         f"{_footer_html(footer_plain)}</td></tr>",
         "</table>",
         "</body></html>",

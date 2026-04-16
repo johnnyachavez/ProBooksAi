@@ -25,6 +25,20 @@ from desktop_app.invoice_print_html import (
 )
 
 
+def _letterhead_plain_from_company_settings(conn: sqlite3.Connection) -> str:
+    """Sender block for the PDF from ``company_settings`` (no hardcoded business identity)."""
+    from probooksai import business
+
+    block = (business.get_setting(conn, "invoice_company_block", "") or "").strip()
+    if block:
+        return block
+    name = (business.get_setting(conn, "invoice_company_name", "") or "").strip()
+    addr = (business.get_setting(conn, "invoice_company_address", "") or "").strip()
+    phone = (business.get_setting(conn, "invoice_company_phone", "") or "").strip()
+    parts = [p for p in (name, addr, phone) if p]
+    return "\n".join(parts)
+
+
 def invoice_html_string(conn: sqlite3.Connection, invoice_id: int) -> str:
     """Build the same HTML used for PDF export and **Invoices** tab printing (saved invoice row)."""
     from probooksai import business
@@ -61,7 +75,7 @@ def invoice_html_string(conn: sqlite3.Connection, invoice_id: int) -> str:
     balance_plain = f"${total:,.2f}"
 
     return build_invoice_print_html(
-        company_block_plain="",
+        company_block_plain=_letterhead_plain_from_company_settings(conn),
         invoice_date=inv_date,
         invoice_number=(inv_d.get("invoice_number") or "").strip(),
         bill_to_plain=bill_to_plain,
