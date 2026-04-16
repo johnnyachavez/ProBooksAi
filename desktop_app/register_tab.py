@@ -1,3 +1,4 @@
+
 """
 desktop_app.register_tab
 ========================
@@ -13,13 +14,13 @@ later splits those views.
 
 Phase 3 – Bank register: chronological transactions for one bank account with
 debit/credit columns, running balance, COA inline edits, and memo via the row menu
-(txn id on Date ``UserRole``; balance stays chronological). Footer totals and the long help paragraph appear only when **Reconciliation mode** is on.
+(txn id on Date ``UserRole``; balance stays chronological). The footer keeps the same height in normal and **Reconciliation mode**; debit/credit/net totals show only when reconciliation is on, while the gray help paragraph stays visible.
 **Add transaction…** persists new lines via a per-account sentinel import batch (``(Manual entry)``); same ``bank_transactions`` rows as CSV imports, with an optional **Category (COA)** picker in the dialog (last non-empty choice per bank account is remembered for the next add, scoped by company file). **Date** defaults to the latest register transaction on that account when any exist, else today. **Amount** receives initial keyboard focus when the dialog opens.
 The grid always shows at least **20** rows (practice lines when short on data; UI-only, not saved).
-**Reconciliation mode** shows a banner; statement line-match status (**Matched** / **Missing** / **Extra**) appears on the second line of the **Match** column (demo from mock extract). Bank Import **Run mock extract & compare** can populate that overlay for the same account.
+**Reconciliation mode** shows a banner; statement line-match status (**Matched** / **Missing** / **Extra**) appears on the second line of the **Match** column (demo from mock extract). Bank Import **Run extract & compare** can populate that overlay for the same account.
 Payee column uses a two-band row: description on the lighter upper panel, COA account on the darker lower panel (full row width uses the same upper/lower band colors; other columns show values in the upper band).
 **Memo** is not shown as a grid column (edit via row context menu). Hover **tooltips** on Payee, Number, Date, Debit/Credit, Balance, and Match show full values or helpful detail when the grid elides text.
-**Match** (reconciliation mode): double-click **Match** or use row context **Open linked Business record…** (when the menu shows it) to open **Business** when the **complete bank link** allows; otherwise the same **Business link** message as **Ctrl+Shift+B** (invoice/bill editor, payroll tax lines, or AR/AP payment summary).
+**Match** (reconciliation mode): double-click **Match** or use row context **Open linked Business record…** (when the menu shows it) to open **Customers** / **Vendors** for AR/AP invoice or bill links, **More → Business → Payroll** for payroll, when the **complete bank link** allows; otherwise the same **Business link** message as **Ctrl+Shift+B** (invoice/bill editor, payroll tax lines, or AR/AP payment summary).
 The **COA Account** combo tooltip states the saved category and whether the row is posted (read-only).
 Number column keeps reference plus type tag (DEP / PMT / XFER / TXN) in the cell data for copy/edit;
 on screen they appear on one line in the upper band. **Clr** shows **C** when the row is marked cleared on the register, else **R** when the
@@ -27,7 +28,7 @@ CSV import batch is marked reconciled in Bank Import. Rows without a COA categor
 The filter choice, last selected bank account, and register table **column header widths**
 persist in ``QSettings``, scoped by company SQLite path (same app profile as the main window).
 **Ctrl+Shift+C** / **Ctrl+Shift+U** mark cleared / clear cleared; **Ctrl+Shift+E** runs **Export CSV…**;
-**Ctrl+Shift+G** runs **Post selected to GL**; **Ctrl+Shift+B** runs the same **Business link** flow as double-click **Match** (opens **Business** when the row has a **complete bank link**); **F5** refreshes the grid when the Register tab (or its
+**Ctrl+Shift+G** runs **Post selected to GL**; **Ctrl+Shift+B** runs the same **Business link** flow as double-click **Match** (navigates to **Customers** / **Vendors** / **Business → Payroll** when the row has a **complete bank link**); **F5** refreshes the grid when the Register tab (or its
 controls) has keyboard focus. The same actions are on **Recon** → **Register Actions** / **Reconciliation** / **Attachments** / **Transaction Tools** / **Flags**. **Help** → **Bank register keyboard shortcuts…** (dialog also points at **Bank import shortcuts…**) or
 **right-click** the grid (including empty area) for **Keyboard shortcuts…** and row actions with **QAction** **setToolTip**
 (**Copy row** as TSV; **Copy transaction id**; **Copy date**; **Copy amount**; **Copy payee / description**; **Copy memo**; **Copy number / ref**; **Copy category (COA)** as plain saved COA); the register grid has a hover **tooltip**
@@ -35,7 +36,7 @@ controls) has keyboard focus. The same actions are on **Recon** → **Register A
 **Suggested matches** / **Manual link** headings, and the suggestions list have hover **tooltips**. **Right-click** the list (empty area OK) for
 **Keyboard shortcuts…** (same **Help** dialog as the register grid).
 Modal **Transfer** / **Splits** / **Link payment** dialogs and their buttons use **setToolTip** for hover hints; register actions on the main **Recon** menu use **QAction** tips there.
-In reconciliation mode, footer **debit** / **credit** / **net** totals and the gray **help** paragraph have tooltips; that block is hidden in normal register.
+Footer **debit** / **credit** / **net** totals (reconciliation mode only) and the gray **help** paragraph have tooltips; the help block is always shown so the footer height matches reconciliation mode.
 The tab **root** **QWidget** has a hover hint. **Bank account** and **Filter** combos (and their **QLabel** prompts) use **setToolTip**.
 """
 
@@ -43,10 +44,11 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import warnings
 import sqlite3
 from functools import partial
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from PySide6.QtCore import (
     QByteArray,
@@ -55,6 +57,7 @@ from PySide6.QtCore import (
     QRect,
     Qt,
     QSettings,
+    QStringListModel,
     QTimer,
     Signal,
 )
@@ -73,6 +76,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,
+    QCompleter,
     QDateEdit,
     QDialog,
     QDialogButtonBox,
@@ -116,6 +120,12 @@ from desktop_app.qt_combo_ids import (
     combo_index_for_int_user_data,
     combo_int_ids_equal,
 )
+from desktop_app.flexible_date import (
+    configure_qdate_edit_us,
+    format_iso_to_us_display,
+    format_ymd_as_us,
+    parse_flexible_date_to_ymd,
+)
 from desktop_app.qt_mnemonic import (
     CSV_EXPORT_OK_TIP_SUFFIX,
     escape_ampersand_for_qt,
@@ -128,6 +138,7 @@ from desktop_app.table_clipboard import (
     QLIST_PLAIN_TEXT_ROLE,
     QTABLE_PLAIN_TEXT_ROLE,
     VIEW_BANK_REGISTER_KEYS_TOOLTIP,
+    IntSortTableItem,
     NumericAmountTableItem,
     copy_qlistwidget_row_text,
     copy_table_row_as_tsv,
@@ -295,10 +306,10 @@ class CoaBandFrame(QFrame):
         self._table = table
         self._logical_row = logical_row
         self._combo = combo
+        self._open_coa_cb: Optional[Callable[["CoaBandFrame"], None]] = None
         combo.setParent(self)
-        self._upper = QWidget(self)
+        self._upper = _CoaUpperBand(self)
         self._upper.setStyleSheet("background: transparent;")
-        self._upper.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(1, 1, 1, 1)
         lay.setSpacing(0)
@@ -310,6 +321,11 @@ class CoaBandFrame(QFrame):
 
     def combo(self) -> QComboBox:
         return self._combo
+
+    def set_open_coa_callback(
+        self, cb: Optional[Callable[["CoaBandFrame"], None]]
+    ) -> None:
+        self._open_coa_cb = cb
 
     def set_logical_row(self, row: int) -> None:
         self._logical_row = row
@@ -388,16 +404,109 @@ def _register_row_coa_user_data(table: QTableWidget, row: int) -> str:
     """Raw COA line from the row's category combo (``userData``), or empty when uncategorized."""
     w = table.cellWidget(row, _COL_COA)
     if isinstance(w, CoaBandFrame):
-        raw = w.combo().currentData()
+        return register_coa_combo_resolve_user_data(w.combo())
     elif isinstance(w, QComboBox):
-        raw = w.currentData()
+        return register_coa_combo_resolve_user_data(w)
     else:
         return ""
-    if isinstance(raw, str):
-        return raw.strip()
-    if raw is None:
+
+
+_UNCATEGORIZED_COMBO_LABEL = "(Uncategorized)"
+
+
+def register_coa_combo_resolve_user_data(combo: QComboBox) -> str:
+    """Canonical ``coa_account`` string for the combo (editable-aware)."""
+    if not combo.isEditable():
+        raw = combo.currentData()
+        return raw.strip() if isinstance(raw, str) else ""
+    le = combo.lineEdit()
+    if le is None:
+        raw = combo.currentData()
+        return raw.strip() if isinstance(raw, str) else ""
+    text = le.text().strip()
+    if not text or text.lower() in ("(uncategorized)", "uncategorized"):
         return ""
-    return str(raw).strip()
+    if text.startswith("★ "):
+        text = text[2:].strip()
+    idx = combo.findData(text)
+    if idx >= 0 and isinstance(combo.itemData(idx), str):
+        return combo.itemData(idx).strip()
+    tlow = text.lower()
+    for i in range(combo.count()):
+        data = combo.itemData(i)
+        if isinstance(data, str) and data.strip().lower() == tlow:
+            return data.strip()
+    for i in range(combo.count()):
+        data = combo.itemData(i)
+        disp = combo.itemText(i).replace("&&", "&")
+        if disp.strip().lower() == tlow and isinstance(data, str):
+            return data.strip()
+    return text
+
+
+def _configure_interactive_register_coa_combo(
+    combo: QComboBox,
+    coa_choices: list[str],
+    txn_id: int,
+    tab: "RegisterTab",
+) -> None:
+    """Editable combo, substring completer over COA list, commit normalization on focus out."""
+    if not combo.isEnabled():
+        return
+    combo.setEditable(True)
+    combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+    strings = [_UNCATEGORIZED_COMBO_LABEL] + list(coa_choices)
+    comp = QCompleter(QStringListModel(strings), combo)
+    comp.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+    comp.setFilterMode(Qt.MatchFlag.MatchContains)
+    comp.setCompletionMode(QCompleter.CompletionMode.InlineCompletion)
+    comp.activated[str].connect(
+        lambda _t: QTimer.singleShot(
+            0, partial(tab._finish_register_coa_line_edit, txn_id, combo)
+        )
+    )
+    combo.setCompleter(comp)
+    le = combo.lineEdit()
+    if le is not None:
+        le.editingFinished.connect(
+            partial(tab._finish_register_coa_line_edit, txn_id, combo)
+        )
+
+
+class _CoaUpperBand(QWidget):
+    """Upper half of the COA cell: click opens the category dropdown; double-click opens Chart of Accounts."""
+
+    def __init__(self, band_frame: "CoaBandFrame"):
+        super().__init__(band_frame)
+        self._band_frame = band_frame
+
+    def mousePressEvent(self, ev):
+        c = self._band_frame._combo
+        if not c.isEnabled():
+            super().mousePressEvent(ev)
+            return
+        c.setFocus()
+        QTimer.singleShot(0, c.showPopup)
+        ev.accept()
+
+    def mouseDoubleClickEvent(self, ev):
+        cb = self._band_frame._open_coa_cb
+        if cb:
+            cb(self._band_frame)
+        ev.accept()
+
+
+def _register_date_cell_item(txn_date_iso: str) -> IntSortTableItem:
+    """Register Date column: US display (MM/DD/YYYY), chronological sort, TSV copy matches display."""
+    raw = (txn_date_iso or "").strip()
+    disp = format_iso_to_us_display(raw) if raw else ""
+    qd = QDate.fromString(raw[:10], "yyyy-MM-dd")
+    sk = (
+        qd.year() * 10000 + qd.month() * 100 + qd.day()
+        if qd.isValid()
+        else 0
+    )
+    return IntSortTableItem(disp, sk)
 
 
 class ManualTransactionDialog(QDialog):
@@ -420,8 +529,7 @@ class ManualTransactionDialog(QDialog):
         self._initial_coa = (initial_coa or "").strip()
         form = QFormLayout(self)
         self._date = QDateEdit()
-        self._date.setCalendarPopup(True)
-        self._date.setDisplayFormat("yyyy-MM-dd")
+        configure_qdate_edit_us(self._date)
         self._date.setDate(QDate.currentDate())
         raw_d = (initial_txn_date or "").strip()[:10]
         if raw_d:
@@ -429,7 +537,8 @@ class ManualTransactionDialog(QDialog):
             if qd.isValid():
                 self._date.setDate(qd)
         self._date.setToolTip(
-            "Transaction date stored as YYYY-MM-DD in the company database. "
+            "Transaction date: type flexibly (e.g. 5/21/26 or 05-21-2026); shown as MM/DD/YYYY; "
+            "stored as YYYY-MM-DD in the company database. "
             "When this account already has register rows, the dialog opens on the latest of those dates; "
             "otherwise today."
         )
@@ -567,11 +676,13 @@ def _register_keyboard_shortcuts_help_text() -> str:
         "Ctrl+Enter or Ctrl+Return accepts when the amount is valid (same as OK).\n\n"
         "Reconciliation mode — checkbox next to Filter: banner + statement line-match status on the **Match** column (demo); "
         "register grid stays visible underneath. "
-        "Bank Import **Run mock extract & compare** can populate that overlay for the same account "
+        "Bank Import **Run extract & compare** can populate that overlay for the same account "
         "and switch the main window here; the main **status bar** may show a short confirmation, "
         "then restore the usual company line.\n\n"
-        "View menu tab focus: Ctrl+1 Document Intake, Ctrl+2 Bank Import, Ctrl+3 Register.\n\n"
-        "Tools menu: Ctrl+Shift+I — Invoice… (Business tab, Invoices AR).\n\n"
+        "View menu tab focus: Ctrl+1 Invoices, Ctrl+2 Enter Bills, Ctrl+3 Pay Bills, Ctrl+4 Receive Payments, "
+        "Ctrl+5 Bank Register, Ctrl+6 Chart of Accounts, Ctrl+7 Customers, Ctrl+8 Vendors, Ctrl+9 Reconcile, "
+        "Ctrl+0 More (Reports, Journal, Business, Audit log).\n\n"
+        "Tools menu: Ctrl+Shift+I — Invoice… (top-level Invoices tab); full AR list and payments: **Customers** tab.\n\n"
         "Practice rows — blank rows pad the grid to ~20 lines; editable for layout only (not saved).\n\n"
         "Register grid — checkbook-style two-band rows; arrow keys move the cell focus. "
         "Double-click or type to edit Number when the row allows it; memo: right-click the row → **Edit memo…**; COA uses the category dropdown. "
@@ -584,7 +695,8 @@ def _register_keyboard_shortcuts_help_text() -> str:
         "in that dialog (closes it first); suggested-matches list: right-click (including empty area) for "
         "Keyboard shortcuts… (same as this dialog).\n"
         "Open linked Business record… — Recon → Transaction Tools, right-click when that action is in the menu, or double-click **Match**: "
-        "opens **Business** when the **complete bank link** allows; otherwise the same **Business link** message as **Ctrl+Shift+B** "
+        "opens **Customers** / **Vendors** for AR/AP invoice or bill links, **More → Business → Payroll** for payroll, "
+        "when the **complete bank link** allows; otherwise the same **Business link** message as **Ctrl+Shift+B** "
         "(invoice, bill, payroll tax lines, or AR/AP payment summary).\n\n"
         "F5 — Refresh\n"
         "Ctrl+Shift+G — Post selected to GL\n"
@@ -618,7 +730,7 @@ def show_register_keyboard_shortcuts_dialog(parent: QWidget) -> None:
         ok_tip="Close; shortcuts apply when Bank register has focus. "
         "Recon menu — Register Actions and related groups for add/post/export, attachments, splits, transfer, link, open linked Business, and receipt flags. "
         "**Link payment…** also shows **Open linked Business record…** when the stored link is complete (can open in Business). "
-        "View → Bank Import (Ctrl+2) for AI line reconciliation / Match-column overlay sync. "
+        "View → Reconcile (Ctrl+9) → Bank statements for AI line reconciliation / Match-column overlay sync. "
         "Company .db: File → Backup / Restore (probooks.backup).",
     )
 
@@ -628,6 +740,7 @@ class RegisterTab(QWidget):
 
     reconciliationModeChanged = Signal(bool)
     openBankMatchNavigationRequested = Signal(str, int)
+    openCoaEditorRequested = Signal(str)
 
     def __init__(
         self,
@@ -647,6 +760,7 @@ class RegisterTab(QWidget):
         self._recon_txn_status: dict[int, str] = {}
         self._recon_overlay_bank_import_mode = False
         self._recon_header_snapshot: QByteArray | None = None
+        self._cached_register_footer_totals_height = 0
         self._build_ui()
 
     def _build_ui(self):
@@ -654,9 +768,9 @@ class RegisterTab(QWidget):
             "Bank register for one account: bank account picker, filter, reconciliation mode, and the transaction grid. "
             "F5 refreshes when Register has focus. "
             "Bulk row actions (add transaction, post to GL, and export CSV (UTF-8 BOM for Excel), cleared, attachments, splits, transfer, link payment, open linked Business, receipt flags): Recon menu. "
-            "Reconciliation mode + Match overlay can be updated from Bank Import AI line reconciliation "
-            "(Help → Bank import shortcuts…). "
-            "View → Bank Import (Ctrl+2), Register (Ctrl+3). "
+            "Reconciliation mode (toggle on the main tab bar when this tab is active) adds the Match overlay; "
+            "Bank Import AI line reconciliation can populate it (Help → Bank import shortcuts…). "
+            "View → Reconcile (Ctrl+9) → Bank statements; Bank Register (Ctrl+5). "
             "Same company SQLite database as other main tabs; File → Backup / Restore (probooks.backup)."
         )
         layout = QVBoxLayout(self)
@@ -701,18 +815,14 @@ class RegisterTab(QWidget):
         self._restore_register_filter_from_settings()
         self._filter_combo.currentIndexChanged.connect(self._on_register_filter_changed)
         controls.addWidget(self._filter_combo)
-        self._chk_recon = QCheckBox("Reconciliation mode")
-        self._chk_recon.setToolTip(
-            "Reconciliation workflow: statement line-match status (Matched / Missing / Extra) on the second line of **Match**, Clr, "
-            "full column layout, and Document Intake + Bank Import tabs. Memo is edited from the row menu, not the grid. "
-            "Off: checkbook-style register (Date, Number, Payee, amounts, Balance, COA) and those tabs hidden. "
-            "F5 refreshes; bulk actions: Recon → Register Actions / Reconciliation / … "
-            "(includes open linked Business record). Bank Import compare can populate the Match overlay. "
-            "View → Bank Import (Ctrl+2), Register (Ctrl+3)."
-        )
-        self._chk_recon.toggled.connect(self._on_reconciliation_mode_toggled)
-        controls.addWidget(self._chk_recon)
+        controls.addStretch(1)
         layout.addLayout(controls)
+
+        # Reconciliation toggle is hosted on the main window tab bar (corner widget); keep a
+        # hidden checkbox for unit tests and until MainWindow.bind_reconciliation_toggle runs.
+        self._recon_checkbox = QCheckBox("Reconciliation mode", self)
+        self._recon_checkbox.hide()
+        self._recon_checkbox.toggled.connect(self._on_reconciliation_mode_toggled)
 
         self._recon_banner = QLabel("Reconciliation Mode Active")
         self._recon_banner.setVisible(False)
@@ -723,8 +833,9 @@ class RegisterTab(QWidget):
         )
         self._recon_banner.setToolTip(
             "Statement line-match overlay is on: second line of **Match** shows Matched / Missing / Extra (demo). "
-            "Register layout is unchanged. "
-            "View → Register (Ctrl+3); run/compare from Bank Import (Ctrl+2)."
+            "Use **Bank Import** (View menu) for compare / line reconciliation; **Document Intake** and **Bank Import** tabs appear while this mode is on. "
+            "Turn recon mode off with the **Reconciliation mode** checkbox on the main tab bar (when Bank register is active). "
+            "View → Bank Register (Ctrl+5); run/compare from Reconcile → Bank import (Ctrl+9)."
         )
         layout.addWidget(self._recon_banner)
 
@@ -743,7 +854,6 @@ class RegisterTab(QWidget):
         self._table.setEditTriggers(
             QAbstractItemView.EditTrigger.DoubleClicked
             | QAbstractItemView.EditTrigger.EditKeyPressed
-            | QAbstractItemView.EditTrigger.AnyKeyPressed
             | QAbstractItemView.EditTrigger.SelectedClicked
         )
         self._table.setAlternatingRowColors(False)
@@ -756,7 +866,7 @@ class RegisterTab(QWidget):
         )
         # Native grid off; RegisterBandDelegate draws full cell borders (classic register lines).
         self._table.setShowGrid(False)
-        self._table.setWordWrap(True)
+        self._table.setWordWrap(False)
         self._table.verticalHeader().setVisible(False)
         self._table.horizontalHeader().setSectionResizeMode(
             _COL_PAYEE, QHeaderView.ResizeMode.Interactive
@@ -767,8 +877,9 @@ class RegisterTab(QWidget):
         self._table.horizontalHeader().setSectionResizeMode(
             _COL_SPACER, QHeaderView.ResizeMode.Stretch
         )
-        self._table.horizontalHeader().setSectionResizeMode(_COL_CLR, QHeaderView.ResizeMode.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(_COL_LINK, QHeaderView.ResizeMode.ResizeToContents)
+        # Interactive avoids ResizeToContents jumping when cell text or editors change (inline edit stability).
+        self._table.horizontalHeader().setSectionResizeMode(_COL_CLR, QHeaderView.ResizeMode.Interactive)
+        self._table.horizontalHeader().setSectionResizeMode(_COL_LINK, QHeaderView.ResizeMode.Interactive)
         self._table.setSortingEnabled(False)
         self._table.itemChanged.connect(self._on_item_changed)
         self._table.cellDoubleClicked.connect(self._on_register_cell_double_clicked)
@@ -812,7 +923,9 @@ class RegisterTab(QWidget):
         footer_column.setContentsMargins(0, 8, 0, 0)
         footer_column.setSpacing(10)
 
-        foot = QHBoxLayout()
+        self._register_footer_totals_wrap = QWidget()
+        foot = QHBoxLayout(self._register_footer_totals_wrap)
+        foot.setContentsMargins(0, 0, 0, 0)
         self._lbl_debits = QLabel("Total debits: —")
         self._lbl_debits.setToolTip(
             "Sum of debit amounts for rows currently visible in the grid (respects the filter)."
@@ -833,7 +946,13 @@ class RegisterTab(QWidget):
         foot.addSpacing(24)
         foot.addWidget(self._lbl_net)
         foot.addStretch()
-        footer_column.addLayout(foot)
+        footer_column.addWidget(self._register_footer_totals_wrap)
+
+        self._register_footer_totals_spacer = QWidget()
+        self._register_footer_totals_spacer.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
+        footer_column.addWidget(self._register_footer_totals_spacer)
 
         self._register_help_tip = QLabel(
             "Deposits show in Debit; payments in Credit (cash-basis register). "
@@ -881,6 +1000,8 @@ class RegisterTab(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._sync_payee_coa_spacer_widths()
+        if self._reconciliation_mode:
+            self._cache_register_footer_totals_height()
 
     def hideEvent(self, event: QHideEvent) -> None:
         self._persist_register_table_header_state()
@@ -1105,9 +1226,51 @@ class RegisterTab(QWidget):
     def is_reconciliation_mode(self) -> bool:
         return self._reconciliation_mode
 
+    def bind_reconciliation_toggle(self, checkbox: QCheckBox) -> None:
+        """Main window: use *checkbox* (tab bar corner widget) as the recon toggle; replaces any prior binding."""
+        if checkbox is self._recon_checkbox:
+            return
+        try:
+            self._recon_checkbox.toggled.disconnect(self._on_reconciliation_mode_toggled)
+        except TypeError:
+            pass
+        if self._recon_checkbox.parent() is self:
+            self._recon_checkbox.deleteLater()
+        self._recon_checkbox = checkbox
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            try:
+                checkbox.toggled.disconnect()
+            except TypeError:
+                pass
+        checkbox.toggled.connect(self._on_reconciliation_mode_toggled)
+        checkbox.blockSignals(True)
+        checkbox.setChecked(self._reconciliation_mode)
+        checkbox.blockSignals(False)
+
     def _sync_register_info_footer_visibility(self) -> None:
-        """Show debit/credit/net totals and help text only when reconciliation mode is on."""
-        self._register_info_footer.setVisible(self._reconciliation_mode)
+        """Totals row only in reconciliation mode; spacer preserves the same footer height otherwise."""
+        recon = self._reconciliation_mode
+        self._register_footer_totals_wrap.setVisible(recon)
+        self._register_footer_totals_spacer.setVisible(not recon)
+        if not recon:
+            h = self._cached_register_footer_totals_height
+            if h <= 0:
+                fm = self._lbl_debits.fontMetrics()
+                h = fm.height() + 4
+            self._register_footer_totals_spacer.setFixedHeight(h)
+        else:
+            QTimer.singleShot(0, self._cache_register_footer_totals_height)
+
+    def _cache_register_footer_totals_height(self) -> None:
+        if not self._reconciliation_mode:
+            return
+        self._register_footer_totals_wrap.updateGeometry()
+        h = self._register_footer_totals_wrap.height()
+        if h <= 0:
+            h = self._register_footer_totals_wrap.sizeHint().height()
+        if h > 0:
+            self._cached_register_footer_totals_height = h
 
     def _ensure_payee_column_resize_policy(self) -> None:
         """Payee + COA are fixed-width (synced from slack); unnamed spacer column stretches."""
@@ -1159,12 +1322,12 @@ class RegisterTab(QWidget):
         hdr.setSectionResizeMode(_COL_REF, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(_COL_PAYEE, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(_COL_MEMO, QHeaderView.ResizeMode.Interactive)
-        hdr.setSectionResizeMode(_COL_DEBIT, QHeaderView.ResizeMode.ResizeToContents)
-        hdr.setSectionResizeMode(_COL_CREDIT, QHeaderView.ResizeMode.ResizeToContents)
-        hdr.setSectionResizeMode(_COL_CLR, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(_COL_DEBIT, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(_COL_CREDIT, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(_COL_CLR, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(_COL_BAL, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(_COL_COA, QHeaderView.ResizeMode.Interactive)
-        hdr.setSectionResizeMode(_COL_LINK, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(_COL_LINK, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(_COL_SPACER, QHeaderView.ResizeMode.Stretch)
 
     def _apply_normal_register_header_resize_modes(self) -> None:
@@ -1173,8 +1336,8 @@ class RegisterTab(QWidget):
         hdr.setSectionResizeMode(_COL_DATE, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(_COL_REF, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(_COL_PAYEE, QHeaderView.ResizeMode.Interactive)
-        hdr.setSectionResizeMode(_COL_DEBIT, QHeaderView.ResizeMode.ResizeToContents)
-        hdr.setSectionResizeMode(_COL_CREDIT, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(_COL_DEBIT, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(_COL_CREDIT, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(_COL_BAL, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(_COL_COA, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(_COL_SPACER, QHeaderView.ResizeMode.Stretch)
@@ -1238,7 +1401,7 @@ class RegisterTab(QWidget):
         self, bank_account_id: int, results: list[dict]
     ) -> bool:
         """
-        Apply Bank Import **Run mock extract & compare** results to the **Match** column statement overlay.
+        Apply Bank Import **Run extract & compare** results to the **Match** column statement overlay.
 
         Enables reconciliation mode, selects the same bank account when possible, and preserves
         statuses across F5 / filter reloads until the user turns reconciliation off or switches account.
@@ -1255,17 +1418,17 @@ class RegisterTab(QWidget):
             if rk is None:
                 continue
             self._recon_txn_status[rk] = str(res.get("status") or "")
-        self._chk_recon.blockSignals(True)
-        self._chk_recon.setChecked(True)
-        self._chk_recon.blockSignals(False)
+        self._recon_checkbox.blockSignals(True)
+        self._recon_checkbox.setChecked(True)
+        self._recon_checkbox.blockSignals(False)
         self._reconciliation_mode = True
         self._recon_banner.setVisible(True)
         self._apply_register_column_layout()
         want_acct = coerce_combo_int_id(bank_account_id)
         if want_acct is None or not self._select_bank_account_for_overlay(want_acct):
-            self._chk_recon.blockSignals(True)
-            self._chk_recon.setChecked(False)
-            self._chk_recon.blockSignals(False)
+            self._recon_checkbox.blockSignals(True)
+            self._recon_checkbox.setChecked(False)
+            self._recon_checkbox.blockSignals(False)
             self._on_reconciliation_mode_toggled(False)
             return False
         self._sync_register_info_footer_visibility()
@@ -1407,7 +1570,10 @@ class RegisterTab(QWidget):
         d_it = QTableWidgetItem("")
         d_it.setFlags(edit_flags)
         d_it.setTextAlignment(top_left)
-        d_it.setToolTip("Practice row: date is not saved until you use Add transaction….")
+        d_it.setToolTip(
+            "Practice row: date is not saved until you use Add transaction…. "
+            "You can type dates in common US forms; valid entries normalize to MM/DD/YYYY."
+        )
         d_it.setData(REGISTER_MISSING_COA_ROLE, False)
         self._table.setItem(row, _COL_DATE, d_it)
 
@@ -1555,6 +1721,11 @@ class RegisterTab(QWidget):
                 return
             self.open_linked_business_record_for_transaction_id(tid)
             return
+        if col == _COL_COA:
+            coa = _register_row_coa_user_data(self._table, row).strip()
+            if coa:
+                self.openCoaEditorRequested.emit(coa)
+            return
         if col != _COL_CLR:
             return
         id_item = self._table.item(row, _COL_DATE)
@@ -1687,6 +1858,16 @@ class RegisterTab(QWidget):
             "Copy the saved category line (plain COA string from the dropdown) for rules, COA search, or notes. "
             + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
+        coa_disp = _register_row_coa_user_data(self._table, row).strip()
+        act_open_coa = menu.addAction(
+            "Open category in Chart of Accounts…",
+            partial(self._open_register_row_coa_in_chart_tab, row),
+        )
+        act_open_coa.setToolTip(
+            "Switch to the Chart of Accounts tab and select this category when it exists in the chart. "
+            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+        )
+        act_open_coa.setEnabled(bool(coa_disp))
         act_history = menu.addAction("View change history…")
         act_history.setToolTip(
             "Open field-level audit history for this bank transaction."
@@ -1701,6 +1882,11 @@ class RegisterTab(QWidget):
                 window_title=f"Change history — transaction #{tid}",
                 empty_message="No audit entries recorded for this transaction yet.",
             )
+
+    def _open_register_row_coa_in_chart_tab(self, row: int) -> None:
+        coa = _register_row_coa_user_data(self._table, row).strip()
+        if coa:
+            self.openCoaEditorRequested.emit(coa)
 
     def _copy_register_row_coa(self, row: int) -> None:
         QGuiApplication.clipboard().setText(_register_row_coa_user_data(self._table, row))
@@ -1824,7 +2010,7 @@ class RegisterTab(QWidget):
 
             missing_coa = not (txn.get("coa_account") or "").strip()
 
-            d_item = plain_display_table_item(txn["txn_date"] or "")
+            d_item = _register_date_cell_item(txn.get("txn_date") or "")
             if tid is not None:
                 d_item.setData(Qt.ItemDataRole.UserRole, tid)
             d_item.setFlags(d_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
@@ -1978,18 +2164,29 @@ class RegisterTab(QWidget):
                 combo.setCurrentIndex(combo.count() - 1)
             if posted:
                 combo.setEnabled(False)
-            combo.setToolTip(
-                escape_ampersand_for_qt(
-                    _register_coa_combo_tooltip(
-                        posted=posted, saved_coa_display=current
-                    )
-                )
+            base_tip = _register_coa_combo_tooltip(
+                posted=posted, saved_coa_display=current
             )
+            if posted:
+                extra = (
+                    " Double-click the upper category band or use **Open category in Chart of Accounts…** "
+                    "in the row menu to view it in the chart (posted rows are read-only here)."
+                )
+            else:
+                extra = (
+                    " Click the upper band to open the list; type to filter by name or number. "
+                    "Double-click the upper band or use the row menu to open this category in Chart of Accounts."
+                )
+            combo.setToolTip(escape_ampersand_for_qt(base_tip + extra))
             if tid is not None:
                 combo.currentIndexChanged.connect(
                     partial(self._on_coa_changed, tid, combo)
                 )
+                _configure_interactive_register_coa_combo(
+                    combo, self._coa_choices, tid, self
+                )
             coa_frame = CoaBandFrame(combo, self._table, r)
+            coa_frame.set_open_coa_callback(self._on_coa_frame_request_open_editor)
             coa_frame.apply_combo_missing_style(missing_coa)
             self._table.setCellWidget(r, _COL_COA, coa_frame)
 
@@ -2055,9 +2252,27 @@ class RegisterTab(QWidget):
         if self._populating:
             return
         col = item.column()
+        row = item.row()
+        if col == _COL_DATE:
+            txn_id = coerce_combo_int_id(item.data(Qt.ItemDataRole.UserRole))
+            if txn_id is not None:
+                return
+            raw = item.text().strip()
+            if not raw:
+                return
+            ymd = parse_flexible_date_to_ymd(raw)
+            if ymd is None:
+                return
+            y, m, d = ymd
+            disp = format_ymd_as_us(m, d, y)
+            self._populating = True
+            item.setText(escape_ampersand_for_qt(disp))
+            item.setData(QTABLE_PLAIN_TEXT_ROLE, disp)
+            self._populating = False
+            self._resize_register_row(row)
+            return
         if col != _COL_REF:
             return
-        row = item.row()
         id_item = self._table.item(row, _COL_DATE)
         if id_item is None:
             return
@@ -2223,12 +2438,35 @@ class RegisterTab(QWidget):
             ok_tip="Close; open the CSV from the path you chose." + CSV_EXPORT_OK_TIP_SUFFIX,
         )
 
+    def _on_coa_frame_request_open_editor(self, frame: CoaBandFrame) -> None:
+        row = frame._visual_row()
+        coa = _register_row_coa_user_data(self._table, row).strip()
+        if coa:
+            self.openCoaEditorRequested.emit(coa)
+
+    def _finish_register_coa_line_edit(self, txn_id: int, combo: QComboBox) -> None:
+        if self._populating or not combo.isEnabled():
+            return
+        resolved = register_coa_combo_resolve_user_data(combo)
+        prev_idx = combo.currentIndex()
+        if not (resolved or "").strip():
+            target_idx = 0
+        else:
+            found = combo.findData(resolved)
+            target_idx = found if found >= 0 else prev_idx
+        combo.blockSignals(True)
+        combo.setCurrentIndex(max(0, target_idx))
+        le = combo.lineEdit()
+        if le is not None:
+            le.setText(combo.itemText(combo.currentIndex()))
+        combo.blockSignals(False)
+        if combo.currentIndex() != prev_idx:
+            self._on_coa_changed(txn_id, combo, combo.currentIndex())
+
     def _on_coa_changed(self, txn_id: int, combo: QComboBox, _index: int):
         if self._populating:
             return
-        val = combo.currentData()
-        if val is None:
-            val = ""
+        val = register_coa_combo_resolve_user_data(combo)
         try:
             self._db.update_transaction(txn_id, coa_account=val)
         except ValueError as exc:

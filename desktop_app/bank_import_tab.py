@@ -2,7 +2,8 @@
 desktop_app.bank_import_tab
 ============================
 **Architecture:** This tab owns **bank account** setup, **import batches**, **CSV/PDF** intake,
-and **statement reconciliation**. The **Bank register** tab is the primary grid for working
+**raw statement text** staging (review-only grid; no import), and **statement reconciliation**.
+The **Bank register** tab is the primary grid for working
 existing **bank_transactions** (COA, cleared, GL posting, payment links). The right-hand
 **register preview** is a batch-scoped, register-styled readout of imported rows—not a second
 full register.
@@ -18,7 +19,7 @@ re-selects the same batch when it still exists, refreshing transactions and reco
 (``bank_import/last_import_dir``), with fallback to the last CSV export folder when unset.
 
 **Help** → **Bank import shortcuts…** shows the same **F5** summary and points at Register shortcuts.
-**Right-click** the **Import Batches** table, **register preview** grid, **AI-assisted line reconciliation** table (including **Open linked Business record…** when **Reg #** has a **complete bank link** and the register tab is wired),
+**Right-click** the **Import Batches** table, **register preview** grid, **Line Reconciliation (AI)** table (including **Open linked Business record…** when **Reg #** has a **complete bank link** and the register tab is wired),
 or **Manage Bank Accounts** tables
 (including empty area) for **Keyboard shortcuts…** and row actions; each **QAction** has **setToolTip** where shown.
 Imported transaction rows on the preview offer **Copy row** (TSV), **Copy transaction id**, **Copy date**, **Copy amount**, **Copy payee / description**, **Copy memo**, **Copy number / ref**, and **Copy category (COA)** (plain text from the database, aligned with **Bank register** context menus). When the main window wires **register preview** to the **Bank register** tab and the row has a **complete bank link**, **Open linked Business record…** also appears (same as register Recon). **Double-click** an imported row uses the same **Business link** prompts as the register (opens **Business** when the link is complete; otherwise an explanatory message).
@@ -31,12 +32,14 @@ Tabs / widgets
   StatementPeriodDialog  – statement dates and balances (window + field + note tooltips; OK/Cancel via ``tip_qdialog_button_box``)
   ColumnMappingDialog    – map CSV headers (window + combo + OK/Cancel via ``tip_qdialog_button_box``)
   BlankBankRegisterTable – **QTableWidget** (Date…Balance; blank editable rows, or read-only import rows + padded blanks when a batch is selected; populated rows set hover tooltips like the Bank register for elided text)
-  ReconciliationPanel    – statement vs import summary (**QGroupBox** + value labels + status **tooltips**)
-  StatementLineMatchPanel – mock statement extract vs register (**Matched** / **Missing** / **Extra**; review checkboxes, UI-only); **Run mock extract & compare** also pushes the **Match overlay** onto the **Bank register** tab when a ``register_tab`` is wired (optional **after_stmt_match_sync** focuses that tab).
+  ReconciliationPanel    – **Reconciliation Summary** (**QGroupBox** + value labels + status **tooltips**)
+  StatementLineMatchPanel – line reconciliation vs register (**Matched** / **Missing** / **Extra**); **Run extract & compare** syncs **Match overlay** on **Bank register** when wired (**after_stmt_match_sync**).
 """
 
 from __future__ import annotations
 
+import csv
+import io
 import sqlite3
 from functools import partial
 from pathlib import Path
@@ -58,8 +61,10 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMainWindow,
     QMenu,
     QMessageBox,
+    QPlainTextEdit,
     QProgressDialog,
     QPushButton,
     QSizePolicy,
@@ -73,6 +78,10 @@ from probooksai import business
 from probooksai.bank_import import ACCOUNT_TYPES, BANK_CSV_READ_ENCODING, BankDatabase
 from probooksai.coa_db import COADatabase
 
+from desktop_app.bank_statement_text_parse import (
+    format_amount_cell,
+    parse_bank_statement_text,
+)
 from desktop_app.audit_dialog import show_entity_audit_history
 from desktop_app.qt_combo_ids import (
     coerce_combo_int_id,
@@ -80,6 +89,7 @@ from desktop_app.qt_combo_ids import (
     combo_int_ids_equal,
 )
 from desktop_app.csv_import_worker import CsvImportWorker
+from desktop_app.flexible_date import configure_qdate_edit_us
 from desktop_app.open_attachment import open_local_attachment
 from desktop_app.qt_mnemonic import (
     CSV_EXPORT_OK_TIP_SUFFIX,
@@ -148,10 +158,12 @@ def _bank_import_keyboard_shortcuts_help_text() -> str:
         "**Import CSV\u2026** or **Import PDF\u2026** (then your profile folder). "
         "**Import CSV\u2026** and **Import PDF\u2026** reopen the last folder you picked a bank file from, "
         "or the last CSV export folder if you have not imported yet. "
-        "**Import CSV\u2026** reads UTF-8 with optional BOM (typical Excel bank exports).\n\n"
-        "AI-assisted line reconciliation (right-hand panel): **Run mock extract & compare** "
+        "**Import CSV\u2026** reads UTF-8 with optional BOM (typical Excel bank exports). "
+        "**Paste bank CSV** + **Import pasted CSV\u2026** runs the same import using text from the clipboard. "
+        "**Paste raw statement text** + **Parse to review rows** fills a staging grid only (does not import or post).\n\n"
+        "**Line Reconciliation (AI)** (lower panel): **Run extract & compare** "
         "fills the **Bank register** **Match** column statement overlay for the same bank account and "
-        "switches the main window to that tab (reconciliation mode turns on there). "
+        "switches the main window to **Bank register** and turns on reconciliation overlay there. "
         "If that account cannot be opened on the register, a warning explains that the **Match overlay** was not updated. "
         "On success the main **status bar** also shows a short confirmation, then restores the company line. "
         "Right-click the **Matched / Missing / Extra** line-reconciliation grid for **Copy row** "
@@ -167,9 +179,9 @@ def _bank_import_keyboard_shortcuts_help_text() -> str:
         "when possible: last CSV export folder, else last import folder, else your profile folder "
         "(same as reconciliation export).\n\n"
         "**Ctrl+Shift+B** when the **batch preview** or **line-reconciliation** grid has keyboard focus "
-        "runs the **Business link** flow (**Business** when the **complete bank link** allows it; same as right-click **Open linked Business record…**).\n\n"
-        "View menu tab focus: Ctrl+1 Document Intake, Ctrl+2 Bank Import, Ctrl+3 Register.\n\n"
-        "Tools menu: Ctrl+Shift+I — Invoice… (Business tab, Invoices AR).\n\n"
+        "runs the **Business link** flow (**Customers** / **Vendors** / **Business → Payroll** when the **complete bank link** allows it; same as right-click **Open linked Business record…**).\n\n"
+        "View menu tab focus: Ctrl+1 Invoices … Ctrl+9 Reconcile, Ctrl+0 More (Reports, Journal, Business, Audit log).\n\n"
+        "Tools menu: Ctrl+Shift+I — Invoice… (top-level Invoices tab); full AR list: **Customers** tab.\n\n"
         "Manage Bank Accounts (dialog): right-click the accounts table (including empty area) "
         "for Keyboard shortcuts… (same as this dialog).\n\n"
         "Document Intake:\n"
@@ -179,10 +191,10 @@ def _bank_import_keyboard_shortcuts_help_text() -> str:
         "Register tab: **F5** / **Ctrl+Shift+** shortcuts and **Help → Bank register keyboard shortcuts…**; "
         "add/post/export and other row actions are on **Recon** (Register Actions, Reconciliation, …). "
         "When the **complete bank link** allows it, **Ctrl+Shift+B** or **Recon → Transaction Tools → Open linked Business record** "
-        "switches to **Business** (same as right-click **Open linked Business record…** or double-click **Match** in reconciliation mode; "
+        "navigates to **Customers** / **Vendors** / **More → Business → Payroll** (same as right-click **Open linked Business record…** or double-click **Match** in reconciliation mode; "
         "otherwise the **Business link** message). "
-        "**Link payment…** includes **Open linked Business record…** when the stored link is complete (can open in Business).\n\n"
-        "Business tab (rules, invoices, bills, payroll):\n"
+        "**Link payment…** includes **Open linked Business record…** when the stored link is complete.\n\n"
+        "Business tab (rules, payroll, tax %):\n"
         "Help → Business shortcuts…"
     )
 
@@ -193,7 +205,7 @@ def show_bank_import_keyboard_shortcuts_dialog(parent: QWidget) -> None:
         "Bank import shortcuts",
         _bank_import_keyboard_shortcuts_help_text(),
         ok_tip="Close; shortcuts apply when Bank Import has focus. "
-        "View → Register (Ctrl+3) for the Match overlay after Run mock extract & compare; "
+        "View → Bank Register (Ctrl+5) for the Match overlay after Run extract & compare; "
         "register bulk actions live under Recon; **Ctrl+Shift+B** on the **batch preview** or **line-reconciliation** grid "
         "runs the **Business link** flow (**Business** when the row has a **complete bank link**; same chord as **Bank register**). "
         "Company .db: File → Backup / Restore (probooks.backup).",
@@ -670,12 +682,10 @@ class StatementPeriodDialog(QDialog):
         layout = QFormLayout(self)
 
         self._start = QDateEdit()
-        self._start.setCalendarPopup(True)
-        self._start.setDisplayFormat("yyyy-MM-dd")
+        configure_qdate_edit_us(self._start)
 
         self._end = QDateEdit()
-        self._end.setCalendarPopup(True)
-        self._end.setDisplayFormat("yyyy-MM-dd")
+        configure_qdate_edit_us(self._end)
         self._end.setDate(QDate.currentDate())
         self._start.setDate(QDate.currentDate().addMonths(-1))
 
@@ -799,12 +809,12 @@ class BlankBankRegisterTable(QTableWidget):
         )
         self.verticalHeader().setDefaultSectionSize(REGISTER_ROW_HEIGHT_MIN_PREVIEW)
         self.setShowGrid(False)
-        self.setWordWrap(True)
+        self.setWordWrap(False)
         self.verticalHeader().setVisible(False)
         self.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        self.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        self.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        self.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
+        self.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
         self.setSortingEnabled(False)
         self.setToolTip(
             "Register-style preview: select an import batch to load its rows (debit/credit split); "
@@ -947,7 +957,7 @@ class BlankBankRegisterTable(QTableWidget):
 
 class ReconciliationPanel(QGroupBox):
     """
-    Displays reconciliation summary and the Mark Reconciled button.
+    Reconciliation summary (statement vs import) and Mark Reconciled / export CSV.
 
     Emits :attr:`reconcileRequested` when the button is clicked.
     Emits :attr:`exportCsvRequested` when the user asks for a CSV reconciliation report.
@@ -959,21 +969,34 @@ class ReconciliationPanel(QGroupBox):
     toleranceChanged = Signal()
 
     def __init__(self, parent=None):
-        super().__init__("Reconciliation", parent)
+        super().__init__("Reconciliation Summary", parent)
         self.setToolTip(
-            "Compares statement dates and balances to imported transactions for the selected batch. "
-            "Line-by-line Matched / Missing / Extra is in AI-assisted line reconciliation below "
+            "Statement period, balances, and difference for the selected import batch. "
+            "Line reconciliation (Matched / Missing / Extra) is in **Line Reconciliation (AI)** below "
             "(Help → Bank import shortcuts…)."
+        )
+        self.setStyleSheet(
+            "QGroupBox { font-weight: 600; margin-top: 8px; } "
+            "QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; }"
         )
         self._build_ui()
         self._reset()
 
     def _build_ui(self):
         layout = QFormLayout(self)
+        layout.setLabelAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
+        layout.setFormAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+        )
+        layout.setHorizontalSpacing(14)
+        layout.setVerticalSpacing(8)
 
         def _lbl():
             l = QLabel("—")
-            l.setAlignment(Qt.AlignmentFlag.AlignRight)
+            l.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            l.setMinimumWidth(120)
             l.setToolTip("Populates when you select an import batch with statement metadata.")
             return l
 
@@ -989,7 +1012,7 @@ class ReconciliationPanel(QGroupBox):
         layout.addRow("Statement end:", self._lbl_end)
         layout.addRow("Beginning balance:", self._lbl_begin)
         layout.addRow("Ending balance (bank):", self._lbl_ending)
-        layout.addRow("Sum of imported transactions:", self._lbl_sum)
+        layout.addRow("Sum of transactions:", self._lbl_sum)
         layout.addRow("Computed ending balance:", self._lbl_computed)
         layout.addRow("Difference:", self._lbl_diff)
 
@@ -998,6 +1021,7 @@ class ReconciliationPanel(QGroupBox):
         self._spin_tol.setDecimals(2)
         self._spin_tol.setSingleStep(0.01)
         self._spin_tol.setPrefix("±$ ")
+        self._spin_tol.setMaximumWidth(140)
         self._spin_tol.setToolTip(
             "Mark Reconciled is enabled when the absolute difference "
             "is within this amount (pennies rounding or small bank fees)."
@@ -1010,7 +1034,8 @@ class ReconciliationPanel(QGroupBox):
         layout.addRow("Match within:", self._spin_tol)
 
         btn_row = QHBoxLayout()
-        self._btn_reconcile = QPushButton("✔  Mark Reconciled")
+        btn_row.setSpacing(8)
+        self._btn_reconcile = QPushButton("Mark reconciled")
         self._btn_reconcile.setToolTip(
             "Mark the selected import batch reconciled when the difference is within "
             "Match within (see tolerance field tooltip)."
@@ -1032,7 +1057,8 @@ class ReconciliationPanel(QGroupBox):
         layout.addRow(btn_row)
 
         self._lbl_status = QLabel("")
-        self._lbl_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._lbl_status.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self._lbl_status.setWordWrap(True)
         self._lbl_status.setToolTip(
             "Reconciliation outcome: balanced within tolerance, difference too large, or already reconciled."
         )
@@ -1117,7 +1143,7 @@ class BankImportTab(QWidget):
 
     Layout (horizontal splitter):
       Left  – account selector, batch list, import & manage buttons
-      Right – top: **BlankBankRegisterTable** (import batch rows when selected); bottom: **Statement reconciliation** … + **Reconciliation** panel
+      Right – top: **BlankBankRegisterTable** (import batch rows when selected); bottom: **Reconciliation Summary** + **Line Reconciliation (AI)**
     """
 
     def __init__(
@@ -1173,14 +1199,36 @@ class BankImportTab(QWidget):
         self.setToolTip(
             "Bank CSV/PDF import and reconciliation: choose an account, import batches, transactions, "
             "and match statement balances. "
-            "AI-assisted line reconciliation (Matched / Missing / Extra) can update Bank register Match overlay "
-            "when you run compare (Help → Bank import shortcuts…); exported CSV uses UTF-8 BOM for Excel "
+            "**Line Reconciliation (AI)** (Matched / Missing / Extra) can update Bank register Match overlay "
+            "when you run extract & compare (Help → Bank import shortcuts…); exported CSV uses UTF-8 BOM for Excel "
             "(F5 refreshes when this tab has focus). "
-            "View → Register (Ctrl+3) shows the Match overlay after compare. "
+            "View → Bank Register (Ctrl+5) shows the Match overlay after compare. "
             "Same company SQLite database as other main tabs; File → Backup / Restore (probooks.backup)."
         )
         outer = QVBoxLayout(self)
         outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(10)
+
+        intake_gb = QGroupBox("Intake")
+        intake_gb.setToolTip(
+            "Import bank CSV or PDF (or paste CSV) for the selected account. "
+            "Creates import batches using the same logic as before."
+        )
+        intake_lay = QVBoxLayout(intake_gb)
+        intake_lay.setSpacing(8)
+
+        intake_intro = QLabel(
+            "<b>Bring in statements</b> — pick the bank account, then <b>Import CSV</b>, <b>Import PDF</b>, "
+            "<b>paste CSV</b> (same wizard as file import), or <b>paste raw statement text</b> for a separate "
+            "staging review (no import). Formats and mapping for CSV/PDF are unchanged."
+        )
+        intake_intro.setTextFormat(Qt.TextFormat.RichText)
+        intake_intro.setWordWrap(True)
+        intake_intro.setStyleSheet("color: #A0A0B0; font-size: 12px;")
+        intake_intro.setToolTip(
+            "Digital PDFs need selectable text (no OCR). CSV is UTF-8 with optional BOM, same as exports."
+        )
+        intake_lay.addWidget(intake_intro)
 
         # ── Header row ──────────────────────────────────────────────────────
         hdr_row = QHBoxLayout()
@@ -1229,7 +1277,7 @@ class BankImportTab(QWidget):
         hdr_row.addWidget(btn_pdf)
 
         hdr_row.addStretch()
-        outer.addLayout(hdr_row)
+        intake_lay.addLayout(hdr_row)
 
         import_hint = QLabel(
             "Import formats: <b>CSV</b> — typical bank export (UTF-8, optional BOM for Excel). "
@@ -1244,7 +1292,125 @@ class BankImportTab(QWidget):
             "ProBooks+ai reads text embedded in PDFs; it does not OCR scans. "
             "For photo or scanned statements, use CSV until automatic OCR ships (Phase 7)."
         )
-        outer.addWidget(import_hint)
+        intake_lay.addWidget(import_hint)
+
+        paste_box = QGroupBox("Paste bank CSV")
+        paste_box.setToolTip(
+            "Paste the same bank-export CSV you would pick from disk (include the header row). "
+            "Uses the same column mapping, statement period, import batch, register preview, and reconciliation as Import CSV."
+        )
+        paste_lay = QVBoxLayout(paste_box)
+        self._paste_csv_edit = QPlainTextEdit()
+        self._paste_csv_edit.setPlaceholderText(
+            "Paste CSV text here (header row + data rows), then Import pasted CSV…"
+        )
+        self._paste_csv_edit.setToolTip(
+            "UTF-8 bank export text. After pasting, use Import pasted CSV… for the same wizard as Import CSV…."
+        )
+        self._paste_csv_edit.setFixedHeight(100)
+        paste_lay.addWidget(self._paste_csv_edit)
+        paste_row = QHBoxLayout()
+        btn_paste_import = QPushButton("Import pasted CSV…")
+        btn_paste_import.setToolTip(
+            "Run the same import as Import CSV… using the text above (filename shown as pasted)."
+        )
+        btn_paste_import.clicked.connect(self._on_import_pasted_csv)
+        paste_row.addWidget(btn_paste_import)
+        paste_row.addStretch()
+        paste_lay.addLayout(paste_row)
+        intake_lay.addWidget(paste_box)
+
+        raw_box = QGroupBox("Paste raw statement text")
+        raw_box.setToolTip(
+            "Paste copied bank or card statement text (not CSV-shaped). "
+            "Parse to review rows stages Date, Description, Amount, and flags unclear lines as Needs Review. "
+            "Does not import or post to Bank Register — use Import CSV / PDF for that."
+        )
+        raw_lay = QVBoxLayout(raw_box)
+        raw_lay.setSpacing(6)
+        raw_hint = QLabel(
+            "For messy copy/paste from web or PDF: dates, payees, and amounts when recognizable. "
+            "<b>Parse to review rows</b> fills the table below for you to check — staging only."
+        )
+        raw_hint.setTextFormat(Qt.TextFormat.RichText)
+        raw_hint.setWordWrap(True)
+        raw_hint.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        raw_lay.addWidget(raw_hint)
+        self._paste_raw_statement_edit = QPlainTextEdit()
+        self._paste_raw_statement_edit.setPlaceholderText(
+            "Paste raw statement lines here (not the CSV block above), then Parse to review rows…"
+        )
+        self._paste_raw_statement_edit.setFixedHeight(90)
+        self._paste_raw_statement_edit.setToolTip(
+            "Any bank- or card-style text: one transaction per line when possible. "
+            "Separate from the CSV paste box so column mapping is unchanged for CSV imports."
+        )
+        raw_lay.addWidget(self._paste_raw_statement_edit)
+        raw_btn_row = QHBoxLayout()
+        self._btn_parse_raw_statement = QPushButton("Parse to review rows")
+        self._btn_parse_raw_statement.setToolTip(
+            "Run heuristics on the text above and fill the review grid. Does not write to the database."
+        )
+        self._btn_parse_raw_statement.clicked.connect(self._on_parse_raw_statement_text)
+        self._btn_clear_raw_review = QPushButton("Clear review")
+        self._btn_clear_raw_review.setToolTip("Clear the review table and the raw paste box.")
+        self._btn_clear_raw_review.clicked.connect(self._on_clear_raw_statement_review)
+        for _br in (self._btn_parse_raw_statement, self._btn_clear_raw_review):
+            _br.setAutoDefault(False)
+            _br.setDefault(False)
+        raw_btn_row.addWidget(self._btn_parse_raw_statement)
+        raw_btn_row.addWidget(self._btn_clear_raw_review)
+        raw_btn_row.addStretch()
+        raw_lay.addLayout(raw_btn_row)
+        self._raw_statement_review_table = QTableWidget(0, 5)
+        self._raw_statement_review_table.setObjectName("rawStatementReviewTable")
+        self._raw_statement_review_table.setHorizontalHeaderLabels(
+            ["Date", "Description / Payee", "Amount", "Type / Status", "Notes"]
+        )
+        self._raw_statement_review_table.setEditTriggers(
+            QAbstractItemView.EditTrigger.NoEditTriggers
+        )
+        self._raw_statement_review_table.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        self._raw_statement_review_table.setAlternatingRowColors(True)
+        self._raw_statement_review_table.verticalHeader().setVisible(False)
+        self._raw_statement_review_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Stretch
+        )
+        for col in (0, 2, 3, 4):
+            self._raw_statement_review_table.horizontalHeader().setSectionResizeMode(
+                col, QHeaderView.ResizeMode.ResizeToContents
+            )
+        self._raw_statement_review_table.setMinimumHeight(140)
+        self._raw_statement_review_table.setToolTip(
+            "Staged rows from raw statement paste — review before using Import CSV/PDF for the register. "
+            "Needs Review highlights uncertain lines."
+        )
+        raw_lay.addWidget(self._raw_statement_review_table)
+        intake_lay.addWidget(raw_box)
+
+        outer.addWidget(intake_gb)
+
+        review_gb = QGroupBox("Review & match")
+        review_gb.setToolTip(
+            "Imported batches, register-styled preview, reconciliation summary, and AI line match vs Bank Register."
+        )
+        review_lay = QVBoxLayout(review_gb)
+        review_lay.setSpacing(8)
+
+        review_intro = QLabel(
+            "<b>Review and reconcile</b> — select an import batch, check rows and balances, then use "
+            "<b>Line Reconciliation (AI)</b>. Open <b>Bank Register</b> (Ctrl+5) to work the Match overlay; "
+            "the register remains the source of truth for posted bank activity."
+        )
+        review_intro.setTextFormat(Qt.TextFormat.RichText)
+        review_intro.setWordWrap(True)
+        review_intro.setStyleSheet("color: #A0A0B0; font-size: 12px;")
+        review_intro.setToolTip(
+            "Matched / Missing / Extra and tolerance behave as before; extract & compare can sync the register overlay."
+        )
+        review_lay.addWidget(review_intro)
 
         # ── Splitter: batch list (left) | detail (right) ──────────────────
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -1252,8 +1418,8 @@ class BankImportTab(QWidget):
         # Left: batch list
         left = QWidget()
         left.setToolTip(
-            "Import batches column for the selected bank account; pick a batch to load transactions into the preview, "
-            "statement reconciliation, and AI line reconciliation on the right. "
+            "Import batches column for the selected bank account; pick a batch to load the preview, "
+            "**Reconciliation Summary**, and **Line Reconciliation (AI)** on the right. "
             "Batches and transactions live in the company SQLite file (File → Backup / Restore, probooks.backup)."
         )
         left_layout = QVBoxLayout(left)
@@ -1261,13 +1427,13 @@ class BankImportTab(QWidget):
         lbl_import_batches = QLabel("Import Batches:")
         lbl_import_batches.setToolTip(
             "CSV import batches for the selected bank account; choose one to load the preview, "
-            "statement reconciliation, and AI line reconciliation. "
+            "reconciliation summary, and line reconciliation (AI). "
             "Same shared company .db as the rest of the app (File → Backup / probooks backup)."
         )
         left_layout.addWidget(lbl_import_batches)
         batch_hint = QLabel(
-            "Batches appear after you <b>Import CSV</b> or <b>Import PDF</b> for the account above. "
-            "Select a batch to load the preview, statement reconciliation, and AI line reconciliation on the right."
+            "Batches appear after you <b>Import CSV</b>, <b>paste CSV</b>, or <b>Import PDF</b> for the account above. "
+            "Select a batch to load the preview and reconciliation panels on the right."
         )
         batch_hint.setTextFormat(Qt.TextFormat.RichText)
         batch_hint.setWordWrap(True)
@@ -1284,7 +1450,7 @@ class BankImportTab(QWidget):
             (
                 "Date this batch was imported (YYYY-MM-DD).",
                 "Statement start → end dates for this batch, if provided at import.",
-                "Whether Mark Reconciled has been applied for this batch.",
+                "Whether **Mark reconciled** has been applied for this batch.",
             )
         ):
             h = self._batch_table.horizontalHeaderItem(col)
@@ -1301,7 +1467,7 @@ class BankImportTab(QWidget):
         self._batch_table.setSortingEnabled(True)
         self._batch_table.setToolTip(
             "Import batches for the selected bank account; pick one to load its transactions into the "
-            "register preview, statement reconciliation, and AI line-reconciliation panel below. "
+            "register preview, reconciliation summary, and line reconciliation (AI) below. "
             "Right-click for Keyboard shortcuts… (including on empty area). "
             "Batches live in the company .db (File → Backup / Restore, probooks.backup)."
         )
@@ -1335,33 +1501,22 @@ class BankImportTab(QWidget):
         recon_col = QWidget()
         recon_col_layout = QVBoxLayout(recon_col)
         recon_col_layout.setContentsMargins(0, 0, 0, 0)
-        recon_col_layout.setSpacing(6)
-
-        lbl_recon_header = QLabel("Statement reconciliation:")
-        lbl_recon_header.setToolTip(
-            "Statement period, opening and closing balances, and Mark Reconciled for the batch "
-            "selected on the left. Line-by-line Matched / Missing / Extra is in AI-assisted line "
-            "reconciliation below (Help → Bank import shortcuts…). "
-            "Same company .db (File → Backup / probooks backup)."
-        )
-        recon_col_layout.addWidget(lbl_recon_header)
+        recon_col_layout.setSpacing(10)
 
         self._recon_placeholder = QLabel()
         self._recon_placeholder.setTextFormat(Qt.TextFormat.RichText)
         self._recon_placeholder.setWordWrap(True)
-        self._recon_placeholder.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        self._recon_placeholder.setStyleSheet("color: #A0A0B0; font-size: 12px;")
         self._recon_placeholder.setToolTip(
-            "Statement period, balances, and Mark Reconciled apply to the batch highlighted on the left."
+            "Pick an account and batch on the left to load reconciliation fields."
         )
         recon_col_layout.addWidget(self._recon_placeholder)
 
-        self._recon_panel_empty_hint = QLabel(
-            "Select a batch on the left to view statement reconciliation"
-        )
+        self._recon_panel_empty_hint = QLabel("Select an import batch on the left.")
         self._recon_panel_empty_hint.setWordWrap(True)
-        self._recon_panel_empty_hint.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        self._recon_panel_empty_hint.setStyleSheet("color: #A0A0B0; font-size: 12px;")
         self._recon_panel_empty_hint.setToolTip(
-            "Statement balances, difference, and Mark Reconciled populate after you pick a batch on the left."
+            "Balances and actions populate after you select a batch."
         )
         recon_col_layout.addWidget(self._recon_panel_empty_hint)
 
@@ -1373,15 +1528,6 @@ class BankImportTab(QWidget):
         )
         recon_col_layout.addWidget(self._recon_panel, stretch=1)
 
-        lbl_ai_line = QLabel("AI-assisted line reconciliation:")
-        lbl_ai_line.setToolTip(
-            "Mock PDF extract vs register (Matched / Missing / Extra). "
-            "Reconciled checkboxes are UI-only; register data is unchanged. "
-            "Right-click the grid for Copy row and statement/register field copies; "
-            "when **Reg #** is set and that transaction has a **complete bank link**, **Open linked Business record…** "
-            "(Help → Bank import shortcuts… summarizes menus)."
-        )
-        recon_col_layout.addWidget(lbl_ai_line)
         self._line_match_panel = StatementLineMatchPanel(
             self._db,
             parent=self,
@@ -1417,7 +1563,7 @@ class BankImportTab(QWidget):
             "All bank import data is in the open company .db (File → Backup / Restore, probooks.backup)."
         )
 
-        outer.addWidget(splitter)
+        review_lay.addWidget(splitter, stretch=1)
 
         tip = QLabel(
             "F5 refreshes accounts and import batches; if a batch is selected, it is re-opened when "
@@ -1427,7 +1573,7 @@ class BankImportTab(QWidget):
             "AI line-reconciliation grid (empty area where supported) for Keyboard shortcuts…; "
             "preview rows and that grid also offer Copy row and field copies. "
             "Help → Bank import shortcuts…; Register tab: Help → Bank register keyboard shortcuts…. "
-            "View: Ctrl+2 this tab, Ctrl+3 Register (Match overlay). "
+            "View: Ctrl+9 Reconcile → this tab; Ctrl+5 Bank Register (Match overlay). "
             "Company SQLite: File → Backup / Restore (probooks.backup, CLI probooks backup/restore)."
         )
         tip.setWordWrap(True)
@@ -1438,7 +1584,8 @@ class BankImportTab(QWidget):
             "Preview and line-reconciliation rows include Copy row and field copies. "
             "Back up the company .db from File → Backup / probooks backup before destructive imports."
         )
-        outer.addWidget(tip)
+        review_lay.addWidget(tip)
+        outer.addWidget(review_gb, stretch=1)
 
         sc_reload = QShortcut(QKeySequence("F5"), self)
         sc_reload.setContext(Qt.WidgetWithChildrenShortcut)
@@ -1460,13 +1607,11 @@ class BankImportTab(QWidget):
 
         if aid is None:
             self._recon_placeholder.setText(
-                "After you select an account and an <b>import batch</b>, statement balances and "
-                "<b>Mark Reconciled</b> apply here."
+                "Select a <b>bank account</b>, then an <b>import batch</b>."
             )
         elif batches is not None and len(batches) == 0:
             self._recon_placeholder.setText(
-                "Reconciliation needs an import batch with statement dates and balances—create one via "
-                "<b>Import CSV</b> or <b>Import PDF</b> first."
+                "No batches yet — use <b>Import CSV</b>, <b>paste CSV</b>, or <b>Import PDF</b>."
             )
         else:
             self._recon_placeholder.setVisible(False)
@@ -2059,20 +2204,94 @@ class BankImportTab(QWidget):
             )
             return
 
-        import csv, io
+        self._run_csv_import_wizard(content, Path(path).name)
+
+    def _on_import_pasted_csv(self) -> None:
+        if self._current_account_id is None:
+            message_box_information_ok(
+                self,
+                "No Account",
+                "Please create and select a bank account first (Manage Accounts).",
+                ok_tip="Close; use Manage Accounts to add an account, then select it above.",
+            )
+            return
+        content = self._paste_csv_edit.toPlainText()
+        if not (content or "").strip():
+            message_box_information_ok(
+                self,
+                "Nothing to import",
+                "Paste bank-export CSV text first (include the header row), then try again.",
+                ok_tip="Close; same column mapping and statement period steps as Import CSV.",
+            )
+            return
+        self._run_csv_import_wizard(content, "(pasted).csv")
+
+    def _on_parse_raw_statement_text(self) -> None:
+        text = self._paste_raw_statement_edit.toPlainText()
+        if not (text or "").strip():
+            message_box_information_ok(
+                self,
+                "Nothing to parse",
+                "Paste raw statement text first, then try again.",
+                ok_tip="Close; use the raw statement box (not the CSV paste area above).",
+            )
+            return
+        rows = parse_bank_statement_text(text)
+        t = self._raw_statement_review_table
+        t.setSortingEnabled(False)
+        t.setRowCount(len(rows))
+        review_bg = QColor(70, 52, 28, 90)
+        for i, pr in enumerate(rows):
+            date_it = QTableWidgetItem(pr.date_display or "—")
+            desc_it = QTableWidgetItem(pr.description or "—")
+            amt_it = QTableWidgetItem(format_amount_cell(pr.amount))
+            status_it = QTableWidgetItem(pr.type_status or "—")
+            notes_it = QTableWidgetItem(pr.notes or "—")
+            for it in (date_it, desc_it, amt_it, status_it, notes_it):
+                it.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
+            if pr.type_status.strip().startswith("Needs Review"):
+                for it in (date_it, desc_it, amt_it, status_it, notes_it):
+                    it.setBackground(review_bg)
+            tip = (pr.notes or "").strip()
+            if tip and tip != "—":
+                for it in (date_it, desc_it, amt_it, status_it, notes_it):
+                    it.setToolTip(tip)
+            t.setItem(i, 0, date_it)
+            t.setItem(i, 1, desc_it)
+            t.setItem(i, 2, amt_it)
+            t.setItem(i, 3, status_it)
+            t.setItem(i, 4, notes_it)
+        t.setSortingEnabled(False)
+        w: QWidget | None = self
+        while w is not None:
+            if isinstance(w, QMainWindow):
+                sb = w.statusBar()
+                if sb is not None:
+                    sb.showMessage(
+                        f"Staged {len(rows)} row(s) from raw statement text (review only; not imported).",
+                        6000,
+                    )
+                    break
+            w = w.parentWidget()
+
+    def _on_clear_raw_statement_review(self) -> None:
+        self._paste_raw_statement_edit.clear()
+        self._raw_statement_review_table.setRowCount(0)
+
+    def _run_csv_import_wizard(self, content: str, filename: str) -> None:
+        """Shared path for file import and pasted CSV: map columns, statement period, background import."""
         reader = csv.reader(io.StringIO(content))
         try:
             headers = next(reader)
         except StopIteration:
             message_box_critical_ok(
                 self,
-                "File Error",
-                "CSV file appears to be empty.",
-                ok_tip="Close; pick a CSV with a header row and data.",
+                "CSV Error",
+                "CSV text appears to be empty.",
+                ok_tip="Close; include a header row and at least one data row.",
             )
             return
 
-        # 3. Column mapping (pre-fill from saved profile when present)
         acct_row = self._db.get_bank_account(self._current_account_id)
         preset = {}
         if acct_row is not None:
@@ -2087,7 +2306,6 @@ class BankImportTab(QWidget):
         if col_dlg.exec() != QDialog.DialogCode.Accepted:
             return
 
-        # 4. Statement period & balances
         period_dlg = StatementPeriodDialog(parent=self)
         if period_dlg.exec() != QDialog.DialogCode.Accepted:
             return
@@ -2100,7 +2318,6 @@ class BankImportTab(QWidget):
             ref_col=col_dlg.ref_col,
         )
 
-        # 5. Import on background thread (keeps UI responsive for large files)
         import_kw = dict(
             bank_account_id=self._current_account_id,
             csv_content=content,
@@ -2108,7 +2325,7 @@ class BankImportTab(QWidget):
             amount_col=col_dlg.amount_col,
             description_col=col_dlg.description_col,
             ref_col=col_dlg.ref_col,
-            filename=Path(path).name,
+            filename=filename,
             statement_start=period_dlg.statement_start,
             statement_end=period_dlg.statement_end,
             beginning_balance=period_dlg.beginning_balance,

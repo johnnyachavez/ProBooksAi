@@ -6,7 +6,8 @@ darker lower) with optional Payee / Number column layouts.
 ``simple_band_rows`` so every column draws a single line in the upper band (shorter
 ``sizeHint``). Keyboard focus draws a high-contrast cosmetic outline on the active cell
 (visible on the dark register theme). Inline editors are sized to the full cell via
-``updateEditorGeometry``. Disabled items use ``DISABLED_FG`` for text and omit the focus ring.
+``updateEditorGeometry`` (full register: ``QLineEdit`` is clipped to the **upper** band so editing
+matches a single-line cell, not a tall overlay). Disabled items use ``DISABLED_FG`` for text and omit the focus ring.
 """
 
 from __future__ import annotations
@@ -14,12 +15,15 @@ from __future__ import annotations
 from PySide6.QtCore import QRect, QSize, Qt
 from PySide6.QtGui import QBrush, QColor, QFontMetrics, QPainter, QPalette, QPen
 from PySide6.QtWidgets import (
+    QLineEdit,
     QStyledItemDelegate,
     QStyle,
     QStyleOptionViewItem,
     QTableWidget,
     QWidget,
 )
+
+from desktop_app.table_clipboard import QTABLE_PLAIN_TEXT_ROLE
 
 from probooksai.statement_line_match import STATUS_EXTRA, STATUS_MATCHED, STATUS_MISSING
 
@@ -103,10 +107,31 @@ class RegisterBandDelegate(QStyledItemDelegate):
         return QSize(super().sizeHint(option, index).width(), h)
 
     def updateEditorGeometry(self, editor, option, index) -> None:
-        """Keep editors flush with the cell; tall banded rows can otherwise leave odd insets."""
-        super().updateEditorGeometry(editor, option, index)
-        if editor is not None:
-            editor.setGeometry(option.rect)
+        """Pin editors to the cell; on full register rows, single-line editors use only the upper band."""
+        rect = option.rect
+        if isinstance(editor, QLineEdit) and not self._simple:
+            top_r, _ = self._split_rect(option.rect)
+            rect = top_r
+        editor.setGeometry(rect)
+
+    def createEditor(self, parent: QWidget, option, index):
+        """Use a single-line editor so multiline register text does not open a tall QTextEdit."""
+        if index.flags() & Qt.ItemFlag.ItemIsEditable:
+            return QLineEdit(parent)
+        return super().createEditor(parent, option, index)
+
+    def setEditorData(self, editor, index) -> None:
+        if isinstance(editor, QLineEdit):
+            plain = index.data(QTABLE_PLAIN_TEXT_ROLE)
+            if isinstance(plain, str) and plain != "":
+                editor.setText(plain.split("\n", 1)[0])
+                return
+            disp = index.data(Qt.ItemDataRole.DisplayRole)
+            editor.setText(
+                disp.split("\n", 1)[0] if isinstance(disp, str) else ""
+            )
+            return
+        super().setEditorData(editor, index)
 
     def paint(self, painter: QPainter, option, index) -> None:
         table = self.parent()

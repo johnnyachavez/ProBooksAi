@@ -290,6 +290,21 @@ class COADatabase:
         rows = self.list_accounts(include_inactive=include_inactive)
         return [f"{r['account_number']} – {r['account_name']}" for r in rows]
 
+    def find_account_id_by_display_line(self, line: str) -> Optional[int]:
+        """Resolve a register/transaction COA label to ``coa_accounts.id``, or ``None`` if unknown."""
+        target = (line or "").strip()
+        if not target:
+            return None
+        tlow = target.lower()
+        for row in self.list_accounts(include_inactive=True):
+            disp = f"{row['account_number']} – {row['account_name']}"
+            if disp == target or disp.lower() == tlow:
+                try:
+                    return int(row["id"])
+                except (TypeError, ValueError):
+                    return None
+        return None
+
 
 # ---------------------------------------------------------------------------
 # Validation helpers

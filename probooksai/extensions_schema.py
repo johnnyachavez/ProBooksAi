@@ -13,7 +13,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
-EXTENSION_SCHEMA_VERSION = 3
+EXTENSION_SCHEMA_VERSION = 4
 
 _DDL_VERSION = """
 CREATE TABLE IF NOT EXISTS extension_schema_version (
@@ -212,6 +212,20 @@ _MIGRATION_V3 = """
 ALTER TABLE ar_payments ADD COLUMN bank_account_id INTEGER REFERENCES bank_accounts(id);
 """
 
+# v4 – Enter Bills expense grid (A/P line detail)
+_MIGRATION_V4 = """
+CREATE TABLE IF NOT EXISTS bill_expense_lines (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    bill_id        INTEGER NOT NULL REFERENCES bills(id) ON DELETE CASCADE,
+    line_date      TEXT,
+    ticket_ref     TEXT,
+    amount         REAL    NOT NULL DEFAULT 0,
+    memo           TEXT,
+    customer_job   TEXT,
+    sort_order     INTEGER NOT NULL DEFAULT 0
+);
+"""
+
 
 def _seed_payroll_tax_items(conn: sqlite3.Connection) -> None:
     """Default federal/state placeholder codes (amounts entered manually per run)."""
@@ -275,6 +289,13 @@ def apply_extensions(conn: sqlite3.Connection) -> None:
             if s:
                 conn.execute(s)
         current = 3
+
+    if current < 4:
+        for stmt in _MIGRATION_V4.strip().split(";"):
+            s = stmt.strip()
+            if s:
+                conn.execute(s)
+        current = 4
 
     conn.execute(
         "UPDATE extension_schema_version SET version = ? WHERE id = 1",

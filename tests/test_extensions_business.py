@@ -31,6 +31,73 @@ def test_bank_schema_version_includes_gl_profile(db):
     )
 
 
+def test_list_open_bills_for_pay_bills(db):
+    assert business.list_open_bills_for_pay_bills(db._conn) == []
+    vid = business.add_vendor(db._conn, "Vendor X")
+    business.create_bill(db._conn, vid, "2024-05-01", 40.0, vendor_invoice_number="VX-1")
+    rows = business.list_open_bills_for_pay_bills(db._conn)
+    assert len(rows) == 1
+    assert dict(rows[0])["vendor_name"] == "Vendor X"
+    assert int(dict(rows[0])["bill_id"]) >= 1
+
+
+def test_list_invoice_ids_chronological_order(db) -> None:
+    assert business.list_invoice_ids_chronological(db._conn) == []
+    c1 = business.add_customer(db._conn, "A")
+    c2 = business.add_customer(db._conn, "B")
+    i2 = business.create_invoice(
+        db._conn,
+        c2,
+        "2",
+        "2024-02-01",
+        lines=[{"description": "b", "qty": 1, "rate": 1.0}],
+    )
+    i1 = business.create_invoice(
+        db._conn,
+        c1,
+        "1",
+        "2024-01-01",
+        lines=[{"description": "a", "qty": 1, "rate": 1.0}],
+    )
+    assert business.list_invoice_ids_chronological(db._conn) == [i2, i1]
+
+
+def test_next_default_invoice_number_starts_at_13001(db) -> None:
+    assert business.next_default_invoice_number(db._conn) == "13001"
+
+
+def test_next_default_invoice_number_none_conn() -> None:
+    assert business.next_default_invoice_number(None) == "13001"
+
+
+def test_next_default_invoice_number_max_digits_plus_one(db) -> None:
+    cid = business.add_customer(db._conn, "C")
+    business.create_invoice(
+        db._conn,
+        cid,
+        "13001",
+        "2024-01-01",
+        lines=[{"description": "x", "qty": 1, "rate": 0.0}],
+    )
+    assert business.next_default_invoice_number(db._conn) == "13002"
+    business.create_invoice(
+        db._conn,
+        cid,
+        "INV-9",
+        "2024-01-02",
+        lines=[{"description": "y", "qty": 1, "rate": 0.0}],
+    )
+    assert business.next_default_invoice_number(db._conn) == "13002"
+    business.create_invoice(
+        db._conn,
+        cid,
+        "13009",
+        "2024-01-03",
+        lines=[{"description": "z", "qty": 1, "rate": 0.0}],
+    )
+    assert business.next_default_invoice_number(db._conn) == "13010"
+
+
 def test_extension_schema_applied(db):
     row = db._conn.execute(
         "SELECT version FROM extension_schema_version WHERE id = 1"
@@ -1061,6 +1128,80 @@ def test_save_invoice_pdf_smoke(db, tmp_path):
     assert out.is_file() and out.stat().st_size > 400
 
 
+def test_invoice_html_string_uses_company_setup_letterhead(db) -> None:
+    """Live invoice HTML pulls sender block from Company setup keys in company_settings."""
+    from desktop_app.invoice_pdf import invoice_html_string
+
+    cid = business.add_customer(db._conn, "Cust LLC", address="1 Oak St")
+    iid = business.create_invoice(
+        db._conn,
+        cid,
+        "L-H-1",
+        "2024-06-01",
+        lines=[{"description": "Line", "qty": 1, "rate": 10.0}],
+        tax_rate_pct=0,
+    )
+    business.set_setting(db._conn, "company_setup_name", "SetupCo & Sons")
+    business.set_setting(db._conn, "company_setup_addr1", "100 Main St")
+    business.set_setting(db._conn, "company_setup_city", "Austin")
+    business.set_setting(db._conn, "company_setup_state", "TX")
+    business.set_setting(db._conn, "company_setup_zip", "78701")
+    business.set_setting(db._conn, "company_setup_phone", "555-0100")
+    business.set_setting(db._conn, "company_setup_email", "hello@example.com")
+    db._conn.commit()
+    html = invoice_html_string(db._conn, iid)
+    assert "SetupCo &amp; Sons" in html
+    assert "100 Main St" in html
+    assert "Austin, TX 78701" in html
+    assert "555-0100" in html
+    assert "hello@example.com" in html
+
+
+def test_invoice_html_string_legacy_invoice_company_keys_fallback(db) -> None:
+    """Older invoice_company_* settings still work when company_setup_* is empty."""
+    from desktop_app.invoice_pdf import invoice_html_string
+
+    cid = business.add_customer(db._conn, "Cust2", address="")
+    iid = business.create_invoice(
+        db._conn,
+        cid,
+        "L-H-2",
+        "2024-06-02",
+        lines=[{"description": "x", "qty": 1, "rate": 1.0}],
+        tax_rate_pct=0,
+    )
+    business.set_setting(db._conn, "invoice_company_name", "Legacy Co")
+    db._conn.commit()
+    html = invoice_html_string(db._conn, iid)
+    assert "Legacy Co" in html
+
+
+def test_invoice_html_string_invoice_company_block_overrides_setup(db) -> None:
+    """Multiline invoice_company_block wins over structured company_setup_* fields."""
+    from desktop_app.invoice_pdf import invoice_html_string
+
+    cid = business.add_customer(db._conn, "Cust3", address="")
+    iid = business.create_invoice(
+        db._conn,
+        cid,
+        "L-H-3",
+        "2024-06-03",
+        lines=[{"description": "x", "qty": 1, "rate": 1.0}],
+        tax_rate_pct=0,
+    )
+    business.set_setting(db._conn, "company_setup_name", "Ignored Name")
+    business.set_setting(
+        db._conn,
+        "invoice_company_block",
+        "Block & Co.\nSecond line",
+    )
+    db._conn.commit()
+    html = invoice_html_string(db._conn, iid)
+    assert "Block &amp; Co." in html
+    assert "Second line" in html
+    assert "Ignored Name" not in html
+
+
 def test_write_ar_and_ap_payments_csv(db, tmp_path):
     cid = business.add_customer(db._conn, "PayerCo")
     vid = business.add_vendor(db._conn, "PayeeCo")
@@ -1213,6 +1354,32 @@ def test_list_open_invoices_and_bills_for_party(db):
     assert business.list_open_bills_for_vendor(db._conn, vid) == []
 
 
+def test_list_customer_ar_summaries(db):
+    cid = business.add_customer(db._conn, "Acme")
+    rows = business.list_customer_ar_summaries(db._conn)
+    assert len(rows) == 1
+    assert rows[0]["customer_id"] == cid
+    assert rows[0]["open_balance"] == 0.0
+    assert rows[0]["ar_status"] == "Current"
+    iid = business.create_invoice(
+        db._conn,
+        cid,
+        "I1",
+        "2024-01-10",
+        due_date="2024-01-31",
+        lines=[{"description": "x", "qty": 1, "rate": 100.0}],
+    )
+    rows2 = business.list_customer_ar_summaries(db._conn)
+    r = next(x for x in rows2 if x["customer_id"] == cid)
+    assert r["open_balance"] == 100.0
+    assert r["last_invoice_date"] == "2024-01-10"
+    business.record_ar_payment(db._conn, cid, "2024-01-15", 100.0, [(iid, 100.0)])
+    rows3 = business.list_customer_ar_summaries(db._conn)
+    r3 = next(x for x in rows3 if x["customer_id"] == cid)
+    assert r3["open_balance"] == 0.0
+    assert r3["last_payment_date"] == "2024-01-15"
+
+
 def test_get_update_customer_and_vendor(db):
     cid = business.add_customer(db._conn, "Old", email="a@x.org")
     row = business.get_customer(db._conn, cid)
@@ -1274,3 +1441,24 @@ def test_update_bill_and_blocked_after_payment(db):
     business.record_ap_payment(db._conn, vid, "2024-04-15", 80.0, [(bid, 80.0)])
     with pytest.raises(ValueError, match="payments"):
         business.update_bill(db._conn, bid, vid, "2024-04-02", 50.0)
+
+
+def test_list_vendor_ap_summaries_open_current_overdue_and_last_dates(db):
+    from datetime import date, timedelta
+
+    today = date.today()
+    past = (today - timedelta(days=30)).isoformat()
+    future = (today + timedelta(days=30)).isoformat()
+    v1 = business.add_vendor(db._conn, "SumVendor")
+    business.create_bill(db._conn, v1, "2024-06-01", 40.0, due_date=future)
+    business.create_bill(db._conn, v1, "2024-05-01", 60.0, due_date=past)
+    by_id = {r["vendor_id"]: r for r in business.list_vendor_ap_summaries(db._conn)}
+    r = by_id[v1]
+    assert r["open_balance"] == pytest.approx(100.0)
+    assert r["current_due"] == pytest.approx(40.0)
+    assert r["overdue"] == pytest.approx(60.0)
+    assert r["last_bill_date"] == "2024-06-01"
+    assert r["ap_status"] == "Overdue"
+    business.record_ap_payment(db._conn, v1, "2025-01-15", 1.0, [])
+    by_id2 = {r["vendor_id"]: r for r in business.list_vendor_ap_summaries(db._conn)}
+    assert by_id2[v1]["last_payment_date"] == "2025-01-15"

@@ -42,8 +42,8 @@ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX = (
 
 # Mid-sentence fragment for **Keyboard shortcuts…** on tabs that open **Help → More / Business / Intake** dialogs.
 VIEW_BANK_REGISTER_KEYS_TOOLTIP = (
-    "Bank CSV/PDF and AI line reconciliation: View → Bank Import (Ctrl+2); "
-    "Match overlay on Register (Ctrl+3). "
+    "Bank CSV/PDF and AI line reconciliation: View → Bank Import (Ctrl+3); "
+    "Match overlay on Register (Ctrl+8). "
     "Register bulk actions: Recon menu. "
 )
 

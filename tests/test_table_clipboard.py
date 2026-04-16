@@ -38,8 +38,8 @@ from desktop_app.table_clipboard import (
 
 
 def test_view_bank_register_keys_tooltip_strings() -> None:
-    assert "Bank Import (Ctrl+2)" in VIEW_BANK_REGISTER_KEYS_TOOLTIP
-    assert "Register (Ctrl+3)" in VIEW_BANK_REGISTER_KEYS_TOOLTIP
+    assert "Bank Import (Ctrl+3)" in VIEW_BANK_REGISTER_KEYS_TOOLTIP
+    assert "Register (Ctrl+8)" in VIEW_BANK_REGISTER_KEYS_TOOLTIP
     assert "Recon menu" in VIEW_BANK_REGISTER_KEYS_TOOLTIP
     assert VIEW_BANK_REGISTER_KEYS_TOOLTIP.endswith(" ")
     assert CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX not in VIEW_BANK_REGISTER_KEYS_TOOLTIP

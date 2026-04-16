@@ -117,23 +117,24 @@ class StatementLineMatchPanel(QGroupBox):
         bank_import_shortcuts_help: Optional[Callable[[], None]] = None,
         register_tab=None,
     ):
-        super().__init__("AI-assisted line reconciliation (mock extract)", parent)
+        super().__init__("Line Reconciliation (AI)", parent)
         self._db = db
         self._rows: list[dict] = []
         self._populating = False
         self._bank_import_shortcuts_help = bank_import_shortcuts_help
         self._register_tab = register_tab
         self.setToolTip(
-            "Compare mock ‘statement’ lines to register transactions for the selected batch period. "
-            "Matched / Missing / Extra use amount, date ±2 days, and description similarity. "
-            "Reconciled checkboxes are UI-only (no register or import changes). "
-            "Real PDF OCR is not used yet—this exercises matching + workflow. "
-            "Run also updates **Bank register → Match overlay** when that tab is wired (same account), "
-            "focuses that tab, and shows a short **status bar** message (company line returns after). "
-            "Right-click the table for Copy row and statement/register field copies, "
-            "and Open linked Business when **Reg #** has a **complete bank link** (register tab wired). "
-            "(Help → Bank import shortcuts…). "
-            "View → Bank Import (Ctrl+2), Register (Ctrl+3)."
+            "Compare mock statement lines to register transactions for the selected batch period "
+            "(Matched / Missing / Extra). Reconciled checkboxes are UI-only. "
+            "**Run extract & compare** updates **Bank register → Match overlay** when wired, "
+            "then focuses the register tab and shows a short **status bar** message; "
+            "the usual company line returns after. "
+            "Right-click the table for Copy row, field copies, and Open linked Business when **Reg #** allows. "
+            "Help → Bank import shortcuts…. View → Reconcile (Ctrl+9) → Bank import; Bank Register (Ctrl+5)."
+        )
+        self.setStyleSheet(
+            "QGroupBox { font-weight: 600; margin-top: 8px; } "
+            "QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; }"
         )
         self._build_ui()
 
@@ -174,46 +175,43 @@ class StatementLineMatchPanel(QGroupBox):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        hint = QLabel(
-            "Select an import batch, then <b>Run mock extract and compare</b>. "
-            "Statement lines are synthesized for now (simulating PDF extract). "
-            "On success the main window switches to <b>Bank register</b>, the "
-            "<b>status bar</b> shows a short confirmation, then the usual company line returns."
-        )
-        hint.setTextFormat(Qt.TextFormat.RichText)
-        hint.setWordWrap(True)
-        hint.setStyleSheet("color: #A0A0B0; font-size: 11px;")
-        layout.addWidget(hint)
+        layout.setSpacing(10)
 
-        btn_row = QHBoxLayout()
-        self._btn_run = QPushButton("Run mock extract & compare")
+        primary = QHBoxLayout()
+        primary.setSpacing(8)
+        self._btn_run = QPushButton("Run extract & compare")
         self._btn_run.setToolTip(
             "Build mock statement lines from the register (same period as the batch), "
             "classify Matched / Missing / Extra, and fill the table below. "
-            "Also syncs the **Match overlay** on **Bank register** for this account, switches there, "
-            "and shows a brief status message (company line returns afterward)."
+            "Syncs **Bank register → Match overlay** for this account when wired, switches there, "
+            "and shows a brief status message."
         )
         self._btn_run.clicked.connect(self._on_run_clicked)
-        btn_row.addWidget(self._btn_run)
+        primary.addWidget(self._btn_run)
 
-        self._btn_mark_sel = QPushButton("Mark reconciled (selected)")
+        self._btn_mark_sel = QPushButton("Mark reconciled")
         self._btn_mark_sel.setToolTip(
-            "Set the reconciled flag for selected rows (this panel only; does not change register or import data)."
+            "Set the reconciled flag for selected rows (this panel only; no register or import DB writes)."
         )
         self._btn_mark_sel.clicked.connect(self._mark_reviewed_selected)
-        btn_row.addWidget(self._btn_mark_sel)
+        primary.addWidget(self._btn_mark_sel)
 
-        self._btn_mark_matched = QPushButton("Mark reconciled (all Matched)")
+        primary.addStretch()
+        layout.addLayout(primary)
+
+        secondary = QHBoxLayout()
+        secondary.setSpacing(8)
+        self._btn_mark_matched = QPushButton("Mark all matched")
         self._btn_mark_matched.setToolTip(
-            "Mark all Matched rows reconciled in this panel only (no DB writes)."
+            "Mark every **Matched** row reconciled in this panel only (no DB writes)."
         )
         self._btn_mark_matched.clicked.connect(self._mark_reviewed_all_matched)
-        btn_row.addWidget(self._btn_mark_matched)
+        secondary.addWidget(self._btn_mark_matched)
 
-        self._btn_clear = QPushButton("Clear reconciled flags")
+        self._btn_clear = QPushButton("Clear flags")
         self._btn_clear.setToolTip("Clear reconciled checkboxes in this table (UI only).")
         self._btn_clear.clicked.connect(self._clear_reviewed)
-        btn_row.addWidget(self._btn_clear)
+        secondary.addWidget(self._btn_clear)
 
         self._btn_export_csv = QPushButton("Export comparison CSV\u2026")
         self._btn_export_csv.setToolTip(
@@ -225,10 +223,10 @@ class StatementLineMatchPanel(QGroupBox):
             "and appends .csv if the path has no extension."
         )
         self._btn_export_csv.clicked.connect(self._on_export_comparison_csv)
-        btn_row.addWidget(self._btn_export_csv)
+        secondary.addWidget(self._btn_export_csv)
 
-        btn_row.addStretch()
-        layout.addLayout(btn_row)
+        secondary.addStretch()
+        layout.addLayout(secondary)
 
         self._table = QTableWidget()
         self._table.setColumnCount(len(_HEADERS))
@@ -256,7 +254,7 @@ class StatementLineMatchPanel(QGroupBox):
             "**Ctrl+Shift+B** when this grid has focus does the same when **Reg #** is set; "
             "**double-click** with **Reg #** set: same **Business link** messages as **Bank register**. "
             "Keyboard shortcuts when this panel is embedded in Bank Import. "
-            "View → Bank Import (Ctrl+2), Register (Ctrl+3)."
+            "View → Reconcile (Ctrl+9) → Bank import; Bank Register (Ctrl+5)."
         )
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._on_table_context_menu)

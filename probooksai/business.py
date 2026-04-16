@@ -284,6 +284,34 @@ def list_invoices(conn: sqlite3.Connection) -> list:
     ).fetchall()
 
 
+_DEFAULT_FIRST_INVOICE_NUMBER = "13001"
+
+
+def next_default_invoice_number(conn: sqlite3.Connection | None) -> str:
+    """Suggested next *invoice_number* for a new invoice (desktop default).
+
+    Uses the maximum existing *invoice_number* whose trimmed value is all digits,
+    plus one. Non-numeric values are ignored for sequencing. If none qualify,
+    returns ``13001``. With *conn* ``None`` (no company file), returns ``13001``.
+    """
+    if conn is None:
+        return _DEFAULT_FIRST_INVOICE_NUMBER
+    try:
+        rows = conn.execute("SELECT invoice_number FROM invoices").fetchall()
+    except sqlite3.Error:
+        return _DEFAULT_FIRST_INVOICE_NUMBER
+    best: int | None = None
+    for r in rows:
+        s = (r["invoice_number"] or "").strip()
+        if s.isdigit():
+            v = int(s)
+            if best is None or v > best:
+                best = v
+    if best is None:
+        return _DEFAULT_FIRST_INVOICE_NUMBER
+    return str(best + 1)
+
+
 def write_invoices_csv(
     conn: sqlite3.Connection,
     path: str,
@@ -337,6 +365,21 @@ def write_invoices_csv(
             )
             n += 1
     return n
+
+
+def list_invoice_ids_chronological(conn: sqlite3.Connection) -> list[int]:
+    """Invoice primary keys ordered by ``id`` ascending (oldest created first)."""
+    try:
+        rows = conn.execute("SELECT id FROM invoices ORDER BY id ASC").fetchall()
+    except sqlite3.Error:
+        return []
+    out: list[int] = []
+    for r in rows:
+        try:
+            out.append(int(r["id"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
 
 
 def get_invoice_detail(
@@ -717,6 +760,21 @@ def list_open_invoices_for_customer(
     ).fetchall()
 
 
+def list_open_invoices_for_receive_payments(conn: sqlite3.Connection) -> list:
+    """Open AR invoices with customer columns for the Receive Payments tab (``balance_due`` > 0)."""
+    return conn.execute(
+        """
+        SELECT i.id AS invoice_id, i.customer_id, c.name AS customer_name,
+               i.invoice_number, i.invoice_date, i.due_date,
+               i.balance_due, i.total, i.status
+        FROM invoices i
+        JOIN customers c ON c.id = i.customer_id
+        WHERE i.balance_due > 0.005
+        ORDER BY c.name, COALESCE(NULLIF(TRIM(i.due_date), ''), i.invoice_date), i.id
+        """
+    ).fetchall()
+
+
 # ---------------------------------------------------------------------------
 # Vendors & bills (Phase 11)
 # ---------------------------------------------------------------------------
@@ -795,6 +853,59 @@ def write_vendors_csv(conn: sqlite3.Connection, path: str) -> int:
     return n
 
 
+def _sum_bill_expense_line_amounts(lines: list[dict]) -> float:
+    s = 0.0
+    for ln in lines:
+        s += round(float(ln.get("amount", 0) or 0), 2)
+    return round(s, 2)
+
+
+def _replace_bill_expense_lines(
+    conn: sqlite3.Connection, bill_id: int, lines: list[dict]
+) -> None:
+    """Replace expense lines for a bill (caller commits)."""
+    conn.execute("DELETE FROM bill_expense_lines WHERE bill_id = ?", (bill_id,))
+    for i, ln in enumerate(lines):
+        conn.execute(
+            """
+            INSERT INTO bill_expense_lines (
+                bill_id, line_date, ticket_ref, amount, memo, customer_job, sort_order
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                bill_id,
+                (ln.get("line_date") or "").strip(),
+                (ln.get("ticket_ref") or "").strip(),
+                round(float(ln.get("amount", 0) or 0), 2),
+                (ln.get("memo") or "").strip(),
+                (ln.get("customer_job") or "").strip(),
+                i,
+            ),
+        )
+
+
+def list_bill_expense_lines(conn: sqlite3.Connection, bill_id: int) -> list:
+    return conn.execute(
+        """
+        SELECT * FROM bill_expense_lines
+        WHERE bill_id = ?
+        ORDER BY sort_order, id
+        """,
+        (bill_id,),
+    ).fetchall()
+
+
+def get_bill_detail(
+    conn: sqlite3.Connection, bill_id: int
+) -> tuple[Optional[sqlite3.Row], list]:
+    """Bill header row and expense lines (may be empty for legacy header-only bills)."""
+    b = get_bill(conn, bill_id)
+    if b is None:
+        return None, []
+    lines = list_bill_expense_lines(conn, bill_id)
+    return b, list(lines)
+
+
 def create_bill(
     conn: sqlite3.Connection,
     vendor_id: int,
@@ -804,8 +915,12 @@ def create_bill(
     due_date: str = "",
     memo: str = "",
     attachment_path: str = "",
+    expense_lines: Optional[list[dict]] = None,
 ) -> int:
-    total = round(float(total), 2)
+    if expense_lines is not None:
+        total = _sum_bill_expense_line_amounts(expense_lines)
+    else:
+        total = round(float(total), 2)
     cur = conn.execute(
         """
         INSERT INTO bills (
@@ -825,8 +940,11 @@ def create_bill(
             _now(),
         ),
     )
+    bid = cur.lastrowid
+    if expense_lines is not None:
+        _replace_bill_expense_lines(conn, bid, expense_lines)
     conn.commit()
-    return cur.lastrowid
+    return bid
 
 
 def get_bill(conn: sqlite3.Connection, bill_id: int) -> Optional[sqlite3.Row]:
@@ -851,13 +969,20 @@ def update_bill(
     due_date: str = "",
     memo: str = "",
     attachment_path: str = "",
+    expense_lines: Optional[list[dict]] = None,
 ) -> None:
-    """Update bill header amounts. Raises ``ValueError`` if any AP payment applies."""
+    """Update bill header amounts. Raises ``ValueError`` if any AP payment applies.
+
+    When *expense_lines* is not ``None``, *total* is derived from line amounts and lines are replaced.
+    """
     if bill_has_payment_allocations(conn, bill_id):
         raise ValueError("Cannot edit a bill that has payments applied.")
     if get_bill(conn, bill_id) is None:
         raise ValueError("Bill not found.")
-    total = round(float(total), 2)
+    if expense_lines is not None:
+        total = _sum_bill_expense_line_amounts(expense_lines)
+    else:
+        total = round(float(total), 2)
     conn.execute(
         """
         UPDATE bills SET
@@ -877,6 +1002,8 @@ def update_bill(
             bill_id,
         ),
     )
+    if expense_lines is not None:
+        _replace_bill_expense_lines(conn, bill_id, expense_lines)
     conn.commit()
 
 
@@ -999,6 +1126,156 @@ def list_open_bills_for_vendor(conn: sqlite3.Connection, vendor_id: int) -> list
         """,
         (vendor_id,),
     ).fetchall()
+
+
+def list_open_bills_for_pay_bills(conn: sqlite3.Connection) -> list:
+    """Open AP bills with vendor columns for the Pay Bills tab (``balance_due`` > 0)."""
+    return conn.execute(
+        """
+        SELECT b.id AS bill_id, b.vendor_id, v.name AS vendor_name,
+               b.bill_date, b.due_date, b.vendor_invoice_number,
+               b.balance_due, b.total, b.status
+        FROM bills b
+        JOIN vendors v ON v.id = b.vendor_id
+        WHERE b.balance_due > 0.005
+        ORDER BY COALESCE(NULLIF(TRIM(b.due_date), ''), b.bill_date), b.id
+        """
+    ).fetchall()
+
+
+def list_vendor_ap_summaries(conn: sqlite3.Connection) -> list[dict]:
+    """One row per vendor: open AP balance, current vs overdue (by due date), last bill and payment dates.
+
+    *current_due* sums open balances whose due date is empty or not before today; *overdue* sums
+    balances past due. Uses *today* in local calendar sense (``date.today()`` ISO compare to ``due_date``).
+    """
+    from datetime import date
+
+    today = date.today()
+    vendors = list_vendors(conn)
+    out: list[dict] = []
+    for v in vendors:
+        vid = int(v["id"])
+        name = (v["name"] or "").strip()
+        bill_rows = conn.execute(
+            "SELECT balance_due, due_date FROM bills WHERE vendor_id = ?",
+            (vid,),
+        ).fetchall()
+        open_bal = 0.0
+        current_due = 0.0
+        overdue = 0.0
+        for b in bill_rows:
+            bal = float(b["balance_due"] or 0)
+            if bal <= 0.005:
+                continue
+            open_bal += bal
+            due_s = (b["due_date"] or "").strip()
+            days_past = 0
+            if due_s:
+                try:
+                    dd = date.fromisoformat(due_s)
+                    days_past = (today - dd).days
+                except ValueError:
+                    days_past = 0
+            if days_past <= 0:
+                current_due += bal
+            else:
+                overdue += bal
+        last_bill_row = conn.execute(
+            "SELECT MAX(bill_date) FROM bills WHERE vendor_id = ?", (vid,)
+        ).fetchone()
+        last_bill_date = (last_bill_row[0] or "").strip() if last_bill_row else ""
+        pay_row = conn.execute(
+            "SELECT MAX(payment_date) FROM ap_payments WHERE vendor_id = ?", (vid,)
+        ).fetchone()
+        last_pay = (pay_row[0] or "").strip() if pay_row and pay_row[0] else ""
+        if open_bal <= 0.005:
+            ap_status = "Current"
+        elif overdue > 0.005:
+            ap_status = "Overdue"
+        else:
+            ap_status = "Open"
+        out.append(
+            {
+                "vendor_id": vid,
+                "vendor_name": name,
+                "open_balance": round(open_bal, 2),
+                "current_due": round(current_due, 2),
+                "overdue": round(overdue, 2),
+                "last_bill_date": last_bill_date,
+                "last_payment_date": last_pay,
+                "ap_status": ap_status,
+            }
+        )
+    out.sort(key=lambda x: (x["vendor_name"] or "").lower())
+    return out
+
+
+def list_customer_ar_summaries(conn: sqlite3.Connection) -> list[dict]:
+    """One row per customer: open AR balance, current vs overdue (by due date), last invoice and payment dates.
+
+    Mirrors :func:`list_vendor_ap_summaries` for invoices / ``ar_payments``.
+    """
+    from datetime import date
+
+    today = date.today()
+    customers = list_customers(conn)
+    out: list[dict] = []
+    for c in customers:
+        cid = int(c["id"])
+        name = (c["name"] or "").strip()
+        inv_rows = conn.execute(
+            "SELECT balance_due, due_date FROM invoices WHERE customer_id = ?",
+            (cid,),
+        ).fetchall()
+        open_bal = 0.0
+        current_due = 0.0
+        overdue = 0.0
+        for inv in inv_rows:
+            bal = float(inv["balance_due"] or 0)
+            if bal <= 0.005:
+                continue
+            open_bal += bal
+            due_s = (inv["due_date"] or "").strip()
+            days_past = 0
+            if due_s:
+                try:
+                    dd = date.fromisoformat(due_s)
+                    days_past = (today - dd).days
+                except ValueError:
+                    days_past = 0
+            if days_past <= 0:
+                current_due += bal
+            else:
+                overdue += bal
+        last_inv_row = conn.execute(
+            "SELECT MAX(invoice_date) FROM invoices WHERE customer_id = ?", (cid,)
+        ).fetchone()
+        last_inv_date = (last_inv_row[0] or "").strip() if last_inv_row else ""
+        pay_row = conn.execute(
+            "SELECT MAX(payment_date) FROM ar_payments WHERE customer_id = ?", (cid,)
+        ).fetchone()
+        last_pay = (pay_row[0] or "").strip() if pay_row and pay_row[0] else ""
+        if open_bal <= 0.005:
+            ar_status = "Current"
+        elif overdue > 0.005:
+            ar_status = "Overdue"
+        else:
+            ar_status = "Open"
+        out.append(
+            {
+                "customer_id": cid,
+                "customer_name": name,
+                "open_balance": round(open_bal, 2),
+                "current_due": round(current_due, 2),
+                "overdue": round(overdue, 2),
+                "last_invoice_date": last_inv_date,
+                "last_payment_date": last_pay,
+                "ar_status": ar_status,
+            }
+        )
+    out.sort(key=lambda x: (x["customer_name"] or "").lower())
+    return out
 
 
 # ---------------------------------------------------------------------------

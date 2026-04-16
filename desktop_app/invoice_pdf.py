@@ -1,14 +1,130 @@
-"""Print invoice to PDF via Qt (Phase 8)."""
+"""Render invoice HTML to a PDF file path via Qt (no ``QFileDialog`` / ``QPrintDialog`` here).
+
+**Desktop UI**
+
+- **Invoices** tab uses ``invoice_html_string`` for print preview HTML and ``save_invoice_pdf`` for
+  PDF files; **Print…** opens ``QPrintDialog`` (user may pick a physical printer or a “Print to PDF” driver).
+- ``save_invoice_pdf`` / ``invoice_html_string`` are also used from tests and CLI helpers.
+
+``save_invoice_pdf`` creates ``QPrinter`` in PDF mode and calls ``QTextDocument.print_``.
+
+Company letterhead comes from **More → Business → Company** (``company_setup_*`` keys in
+``company_settings``), with optional ``invoice_company_block`` override and legacy
+``invoice_company_*`` fallback.
+"""
 
 from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
 
-from PySide6.QtGui import QTextDocument
-from PySide6.QtPrintSupport import QPrinter
+from desktop_app.flexible_date import format_iso_to_us_display
+from desktop_app.invoice_print_html import (
+    build_invoice_print_html,
+    parse_invoice_line_description,
+    parse_invoice_memo_po_job_footer,
+)
 
-from probooksai.html_escape import escape_html_text as _he
+
+def _format_city_state_zip_line(city: str, state: str, zip_code: str) -> str:
+    city = (city or "").strip()
+    state = (state or "").strip()
+    zip_code = (zip_code or "").strip()
+    if not (city or state or zip_code):
+        return ""
+    if city and state:
+        return f"{city}, {state} {zip_code}".strip()
+    if city:
+        return f"{city} {zip_code}".strip() if zip_code else city
+    return f"{state} {zip_code}".strip() if state or zip_code else ""
+
+
+def _letterhead_plain_from_company_settings(conn: sqlite3.Connection) -> str:
+    """Sender block for the PDF from ``company_settings`` (no hardcoded business identity)."""
+    from probooksai import business
+
+    block = (business.get_setting(conn, "invoice_company_block", "") or "").strip()
+    if block:
+        return block
+    name = (business.get_setting(conn, "company_setup_name", "") or "").strip()
+    addr1 = (business.get_setting(conn, "company_setup_addr1", "") or "").strip()
+    addr2 = (business.get_setting(conn, "company_setup_addr2", "") or "").strip()
+    csz = _format_city_state_zip_line(
+        business.get_setting(conn, "company_setup_city", ""),
+        business.get_setting(conn, "company_setup_state", ""),
+        business.get_setting(conn, "company_setup_zip", ""),
+    )
+    phone = (business.get_setting(conn, "company_setup_phone", "") or "").strip()
+    email = (business.get_setting(conn, "company_setup_email", "") or "").strip()
+    parts: list[str] = []
+    if name:
+        parts.append(name)
+    if addr1:
+        parts.append(addr1)
+    if addr2:
+        parts.append(addr2)
+    if csz:
+        parts.append(csz)
+    if phone:
+        parts.append(phone)
+    if email:
+        parts.append(email)
+    if parts:
+        return "\n".join(parts)
+    # Legacy keys (older builds or manual SQL)
+    leg_name = (business.get_setting(conn, "invoice_company_name", "") or "").strip()
+    leg_addr = (business.get_setting(conn, "invoice_company_address", "") or "").strip()
+    leg_phone = (business.get_setting(conn, "invoice_company_phone", "") or "").strip()
+    legacy = [p for p in (leg_name, leg_addr, leg_phone) if p]
+    return "\n".join(legacy)
+
+
+def invoice_html_string(conn: sqlite3.Connection, invoice_id: int) -> str:
+    """Build the same HTML used for PDF export and **Invoices** tab printing (saved invoice row)."""
+    from probooksai import business
+
+    inv, lines = business.get_invoice_detail(conn, invoice_id)
+    if inv is None:
+        raise ValueError("Invoice not found")
+
+    inv_d = dict(inv)
+    memo = (inv_d.get("memo") or "").strip()
+    po, job, footer = parse_invoice_memo_po_job_footer(memo)
+    inv_date_raw = (inv_d.get("invoice_date") or "").strip()
+    inv_date = format_iso_to_us_display(inv_date_raw) if inv_date_raw else ""
+
+    name = (inv_d.get("customer_name") or "").strip()
+    addr = (inv_d.get("customer_address") or "").strip()
+    bill_parts = [name] if name else []
+    if addr:
+        bill_parts.append(addr)
+    bill_to_plain = "\n".join(bill_parts)
+
+    line_rows: list[tuple[str, str, str, str, str, str, str]] = []
+    for ln in lines:
+        d = dict(ln)
+        so, jl, desc, bol = parse_invoice_line_description(d.get("description") or "")
+        qty = float(d.get("qty") or 0)
+        rate = float(d.get("rate") or 0)
+        lt = float(d.get("line_total") or 0)
+        line_rows.append(
+            (so, jl, desc, bol, f"{rate:,.2f}", f"{qty:.2f}", f"{lt:,.2f}")
+        )
+
+    total = float(inv_d.get("total") or 0)
+    balance_plain = f"${total:,.2f}"
+
+    return build_invoice_print_html(
+        company_block_plain=_letterhead_plain_from_company_settings(conn),
+        invoice_date=inv_date,
+        invoice_number=(inv_d.get("invoice_number") or "").strip(),
+        bill_to_plain=bill_to_plain,
+        po_contract=po,
+        name_job=job,
+        footer_plain=footer,
+        line_rows=line_rows,
+        balance_due_plain=balance_plain,
+    )
 
 
 def save_invoice_pdf(conn: sqlite3.Connection, invoice_id: int, file_path: str) -> None:
@@ -19,74 +135,15 @@ def save_invoice_pdf(conn: sqlite3.Connection, invoice_id: int, file_path: str) 
     to exist before constructing QPrinter. In CLI/subprocess contexts (like pytest),
     there usually isn't one yet, so we create it if needed.
     """
+    from PySide6.QtGui import QTextDocument
+    from PySide6.QtPrintSupport import QPrinter
     from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance()
     if app is None:
         app = QApplication([])
 
-    from probooksai import business
-
-    inv, lines = business.get_invoice_detail(conn, invoice_id)
-    if inv is None:
-        raise ValueError("Invoice not found")
-
-    inv_d = dict(inv)
-    memo = (inv_d.get("memo") or "").strip()
-    memo_row = (
-        f"<tr><th>Memo</th><td colspan='3'>{_he(memo) if memo else '—'}</td></tr>"
-    )
-    html_parts = [
-        "<html><body style='font-family: sans-serif;'>",
-        "<h1>Invoice</h1>",
-        "<p><b>ProBooks+ai</b></p>",
-        "<p>Bill to: <b>"
-        + _he(inv_d["customer_name"])
-        + "</b><br/>"
-        + _he(inv_d.get("customer_address") or "")
-        + "</p>",
-        "<table width='100%' cellspacing='0' cellpadding='6' border='1'>",
-        "<tr><th>Invoice #</th><td>"
-        + _he(inv_d["invoice_number"])
-        + "</td><th>Date</th><td>"
-        + _he(inv_d["invoice_date"])
-        + "</td></tr>",
-        "<tr><th>Due</th><td>"
-        + (_he(inv_d.get("due_date")) if inv_d.get("due_date") else "—")
-        + "</td><th>Status</th><td>"
-        + _he(inv_d.get("status"))
-        + "</td></tr>",
-        memo_row,
-        "</table>",
-        "<h3>Line items</h3>",
-        "<table width='100%' cellspacing='0' cellpadding='4' border='1'>",
-        "<tr><th>Description</th><th>Qty</th><th>Rate</th><th>Total</th></tr>",
-    ]
-    for ln in lines:
-        d = dict(ln)
-        html_parts.append(
-            "<tr><td>"
-            + _he(d.get("description"))
-            + "</td><td>"
-            + _he(d.get("qty"))
-            + "</td><td>"
-            + f"{float(d.get('rate') or 0):,.2f}"
-            + "</td><td>"
-            + f"{float(d.get('line_total') or 0):,.2f}"
-            + "</td></tr>"
-        )
-    html_parts.extend(
-        [
-            "</table>",
-            f"<p><b>Subtotal:</b> ${float(inv_d['subtotal']):,.2f}<br/>",
-            f"<b>Tax:</b> ${float(inv_d['tax_total']):,.2f}<br/>",
-            f"<b>Total:</b> ${float(inv_d['total']):,.2f}<br/>",
-            f"<b>Balance due:</b> ${float(inv_d['balance_due']):,.2f}</p>",
-            "</body></html>",
-        ]
-    )
-    html = "".join(html_parts)
-
+    html = invoice_html_string(conn, invoice_id)
     doc = QTextDocument()
     doc.setHtml(html)
 

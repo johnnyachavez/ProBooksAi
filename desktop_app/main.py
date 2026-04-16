@@ -22,7 +22,7 @@ also have hover hints. The banner **AppHeaderWidget** (**QFrame**) right-aligns 
 Destructive **Yes**/**No** prompts (new company file exists, database restore) use **tip_message_box_buttons** for button hover hints and **QMessageBox.setToolTip** for the dialog window.
 
 Main window **menu bar**: each ``QAction`` uses ``setStatusTip`` for the **status bar** and the same text via ``setToolTip`` for hover (``_menu_action_tip`` helper).
-Top-level menus: **File**, **View**, **Edit**, **Tools** (e.g. **Invoice…** Ctrl+Shift+I to Business → Invoices AR), **Recon** (bank register bulk actions in submenus), **Help**.
+Top-level menus: **File**, **View**, **Edit**, **Tools** (e.g. **Invoice…** Ctrl+Shift+I to the **Invoices** tab), **Recon** (bank register bulk actions in submenus), **Help**.
 """
 
 from __future__ import annotations
@@ -61,7 +61,7 @@ from PySide6.QtWidgets import (
     QFormLayout, QFrame, QGroupBox, QHBoxLayout, QLabel,
     QLineEdit, QMainWindow, QMenu, QMessageBox, QPlainTextEdit,
     QPushButton, QScrollArea, QSizePolicy, QSplitter,
-    QStackedWidget, QStatusBar, QTabWidget, QTableWidget,
+    QStatusBar, QTabWidget, QTableWidget,
     QVBoxLayout, QWidget,
 )
 
@@ -90,13 +90,16 @@ from desktop_app.extra_tabs import (
     show_business_keyboard_shortcuts_dialog,
 )
 from desktop_app.audit_tab import AuditTab
+from desktop_app.enter_bills_screen import EnterBillsScreen
+from desktop_app.invoice_screen import InvoiceScreen
+from desktop_app.pay_bills_screen import PayBillsScreen
+from desktop_app.receive_checks_screen import ReceiveChecksScreen
 from desktop_app.theme import apply_dark_theme, STATUS_COLORS as THEME_STATUS_COLORS
 from desktop_app.version import application_version
 from desktop_app.local_docs import resolve_local_roadmap_path
 from desktop_app.more_main_tabs_shortcuts import (
     show_more_main_tabs_keyboard_shortcuts_dialog,
 )
-from desktop_app.dialog_trace import init_dialog_trace, trace_entry
 from desktop_app.qt_combo_ids import coerce_combo_int_id
 from desktop_app.table_clipboard import (
     CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
@@ -129,13 +132,12 @@ def _document_intake_keyboard_shortcuts_help_text() -> str:
         "Backup company file… / Restore from backup… — SQLite online backup (probooks.backup), "
         "same path as the CLI; no default shortcuts — hover each action for status-bar tips.\n\n"
         "View menu:\n"
-        "Ctrl+1 Invoices, Ctrl+2 Enter Bills, Ctrl+3 Pay Bills, Ctrl+4 Receive Payments, "
-        "Ctrl+5 Bank Register, Ctrl+6 Chart of Accounts, Ctrl+7 Customers, Ctrl+8 Vendors, Ctrl+9 Reconcile "
-        "(fixed top tabs). Document Intake / Bank Import / Reports / Journal / Business / Audit live in the More area. "
-        "All views share the open company SQLite file (File → Backup / Restore, probooks.backup).\n\n"
+        "Ctrl+1 Invoices … Ctrl+9 Reconcile, Ctrl+0 More (Reports, Journal, Business, Audit log) — all tabs share the open "
+        "company SQLite file (File → Backup / Restore, probooks.backup). "
+        "Use **Reconcile** (Ctrl+9) → **Bank statements** for statement import and **Bank Register** (Ctrl+5) for the Match overlay.\n\n"
         "**Recon** menu — **Bank register** bulk row actions (add transaction, post to GL, export CSV, cleared, "
-        "attachments, splits, transfer, link payment, open linked Business record, receipt flags) when you use Register (Ctrl+3). "
-        "**Tools** menu — open operational tabs directly (Invoice… Ctrl+Shift+I, Enter Bills, Pay Bills, Receive Payments, Customers, Vendors, Reconcile).\n\n"
+        "attachments, splits, transfer, link payment, open linked Business record, receipt flags) when you use Bank Register (Ctrl+5). "
+        "**Tools** menu — open **Invoice…** (Ctrl+Shift+I; top-level Invoices tab).\n\n"
         "CSV exports on Bank Import (reconciliation report and line-compare), Register, Reports, Journal, Business, "
         "and Audit use UTF-8 with BOM for Excel.\n"
         "Bank Import Import CSV… reads bank statement CSV as UTF-8 with optional BOM.\n\n"
@@ -157,8 +159,8 @@ def show_document_intake_keyboard_shortcuts_dialog(parent: QWidget) -> None:
         "Document intake shortcuts",
         _document_intake_keyboard_shortcuts_help_text(),
         ok_tip="Close; shortcuts apply when Document Intake has focus. "
-        "Bank CSV/PDF and AI line reconciliation: Ctrl+2 Bank Import; "
-        "Register Match overlay: Ctrl+3 Register; register bulk actions: Recon menu. "
+        "Bank CSV/PDF and AI line reconciliation: Ctrl+9 Reconcile → Bank statements; "
+        "Register Match overlay: Ctrl+5 Bank Register; register bulk actions: Recon menu. "
         "Company .db: File → Backup / Restore (probooks.backup).",
     )
 
@@ -171,26 +173,15 @@ STATUS_COLORS = THEME_STATUS_COLORS
 
 INBOX_HEADER_COLOR = "#1F3864"  # dark navy – matches ProBooks+ai branding
 
-# Intake-adjacent tooltips: Bank Import on the View menu (Ctrl+2).
+# Intake-adjacent tooltips: bank import lives under the Reconcile top-level tab (View Ctrl+9).
 _BANK_IMPORT_VIEW_POINTER = (
-    "Bank CSV/PDF and AI line reconciliation: View → Bank Import (Ctrl+2). "
+    "Bank CSV/PDF and AI line reconciliation: Reconcile tab → Bank statements (View → Reconcile, Ctrl+9). "
 )
 
 # Temporary status bar duration after Bank Import → Register **Match overlay** sync.
 _STMT_MATCH_SYNC_STATUS_MS = 8000
 
-COMPANY_NAME = "COMPANY NAME"  # placeholder – replace from company settings or file
-
-# Primary top-level tabs (fixed order: trust + clarity over flexibility).
-TAB_IDX_INVOICES = 0
-TAB_IDX_ENTER_BILLS = 1
-TAB_IDX_PAY_BILLS = 2
-TAB_IDX_RECEIVE_PAYMENTS = 3
-TAB_IDX_BANK_REGISTER = 4
-TAB_IDX_CHART_OF_ACCOUNTS = 5
-TAB_IDX_CUSTOMERS = 6
-TAB_IDX_VENDORS = 7
-TAB_IDX_RECONCILE = 8
+COMPANY_NAME = ""  # blank-safe placeholder until a company database is opened
 
 
 # ---------------------------------------------------------------------------
@@ -861,41 +852,51 @@ class MainWindow(QMainWindow):
         self._refresh_inbox()
         self._update_company_status()
 
-    # -- UI construction -----------------------------------------------------
-
-    def _build_ui(self):
-        self._build_menu_bar()
-
-        # Container: header banner + top tabs + secondary More area.
-        container = QWidget()
-        container.setToolTip(
-            "Main workspace: fixed top tabs for daily operations plus a fixed More area for secondary views."
+    def _make_placeholder_shell_tab(self, title: str, body: str) -> QWidget:
+        """Step-1 shell for a top-level tab whose full workflow is not migrated yet."""
+        w = QWidget()
+        w.setToolTip(
+            f"{title}: placeholder shell (fixed top-level tab order). {body} "
+            "Same company .db (File → Backup / Restore, probooks.backup)."
         )
-        container_layout = QVBoxLayout(container)
-        container_layout.setContentsMargins(0, 0, 0, 0)
-        container_layout.setSpacing(0)
+        outer = QVBoxLayout(w)
+        lbl = QLabel(body)
+        lbl.setWordWrap(True)
+        outer.addWidget(lbl)
+        return w
 
-        self._header = AppHeaderWidget()
-        container_layout.addWidget(self._header)
-
-        # Top-level operational tabs only (fixed order).
-        self._tabs = QTabWidget()
-        self._tabs.setToolTip(
-            "Daily operations tabs only: Invoices, Enter Bills, Pay Bills, Receive Payments, "
-            "Bank Register, Chart of Accounts, Customers, Vendors, Reconcile."
-        )
-
-        # Intake widget remains available via secondary More area.
+    def _build_document_intake_widget(self) -> None:
+        """Build the Document Intake UI (hosted under Reconcile → Documents)."""
         intake_widget = QWidget()
         intake_widget.setToolTip(
-            "Document Intake: import files, pick an inbox row, then review extraction and categorization."
+            "Document Intake: import files, pick an inbox row, then review extraction and categorization on the right. "
+            "F5 refreshes the list when this tab has focus. "
+            "Bank CSV/PDF and AI line reconciliation: Reconcile → Bank statements. "
+            "Help → Document intake shortcuts lists File → Backup/Restore (probooks.backup)."
         )
         intake_layout = QVBoxLayout(intake_widget)
         intake_layout.setContentsMargins(0, 0, 0, 0)
         intake_layout.setSpacing(0)
 
+        doc_guidance = QLabel(
+            "<b>Documents</b> — import PDFs or images (File → Import or drag-and-drop), then review extraction on the right. "
+            "For <b>bank CSV/PDF statements</b> and register reconciliation, use the <b>Bank statements</b> subtab."
+        )
+        doc_guidance.setTextFormat(Qt.TextFormat.RichText)
+        doc_guidance.setWordWrap(True)
+        doc_guidance.setStyleSheet("color: #A0A0B0; font-size: 12px; padding: 0 0 8px 0;")
+        doc_guidance.setToolTip(
+            "Same document pipeline as before; statement workflows stay on Bank statements so intake feels unified."
+        )
+
         splitter = QSplitter(Qt.Orientation.Horizontal)
+
         left = QWidget()
+        left.setToolTip(
+            "Document inbox column: header and file list for the selected company; drag the splitter to resize against the detail pane. "
+            + _BANK_IMPORT_VIEW_POINTER
+            + "Same company .db as other tabs; File → Backup / Restore (probooks.backup)."
+        )
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(0)
@@ -904,6 +905,11 @@ class MainWindow(QMainWindow):
         lbl_inbox.setStyleSheet(
             f"background: {INBOX_HEADER_COLOR}; color: white; font-weight: bold; "
             "font-size: 13px; padding: 6px;"
+        )
+        lbl_inbox.setToolTip(
+            "Imported documents: pick a row to load extraction and categorization in the detail pane. "
+            "Bank statement files: Reconcile → Bank statements (View → Reconcile, Ctrl+9). "
+            "Back up the company file from File → Backup / probooks backup before bulk deletes or experiments."
         )
         left_layout.addWidget(lbl_inbox)
 
@@ -923,61 +929,228 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self._detail)
 
         splitter.setSizes([380, 720])
+        splitter.setToolTip(
+            "Drag the handle to resize the document inbox and the extraction detail pane. "
+            "Bank workflows (CSV/PDF, AI line reconciliation) use Reconcile → Bank statements. "
+            "Both sides use the same company SQLite file (File → Backup / probooks backup)."
+        )
+        intake_layout.addWidget(doc_guidance)
         intake_layout.addWidget(splitter)
 
         sc_intake_f5 = QShortcut(QKeySequence("F5"), intake_widget)
         sc_intake_f5.setContext(Qt.WidgetWithChildrenShortcut)
         sc_intake_f5.activated.connect(self._refresh_inbox)
+
         self._intake_widget = intake_widget
 
-        self._more_selector = QComboBox()
-        self._more_selector.setToolTip(
-            "Fixed More area selector: Document Intake, Bank Import, Reports, Journal, Business, Audit Log."
+    def _assemble_main_tabs(self) -> None:
+        """Fixed-order top-level strip + More hub (Reports, Journal, Business, Audit)."""
+        conn = self._bank_db._conn
+        self._invoice_screen = InvoiceScreen(ap_conn=conn)
+        self._enter_bills_screen = EnterBillsScreen(ap_conn=conn)
+        self._pay_bills_screen = PayBillsScreen(
+            ap_conn=conn, bank_db=self._bank_db
         )
-        self._more_stack = QStackedWidget()
-        self._more_stack.setToolTip("Secondary fixed More area.")
-        self._more_selector.currentIndexChanged.connect(self._more_stack.setCurrentIndex)
+        self._receive_payments_screen = ReceiveChecksScreen(
+            ap_conn=conn, bank_db=self._bank_db
+        )
 
-        # Build all navigation-managed widgets.
-        self._populate_navigation_views()
+        self._register_tab = RegisterTab(self._bank_db, self._coa_db, self._gl_db)
+        self._bank_tab = BankImportTab(
+            self._bank_db,
+            self._coa_db,
+            register_tab=self._register_tab,
+            after_stmt_match_sync=self._focus_bank_register_tab,
+        )
+        self._coa_tab = COATab(self._coa_db)
+        self._coa_tab.coaChanged.connect(self._on_coa_changed)
 
+        # AR/AP primary UI: top-level Customers / Vendors (Business hub keeps Rules, Payroll, Tax %).
+        self._customers_tab = ARTab(conn)
+        self._vendors_tab = APTab(conn)
+
+        self._reconcile_hub = QTabWidget()
+        self._reconcile_hub.setToolTip(
+            "Reconcile: bank statement import, AI line reconciliation, and document intake. "
+            "Same company .db (File → Backup / Restore, probooks.backup)."
+        )
+        self._reconcile_hub.addTab(self._bank_tab, "Bank statements")
+        self._reconcile_hub.addTab(self._intake_widget, "Documents")
+
+        self._reconcile_root = QWidget()
+        self._reconcile_root.setToolTip(
+            "Reconcile: intake (statements or documents), then review and match against Bank Register. "
+            "Same company .db (File → Backup / Restore, probooks.backup)."
+        )
+        reconcile_root_layout = QVBoxLayout(self._reconcile_root)
+        reconcile_root_layout.setContentsMargins(8, 8, 8, 0)
+        reconcile_root_layout.setSpacing(6)
+        reconcile_banner = QLabel(
+            "<b>Reconcile</b> — intake on the subtabs below, then review and match against <b>Bank Register</b> "
+            "(Ctrl+5; source of truth for posted activity)."
+        )
+        reconcile_banner.setTextFormat(Qt.TextFormat.RichText)
+        reconcile_banner.setWordWrap(True)
+        reconcile_banner.setStyleSheet("color: #A0A0B0; font-size: 12px;")
+        reconcile_banner.setToolTip(
+            "Bank statements: CSV/PDF/paste and AI line reconciliation. Documents: inbox and extraction. "
+            "No change to import or reconciliation logic."
+        )
+        reconcile_root_layout.addWidget(reconcile_banner)
+        reconcile_root_layout.addWidget(self._reconcile_hub, stretch=1)
+
+        self._reports_tab = ReportsTab(conn)
+        self._journal_tab = JournalTab(conn)
+        self._business_hub = BusinessHub(conn)
+        self._audit_tab = AuditTab(conn)
+
+        self._more_hub = QTabWidget()
+        self._more_hub.setToolTip(
+            "More: Reports, Journal, Business, and Audit log (legacy locations; full migration pending). "
+            "Same company .db (File → Backup / Restore, probooks.backup)."
+        )
+        self._more_hub.addTab(self._reports_tab, "Reports")
+        self._more_hub.addTab(self._journal_tab, "Journal")
+        self._more_hub.addTab(self._business_hub, "Business")
+        self._more_hub.addTab(self._audit_tab, "Audit log")
+
+        self._tabs.addTab(self._invoice_screen, "Invoices")
+        self._tabs.addTab(self._enter_bills_screen, "Enter Bills")
+        self._tabs.addTab(self._pay_bills_screen, "Pay Bills")
+        self._tabs.addTab(self._receive_payments_screen, "Receive Payments")
+        self._tabs.addTab(self._register_tab, "Bank Register")
+        self._tabs.addTab(self._coa_tab, "Chart of Accounts")
+        self._tabs.addTab(self._customers_tab, "Customers")
+        self._tabs.addTab(self._vendors_tab, "Vendors")
+        self._tabs.addTab(self._reconcile_root, "Reconcile")
+        self._tabs.addTab(self._more_hub, "More")
+
+    def _apply_main_tab_bar_tooltips(self) -> None:
         main_tab_bar = self._tabs.tabBar()
-        main_tab_bar.setTabToolTip(TAB_IDX_INVOICES, "Invoices")
-        main_tab_bar.setTabToolTip(TAB_IDX_ENTER_BILLS, "Enter Bills")
-        main_tab_bar.setTabToolTip(TAB_IDX_PAY_BILLS, "Pay Bills")
-        main_tab_bar.setTabToolTip(TAB_IDX_RECEIVE_PAYMENTS, "Receive Payments")
-        main_tab_bar.setTabToolTip(TAB_IDX_BANK_REGISTER, "Bank Register source of truth")
-        main_tab_bar.setTabToolTip(TAB_IDX_CHART_OF_ACCOUNTS, "Chart of Accounts")
-        main_tab_bar.setTabToolTip(TAB_IDX_CUSTOMERS, "Customers")
-        main_tab_bar.setTabToolTip(TAB_IDX_VENDORS, "Vendors")
-        main_tab_bar.setTabToolTip(TAB_IDX_RECONCILE, "Reconcile")
+        _main_tab_bar_db_hint = " Same company .db (File → Backup / Restore, probooks.backup)."
+        _tab_bar_csv_excel_hint = " CSV: UTF-8 with BOM for Excel."
+        tips = [
+            (
+                "Invoices: invoice entry workflow (line items, Bill To, print/PDF when connected). "
+                + _main_tab_bar_db_hint
+            ),
+            (
+                "Enter Bills: bill header and expense lines (vendor-backed when connected)."
+                + _main_tab_bar_db_hint
+            ),
+            (
+                "Pay Bills: payables grid (visual foundation; full A/P posting pending)."
+                + _main_tab_bar_db_hint
+            ),
+            (
+                "Receive Payments: customer payments against open invoices (visual foundation)."
+                + _main_tab_bar_db_hint
+            ),
+            (
+                "Bank Register: check-register grid for one bank account; inline edits where allowed; F5 refresh. "
+                "Reconciliation mode + Match overlay (Bank Import AI line reconciliation can populate it). "
+                "Bulk actions: Recon menu."
+                + _tab_bar_csv_excel_hint
+                + _main_tab_bar_db_hint
+            ),
+            (
+                "Chart of accounts: add, edit, deactivate; used in journal, reports, and pickers."
+                + _main_tab_bar_db_hint
+            ),
+            (
+                "Customers: customer master (detail + list), balances and activity; export customers CSV (F5). "
+                "Invoices, payments, and AR exports use Invoices, Receive Payments, and Reports (Business hub holds Rules, Payroll, Tax % only)."
+                + _tab_bar_csv_excel_hint
+                + _main_tab_bar_db_hint
+            ),
+            (
+                "Vendors: vendor master (detail + list), balances and activity; export vendors CSV (F5). "
+                "Bills and payments use Enter Bills, Pay Bills, and Reports (Business hub holds Rules, Payroll, Tax % only)."
+                + _tab_bar_csv_excel_hint
+                + _main_tab_bar_db_hint
+            ),
+            (
+                "Reconcile: Bank statements (CSV/PDF, AI line reconciliation, Match overlay sync) and Documents."
+                + _tab_bar_csv_excel_hint
+                + _main_tab_bar_db_hint
+            ),
+            (
+                "More: Reports, Journal, Business hub, and Audit log."
+                + _tab_bar_csv_excel_hint
+                + _main_tab_bar_db_hint
+            ),
+        ]
+        for i, tip in enumerate(tips):
+            main_tab_bar.setTabToolTip(i, tip)
+
+    def _teardown_main_tabs_for_rebuild(self) -> None:
+        """Remove main tabs and dispose widgets except the shared Document Intake root widget."""
+        old_reg = getattr(self, "_register_tab", None)
+        if old_reg is not None:
+            try:
+                old_reg.reconciliationModeChanged.disconnect()
+            except TypeError:
+                pass
+        rh = getattr(self, "_reconcile_hub", None)
+        iw = getattr(self, "_intake_widget", None)
+        if rh is not None and iw is not None:
+            ix = rh.indexOf(iw)
+            if ix >= 0:
+                rh.removeTab(ix)
+            iw.setParent(None)
+        while self._tabs.count() > 0:
+            w = self._tabs.widget(0)
+            self._tabs.removeTab(0)
+            if w is not None and w is not iw:
+                w.deleteLater()
+
+    # -- UI construction -----------------------------------------------------
+
+    def _build_ui(self):
+        self._build_menu_bar()
+
+        # Container: header banner + tab widget
+        container = QWidget()
+        container.setToolTip(
+            "Main workspace: fixed-order tabs (Invoices through More). "
+            "Bank Import and Register host statement reconciliation, AI line reconciliation, and Register Match overlay. "
+            "All tabs share the open SQLite company file (File → Backup / Restore, probooks.backup)."
+        )
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(0)
+
+        self._header = AppHeaderWidget()
+        container_layout.addWidget(self._header)
+
+        self._tabs = QTabWidget()
+        self._tabs.setToolTip(
+            "Main workspace: Invoices, Enter Bills, Pay Bills, Receive Payments, Bank Register, "
+            "Chart of Accounts, Customers, Vendors, Reconcile, and More (hover each tab). "
+            "File → Backup / Restore applies to the whole company database (CLI: probooks backup / restore)."
+        )
+
+        self._build_document_intake_widget()
+        self._assemble_main_tabs()
+        self._apply_main_tab_bar_tooltips()
+        self._wire_register_bank_match_navigation()
 
         container_layout.addWidget(self._tabs)
-
-        more_box = QGroupBox("More")
-        more_box.setToolTip(
-            "Fixed secondary area for non-top-line views: Document Intake, Bank Import, Reports, Journal, Business, Audit Log."
-        )
-        more_layout = QVBoxLayout(more_box)
-        more_layout.setContentsMargins(8, 8, 8, 8)
-        more_layout.setSpacing(6)
-        more_layout.addWidget(self._more_selector)
-        more_layout.addWidget(self._more_stack)
-        container_layout.addWidget(more_box)
-
         self.setCentralWidget(container)
 
+        # Status bar
         self._status_bar = QStatusBar()
         self.setStatusBar(self._status_bar)
         _boot_ver = application_version()
         self._status_bar.showMessage(
             escape_ampersand_for_qt(
-                "Ready – daily operations on top tabs; Document Intake / Bank Import / Reports / Journal / Business / Audit in More. "
-                "File → Backup saves the company .db."
+                "Ready \u2013 drag & drop or use Import; bank CSV/PDF and AI line reconciliation: "
+                "Reconcile → Bank statements (Ctrl+9); File → Backup saves the company .db."
             )
             + f" ProBooks+ai v{_boot_ver}."
         )
 
+        # Drag & drop on the main window itself
         self.setAcceptDrops(True)
 
     # -- menu bar ------------------------------------------------------------
@@ -1017,6 +1190,15 @@ class MainWindow(QMainWindow):
         )
         act_new_company.triggered.connect(self._on_new_company_database)
         file_menu.addAction(act_new_company)
+
+        act_company_setup = QAction("Company &Setup\u2026", self)
+        _menu_action_tip(
+            act_company_setup,
+            "Open Company Setup (More → Business → Company): name, address, and contact "
+            "used as the letterhead on printed and exported invoices.",
+        )
+        act_company_setup.triggered.connect(self._on_company_setup)
+        file_menu.addAction(act_company_setup)
 
         act_backup = QAction("&Backup company file\u2026", self)
         _menu_action_tip(
@@ -1074,48 +1256,47 @@ class MainWindow(QMainWindow):
         act_exit.triggered.connect(self.close)
         file_menu.addAction(act_exit)
 
-        # View menu — fixed top tabs + fixed More area
+        # View menu — tab shortcuts (tabs are created later; shortcuts fire after UI exists)
         view_menu = mb.addMenu("&View")
         _view_tab_tip_suffix = (
             " Same company SQLite file (File → Backup / Restore, probooks.backup)."
         )
+        _view_tab_tip_extra = {
+            0: " Invoice entry workflow.",
+            1: " Enter Bills screen.",
+            2: " Pay Bills screen.",
+            3: " Receive Payments screen.",
+            4: " Bank Register: Match overlay (Bank Import can populate).",
+            5: " Chart of Accounts editor.",
+            6: " AR: customers, invoices, payments (primary route; Business hub is Rules/Payroll/Tax %).",
+            7: " AP: vendors, bills, payments (primary route; Business hub is Rules/Payroll/Tax %).",
+            8: " Reconcile: Bank statements + Documents (intake → review/match).",
+        }
         for idx, (sc, label) in enumerate(
             [
                 ("Ctrl+1", "&Invoices"),
-                ("Ctrl+2", "Enter &Bills"),
+                ("Ctrl+2", "&Enter Bills"),
                 ("Ctrl+3", "&Pay Bills"),
-                ("Ctrl+4", "Receive &Payments"),
-                ("Ctrl+5", "Bank &Register"),
+                ("Ctrl+4", "&Receive Payments"),
+                ("Ctrl+5", "&Bank Register"),
                 ("Ctrl+6", "Chart of &Accounts"),
                 ("Ctrl+7", "&Customers"),
                 ("Ctrl+8", "&Vendors"),
                 ("Ctrl+9", "&Reconcile"),
+                ("Ctrl+0", "&More"),
             ]
         ):
             act = QAction(label, self)
             act.setShortcut(sc)
             act.setShortcutContext(Qt.ApplicationShortcut)
-            _menu_action_tip(act, f"Show this top tab ({sc}).{_view_tab_tip_suffix}")
+            extra = _view_tab_tip_extra.get(idx, " Reports, Journal, Business, Audit log.")
+            _menu_action_tip(
+                act, f"Show this main tab ({sc}).{extra}{_view_tab_tip_suffix}"
+            )
             act.triggered.connect(
                 lambda checked=False, i=idx: self._set_main_tab_index(i)
             )
             view_menu.addAction(act)
-
-        view_menu.addSeparator()
-        more_menu = view_menu.addMenu("&More")
-        for page in (
-            "Document Intake",
-            "Bank Import",
-            "Reports",
-            "Journal",
-            "Business",
-            "Audit Log",
-        ):
-            act_more = QAction(page, self)
-            act_more.triggered.connect(
-                lambda checked=False, p=page: self._set_more_page_by_name(p)
-            )
-            more_menu.addAction(act_more)
 
         # Edit menu
         edit_menu = mb.addMenu("&Edit")
@@ -1145,45 +1326,19 @@ class MainWindow(QMainWindow):
         act_prefs.setEnabled(False)
         edit_menu.addAction(act_prefs)
 
-        # Tools menu — direct routing to top operational tabs
+        # Tools menu — general utilities (invoice entry on top-level Invoices tab)
         tools_menu = mb.addMenu("&Tools")
-
-        act_tools_invoice = QAction("&Invoice…", self)
+        act_tools_invoice = QAction("&Invoice\u2026", self)
         act_tools_invoice.setShortcut("Ctrl+Shift+I")
         act_tools_invoice.setShortcutContext(Qt.ApplicationShortcut)
-        _menu_action_tip(act_tools_invoice, "Open top tab: Invoices (Ctrl+Shift+I).")
+        _menu_action_tip(
+            act_tools_invoice,
+            "Open the **Invoices** main tab (Ctrl+Shift+I). "
+            "Full AR lists and payments: **Customers** tab. "
+            "Same company .db (File → Backup / Restore, probooks.backup).",
+        )
         act_tools_invoice.triggered.connect(self._on_tools_invoice)
         tools_menu.addAction(act_tools_invoice)
-
-        act_tools_enter_bills = QAction("Enter &Bills…", self)
-        _menu_action_tip(act_tools_enter_bills, "Open top tab: Enter Bills.")
-        act_tools_enter_bills.triggered.connect(self._on_tools_enter_bills)
-        tools_menu.addAction(act_tools_enter_bills)
-
-        act_tools_pay_bills = QAction("&Pay Bills…", self)
-        _menu_action_tip(act_tools_pay_bills, "Open top tab: Pay Bills.")
-        act_tools_pay_bills.triggered.connect(self._on_tools_pay_bills)
-        tools_menu.addAction(act_tools_pay_bills)
-
-        act_tools_receive_payments = QAction("Receive &Payments…", self)
-        _menu_action_tip(act_tools_receive_payments, "Open top tab: Receive Payments.")
-        act_tools_receive_payments.triggered.connect(self._on_tools_receive_payments)
-        tools_menu.addAction(act_tools_receive_payments)
-
-        act_tools_customers = QAction("&Customers…", self)
-        _menu_action_tip(act_tools_customers, "Open top tab: Customers.")
-        act_tools_customers.triggered.connect(self._on_tools_customers)
-        tools_menu.addAction(act_tools_customers)
-
-        act_tools_vendors = QAction("&Vendors…", self)
-        _menu_action_tip(act_tools_vendors, "Open top tab: Vendors.")
-        act_tools_vendors.triggered.connect(self._on_tools_vendors)
-        tools_menu.addAction(act_tools_vendors)
-
-        act_tools_reconcile = QAction("&Reconcile…", self)
-        _menu_action_tip(act_tools_reconcile, "Open top tab: Reconcile.")
-        act_tools_reconcile.triggered.connect(self._on_tools_reconcile)
-        tools_menu.addAction(act_tools_reconcile)
 
         # Recon menu — bank register bulk actions (moved from the register tab for a table-focused UI)
         recon_menu = mb.addMenu("&Recon")
@@ -1472,10 +1627,6 @@ class MainWindow(QMainWindow):
         )
 
     def _on_import(self):
-        trace_entry(
-            trigger_hint="menu_action_or_shortcut:File->Import documents",
-            note="MainWindow import documents handler",
-        )
         paths, _ = QFileDialog.getOpenFileNames(
             self,
             "Import Documents",
@@ -1643,216 +1794,27 @@ class MainWindow(QMainWindow):
         self._detail.update_coa(coa_display)
         self._register_tab.refresh_coa_choices()
 
-    def _make_navigation_shell(self, title: str, description: str, actions: list[tuple[str, str, callable]]) -> QWidget:
-        shell = QWidget()
-        lay = QVBoxLayout(shell)
-        title_lbl = QLabel(f"<b>{escape_html_text(title)}</b>")
-        body_lbl = QLabel(description)
-        body_lbl.setWordWrap(True)
-        lay.addWidget(title_lbl)
-        lay.addWidget(body_lbl)
-        btn_row = QHBoxLayout()
-        for label, tip, cb in actions:
-            btn = QPushButton(label)
-            btn.setToolTip(tip)
-            btn.clicked.connect(cb)
-            btn_row.addWidget(btn)
-        btn_row.addStretch()
-        lay.addLayout(btn_row)
-        lay.addStretch()
-        return shell
-
-    def _populate_navigation_views(self) -> None:
-        # Clear top tabs
-        while self._tabs.count():
-            w = self._tabs.widget(0)
-            self._tabs.removeTab(0)
-            if w is not None:
-                w.deleteLater()
-
-        # Core runtime widgets (shared source-of-truth DB connection)
-        self._register_tab = RegisterTab(self._bank_db, self._coa_db, self._gl_db)
-        self._bank_tab = BankImportTab(
-            self._bank_db,
-            self._coa_db,
-            register_tab=self._register_tab,
-            after_stmt_match_sync=self._focus_bank_register_tab,
-        )
-        self._coa_tab = COATab(self._coa_db)
-        self._coa_tab.coaChanged.connect(self._on_coa_changed)
-
-        self._tab_invoices = ARTab(self._bank_db._conn)
-        self._tab_enter_bills = APTab(self._bank_db._conn)
-
-        self._tab_pay_bills = self._make_navigation_shell(
-            "Pay Bills",
-            "Dedicated AP payment entry point. Uses Enter Bills workflows and Bank Register source-of-truth links.",
-            [
-                (
-                    "Record vendor payment…",
-                    "Open the AP payment flow.",
-                    lambda: self._tab_enter_bills._record_ap_payment(),
-                ),
-                (
-                    "Go to Enter Bills",
-                    "Switch to Enter Bills top tab.",
-                    self._on_tools_enter_bills,
-                ),
-            ],
-        )
-
-        self._tab_receive_payments = self._make_navigation_shell(
-            "Receive Payments",
-            "Dedicated AR payment entry point. Uses Invoices workflows and Bank Register source-of-truth links.",
-            [
-                (
-                    "Record customer payment…",
-                    "Open the AR payment flow.",
-                    lambda: self._tab_invoices._record_ar_payment(),
-                ),
-                (
-                    "Go to Invoices",
-                    "Switch to Invoices top tab.",
-                    self._on_tools_invoice,
-                ),
-            ],
-        )
-
-        self._tab_customers = self._make_navigation_shell(
-            "Customers",
-            "Dedicated customer management entry point (implemented by AR customer workflows).",
-            [
-                (
-                    "New customer…",
-                    "Create customer record.",
-                    lambda: self._tab_invoices._new_cust(),
-                ),
-                (
-                    "Edit customer…",
-                    "Edit existing customer.",
-                    lambda: self._tab_invoices._edit_cust(),
-                ),
-            ],
-        )
-
-        self._tab_vendors = self._make_navigation_shell(
-            "Vendors",
-            "Dedicated vendor management entry point (implemented by AP vendor workflows).",
-            [
-                (
-                    "New vendor…",
-                    "Create vendor record.",
-                    lambda: self._tab_enter_bills._new_v(),
-                ),
-                (
-                    "Edit vendor…",
-                    "Edit existing vendor.",
-                    lambda: self._tab_enter_bills._edit_v(),
-                ),
-            ],
-        )
-
-        self._tab_reconcile = self._make_navigation_shell(
-            "Reconcile",
-            "Dedicated reconcile tab that operates against Bank Register data only. It never hides or reorders top-level tabs.",
-            [
-                (
-                    "Open Bank Register",
-                    "Switch to Bank Register top tab.",
-                    lambda: self._set_main_tab_index(TAB_IDX_BANK_REGISTER),
-                ),
-                (
-                    "Enable reconcile mode",
-                    "Enable reconciliation mode on Bank Register.",
-                    lambda: (self._set_main_tab_index(TAB_IDX_BANK_REGISTER), self._register_tab._chk_recon.setChecked(True)),
-                ),
-                (
-                    "Disable reconcile mode",
-                    "Disable reconciliation mode on Bank Register.",
-                    lambda: (self._set_main_tab_index(TAB_IDX_BANK_REGISTER), self._register_tab._chk_recon.setChecked(False)),
-                ),
-            ],
-        )
-
-        # Fixed top tab order (approved)
-        self._tabs.addTab(self._tab_invoices, "Invoices")
-        self._tabs.addTab(self._tab_enter_bills, "Enter Bills")
-        self._tabs.addTab(self._tab_pay_bills, "Pay Bills")
-        self._tabs.addTab(self._tab_receive_payments, "Receive Payments")
-        self._tabs.addTab(self._register_tab, "Bank Register")
-        self._tabs.addTab(self._coa_tab, "Chart of Accounts")
-        self._tabs.addTab(self._tab_customers, "Customers")
-        self._tabs.addTab(self._tab_vendors, "Vendors")
-        self._tabs.addTab(self._tab_reconcile, "Reconcile")
-
-        # Rebuild fixed More area pages.
-        self._more_selector.blockSignals(True)
-        self._more_selector.clear()
-        while self._more_stack.count():
-            w = self._more_stack.widget(0)
-            self._more_stack.removeWidget(w)
-            if w is not None and w is not self._intake_widget:
-                w.deleteLater()
-
-        self._tab_reports = ReportsTab(self._bank_db._conn)
-        self._tab_journal = JournalTab(self._bank_db._conn)
-        self._business_hub = BusinessHub(self._bank_db._conn)
-        self._tab_audit = AuditTab(self._bank_db._conn)
-
-        self._more_page_indices = {}
-
-        def add_more(name: str, widget: QWidget) -> None:
-            idx = self._more_stack.addWidget(widget)
-            self._more_selector.addItem(name)
-            self._more_page_indices[name] = idx
-
-        add_more("Document Intake", self._intake_widget)
-        add_more("Bank Import", self._bank_tab)
-        add_more("Reports", self._tab_reports)
-        add_more("Journal", self._tab_journal)
-        add_more("Business", self._business_hub)
-        add_more("Audit Log", self._tab_audit)
-
-        self._more_selector.blockSignals(False)
-        self._set_more_page_by_name("Document Intake")
-
-        self._register_tab.reconciliationModeChanged.connect(
-            self._sync_bank_workflow_tabs_for_reconciliation_mode
-        )
-        self._sync_bank_workflow_tabs_for_reconciliation_mode(
-            self._register_tab.is_reconciliation_mode()
-        )
-        self._wire_register_bank_match_navigation()
-
-    def _set_more_page_by_name(self, page_name: str) -> None:
-        if not hasattr(self, "_more_page_indices"):
-            return
-        idx = self._more_page_indices.get(page_name)
-        if idx is None:
-            return
-        self._more_selector.setCurrentIndex(idx)
-        self._more_stack.setCurrentIndex(idx)
-
     def _on_tools_invoice(self) -> None:
-        self._set_main_tab_index(TAB_IDX_INVOICES)
+        """Tools → Invoice: top-level Invoices tab."""
+        if not hasattr(self, "_tabs") or not hasattr(self, "_invoice_screen"):
+            return
+        idx = self._tabs.indexOf(self._invoice_screen)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
 
-    def _on_tools_enter_bills(self) -> None:
-        self._set_main_tab_index(TAB_IDX_ENTER_BILLS)
-
-    def _on_tools_pay_bills(self) -> None:
-        self._set_main_tab_index(TAB_IDX_PAY_BILLS)
-
-    def _on_tools_receive_payments(self) -> None:
-        self._set_main_tab_index(TAB_IDX_RECEIVE_PAYMENTS)
-
-    def _on_tools_customers(self) -> None:
-        self._set_main_tab_index(TAB_IDX_CUSTOMERS)
-
-    def _on_tools_vendors(self) -> None:
-        self._set_main_tab_index(TAB_IDX_VENDORS)
-
-    def _on_tools_reconcile(self) -> None:
-        self._set_main_tab_index(TAB_IDX_RECONCILE)
+    def _on_company_setup(self) -> None:
+        """File → Company Setup: navigate to More → Business → Company sub-tab."""
+        if not hasattr(self, "_tabs") or not hasattr(self, "_more_hub"):
+            return
+        idx = self._tabs.indexOf(self._more_hub)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+        if not hasattr(self, "_business_hub"):
+            return
+        biz_idx = self._more_hub.indexOf(self._business_hub)
+        if biz_idx >= 0:
+            self._more_hub.setCurrentIndex(biz_idx)
+        self._business_hub.focus_company_subtab()
 
     def _set_main_tab_index(self, index: int) -> None:
         if not hasattr(self, "_tabs"):
@@ -1861,38 +1823,142 @@ class MainWindow(QMainWindow):
             return
         self._tabs.setCurrentIndex(index)
 
-    def _sync_bank_workflow_tabs_for_reconciliation_mode(self, recon_on: bool) -> None:
-        # Fixed top-level tab structure by design; reconciliation mode must never mutate top tab visibility/order.
-        _ = recon_on
-
     def _focus_bank_register_tab(self) -> None:
+        """Focus **Bank register** after Bank Import syncs line-match results to the Match overlay.
+
+        Shows a temporary **status bar** message, then schedules :meth:`_update_company_status`
+        so the default company line returns when the message clears.
+        """
         if not hasattr(self, "_tabs") or not hasattr(self, "_register_tab"):
             return
-        self._set_main_tab_index(TAB_IDX_BANK_REGISTER)
-        if hasattr(self, "_status_bar"):
-            self._status_bar.showMessage(
-                "Match overlay updated on Bank Register. Reconcile state is on the Register source-of-truth tab.",
-                _STMT_MATCH_SYNC_STATUS_MS,
-            )
-            QTimer.singleShot(
-                _STMT_MATCH_SYNC_STATUS_MS,
-                self._update_company_status,
-            )
+        idx = self._tabs.indexOf(self._register_tab)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+            if hasattr(self, "_status_bar"):
+                self._status_bar.showMessage(
+                    "Match overlay updated on Bank register. Reconciliation mode is on. "
+                    "Row field copies: Bank Import line-reconciliation grid (Help → Bank import shortcuts…).",
+                    _STMT_MATCH_SYNC_STATUS_MS,
+                )
+                QTimer.singleShot(
+                    _STMT_MATCH_SYNC_STATUS_MS,
+                    self._update_company_status,
+                )
 
     def _navigate_register_bank_match_link(self, link_type: str, link_id: int) -> None:
+        """Bank register Match link: AR/AP go to Customers/Vendors; payroll opens More → Business → Payroll."""
+        if not hasattr(self, "_customers_tab") or not hasattr(self, "_vendors_tab"):
+            return
         lt = (link_type or "").strip()
+        try:
+            lid = int(link_id)
+        except (TypeError, ValueError):
+            message_box_information_ok(
+                self,
+                "Business link",
+                "Invalid link id.",
+                ok_tip="Close; clear the bank link and set it again if needed.",
+            )
+            return
+        conn = self._bank_db._conn
         if lt == "ar_invoice":
-            self._set_main_tab_index(TAB_IDX_INVOICES)
-            self._tab_invoices.open_invoice_by_id(link_id)
+            idx = self._tabs.indexOf(self._invoice_screen)
+            if idx >= 0:
+                self._tabs.setCurrentIndex(idx)
+            self._invoice_screen.open_invoice_by_id(lid)
             return
         if lt == "ap_bill":
-            self._set_main_tab_index(TAB_IDX_ENTER_BILLS)
-            self._tab_enter_bills.open_bill_by_id(link_id)
+            idx = self._tabs.indexOf(self._enter_bills_screen)
+            if idx >= 0:
+                self._tabs.setCurrentIndex(idx)
+            self._enter_bills_screen.open_bill_by_id(lid)
             return
-        # Payroll and payment summary links continue through Business logic in More area.
-        self._set_more_page_by_name("Business")
-        if hasattr(self, "_business_hub"):
+        if lt == "ar_payment":
+            idx = self._tabs.indexOf(self._receive_payments_screen)
+            if idx >= 0:
+                self._tabs.setCurrentIndex(idx)
+            row = conn.execute(
+                """
+                SELECT p.payment_date, p.amount, p.reference, c.name AS party_name
+                FROM ar_payments p
+                JOIN customers c ON c.id = p.customer_id
+                WHERE p.id = ?
+                """,
+                (lid,),
+            ).fetchone()
+            if row is None:
+                message_box_information_ok(
+                    self,
+                    "AR payment",
+                    f"No AR payment #{lid} in this company file.",
+                    ok_tip="Close; the link may point at removed data.",
+                )
+                return
+            r = dict(row)
+            ref = (r.get("reference") or "").strip() or "—"
+            message_box_information_ok(
+                self,
+                "AR payment",
+                f"AR payment #{lid}: {r['payment_date']}  ${float(r['amount']):.2f}  — {r['party_name']}\n"
+                f"Reference: {ref}\n\n"
+                "Export AR payments CSV from More → Reports or Receive Payments as needed; record new payments via Record customer payment… on Receive Payments.",
+                ok_tip="Close; you are on the Receive Payments tab.",
+            )
+            return
+        if lt == "ap_payment":
+            idx = self._tabs.indexOf(self._pay_bills_screen)
+            if idx >= 0:
+                self._tabs.setCurrentIndex(idx)
+            row = conn.execute(
+                """
+                SELECT p.payment_date, p.amount, p.reference, v.name AS party_name
+                FROM ap_payments p
+                JOIN vendors v ON v.id = p.vendor_id
+                WHERE p.id = ?
+                """,
+                (lid,),
+            ).fetchone()
+            if row is None:
+                message_box_information_ok(
+                    self,
+                    "AP payment",
+                    f"No AP payment #{lid} in this company file.",
+                    ok_tip="Close; the link may point at removed data.",
+                )
+                return
+            r = dict(row)
+            ref = (r.get("reference") or "").strip() or "—"
+            message_box_information_ok(
+                self,
+                "AP payment",
+                f"AP payment #{lid}: {r['payment_date']}  ${float(r['amount']):.2f}  — {r['party_name']}\n"
+                f"Reference: {ref}\n\n"
+                "Export AP payments CSV from More → Reports or Pay Bills as needed; record new payments on Pay Bills.",
+                ok_tip="Close; you are on the Pay Bills tab.",
+            )
+            return
+        if lt == "payroll_run":
+            if not hasattr(self, "_business_hub") or not hasattr(self, "_more_hub"):
+                return
+            idx = self._tabs.indexOf(self._more_hub)
+            if idx >= 0:
+                self._tabs.setCurrentIndex(idx)
+            self._more_hub.setCurrentWidget(self._business_hub)
             self._business_hub.navigate_bank_match_link(self, link_type, link_id)
+            return
+        message_box_information_ok(
+            self,
+            "Business link",
+            f"Unsupported link type: {lt or '(empty)'}",
+            ok_tip="Close; clear the link or pick a supported AR/AP/payroll target.",
+        )
+
+    def _wire_register_bank_match_navigation(self) -> None:
+        if not hasattr(self, "_register_tab"):
+            return
+        self._register_tab.openBankMatchNavigationRequested.connect(
+            self._navigate_register_bank_match_link
+        )
 
     def _sync_window_title(self) -> None:
         ver = application_version()
@@ -1910,7 +1976,7 @@ class MainWindow(QMainWindow):
         self._status_bar.showMessage(
             escape_ampersand_for_qt(
                 f"Company: {p}  \u2013  drag & drop or Import; bank CSV/PDF and AI line reconciliation: "
-                f"Bank Import (Ctrl+2); File → Backup copies this .db."
+                f"Reconcile → Bank statements (Ctrl+9); File → Backup copies this .db."
             )
             + f" ProBooks+ai v{_sv}."
         )
@@ -1921,8 +1987,11 @@ class MainWindow(QMainWindow):
         self._sync_window_title()
 
     def _rebuild_bank_related_tabs(self):
-        """Rebuild runtime-connected top tabs + More pages after switching SQLite company file."""
-        self._populate_navigation_views()
+        """Replace main tabs after switching SQLite company file (reuses Document Intake widget)."""
+        self._teardown_main_tabs_for_rebuild()
+        self._assemble_main_tabs()
+        self._apply_main_tab_bar_tooltips()
+        self._wire_register_bank_match_navigation()
 
     def _load_company_at_path(self, resolved: str) -> None:
         """Open SQLite at *resolved* and rebuild bank-side tabs + intake COA."""
@@ -1993,10 +2062,6 @@ class MainWindow(QMainWindow):
         self._load_company_at_path(resolved)
 
     def _on_backup_company(self):
-        trace_entry(
-            trigger_hint="menu_action:File->Backup company file",
-            note="MainWindow backup handler",
-        )
         if self._worker and self._worker.isRunning():
             message_box_warning_ok(
                 self,
@@ -2043,10 +2108,6 @@ class MainWindow(QMainWindow):
         )
 
     def _on_restore_company(self):
-        trace_entry(
-            trigger_hint="menu_action:File->Restore from backup",
-            note="MainWindow restore handler",
-        )
         if self._worker and self._worker.isRunning():
             message_box_warning_ok(
                 self,
@@ -2136,10 +2197,6 @@ class MainWindow(QMainWindow):
         )
 
     def _on_open_company_database(self):
-        trace_entry(
-            trigger_hint="menu_action_or_shortcut:File->Open company database",
-            note="MainWindow open company database handler",
-        )
         prev = QSettings().value("company_database_path", "", type=str) or ""
         start_dir = str(Path(prev).parent) if prev else ""
         path, _ = QFileDialog.getOpenFileName(
@@ -2152,10 +2209,6 @@ class MainWindow(QMainWindow):
             self._switch_company_database(path, create_new=False)
 
     def _on_new_company_database(self):
-        trace_entry(
-            trigger_hint="menu_action:File->New company database",
-            note="MainWindow new company database handler",
-        )
         prev = QSettings().value("company_database_path", "", type=str) or ""
         start_dir = str(Path(prev).parent) if prev else ""
         path, _ = QFileDialog.getSaveFileName(
@@ -2226,7 +2279,6 @@ def main():
     args = parser.parse_args()
 
     app = QApplication(sys.argv)
-    init_dialog_trace(app)
     app.setApplicationName("ProBooks+ai")
     app.setOrganizationName("ProBooks+ai")
     apply_dark_theme(app)
