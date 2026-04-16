@@ -1128,8 +1128,8 @@ def test_save_invoice_pdf_smoke(db, tmp_path):
     assert out.is_file() and out.stat().st_size > 400
 
 
-def test_invoice_html_string_uses_company_settings_letterhead(db) -> None:
-    """Live invoice HTML pulls sender block from company_settings (not hardcoded)."""
+def test_invoice_html_string_uses_company_setup_letterhead(db) -> None:
+    """Live invoice HTML pulls sender block from Company setup keys in company_settings."""
     from desktop_app.invoice_pdf import invoice_html_string
 
     cid = business.add_customer(db._conn, "Cust LLC", address="1 Oak St")
@@ -1141,10 +1141,65 @@ def test_invoice_html_string_uses_company_settings_letterhead(db) -> None:
         lines=[{"description": "Line", "qty": 1, "rate": 10.0}],
         tax_rate_pct=0,
     )
-    business.set_setting(db._conn, "invoice_company_name", "SettingsCo & Sons")
+    business.set_setting(db._conn, "company_setup_name", "SetupCo & Sons")
+    business.set_setting(db._conn, "company_setup_addr1", "100 Main St")
+    business.set_setting(db._conn, "company_setup_city", "Austin")
+    business.set_setting(db._conn, "company_setup_state", "TX")
+    business.set_setting(db._conn, "company_setup_zip", "78701")
+    business.set_setting(db._conn, "company_setup_phone", "555-0100")
+    business.set_setting(db._conn, "company_setup_email", "hello@example.com")
     db._conn.commit()
     html = invoice_html_string(db._conn, iid)
-    assert "SettingsCo &amp; Sons" in html
+    assert "SetupCo &amp; Sons" in html
+    assert "100 Main St" in html
+    assert "Austin, TX 78701" in html
+    assert "555-0100" in html
+    assert "hello@example.com" in html
+
+
+def test_invoice_html_string_legacy_invoice_company_keys_fallback(db) -> None:
+    """Older invoice_company_* settings still work when company_setup_* is empty."""
+    from desktop_app.invoice_pdf import invoice_html_string
+
+    cid = business.add_customer(db._conn, "Cust2", address="")
+    iid = business.create_invoice(
+        db._conn,
+        cid,
+        "L-H-2",
+        "2024-06-02",
+        lines=[{"description": "x", "qty": 1, "rate": 1.0}],
+        tax_rate_pct=0,
+    )
+    business.set_setting(db._conn, "invoice_company_name", "Legacy Co")
+    db._conn.commit()
+    html = invoice_html_string(db._conn, iid)
+    assert "Legacy Co" in html
+
+
+def test_invoice_html_string_invoice_company_block_overrides_setup(db) -> None:
+    """Multiline invoice_company_block wins over structured company_setup_* fields."""
+    from desktop_app.invoice_pdf import invoice_html_string
+
+    cid = business.add_customer(db._conn, "Cust3", address="")
+    iid = business.create_invoice(
+        db._conn,
+        cid,
+        "L-H-3",
+        "2024-06-03",
+        lines=[{"description": "x", "qty": 1, "rate": 1.0}],
+        tax_rate_pct=0,
+    )
+    business.set_setting(db._conn, "company_setup_name", "Ignored Name")
+    business.set_setting(
+        db._conn,
+        "invoice_company_block",
+        "Block & Co.\nSecond line",
+    )
+    db._conn.commit()
+    html = invoice_html_string(db._conn, iid)
+    assert "Block &amp; Co." in html
+    assert "Second line" in html
+    assert "Ignored Name" not in html
 
 
 def test_write_ar_and_ap_payments_csv(db, tmp_path):

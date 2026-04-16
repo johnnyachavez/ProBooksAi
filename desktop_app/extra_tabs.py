@@ -1,10 +1,10 @@
 """Rules, AR/AP, payroll, and tax settings (roadmap phases 6, 8–16).
 
 **Business** hub (**F5**): refreshes the active sub-tab list when it defines
-``_refresh`` (Rules, Payroll). **Tax %** is settings-only. Full AR/AP grids live on the top-level **Customers** / **Vendors** tabs.
+``_refresh`` (Rules, Payroll). **Tax %** and **Company** are settings-only. Full AR/AP grids live on the top-level **Customers** / **Vendors** tabs.
 Invoice print/PDF is only from the **Invoice** workflow tab (``invoice_screen``), not AR list toolbars.
 The **BusinessHub** root **QWidget** has a hover hint; the nested **QTabWidget** strip has a **setToolTip** for switching subtabs.
-Each **sub-tab** on the hub bar has a **setTabToolTip** summary (Rules, Payroll, Tax %).
+Each **sub-tab** on the hub bar has a **setTabToolTip** summary (Rules, Payroll, Tax %, Company).
 **Rules**, **Payroll**, and **Tax %** hub tab roots also set **self.setToolTip** for margin hover.
 **Keyboard shortcuts…** on Rules / AR / AP / Payroll grids (including empty area)
 matches **Help → Business shortcuts…**; context-menu **QAction**s use **setToolTip**. The same dialog is offered on Business modal tables
@@ -2452,6 +2452,91 @@ class PayrollTaxTab(QWidget):
         self._refresh()
 
 
+class CompanySetupTab(QWidget):
+    """Company identity stored in ``company_settings``; used for invoice print/PDF letterhead."""
+
+    def __init__(self, conn: sqlite3.Connection, parent=None):
+        super().__init__(parent)
+        self._conn = conn
+        self.setToolTip(
+            "Legal or DBA name, mailing address, and contact fields saved to your company file; "
+            "used as the sender block on printed and exported invoices (Ctrl+S or Save)."
+        )
+        root = QVBoxLayout(self)
+        lay = QFormLayout()
+        self._name = QLineEdit()
+        self._addr1 = QLineEdit()
+        self._addr2 = QLineEdit()
+        self._city = QLineEdit()
+        self._state = QLineEdit()
+        self._zip = QLineEdit()
+        self._phone = QLineEdit()
+        self._email = QLineEdit()
+        for w, tip in (
+            (self._name, "Company or DBA name shown at the top of invoices."),
+            (self._addr1, "Street address line 1."),
+            (self._addr2, "Suite, unit, or second line (optional)."),
+            (self._city, "City."),
+            (self._state, "State or province."),
+            (self._zip, "Postal or ZIP code."),
+            (self._phone, "Main business phone (optional)."),
+            (self._email, "Contact email (optional)."),
+        ):
+            w.setToolTip(tip)
+        lay.addRow(escape_ampersand_for_qt("Company name"), self._name)
+        lay.addRow("Address line 1", self._addr1)
+        lay.addRow("Address line 2", self._addr2)
+        lay.addRow("City", self._city)
+        lay.addRow("State", self._state)
+        lay.addRow("Zip", self._zip)
+        lay.addRow("Phone", self._phone)
+        lay.addRow("Email", self._email)
+        root.addLayout(lay)
+        self._load_from_settings()
+        btn = QPushButton("Save company info")
+        btn.setToolTip("Write these fields to the open company database (Ctrl+S does the same).")
+        btn.clicked.connect(self._save)
+        root.addWidget(btn)
+        tip = QLabel(
+            "Saved values appear on invoice PDFs and printouts (Invoices tab). "
+            "Ctrl+S saves while this sub-tab has focus. Help → Business shortcuts… for hub keys."
+        )
+        tip.setWordWrap(True)
+        tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        tip.setToolTip("Same company .db as other tabs; File → Backup / Restore (probooks.backup).")
+        root.addWidget(tip)
+        save_sc = QShortcut(QKeySequence(QKeySequence.StandardKey.Save), self)
+        save_sc.setContext(Qt.WidgetWithChildrenShortcut)
+        save_sc.activated.connect(self._save)
+
+    def _load_from_settings(self) -> None:
+        g = lambda k: (business.get_setting(self._conn, k, "") or "").strip()
+        self._name.setText(g("company_setup_name"))
+        self._addr1.setText(g("company_setup_addr1"))
+        self._addr2.setText(g("company_setup_addr2"))
+        self._city.setText(g("company_setup_city"))
+        self._state.setText(g("company_setup_state"))
+        self._zip.setText(g("company_setup_zip"))
+        self._phone.setText(g("company_setup_phone"))
+        self._email.setText(g("company_setup_email"))
+
+    def _save(self) -> None:
+        business.set_setting(self._conn, "company_setup_name", (self._name.text() or "").strip())
+        business.set_setting(self._conn, "company_setup_addr1", (self._addr1.text() or "").strip())
+        business.set_setting(self._conn, "company_setup_addr2", (self._addr2.text() or "").strip())
+        business.set_setting(self._conn, "company_setup_city", (self._city.text() or "").strip())
+        business.set_setting(self._conn, "company_setup_state", (self._state.text() or "").strip())
+        business.set_setting(self._conn, "company_setup_zip", (self._zip.text() or "").strip())
+        business.set_setting(self._conn, "company_setup_phone", (self._phone.text() or "").strip())
+        business.set_setting(self._conn, "company_setup_email", (self._email.text() or "").strip())
+        message_box_information_ok(
+            self,
+            "Company",
+            "Saved.",
+            ok_tip="Close; invoice print and PDF use this sender block.",
+        )
+
+
 class TaxSettingsTab(QWidget):
     def __init__(self, conn: sqlite3.Connection, parent=None):
         super().__init__(parent)
@@ -2619,12 +2704,14 @@ def _business_keyboard_shortcuts_help_text() -> str:
     return (
         "These shortcuts apply when the Business tab or its controls have focus:\n\n"
         "F5 — Refresh the current sub-tab list (Rules, Payroll). "
-        "Tax % has no list to reload.\n\n"
+        "Tax % and Company have no list to reload.\n\n"
         "CSV exports from Business (Rules, payroll tax report, sales tax summary) use UTF-8 with BOM for Excel. "
         "Customer/vendor lists, invoices/bills, and AR/AP payments export from the main **Customers** and **Vendors** tabs.\n"
         "Rules Import CSV… reads UTF-8 with optional BOM (same as files from Export CSV…).\n\n"
         "On Tax % (settings):\n"
         "Ctrl+S — Save default tax name and rate (standard Save shortcut)\n\n"
+        "On Company (settings):\n"
+        "Ctrl+S — Save company name and address for invoice letterhead\n\n"
         "View menu tab focus: Ctrl+1 Invoices … Ctrl+9 Reconcile, Ctrl+0 More (Reports, Journal, Business, Audit log).\n\n"
         "Tools menu: Ctrl+Shift+I — Invoice… (top-level Invoices tab).\n\n"
         "Right-click the Rules or Payroll grid (including empty area) "
@@ -2663,20 +2750,22 @@ class BusinessHub(QWidget):
         super().__init__(parent)
         self._conn = conn
         self.setToolTip(
-            "Business hub: categorization Rules, Payroll, and default Tax % (F5 refreshes the active list sub-tab). "
+            "Business hub: categorization Rules, Payroll, default Tax %, and Company setup "
+            "(F5 refreshes the active list sub-tab). "
             "Full AR/AP is on the main Customers and Vendors tabs. "
             "CSV exports use UTF-8 BOM for Excel. "
             "Same company SQLite database as other main tabs; File → Backup / Restore (probooks.backup)."
         )
         self._business_subtabs = QTabWidget()
         self._business_subtabs.setToolTip(
-            "Switch between Rules, Payroll, and Tax % "
+            "Switch between Rules, Payroll, Tax %, and Company "
             "(hover each sub-tab for a summary; F5 refreshes list subtabs). "
             "All sub-tabs share the open company .db (File → Backup / probooks backup)."
         )
         self._business_subtabs.addTab(RulesTab(conn), "Rules")
         self._business_subtabs.addTab(PayrollTaxTab(conn), "Payroll")
         self._business_subtabs.addTab(TaxSettingsTab(conn), "Tax %")
+        self._business_subtabs.addTab(CompanySetupTab(conn), "Company")
         bar = self._business_subtabs.tabBar()
         bar.setTabToolTip(
             0,
@@ -2689,6 +2778,10 @@ class BusinessHub(QWidget):
         bar.setTabToolTip(
             2,
             "Default sales tax name and rate for new invoices; export sales tax summary CSV (UTF-8 BOM for Excel).",
+        )
+        bar.setTabToolTip(
+            3,
+            "Company name, address, and contact for invoice print and PDF letterhead.",
         )
         raw_idx = QSettings().value(_BUSINESS_HUB_SUBTAB_KEY, 0)
         want_idx = coerce_combo_int_id(raw_idx)
@@ -2703,7 +2796,7 @@ class BusinessHub(QWidget):
         lay.addWidget(self._business_subtabs)
         tip = QLabel(
             "F5 refreshes the current sub-tab when it has a list (Rules, Payroll). "
-            "Tax % is settings-only; sales tax CSV export uses UTF-8 BOM for Excel. "
+            "Tax % and Company are settings-only; sales tax CSV export uses UTF-8 BOM for Excel. "
             "Help → Business shortcuts… for details; other main tabs also use F5."
         )
         tip.setWordWrap(True)

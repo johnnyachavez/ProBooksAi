@@ -7,6 +7,10 @@
 - ``save_invoice_pdf`` / ``invoice_html_string`` are also used from tests and CLI helpers.
 
 ``save_invoice_pdf`` creates ``QPrinter`` in PDF mode and calls ``QTextDocument.print_``.
+
+Company letterhead comes from **More → Business → Company** (``company_setup_*`` keys in
+``company_settings``), with optional ``invoice_company_block`` override and legacy
+``invoice_company_*`` fallback.
 """
 
 from __future__ import annotations
@@ -25,6 +29,19 @@ from desktop_app.invoice_print_html import (
 )
 
 
+def _format_city_state_zip_line(city: str, state: str, zip_code: str) -> str:
+    city = (city or "").strip()
+    state = (state or "").strip()
+    zip_code = (zip_code or "").strip()
+    if not (city or state or zip_code):
+        return ""
+    if city and state:
+        return f"{city}, {state} {zip_code}".strip()
+    if city:
+        return f"{city} {zip_code}".strip() if zip_code else city
+    return f"{state} {zip_code}".strip() if state or zip_code else ""
+
+
 def _letterhead_plain_from_company_settings(conn: sqlite3.Connection) -> str:
     """Sender block for the PDF from ``company_settings`` (no hardcoded business identity)."""
     from probooksai import business
@@ -32,11 +49,37 @@ def _letterhead_plain_from_company_settings(conn: sqlite3.Connection) -> str:
     block = (business.get_setting(conn, "invoice_company_block", "") or "").strip()
     if block:
         return block
-    name = (business.get_setting(conn, "invoice_company_name", "") or "").strip()
-    addr = (business.get_setting(conn, "invoice_company_address", "") or "").strip()
-    phone = (business.get_setting(conn, "invoice_company_phone", "") or "").strip()
-    parts = [p for p in (name, addr, phone) if p]
-    return "\n".join(parts)
+    name = (business.get_setting(conn, "company_setup_name", "") or "").strip()
+    addr1 = (business.get_setting(conn, "company_setup_addr1", "") or "").strip()
+    addr2 = (business.get_setting(conn, "company_setup_addr2", "") or "").strip()
+    csz = _format_city_state_zip_line(
+        business.get_setting(conn, "company_setup_city", ""),
+        business.get_setting(conn, "company_setup_state", ""),
+        business.get_setting(conn, "company_setup_zip", ""),
+    )
+    phone = (business.get_setting(conn, "company_setup_phone", "") or "").strip()
+    email = (business.get_setting(conn, "company_setup_email", "") or "").strip()
+    parts: list[str] = []
+    if name:
+        parts.append(name)
+    if addr1:
+        parts.append(addr1)
+    if addr2:
+        parts.append(addr2)
+    if csz:
+        parts.append(csz)
+    if phone:
+        parts.append(phone)
+    if email:
+        parts.append(email)
+    if parts:
+        return "\n".join(parts)
+    # Legacy keys (older builds or manual SQL)
+    leg_name = (business.get_setting(conn, "invoice_company_name", "") or "").strip()
+    leg_addr = (business.get_setting(conn, "invoice_company_address", "") or "").strip()
+    leg_phone = (business.get_setting(conn, "invoice_company_phone", "") or "").strip()
+    legacy = [p for p in (leg_name, leg_addr, leg_phone) if p]
+    return "\n".join(legacy)
 
 
 def invoice_html_string(conn: sqlite3.Connection, invoice_id: int) -> str:
