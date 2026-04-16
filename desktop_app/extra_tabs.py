@@ -2810,6 +2810,13 @@ class BusinessHub(QWidget):
         sc_business_f5.setContext(Qt.WidgetWithChildrenShortcut)
         sc_business_f5.activated.connect(self._refresh_current_subtab)
 
+    def focus_company_subtab(self) -> None:
+        """Select the **Company** (Company Setup) sub-tab."""
+        for i in range(self._business_subtabs.count()):
+            if isinstance(self._business_subtabs.widget(i), CompanySetupTab):
+                self._business_subtabs.setCurrentIndex(i)
+                return
+
     def focus_payroll_subtab(self) -> None:
         """Select the **Payroll** sub-tab (index 1)."""
         idx = 1

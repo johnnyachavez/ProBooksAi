@@ -1191,6 +1191,15 @@ class MainWindow(QMainWindow):
         act_new_company.triggered.connect(self._on_new_company_database)
         file_menu.addAction(act_new_company)
 
+        act_company_setup = QAction("Company &Setup\u2026", self)
+        _menu_action_tip(
+            act_company_setup,
+            "Open Company Setup (More → Business → Company): name, address, and contact "
+            "used as the letterhead on printed and exported invoices.",
+        )
+        act_company_setup.triggered.connect(self._on_company_setup)
+        file_menu.addAction(act_company_setup)
+
         act_backup = QAction("&Backup company file\u2026", self)
         _menu_action_tip(
             act_backup,
@@ -1792,6 +1801,20 @@ class MainWindow(QMainWindow):
         idx = self._tabs.indexOf(self._invoice_screen)
         if idx >= 0:
             self._tabs.setCurrentIndex(idx)
+
+    def _on_company_setup(self) -> None:
+        """File → Company Setup: navigate to More → Business → Company sub-tab."""
+        if not hasattr(self, "_tabs") or not hasattr(self, "_more_hub"):
+            return
+        idx = self._tabs.indexOf(self._more_hub)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+        if not hasattr(self, "_business_hub"):
+            return
+        biz_idx = self._more_hub.indexOf(self._business_hub)
+        if biz_idx >= 0:
+            self._more_hub.setCurrentIndex(biz_idx)
+        self._business_hub.focus_company_subtab()
 
     def _set_main_tab_index(self, index: int) -> None:
         if not hasattr(self, "_tabs"):
