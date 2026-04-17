@@ -1504,6 +1504,53 @@ class RegisterTab(QWidget):
             return True
         return False
 
+    def send_line_reconciliation_to_register_draft(
+        self,
+        *,
+        bank_account_id: int,
+        row: dict,
+        focus_bank_register_tab: Optional[Callable[[], None]] = None,
+    ) -> str:
+        """Open an **Add transaction** draft prefilled from Reconcile, or focus a register line for review.
+
+        Does not post except when the user saves **Add transaction**. Returns a short result code for UI state.
+
+        Returns:
+            ``"posted"`` — New manual transaction was saved from **Add transaction**.
+            ``"cancelled"`` — **Add transaction** was dismissed without saving.
+            ``"focused"`` — An existing register line was selected (e.g. **Extra**).
+            ``"failed"`` — Account selection failed, or no register line to focus.
+        """
+        want = coerce_combo_int_id(bank_account_id)
+        if want is None or not self._select_bank_account_for_overlay(want):
+            return "failed"
+        if focus_bank_register_tab is not None:
+            focus_bank_register_tab()
+        status = str(row.get("status") or "")
+        rid = coerce_combo_int_id(row.get("register_id"))
+
+        if status in (STATUS_NEEDS_REVIEW, STATUS_LIKELY_MATCH):
+            if self._open_add_transaction_prefilled_from_reconcile(row):
+                return "posted"
+            return "cancelled"
+
+        if status == STATUS_EXTRA:
+            if rid is None:
+                return "failed"
+            if self._focus_transaction_by_id(rid):
+                return "focused"
+            message_box_warning_ok(
+                self,
+                "Send to Register Draft",
+                "That register transaction is not on the grid in the current view. "
+                "The filter was set to **All transactions** once; if it still does not appear, "
+                "refresh (F5) or check that the line exists for this account.",
+                ok_tip="Close; set Filter to All transactions and try again.",
+            )
+            return "failed"
+
+        return "failed"
+
     def _focus_transaction_by_id(self, txn_id: int) -> bool:
         tid = coerce_combo_int_id(txn_id)
         if tid is None:
@@ -1535,16 +1582,17 @@ class RegisterTab(QWidget):
         self._table.scrollToItem(id_it, QAbstractItemView.ScrollHint.PositionAtCenter)
         return True
 
-    def _open_add_transaction_prefilled_from_reconcile(self, row: dict) -> None:
-        """**Add transaction** with statement-side drafts from line reconciliation (**Needs review**)."""
+    def _open_add_transaction_prefilled_from_reconcile(self, row: dict) -> bool:
+        """**Add transaction** with Reconcile drafts (date, amount, payee, COA, notes, hint). Returns True if saved."""
         if self._current_account_id is None:
-            return
+            return False
         aid = self._current_account_id
         coa_key = self._register_manual_entry_last_coa_key(aid)
         raw_saved = QSettings().value(coa_key, "")
         saved_coa = str(raw_saved or "").strip()
         draft_coa = str(row.get("draft_coa_account") or "").strip()
-        initial_coa = draft_coa or saved_coa
+        suggested_coa = str(row.get("suggested_coa") or "").strip()
+        initial_coa = draft_coa or suggested_coa or saved_coa
         stmt_date = str(row.get("stmt_date") or "").strip()[:10]
         latest_date = self._db.latest_txn_date_for_account(aid)
         initial_txn_date = stmt_date if stmt_date else latest_date
@@ -1554,7 +1602,19 @@ class RegisterTab(QWidget):
         except (TypeError, ValueError):
             initial_amt = None
         desc = str(row.get("stmt_description") or "").strip()
+        suggested_payee = str(row.get("suggested_payee") or "").strip()
+        if not desc and suggested_payee:
+            desc = suggested_payee
         notes = str(row.get("review_notes") or "").strip()
+        memo_parts: list[str] = []
+        if notes:
+            memo_parts.append(notes)
+        hint = str(row.get("suggestion_source") or "").strip()
+        if hint:
+            memo_parts.append(f"Reconcile hint: {hint}")
+        if suggested_payee and suggested_payee.casefold() != desc.casefold():
+            memo_parts.append(f"Suggested payee (reconcile): {suggested_payee}")
+        initial_memo = "\n".join(memo_parts)
         dlg = ManualTransactionDialog(
             self,
             coa_choices=self._coa_choices,
@@ -1563,10 +1623,10 @@ class RegisterTab(QWidget):
             initial_txn_date=initial_txn_date or None,
             initial_amount=initial_amt,
             initial_description=desc,
-            initial_memo=notes,
+            initial_memo=initial_memo,
         )
         if dlg.exec() != QDialog.DialogCode.Accepted:
-            return
+            return False
         v = dlg.values()
         try:
             self._db.insert_manual_transaction(
@@ -1585,7 +1645,7 @@ class RegisterTab(QWidget):
                 escape_ampersand_for_qt(str(exc)),
                 ok_tip="Close; this row collided with an existing fingerprint (rare). Try again.",
             )
-            return
+            return False
         picked = (v.get("coa_account") or "").strip()
         s = QSettings()
         if picked:
@@ -1593,6 +1653,7 @@ class RegisterTab(QWidget):
         else:
             s.remove(coa_key)
         self._reload_current()
+        return True
 
     def _maybe_fill_demo_reconciliation_overlay(self, register_dicts: list[dict]) -> None:
         """Demo Matched / Missing / Extra from mock statement extract (no separate view)."""

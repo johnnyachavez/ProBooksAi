@@ -9,7 +9,7 @@ the save dialog suggests a
 basename from the import batch filename (or batch id) and re-opens in the last folder used
 for Bank Import CSV exports (``bank_import/last_csv_export_dir``; legacy
 ``bank_import/line_compare_csv_export_dir`` is still read if unset).
-**Right-click** the grid for **Keyboard shortcuts…** (when wired from Bank Import), **Open in Bank Register…** (selected row), **Copy row** (TSV), **Copy statement date** / amount / description when the imported statement side is filled (**Matched** / **Missing**), **Copy register date** / amount / description when the register side is filled (**Matched** / **Extra**), **Copy register transaction id** when **Reg #** is set, and **Open linked Business record…** when Bank Import wires the register tab and that transaction has a **complete bank link**. **Double-click** a row when **Reg #** is set uses the same **Business link** prompts as **Bank register** (opens **Business** when the link is complete; otherwise an explanatory message).
+**Right-click** the grid for **Keyboard shortcuts…** (when wired from Bank Import), **Open in Bank Register…** / **Send to Register Draft…** (selected row), **Copy row** (TSV), **Copy statement date** / amount / description when the imported statement side is filled (**Matched** / **Missing**), **Copy register date** / amount / description when the register side is filled (**Matched** / **Extra**), **Copy register transaction id** when **Reg #** is set, and **Open linked Business record…** when Bank Import wires the register tab and that transaction has a **complete bank link**. **Double-click** a row when **Reg #** is set uses the same **Business link** prompts as **Bank register** (opens **Business** when the link is complete; otherwise an explanatory message). **Send to Register Draft** opens a prefilled **Add transaction** on Bank Register (Needs review / Likely match) or focuses an **Extra** line; **Draft sent** tracks successful handoffs (UI only).
 """
 
 from __future__ import annotations
@@ -78,6 +78,7 @@ _COL_REG_DATE = 5
 _COL_REG_AMT = 6
 _COL_REG_DESC = 7
 _COL_REG_ID = 8
+_COL_HANDOFF = 9
 
 _HEADERS = [
     "Reconciled",
@@ -89,6 +90,7 @@ _HEADERS = [
     "Register $",
     "Register description",
     "Reg #",
+    "Draft sent",
 ]
 
 # Subtle row backgrounds (R, G, B)
@@ -215,6 +217,18 @@ class StatementLineMatchPanel(QGroupBox):
         self._btn_open_register.setEnabled(False)
         primary.addWidget(self._btn_open_register)
 
+        self._btn_send_register_draft = QPushButton("Send to Register Draft")
+        self._btn_send_register_draft.setToolTip(
+            "Switch to **Bank Register** and open an **Add transaction** draft prefilled from this row "
+            "(**Needs review** / **Likely match**), or focus the register line (**Extra**). "
+            "Reconcile hint and suggested COA are carried into the draft when available. "
+            "Nothing posts until you save on the register. "
+            "A checkmark appears in **Draft sent** when this handoff succeeds."
+        )
+        self._btn_send_register_draft.clicked.connect(self._on_send_to_register_draft_clicked)
+        self._btn_send_register_draft.setEnabled(False)
+        primary.addWidget(self._btn_send_register_draft)
+
         self._btn_mark_sel = QPushButton("Mark reconciled")
         self._btn_mark_sel.setToolTip(
             "Set the reconciled flag for selected rows (this panel only; no register or import DB writes)."
@@ -256,8 +270,9 @@ class StatementLineMatchPanel(QGroupBox):
 
         flow = QLabel(
             "<b>Workflow:</b> Intake → <b>Run extract & compare</b> → use buckets below → "
-            "<b>Open in Bank Register</b> for the selected row (draft add or focus register line) → "
-            "fix <b>Needs review</b> in the queue (draft only) as needed."
+            "<b>Send to Register Draft</b> to open a prefilled **Add transaction** (or focus **Extra**) → "
+            "confirm on **Bank Register**. Use <b>Open in Bank Register</b> to focus a likely match line or "
+            "needs-review add dialog. Review queue edits stay local until you send."
         )
         flow.setWordWrap(True)
         flow.setStyleSheet("color: #A0A0B0; font-size: 11px;")
@@ -345,22 +360,34 @@ class StatementLineMatchPanel(QGroupBox):
         )
         nrv = QVBoxLayout(self._needs_review_box)
         self._needs_review_table = QTableWidget()
-        self._needs_review_table.setColumnCount(7)
+        self._needs_review_table.setColumnCount(8)
         self._needs_review_table.setHorizontalHeaderLabels(
-            ["#", "Stmt date", "Stmt $", "Payee / description", "Category (COA)", "Hint", "Notes"]
+            [
+                "#",
+                "Stmt date",
+                "Stmt $",
+                "Payee / description",
+                "Category (COA)",
+                "Hint",
+                "Notes",
+                "Draft sent",
+            ]
         )
         self._needs_review_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._needs_review_table.verticalHeader().setVisible(False)
         self._needs_review_table.setMinimumHeight(80)
         self._needs_review_table.setMaximumHeight(220)
         hh_nr = self._needs_review_table.horizontalHeader()
-        for c in range(7):
+        for c in range(8):
             hh_nr.setSectionResizeMode(
                 c,
                 QHeaderView.ResizeMode.ResizeToContents
                 if c not in (3, 5, 6)
                 else QHeaderView.ResizeMode.Stretch,
             )
+        self._needs_review_table.itemSelectionChanged.connect(
+            self._on_needs_review_selection_changed
+        )
         nrv.addWidget(self._needs_review_table)
         layout.addWidget(self._needs_review_box)
 
@@ -397,6 +424,43 @@ class StatementLineMatchPanel(QGroupBox):
         self._needs_review_box.setVisible(False)
         self._refresh_reconciled_action_states()
 
+    def _selected_master_row_index(self) -> Optional[int]:
+        """Selected line-reconciliation row: main grid selection, else current review-queue row."""
+        sel = self._table.selectionModel().selectedRows()
+        if sel:
+            r = sel[0].row()
+            if 0 <= r < len(self._rows):
+                return r
+        cr = self._needs_review_table.currentRow()
+        if cr >= 0 and cr < len(self._needs_review_master_rows):
+            return self._needs_review_master_rows[cr]
+        return None
+
+    def _send_to_register_draft_row_enabled(self, master_idx: int) -> bool:
+        if master_idx < 0 or master_idx >= len(self._rows):
+            return False
+        rowd = self._rows[master_idx]
+        st = (rowd.get("status") or "").strip()
+        if st in (STATUS_NEEDS_REVIEW, STATUS_LIKELY_MATCH):
+            return True
+        if st == STATUS_EXTRA and coerce_combo_int_id(rowd.get("register_id")) is not None:
+            return True
+        return False
+
+    def _on_needs_review_selection_changed(self) -> None:
+        if self._populating:
+            return
+        cr = self._needs_review_table.currentRow()
+        if cr < 0 or cr >= len(self._needs_review_master_rows):
+            return
+        mid = self._needs_review_master_rows[cr]
+        if mid < 0 or mid >= self._table.rowCount():
+            return
+        self._table.blockSignals(True)
+        self._table.selectRow(mid)
+        self._table.blockSignals(False)
+        self._refresh_reconciled_action_states()
+
     def _refresh_reconciled_action_states(self) -> None:
         n = self._table.rowCount()
         if n <= 0:
@@ -405,6 +469,7 @@ class StatementLineMatchPanel(QGroupBox):
             self._btn_clear.setEnabled(False)
             self._btn_export_csv.setEnabled(False)
             self._btn_open_register.setEnabled(False)
+            self._btn_send_register_draft.setEnabled(False)
             return
         self._btn_clear.setEnabled(True)
         self._btn_export_csv.setEnabled(True)
@@ -412,14 +477,17 @@ class StatementLineMatchPanel(QGroupBox):
             (r.get("status") or "") == STATUS_MATCHED for r in self._rows
         )
         self._btn_mark_matched.setEnabled(has_matched)
-        rows_sel = self._table.selectionModel().selectedRows()
-        self._btn_mark_sel.setEnabled(len(rows_sel) > 0)
+        mid = self._selected_master_row_index()
+        self._btn_mark_sel.setEnabled(mid is not None)
         self._btn_open_register.setEnabled(
             self._register_tab is not None
-            and len(rows_sel) > 0
-            and self._open_in_register_row_enabled(
-                rows_sel[0].row() if rows_sel else -1
-            )
+            and mid is not None
+            and self._open_in_register_row_enabled(mid)
+        )
+        self._btn_send_register_draft.setEnabled(
+            self._register_tab is not None
+            and mid is not None
+            and self._send_to_register_draft_row_enabled(mid)
         )
 
     def _open_in_register_row_enabled(self, row: int) -> bool:
@@ -495,6 +563,15 @@ class StatementLineMatchPanel(QGroupBox):
                 _COL_REG_ID,
                 _text_item("" if rid is None else str(rid)),
             )
+
+            ho = bool(row.get("register_draft_handoff"))
+            ho_it = _text_item("✓" if ho else "")
+            ho_it.setToolTip(
+                "Sent to Bank Register draft workflow (Add transaction saved, or register line focused)."
+                if ho
+                else "Not sent to register draft yet — use **Send to Register Draft**."
+            )
+            self._table.setItem(r, _COL_HANDOFF, ho_it)
 
             bg = None
             if st == STATUS_MATCHED:
@@ -647,6 +724,16 @@ class StatementLineMatchPanel(QGroupBox):
             )
             t.setCellWidget(nr, 6, ne)
 
+            ho = bool(row.get("register_draft_handoff"))
+            sent_it = QTableWidgetItem("✓" if ho else "")
+            sent_it.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+            sent_it.setToolTip(
+                "Sent to Bank Register draft workflow."
+                if ho
+                else "Not sent yet — use **Send to Register Draft**."
+            )
+            t.setItem(nr, 7, sent_it)
+
             nr += 1
 
         t.blockSignals(False)
@@ -737,6 +824,9 @@ class StatementLineMatchPanel(QGroupBox):
         nrev = self.reviewed_count()
         if nrev:
             base += f" {nrev} row(s) marked reconciled here (UI only)."
+        nh = sum(1 for r in self._rows if r.get("register_draft_handoff"))
+        if nh:
+            base += f" {nh} row(s) sent to register draft (**Draft sent**)."
         base += " Reconciled column does not change register or import data."
         self._summary.setText(base)
 
@@ -893,6 +983,18 @@ class StatementLineMatchPanel(QGroupBox):
                 act_reg.setToolTip(
                     "Switch to Bank Register for this account; focus the register line or open **Add transaction** "
                     "with drafts (Needs review). Nothing saves until you confirm on the register. "
+                    + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+                )
+            if self._register_tab is not None and self._send_to_register_draft_row_enabled(
+                row
+            ):
+                act_draft = menu.addAction(
+                    "Send to Register Draft\u2026",
+                    partial(self._invoke_send_to_register_draft_for_row, row),
+                )
+                act_draft.setToolTip(
+                    "Open **Bank Register** with a prefilled **Add transaction** draft (Needs review / Likely match) "
+                    "or focus the register line (Extra). Check **Draft sent** when the handoff succeeds. "
                     + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
                 )
             sd = self._line_match_stmt_date_plain(row)
@@ -1067,6 +1169,90 @@ class StatementLineMatchPanel(QGroupBox):
         self._table.selectRow(row)
         self._on_open_in_bank_register_clicked()
 
+    def _invoke_send_to_register_draft_for_row(self, row: int) -> None:
+        self._table.selectRow(row)
+        self._on_send_to_register_draft_clicked()
+
+    def _refresh_handoff_ui_for_row(self, master_idx: int) -> None:
+        """Update **Draft sent** cells after a successful register draft handoff."""
+        if master_idx < 0 or master_idx >= len(self._rows):
+            return
+        ho = bool(self._rows[master_idx].get("register_draft_handoff"))
+        tip = (
+            "Sent to Bank Register draft workflow (Add transaction saved, or register line focused)."
+            if ho
+            else "Not sent to register draft yet — use **Send to Register Draft**."
+        )
+        it = self._table.item(master_idx, _COL_HANDOFF)
+        if it is not None:
+            it.setText("✓" if ho else "")
+            it.setToolTip(tip)
+        try:
+            nr = self._needs_review_master_rows.index(master_idx)
+        except ValueError:
+            nr = -1
+        if nr >= 0:
+            hit = self._needs_review_table.item(nr, 7)
+            if hit is not None:
+                hit.setText("✓" if ho else "")
+                hit.setToolTip(tip)
+
+    def _on_send_to_register_draft_clicked(self) -> None:
+        if self._register_tab is None:
+            message_box_information_ok(
+                self,
+                "Bank Register",
+                "Bank Register is not wired in this window.",
+                ok_tip="Close; open the company in the main window.",
+            )
+            return
+        acct = self._account_id
+        if acct is None:
+            return
+        mid = self._selected_master_row_index()
+        if mid is None:
+            message_box_information_ok(
+                self,
+                "Send to Register Draft",
+                "Select a row in the line reconciliation grid or the review queue first.",
+                ok_tip="Close; click a row, then use Send to Register Draft.",
+            )
+            return
+        if not self._send_to_register_draft_row_enabled(mid):
+            message_box_information_ok(
+                self,
+                "Send to Register Draft",
+                "This row cannot be sent (use **Needs review**, **Likely match**, or **Extra** with Reg #).",
+                ok_tip="Close; pick an eligible row.",
+            )
+            return
+        row_data = dict(self._rows[mid])
+        if not hasattr(self._register_tab, "send_line_reconciliation_to_register_draft"):
+            message_box_information_ok(
+                self,
+                "Send to Register Draft",
+                "Bank Register does not support this action in this build.",
+                ok_tip="Close; update the app.",
+            )
+            return
+        result = self._register_tab.send_line_reconciliation_to_register_draft(
+            bank_account_id=acct,
+            row=row_data,
+            focus_bank_register_tab=self._focus_bank_register_tab,
+        )
+        if result == "posted" or result == "focused":
+            self._rows[mid]["register_draft_handoff"] = True
+            self._refresh_handoff_ui_for_row(mid)
+            self._sync_summary_after_review_edit()
+        elif result == "failed":
+            message_box_warning_ok(
+                self,
+                "Send to Register Draft",
+                "Could not complete the handoff (account or register line). "
+                "Try F5 on Bank Register or pick another row.",
+                ok_tip="Close; refresh Bank Register and try again.",
+            )
+
     def _on_open_in_bank_register_clicked(self) -> None:
         if self._register_tab is None:
             message_box_information_ok(
@@ -1079,16 +1265,16 @@ class StatementLineMatchPanel(QGroupBox):
         acct = self._account_id
         if acct is None:
             return
-        sel = self._table.selectionModel().selectedRows()
-        if not sel:
+        mid = self._selected_master_row_index()
+        if mid is None:
             message_box_information_ok(
                 self,
                 "Open in Bank Register",
-                "Select a row in the line reconciliation grid first.",
+                "Select a row in the line reconciliation grid or the review queue first.",
                 ok_tip="Close; click a row, then use Open in Bank Register.",
             )
             return
-        r = sel[0].row()
+        r = mid
         if r < 0 or r >= len(self._rows):
             return
         if not self._open_in_register_row_enabled(r):

@@ -5804,6 +5804,7 @@ def test_register_tab_handoffs_line_reconciliation_row() -> None:
     """Bank Register exposes handoff helpers for Reconcile → Open in Bank Register."""
     reg = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
     assert "def handoff_line_reconciliation_row" in reg
+    assert "def send_line_reconciliation_to_register_draft" in reg
     assert "def _focus_transaction_by_id" in reg
     assert "def _open_add_transaction_prefilled_from_reconcile" in reg
 

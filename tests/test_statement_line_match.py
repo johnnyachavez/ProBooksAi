@@ -1266,6 +1266,66 @@ def test_statement_line_match_panel_open_in_bank_register_delegates_to_register_
             db_path.unlink()
 
 
+def test_statement_line_match_panel_send_to_register_draft_delegates_to_register_tab() -> None:
+    """**Send to Register Draft** calls ``RegisterTab.send_line_reconciliation_to_register_draft``."""
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from probooksai.bank_import import BankDatabase
+    from desktop_app.statement_line_match_panel import StatementLineMatchPanel
+
+    db_path = Path(__file__).resolve().parent / "_stmt_line_match_send_draft_test.db"
+    if db_path.exists():
+        db_path.unlink()
+    db = BankDatabase(str(db_path))
+    try:
+
+        class MockReg:
+            def __init__(self) -> None:
+                self.kwargs: dict | None = None
+                self.result = "posted"
+
+            def send_line_reconciliation_to_register_draft(self, **kwargs):
+                self.kwargs = kwargs
+                return self.result
+
+        reg = MockReg()
+        panel = StatementLineMatchPanel(
+            db, register_tab=reg, focus_bank_register_tab=lambda: None
+        )
+        panel._account_id = 42
+        panel.populate(
+            [
+                {
+                    "status": STATUS_LIKELY_MATCH,
+                    "stmt_date": "2024-01-01",
+                    "stmt_amount": -10.0,
+                    "stmt_description": "Coffee",
+                    "register_id": 99,
+                    "reg_date": "2024-01-01",
+                    "reg_amount": -10.0,
+                    "reg_description": "Coffee",
+                    "review_notes": "",
+                    "draft_coa_account": "",
+                }
+            ]
+        )
+        panel._table.selectRow(0)
+        panel._refresh_reconciled_action_states()
+        assert panel._btn_send_register_draft.isEnabled()
+        panel._on_send_to_register_draft_clicked()
+        assert reg.kwargs is not None
+        assert reg.kwargs["bank_account_id"] == 42
+        assert reg.kwargs["row"]["status"] == STATUS_LIKELY_MATCH
+        assert panel._rows[0].get("register_draft_handoff") is True
+    finally:
+        db.close()
+        if db_path.exists():
+            db_path.unlink()
+
+
 def test_statement_line_match_panel_line_reconciliation_table_alias() -> None:
     from PySide6.QtWidgets import QApplication
 
