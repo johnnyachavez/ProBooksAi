@@ -1,7 +1,8 @@
 """Invoice Intake — stage delivery tickets, PDFs, images, and pasted text for draft invoicing.
 
-Queue + review; **Send to Manual Invoice** hands off the selected row to the Manual Invoice sub-tab
-as a new draft (memo + visible banner). Full OCR/AI line extraction is not implemented yet.
+Queue + review; pasted **Text** rows get a conservative labeled-field extraction pass (see
+``invoice_intake_text_extract``). **Send to Manual Invoice** opens Manual Invoice with memo, banner,
+and high-confidence fields applied to the form where appropriate. PDF/image staging is unchanged.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from desktop_app.invoice_intake_text_extract import extract_text_intake_fields
 from desktop_app.qt_mnemonic import message_box_information_ok
 from desktop_app.theme import (
     WORKFLOW_ALT_ROW as _INV_STRIPE,
@@ -156,8 +158,8 @@ class InvoiceIntakePanel(QWidget):
         self._btn_remove.clicked.connect(self._on_remove_selected)
         self._btn_send_draft = QPushButton("Send to Manual Invoice")
         self._btn_send_draft.setToolTip(
-            "Open the Manual Invoice sub-tab with a new draft carrying this row's source path or "
-            "staged text into the invoice memo (confirm lines and Save)."
+            "Open Manual Invoice with a new draft: memo + raw text, and high-confidence text "
+            "extraction applied to date/BOL/memo where applicable (confirm before Save)."
         )
         self._btn_send_draft.clicked.connect(self._on_send_to_manual_invoice)
         for b in (
@@ -226,14 +228,14 @@ class InvoiceIntakePanel(QWidget):
         rv.setContentsMargins(10, 10, 10, 10)
         rv.setSpacing(6)
 
-        rv_cap = QLabel("Review (next)")
+        rv_cap = QLabel("Review")
         rv_cap.setStyleSheet(
             f"color: {_INV_CAPTION}; font-size: 11px; font-weight: 600; "
             "letter-spacing: 0.03em; background: transparent;"
         )
         rv.addWidget(rv_cap)
 
-        self._lbl_extracted = QLabel("Extracted fields (preview)")
+        self._lbl_extracted = QLabel("Extracted fields")
         self._lbl_extracted.setStyleSheet(
             f"color: {_INV_CAPTION}; font-size: 11px; background: transparent;"
         )
@@ -242,7 +244,7 @@ class InvoiceIntakePanel(QWidget):
         self._txt_extracted = QPlainTextEdit()
         self._txt_extracted.setReadOnly(True)
         self._txt_extracted.setPlaceholderText(
-            "No automated extraction yet — future pass will fill customer, lines, and amounts."
+            "Select a text intake row to see labeled-field extraction (Date, Ticket/BOL, Customer, …)."
         )
         self._txt_extracted.setMinimumHeight(100)
         self._txt_extracted.setStyleSheet(
@@ -259,7 +261,9 @@ class InvoiceIntakePanel(QWidget):
 
         self._txt_attachment = QPlainTextEdit()
         self._txt_attachment.setReadOnly(True)
-        self._txt_attachment.setPlaceholderText("File path or clipboard reference will appear here.")
+        self._txt_attachment.setPlaceholderText(
+            "For text intake: raw staged source below. For files: path on disk."
+        )
         self._txt_attachment.setFixedHeight(72)
         self._txt_attachment.setStyleSheet(
             f"QPlainTextEdit {{ background: {WORKFLOW_INPUT_BG}; color: {_INV_TEXT}; "
@@ -360,12 +364,16 @@ class InvoiceIntakePanel(QWidget):
         data = self._row_intake_payload(r)
         if not data:
             return
+        tex = None
+        if (data.get("kind") or "").strip() == "Text" and data.get("text_payload"):
+            tex = extract_text_intake_fields(str(data["text_payload"]))
         ok = inv.apply_intake_item_to_draft(
             source_display=data["source_display"],
             kind=data["kind"],
             path=data.get("path"),
             text_payload=data.get("text_payload"),
             queue_notes=data.get("queue_notes") or "",
+            text_extraction=tex,
         )
         if ok:
             st = self._table.item(r, 3)
@@ -397,13 +405,14 @@ class InvoiceIntakePanel(QWidget):
                 payload = t
 
         if kind == "Text" and payload:
-            preview = payload.strip()
-            if len(preview) > 4000:
-                preview = preview[:4000] + "\n… (truncated)"
-            self._txt_extracted.setPlainText(
-                "Staged text (no AI extraction yet):\n\n" + preview
+            ex = extract_text_intake_fields(payload)
+            self._txt_extracted.setPlainText(ex.review_panel_text())
+            raw_preview = payload.strip()
+            if len(raw_preview) > 4000:
+                raw_preview = raw_preview[:4000] + "\n… (truncated)"
+            self._txt_attachment.setPlainText(
+                "Clipboard / pasted text\n\n--- Raw staged text ---\n" + raw_preview
             )
-            self._txt_attachment.setPlainText("Clipboard / pasted text")
         elif path:
             self._txt_extracted.setPlainText(
                 "Preview for PDF/image files is not available yet — file is staged on disk."

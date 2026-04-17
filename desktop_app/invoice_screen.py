@@ -70,6 +70,7 @@ from desktop_app.invoice_preferences import (
     ensure_invoice_output_folder,
 )
 from desktop_app.invoice_intake_panel import InvoiceIntakePanel
+from desktop_app.invoice_intake_text_extract import TextIntakeExtraction
 from desktop_app.invoice_pdf import invoice_html_string, save_invoice_pdf
 from desktop_app.qt_mnemonic import message_box_information_ok
 from probooksai import business
@@ -806,10 +807,12 @@ class InvoiceScreen(QWidget):
         path: str | None = None,
         text_payload: str | None = None,
         queue_notes: str = "",
+        text_extraction: TextIntakeExtraction | None = None,
     ) -> bool:
         """Switch to Manual Invoice with a new draft; carry intake source into memo (saved on Save).
 
-        Only uses data the user staged in Invoice Intake — no inferred customer, lines, or amounts.
+        Uses staged data only. For text intake, optional *text_extraction* may set invoice date / BOL#
+        (high confidence only) and memo lines — no invented line totals.
         """
         if self._ap_conn is None:
             message_box_information_ok(
@@ -835,6 +838,19 @@ class InvoiceScreen(QWidget):
             memo_lines.append(f"Attachment path: {os.path.normpath(p)}")
         if qn:
             memo_lines.append(f"Queue notes: {qn}")
+        ex = text_extraction if k == "Text" else None
+        if ex is not None:
+            applied: list[str] = []
+            if ex.date_confidence == "high" and ex.date_display:
+                applied.append(f"Invoice date (form): {ex.date_display}")
+            if ex.ticket_confidence == "high" and ex.ticket_ref:
+                applied.append(f"Line 1 BOL# (form): {ex.ticket_ref}")
+            extra_memo = ex.memo_lines_for_handoff()
+            if applied or extra_memo:
+                memo_lines.append("")
+                memo_lines.append("--- Intake extraction (high confidence) ---")
+                memo_lines.extend(applied)
+                memo_lines.extend(extra_memo)
         if k == "Text" and (text_payload or "").strip():
             body = text_payload.strip()
             if len(body) > 8000:
@@ -845,14 +861,33 @@ class InvoiceScreen(QWidget):
 
         self._invoice_memo_notes = "\n".join(memo_lines).strip()
 
+        if ex is not None:
+            if ex.date_confidence == "high" and ex.date_display:
+                self._date.setText(ex.date_display)
+            if ex.ticket_confidence == "high" and ex.ticket_ref:
+                bol_w = self._table.cellWidget(0, 3)
+                if isinstance(bol_w, QLineEdit):
+                    bol_w.setText(ex.ticket_ref)
+
         num = (self._inv_number.text() or "").strip()
         if k == "Text" and (text_payload or "").strip():
             raw = text_payload.strip()
             preview = raw if len(raw) <= 500 else raw[:500] + "…"
+            ext_note = ""
+            if ex is not None:
+                bits: list[str] = []
+                if ex.date_confidence == "high":
+                    bits.append("invoice date")
+                if ex.ticket_confidence == "high":
+                    bits.append("BOL#")
+                if ex.memo_lines_for_handoff():
+                    bits.append("memo lines")
+                if bits:
+                    ext_note = f"\n\nApplied from text extraction: {', '.join(bits)}."
             banner = (
                 f"From Invoice Intake — pasted text ({len(raw)} chars). "
                 f"Suggested invoice # {num or '—'}.\n\n"
-                f"Preview (full text is saved on the invoice memo):\n{preview}"
+                f"Preview (full text is saved on the invoice memo):\n{preview}{ext_note}"
             )
         elif p:
             banner = (

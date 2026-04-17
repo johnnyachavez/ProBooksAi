@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from desktop_app.customer_bill_to_panel import CustomerBillToPanel
+from desktop_app.invoice_intake_text_extract import extract_text_intake_fields
 from desktop_app.invoice_screen import (
     InvoiceScreen,
     _INVOICE_LINE_ROW_MIN_HEIGHT_PX,
@@ -561,6 +562,41 @@ def test_apply_intake_item_to_draft_hidden_after_opening_saved_invoice(
     assert w.open_invoice_by_id(inv_id) is True
     qapp.processEvents()
     assert not w._invoice_intake_handoff_banner.isVisible()
+    db.close()
+
+
+def test_apply_intake_item_to_draft_applies_high_confidence_text_extraction(
+    qapp: QApplication, tmp_path
+) -> None:
+    db_path = tmp_path / "apply_intake_ex.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    w = InvoiceScreen(ap_conn=db._conn)
+    body = """Date: 2025-04-01
+Ticket # ZZ-1
+Customer: Beta LLC
+Notes: Rush job.
+Extra line in body not labeled.
+"""
+    ex = extract_text_intake_fields(body)
+    ok = w.apply_intake_item_to_draft(
+        source_display="Pasted",
+        kind="Text",
+        text_payload=body,
+        queue_notes="",
+        text_extraction=ex,
+    )
+    assert ok is True
+    assert w._date.text().strip() == "04/01/2025"
+    bol = w._table.cellWidget(0, 3)
+    assert isinstance(bol, QLineEdit)
+    assert bol.text().strip() == "ZZ-1"
+    assert "Beta" in w._invoice_memo_notes
+    assert "Rush job" in w._invoice_memo_notes
+    assert "Extra line" in w._invoice_memo_notes
+    w.show()
+    qapp.processEvents()
+    assert w._invoice_intake_handoff_banner.isVisible()
     db.close()
 
 
