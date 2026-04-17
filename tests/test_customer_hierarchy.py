@@ -31,6 +31,17 @@ def db(tmp_path: Path) -> BankDatabase:
     b.close()
 
 
+def test_list_bill_to_customer_choices_labels(db: BankDatabase) -> None:
+    parent = business.add_customer(db._conn, "Mother Ship")
+    job = business.add_customer(db._conn, "Site A", parent_customer_id=parent)
+    solo = business.add_customer(db._conn, "Solo Co")
+    choices = business.list_bill_to_customer_choices(db._conn)
+    by_id = dict(choices)
+    assert by_id[parent] == "Mother Ship"
+    assert by_id[job] == "Mother Ship > Site A"
+    assert by_id[solo] == "Solo Co"
+
+
 def test_parent_customer_and_job_row(db: BankDatabase) -> None:
     parent = business.add_customer(db._conn, "Mother Ship LLC")
     job = business.add_customer(

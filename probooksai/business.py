@@ -186,6 +186,38 @@ def list_customers(conn: sqlite3.Connection) -> list:
     ).fetchall()
 
 
+def list_bill_to_customer_choices(conn: sqlite3.Connection) -> list[tuple[int, str]]:
+    """Return ``(customer_id, combo_label)`` for invoice Bill To.
+
+    Root customers use their display name. Jobs use ``Parent Name > Job Name`` so the hierarchy
+    is visible while each tuple still refers to a single ``customers.id`` for ``invoice.customer_id``.
+    """
+    rows = list_customers(conn)
+    id_to_row: dict[int, dict] = {}
+    for r in rows:
+        d = dict(r)
+        id_to_row[int(d["id"])] = d
+    out: list[tuple[int, str]] = []
+    for r in rows:
+        d = dict(r)
+        cid = int(d["id"])
+        name = (d.get("name") or "").strip() or f"Customer #{cid}"
+        pid = d.get("parent_customer_id")
+        if pid is None:
+            label = name
+        else:
+            parent = id_to_row.get(int(pid))
+            pname = (
+                (parent.get("name") or "").strip()
+                if parent
+                else f"Customer #{int(pid)}"
+            )
+            label = f"{pname} > {name}"
+        out.append((cid, label))
+    out.sort(key=lambda t: (t[1].lower(), t[0]))
+    return out
+
+
 def get_customer(conn: sqlite3.Connection, customer_id: int) -> Optional[sqlite3.Row]:
     return conn.execute("SELECT * FROM customers WHERE id = ?", (customer_id,)).fetchone()
 

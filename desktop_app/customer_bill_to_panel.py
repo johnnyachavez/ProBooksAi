@@ -1,8 +1,9 @@
 """Reusable **Bill To** customer lookup for the Invoice screen (and future AR UIs).
 
 Uses ``probooksai.business`` customer rows (same source as Business → Customers / Customer Corral).
-Schema today: ``name``, ``email``, ``phone``, ``address``, ``notes`` — optional ``Contact:`` prefix
-in ``notes`` for quick-add contact name.
+Jobs under a parent appear as ``Parent Name > Job Name`` so users can bill to the parent or a
+specific job; each list row still maps to one ``customers.id`` for ``invoice.customer_id``.
+Optional ``Contact:`` prefix in ``notes`` for quick-add contact name.
 """
 
 from __future__ import annotations
@@ -339,7 +340,7 @@ class CustomerBillToPanel(QFrame):
             )
         else:
             tip = (
-                "Pick or type a customer name; Bill To fills from Customer Center records. "
+                "Pick or type a customer; jobs show as Parent > Job. Bill To fills from Customer Center. "
                 "Use **New customer…** if no match."
             )
         self.setToolTip(tip)
@@ -357,10 +358,7 @@ class CustomerBillToPanel(QFrame):
             cur_text = le.text()
         if self._conn is not None:
             try:
-                for row in business.list_customers(self._conn):
-                    d = dict(row)
-                    cid = int(d["id"])
-                    label = (d.get("name") or "").strip() or f"Customer #{cid}"
+                for cid, label in business.list_bill_to_customer_choices(self._conn):
                     self._combo.addItem(label, cid)
             except (sqlite3.Error, KeyError, TypeError, ValueError):
                 pass

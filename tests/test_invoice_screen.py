@@ -458,6 +458,31 @@ def test_invoice_screen_bill_to_selects_customer(qapp: QApplication, tmp_path) -
     db.close()
 
 
+def test_invoice_screen_bill_to_combo_shows_job_hierarchy(
+    qapp: QApplication, tmp_path
+) -> None:
+    db_path = tmp_path / "invoice_bill_hier.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    parent = business.add_customer(db._conn, "Parent Corp")
+    job = business.add_customer(db._conn, "Job Z", parent_customer_id=parent)
+    w = InvoiceScreen(ap_conn=db._conn)
+    panel = w.bill_to_customer_panel()
+    combo = panel._combo
+    texts = [combo.itemText(i) for i in range(combo.count())]
+    assert "Parent Corp" in texts
+    assert "Parent Corp > Job Z" in texts
+    jidx = combo.findText("Parent Corp > Job Z")
+    assert jidx >= 0
+    combo.setCurrentIndex(jidx)
+    assert w.selected_bill_to_customer_id() == job
+    pidx = combo.findText("Parent Corp")
+    assert pidx >= 0
+    combo.setCurrentIndex(pidx)
+    assert w.selected_bill_to_customer_id() == parent
+    db.close()
+
+
 def test_invoice_save_and_print_handlers_require_real_button_sender(
     qapp: QApplication, tmp_path
 ) -> None:
