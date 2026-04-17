@@ -79,6 +79,86 @@ def sales_tax_collected_sum(
 # Customers & invoices (Phase 8)
 # ---------------------------------------------------------------------------
 
+def _count_customer_children(conn: sqlite3.Connection, customer_id: int) -> int:
+    row = conn.execute(
+        "SELECT COUNT(*) AS n FROM customers WHERE parent_customer_id = ?",
+        (customer_id,),
+    ).fetchone()
+    return int(row["n"] or 0) if row else 0
+
+
+def _validate_customer_parent(
+    conn: sqlite3.Connection,
+    *,
+    customer_id: int | None,
+    parent_customer_id: int | None,
+) -> None:
+    if parent_customer_id is None:
+        return
+    if customer_id is not None and int(parent_customer_id) == int(customer_id):
+        raise ValueError("A customer cannot be its own parent.")
+    parent = get_customer(conn, int(parent_customer_id))
+    if parent is None:
+        raise ValueError("Parent customer not found.")
+    pd = dict(parent).get("parent_customer_id")
+    if pd is not None:
+        raise ValueError("Parent must be a top-level customer (not a job).")
+    if customer_id is not None and _count_customer_children(conn, int(customer_id)) > 0:
+        raise ValueError(
+            "This customer has job accounts; reassign or remove those jobs before assigning a parent."
+        )
+
+
+def list_parent_customer_choices(conn: sqlite3.Connection) -> list:
+    """Customers that may be selected as a job parent (standalone / mother-ship rows only)."""
+    return conn.execute(
+        """
+        SELECT * FROM customers
+        WHERE parent_customer_id IS NULL
+        ORDER BY name
+        """
+    ).fetchall()
+
+
+def customer_relationship_label(conn: sqlite3.Connection, customer_id: int) -> str:
+    """Short label for grids: Parent, Standalone, or Job: <parent name>."""
+    row = get_customer(conn, customer_id)
+    if row is None:
+        return ""
+    d = dict(row)
+    pid = d.get("parent_customer_id")
+    if pid is not None:
+        prow = get_customer(conn, int(pid))
+        pname = (prow["name"] or "").strip() if prow else ""
+        return f"Job: {pname}" if pname else "Job"
+    if _count_customer_children(conn, customer_id) > 0:
+        return "Parent"
+    return "Standalone"
+
+
+def customer_ids_for_receive_payments_filter(
+    conn: sqlite3.Connection, customer_id: int
+) -> list[int]:
+    """Invoice filter: one job’s invoices only; for a parent / mother ship, include all child jobs."""
+    row = get_customer(conn, customer_id)
+    if row is None:
+        return [customer_id]
+    d = dict(row)
+    if d.get("parent_customer_id") is not None:
+        return [customer_id]
+    out = [customer_id]
+    for r in conn.execute(
+        """
+        SELECT id FROM customers
+        WHERE parent_customer_id = ?
+        ORDER BY name
+        """,
+        (customer_id,),
+    ).fetchall():
+        out.append(int(r["id"]))
+    return out
+
+
 def add_customer(
     conn: sqlite3.Connection,
     name: str,
@@ -86,13 +166,15 @@ def add_customer(
     phone: str = "",
     address: str = "",
     notes: str = "",
+    parent_customer_id: int | None = None,
 ) -> int:
+    _validate_customer_parent(conn, customer_id=None, parent_customer_id=parent_customer_id)
     cur = conn.execute(
         """
-        INSERT INTO customers (name, email, phone, address, notes, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO customers (name, email, phone, address, notes, parent_customer_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (name, email, phone, address, notes, _now()),
+        (name, email, phone, address, notes, parent_customer_id, _now()),
     )
     conn.commit()
     return cur.lastrowid
@@ -116,15 +198,19 @@ def update_customer(
     phone: str = "",
     address: str = "",
     notes: str = "",
+    parent_customer_id: int | None = None,
 ) -> None:
     if get_customer(conn, customer_id) is None:
         raise ValueError("Customer not found.")
+    _validate_customer_parent(
+        conn, customer_id=customer_id, parent_customer_id=parent_customer_id
+    )
     conn.execute(
         """
-        UPDATE customers SET name = ?, email = ?, phone = ?, address = ?, notes = ?
+        UPDATE customers SET name = ?, email = ?, phone = ?, address = ?, notes = ?, parent_customer_id = ?
         WHERE id = ?
         """,
-        (name, email, phone, address, notes, customer_id),
+        (name, email, phone, address, notes, parent_customer_id, customer_id),
     )
     conn.commit()
 
@@ -134,7 +220,9 @@ def write_customers_csv(conn: sqlite3.Connection, path: str) -> int:
     rows = list_customers(conn)
     with open(path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
-        w.writerow(["id", "name", "email", "phone", "address", "notes"])
+        w.writerow(
+            ["id", "name", "email", "phone", "address", "notes", "parent_customer_id"]
+        )
         n = 0
         for r in rows:
             d = dict(r)
@@ -146,6 +234,7 @@ def write_customers_csv(conn: sqlite3.Connection, path: str) -> int:
                     d.get("phone") or "",
                     d.get("address") or "",
                     d.get("notes") or "",
+                    d.get("parent_customer_id"),
                 ]
             )
             n += 1
@@ -810,6 +899,25 @@ def list_open_invoices_for_customer(
     ).fetchall()
 
 
+def list_open_invoices_for_ar_payment_customer(
+    conn: sqlite3.Connection, customer_id: int
+) -> list:
+    """Like :func:`list_open_invoices_for_customer`, but for a parent (mother ship) includes all job invoices."""
+    ids = customer_ids_for_receive_payments_filter(conn, customer_id)
+    if not ids:
+        return []
+    ph = ",".join("?" * len(ids))
+    return conn.execute(
+        f"""
+        SELECT id, invoice_number, invoice_date, balance_due, total
+        FROM invoices
+        WHERE customer_id IN ({ph}) AND balance_due > 0.005
+        ORDER BY invoice_date, id
+        """,
+        tuple(ids),
+    ).fetchall()
+
+
 def list_open_invoices_for_receive_payments(conn: sqlite3.Connection) -> list:
     """Open AR invoices with customer columns for the Receive Payments tab (``balance_due`` > 0)."""
     return conn.execute(
@@ -1358,6 +1466,7 @@ def list_customer_ar_summaries(conn: sqlite3.Connection) -> list[dict]:
             {
                 "customer_id": cid,
                 "customer_name": name,
+                "relationship": customer_relationship_label(conn, cid),
                 "open_balance": round(open_bal, 2),
                 "current_due": round(current_due, 2),
                 "overdue": round(overdue, 2),

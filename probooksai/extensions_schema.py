@@ -13,7 +13,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
-EXTENSION_SCHEMA_VERSION = 4
+EXTENSION_SCHEMA_VERSION = 5
 
 _DDL_VERSION = """
 CREATE TABLE IF NOT EXISTS extension_schema_version (
@@ -226,6 +226,11 @@ CREATE TABLE IF NOT EXISTS bill_expense_lines (
 );
 """
 
+# v5 – Customer / job hierarchy (job rows point to a root “mother ship” customer)
+_MIGRATION_V5 = """
+ALTER TABLE customers ADD COLUMN parent_customer_id INTEGER REFERENCES customers(id);
+"""
+
 
 def _seed_payroll_tax_items(conn: sqlite3.Connection) -> None:
     """Default federal/state placeholder codes (amounts entered manually per run)."""
@@ -296,6 +301,13 @@ def apply_extensions(conn: sqlite3.Connection) -> None:
             if s:
                 conn.execute(s)
         current = 4
+
+    if current < 5:
+        for stmt in _MIGRATION_V5.strip().split(";"):
+            s = stmt.strip()
+            if s:
+                conn.execute(s)
+        current = 5
 
     conn.execute(
         "UPDATE extension_schema_version SET version = ? WHERE id = 1",

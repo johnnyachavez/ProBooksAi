@@ -944,6 +944,12 @@ class ARTab(QWidget):
         self._d_notes = QLabel("—")
         self._d_notes.setWordWrap(True)
         df.addRow("Customer Name", self._d_name)
+        self._d_relationship = QLabel("—")
+        self._d_relationship.setToolTip(
+            "Standalone: its own account. Parent: mother ship with job accounts below it. "
+            "Job: …: invoices roll up to the parent in Receive Payments when the parent is selected."
+        )
+        df.addRow("Relationship", self._d_relationship)
         df.addRow("Address", self._d_address)
         df.addRow("Phone", self._d_phone)
         df.addRow("Email", self._d_email)
@@ -960,10 +966,11 @@ class ARTab(QWidget):
         list_box.setToolTip("Click a row to show that customer in the detail card above.")
         lb_lay = QVBoxLayout(list_box)
         self._customer_tbl = QTableWidget()
-        self._customer_tbl.setColumnCount(7)
+        self._customer_tbl.setColumnCount(8)
         self._customer_tbl.setHorizontalHeaderLabels(
             [
                 "Customer",
+                "Relationship",
                 "Open Balance",
                 "Current Due",
                 "Overdue",
@@ -1067,6 +1074,13 @@ class ARTab(QWidget):
         self._d_terms.setText("—")
         notes = (d.get("notes") or "").strip()
         self._d_notes.setText(escape_ampersand_for_qt(notes) if notes else "—")
+        if summ is not None:
+            rel = summ.get("relationship") or ""
+        else:
+            rel = business.customer_relationship_label(
+                self._conn, self._focused_customer_id
+            )
+        self._d_relationship.setText(escape_ampersand_for_qt(rel) if rel else "—")
         if summ is None:
             self._d_open_bal.setText("—")
             self._d_cur_due.setText("—")
@@ -1083,6 +1097,7 @@ class ARTab(QWidget):
     def _clear_detail_card(self) -> None:
         for w in (
             self._d_name,
+            self._d_relationship,
             self._d_address,
             self._d_phone,
             self._d_email,
@@ -1107,20 +1122,23 @@ class ARTab(QWidget):
             it0 = QTableWidgetItem(escape_ampersand_for_qt(nm))
             it0.setData(Qt.ItemDataRole.UserRole, cid)
             self._customer_tbl.setItem(i, 0, it0)
+            self._customer_tbl.setItem(
+                i, 1, plain_display_table_item(r.get("relationship") or "")
+            )
             ob = float(r["open_balance"] or 0)
             cd = float(r["current_due"] or 0)
             ov = float(r["overdue"] or 0)
-            self._customer_tbl.setItem(i, 1, _FloatSortTableItem(f"{ob:.2f}", ob))
-            self._customer_tbl.setItem(i, 2, _FloatSortTableItem(f"{cd:.2f}", cd))
-            self._customer_tbl.setItem(i, 3, _FloatSortTableItem(f"{ov:.2f}", ov))
+            self._customer_tbl.setItem(i, 2, _FloatSortTableItem(f"{ob:.2f}", ob))
+            self._customer_tbl.setItem(i, 3, _FloatSortTableItem(f"{cd:.2f}", cd))
+            self._customer_tbl.setItem(i, 4, _FloatSortTableItem(f"{ov:.2f}", ov))
             self._customer_tbl.setItem(
-                i, 4, plain_display_table_item(r["last_invoice_date"] or "")
+                i, 5, plain_display_table_item(r["last_invoice_date"] or "")
             )
             self._customer_tbl.setItem(
-                i, 5, plain_display_table_item(r["last_payment_date"] or "")
+                i, 6, plain_display_table_item(r["last_payment_date"] or "")
             )
             self._customer_tbl.setItem(
-                i, 6, plain_display_table_item(r.get("ar_status") or "")
+                i, 7, plain_display_table_item(r.get("ar_status") or "")
             )
         self._customer_tbl.setSortingEnabled(True)
         ids = {int(r["customer_id"]) for r in rows}
@@ -1146,6 +1164,36 @@ class ARTab(QWidget):
         d.setWindowTitle("New customer")
         d.setToolTip("Create a customer record used for AR invoices, payments, and aging.")
         f = QFormLayout(d)
+        type_cb = QComboBox()
+        type_cb.setToolTip(
+            "Standalone: a normal customer (or future mother ship for jobs). "
+            "Job: bill under this name; choose the parent account to roll up in Receive Payments."
+        )
+        type_cb.addItem("Standalone Customer", "standalone")
+        type_cb.addItem("Job under Existing Customer", "job")
+        parent_lbl = QLabel("Parent customer *")
+        parent_lbl.setToolTip("Top-level (mother ship) customer this job belongs to.")
+        parent_cb = QComboBox()
+        parent_cb.setToolTip(
+            "Open invoices for this job appear when the parent is selected in Receive Payments."
+        )
+
+        def refill_parent_cb() -> None:
+            parent_cb.clear()
+            for r in business.list_parent_customer_choices(self._conn):
+                rid = int(r["id"])
+                nm = (r["name"] or "").strip() or f"#{rid}"
+                parent_cb.addItem(nm, rid)
+
+        def sync_parent_visibility() -> None:
+            is_job = type_cb.currentData() == "job"
+            parent_lbl.setVisible(is_job)
+            parent_cb.setVisible(is_job)
+
+        type_cb.currentIndexChanged.connect(lambda _i=None: sync_parent_visibility())
+        refill_parent_cb()
+        sync_parent_visibility()
+
         ne = QLineEdit()
         ne.setToolTip("Customer display name (required).")
         em = QLineEdit()
@@ -1158,6 +1206,8 @@ class ARTab(QWidget):
         no = QPlainTextEdit()
         no.setFixedHeight(48)
         no.setToolTip("Internal notes about this customer (optional).")
+        f.addRow("Customer type", type_cb)
+        f.addRow(parent_lbl, parent_cb)
         f.addRow("Name *", ne)
         f.addRow("Email", em)
         f.addRow("Phone", ph)
@@ -1170,6 +1220,26 @@ class ARTab(QWidget):
         f.addRow(bb)
         if d.exec() != QDialog.DialogCode.Accepted or not ne.text().strip():
             return
+        mode = type_cb.currentData()
+        parent_id = None
+        if mode == "job":
+            if parent_cb.count() == 0:
+                message_box_warning_ok(
+                    self,
+                    "Customer",
+                    "Create a standalone customer first to use as the parent (mother ship).",
+                    ok_tip="Close; add a top-level customer, then add this job again.",
+                )
+                return
+            parent_id = coerce_combo_int_id(parent_cb.currentData())
+            if parent_id is None:
+                message_box_warning_ok(
+                    self,
+                    "Customer",
+                    "Choose a parent customer for a job account.",
+                    ok_tip="Close; pick the mother ship customer in Parent customer.",
+                )
+                return
         business.add_customer(
             self._conn,
             ne.text().strip(),
@@ -1177,6 +1247,7 @@ class ARTab(QWidget):
             phone=ph.text().strip(),
             address=ad.toPlainText().strip(),
             notes=no.toPlainText().strip(),
+            parent_customer_id=parent_id,
         )
         message_box_information_ok(
             self,
@@ -1219,6 +1290,34 @@ class ARTab(QWidget):
         no.setFixedHeight(48)
         no.setToolTip("Internal notes about this customer (optional).")
 
+        type_cb = QComboBox()
+        type_cb.setToolTip(
+            "Standalone: top-level customer (or mother ship with job accounts). "
+            "Job: link to a parent to roll up open invoices in Receive Payments."
+        )
+        type_cb.addItem("Standalone Customer", "standalone")
+        type_cb.addItem("Job under Existing Customer", "job")
+        parent_lbl = QLabel("Parent customer *")
+        parent_lbl.setToolTip("Mother ship customer for this job.")
+        parent_cb = QComboBox()
+        parent_cb.setToolTip("Clear by switching to Standalone, or pick another parent.")
+
+        def fill_parent_combo(exclude_id: int | None) -> None:
+            parent_cb.clear()
+            for r in business.list_parent_customer_choices(self._conn):
+                rid = int(r["id"])
+                if exclude_id is not None and rid == exclude_id:
+                    continue
+                nm = (r["name"] or "").strip() or f"#{rid}"
+                parent_cb.addItem(nm, rid)
+
+        def sync_parent_visibility() -> None:
+            is_job = type_cb.currentData() == "job"
+            parent_lbl.setVisible(is_job)
+            parent_cb.setVisible(is_job)
+
+        type_cb.currentIndexChanged.connect(lambda _i=None: sync_parent_visibility())
+
         def load_customer(_index: int | None = None) -> None:
             cid = coerce_combo_int_id(cb.currentData())
             if cid is None:
@@ -1226,11 +1325,24 @@ class ARTab(QWidget):
             row = business.get_customer(self._conn, cid)
             if row is None:
                 return
+            fill_parent_combo(cid)
             ne.setText(row["name"] or "")
             em.setText(row["email"] or "")
             ph.setText(row["phone"] or "")
             ad.setPlainText(row["address"] or "")
             no.setPlainText(row["notes"] or "")
+            rd = dict(row)
+            pid = rd.get("parent_customer_id")
+            type_cb.blockSignals(True)
+            if pid is not None:
+                type_cb.setCurrentIndex(1)
+                ix = combo_index_for_int_user_data(parent_cb, int(pid))
+                if ix >= 0:
+                    parent_cb.setCurrentIndex(ix)
+            else:
+                type_cb.setCurrentIndex(0)
+            type_cb.blockSignals(False)
+            sync_parent_visibility()
 
         def sync_customer_combo() -> None:
             _sync_filtered_entity_combo(
@@ -1246,6 +1358,8 @@ class ARTab(QWidget):
         f.addRow("Filter list", filt)
         f.addRow("Customer", cb)
         sync_customer_combo()
+        f.addRow("Customer type", type_cb)
+        f.addRow(parent_lbl, parent_cb)
         f.addRow("Name *", ne)
         f.addRow("Email", em)
         f.addRow("Phone", ph)
@@ -1269,6 +1383,26 @@ class ARTab(QWidget):
                 ok_tip="Close; pick a customer in the list or clear the filter.",
             )
             return
+        mode = type_cb.currentData()
+        parent_id = None
+        if mode == "job":
+            if parent_cb.count() == 0:
+                message_box_warning_ok(
+                    self,
+                    "Customer",
+                    "No eligible parent customer exists. Add a standalone customer first.",
+                    ok_tip="Close; create a top-level customer, then set this one as a job under it.",
+                )
+                return
+            parent_id = coerce_combo_int_id(parent_cb.currentData())
+            if parent_id is None:
+                message_box_warning_ok(
+                    self,
+                    "Customer",
+                    "Choose a parent customer for a job account.",
+                    ok_tip="Close; pick Parent customer or switch to Standalone.",
+                )
+                return
         try:
             business.update_customer(
                 self._conn,
@@ -1278,6 +1412,7 @@ class ARTab(QWidget):
                 phone=ph.text().strip(),
                 address=ad.toPlainText().strip(),
                 notes=no.toPlainText().strip(),
+                parent_customer_id=parent_id,
             )
         except ValueError as exc:
             message_box_warning_ok(

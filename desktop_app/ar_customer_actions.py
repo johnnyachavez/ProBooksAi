@@ -473,7 +473,8 @@ def open_record_ar_payment_dialog(
     outer.addLayout(form)
     lbl_ar_apply_hdr = QLabel("Apply to open invoices:")
     lbl_ar_apply_hdr.setToolTip(
-        "Allocate this payment across unpaid invoices for the customer (table below)."
+        "Allocate this payment across unpaid invoices for the customer (table below). "
+        "If you pick a parent (mother ship) customer, open invoices include all jobs under that account."
     )
     outer.addWidget(lbl_ar_apply_hdr)
     hint = QLabel('Sum of "Apply" must equal the payment amount.')
@@ -487,7 +488,8 @@ def open_record_ar_payment_dialog(
     alloc_tbl.setHorizontalHeaderLabels(["Invoice #", "Date", "Balance", "Apply"])
     alloc_tbl.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
     alloc_tbl.setToolTip(
-        "Open invoices for the selected customer. Enter Apply amounts; they must sum to the payment."
+        "Open invoices for the selected customer (parent customers include job invoices). "
+        "Enter Apply amounts; they must sum to the payment."
     )
 
     def rebuild_ar_alloc_table(_idx: int | None = None) -> None:
@@ -497,7 +499,7 @@ def open_record_ar_payment_dialog(
         if cid is None:
             alloc_tbl.setSortingEnabled(True)
             return
-        opens = business.list_open_invoices_for_customer(conn, cid)
+        opens = business.list_open_invoices_for_ar_payment_customer(conn, cid)
         open_packed = [
             (iid, r)
             for r in opens

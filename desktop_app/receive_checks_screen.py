@@ -221,7 +221,8 @@ class ReceiveChecksScreen(QWidget):
         self._customer_filter.setMinimumWidth(220)
         self._customer_filter.setStyleSheet(_combo_ss)
         self._customer_filter.setToolTip(
-            "Limit the invoice list to one customer, or show all open invoices."
+            "Limit the invoice list to one customer, or show all open invoices. "
+            "For a parent (mother ship) customer, includes invoices for all jobs under that account."
         )
         self._customer_filter.currentIndexChanged.connect(self._rebuild_table)
 
@@ -418,7 +419,13 @@ class ReceiveChecksScreen(QWidget):
         fcid = coerce_combo_int_id(self._customer_filter.currentData())
         if fcid is None:
             return True
-        return int(d.get("customer_id") or 0) == fcid
+        if self._ap_conn is None:
+            return False
+        try:
+            ids = business.customer_ids_for_receive_payments_filter(self._ap_conn, fcid)
+        except (sqlite3.Error, ValueError):
+            ids = [fcid]
+        return int(d.get("customer_id") or 0) in set(ids)
 
     def _update_cust_balance_label(self, visible_rows: list[dict]) -> None:
         s = sum(float(r.get("balance_due") or 0.0) for r in visible_rows)
