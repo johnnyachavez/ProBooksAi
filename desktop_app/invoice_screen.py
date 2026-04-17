@@ -592,7 +592,8 @@ class InvoiceScreen(QWidget):
         )
         self._btn_new_customer = QPushButton("New Customer")
         self._btn_new_customer.setToolTip(
-            "Add a customer to the company file when no match exists; Bill To fills automatically."
+            "Same **New customer** dialog as the Customers tab (type, parent for jobs, contact fields); "
+            "Bill To fills when you save."
         )
         self._btn_save = QPushButton("Save")
         self._btn_save.setToolTip(

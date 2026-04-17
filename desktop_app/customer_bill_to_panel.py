@@ -13,9 +13,6 @@ from PySide6.QtCore import QEvent, QObject, QTimer, Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QCompleter,
-    QDialog,
-    QDialogButtonBox,
-    QFormLayout,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -29,13 +26,13 @@ from PySide6.QtWidgets import (
 
 from probooksai import business
 
+from desktop_app.new_customer_dialog import run_new_customer_dialog
 from desktop_app.theme import (
     WORKFLOW_CONTROL_FACE,
     WORKFLOW_CONTROL_HOVER,
     WORKFLOW_CONTROL_PRESSED,
     WORKFLOW_GRID as _INV_GRID,
     WORKFLOW_INPUT_BG,
-    WORKFLOW_PAGE_BG,
     WORKFLOW_PANEL_BG as _INV_PANEL,
     WORKFLOW_STRIP_BTN_OUTLINE,
     WORKFLOW_TEXT as _INV_TEXT,
@@ -77,89 +74,6 @@ def format_customer_bill_to_plaintext(customer: dict) -> str:
         lines.append(extra_notes)
 
     return "\n".join(lines)
-
-
-class CustomerQuickAddDialog(QDialog):
-    """Minimal new-customer capture; persists via :func:`business.add_customer`."""
-
-    def __init__(
-        self,
-        parent: QWidget | None,
-        conn: sqlite3.Connection,
-        *,
-        initial_name: str = "",
-    ) -> None:
-        super().__init__(parent)
-        self._conn = conn
-        self._new_id: int | None = None
-        self.setWindowTitle("Add customer")
-        self.setMinimumWidth(400)
-        self.setStyleSheet(
-            f"QDialog {{ background-color: {WORKFLOW_PAGE_BG}; }}"
-            f"QLabel {{ color: {_INV_TEXT}; }}"
-            f"QDialog QPushButton {{ background-color: {WORKFLOW_CONTROL_FACE}; color: {_INV_TEXT}; "
-            f"border: 1px solid {WORKFLOW_STRIP_BTN_OUTLINE}; border-radius: 4px; padding: 4px 14px; "
-            f"min-width: 72px; }}"
-            f"QDialog QPushButton:hover {{ background-color: {WORKFLOW_CONTROL_HOVER}; }}"
-            f"QDialog QPushButton:pressed {{ background-color: {WORKFLOW_CONTROL_PRESSED}; }}"
-        )
-        self.setToolTip(
-            "Writes to the live **customers** table (same rows as Customers tab and Receive Payments). "
-            "Bill To refreshes after save. Same .db (File → Backup / Restore, probooks.backup)."
-        )
-        form = QFormLayout(self)
-        self._name = QLineEdit(initial_name.strip())
-        self._name.setPlaceholderText("Customer / company name (required)")
-        self._contact = QLineEdit()
-        self._contact.setPlaceholderText("Contact name (optional)")
-        self._address = QPlainTextEdit()
-        self._address.setPlaceholderText("Bill To address")
-        self._address.setFixedHeight(72)
-        self._phone = QLineEdit()
-        self._email = QLineEdit()
-        _ss = (
-            f"QLineEdit, QPlainTextEdit {{ background: {WORKFLOW_INPUT_BG}; color: {_INV_TEXT}; "
-            f"border: 1px solid {_INV_GRID}; border-radius: 4px; padding: 4px; }}"
-        )
-        for w in (self._name, self._contact, self._phone, self._email):
-            w.setStyleSheet(_ss)
-        self._address.setStyleSheet(_ss)
-        form.addRow("Customer / Company *", self._name)
-        form.addRow("Contact", self._contact)
-        form.addRow("Bill To address", self._address)
-        form.addRow("Phone", self._phone)
-        form.addRow("Email", self._email)
-        bb = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
-        )
-        bb.accepted.connect(self._try_save)
-        bb.rejected.connect(self.reject)
-        form.addRow(bb)
-
-    def _try_save(self) -> None:
-        name = self._name.text().strip()
-        if not name:
-            self._name.setFocus()
-            return
-        contact = self._contact.text().strip()
-        notes = f"Contact: {contact}" if contact else ""
-        addr = self._address.toPlainText().strip()
-        try:
-            cid = business.add_customer(
-                self._conn,
-                name,
-                email=self._email.text().strip(),
-                phone=self._phone.text().strip(),
-                address=addr,
-                notes=notes,
-            )
-        except sqlite3.Error:
-            return
-        self._new_id = cid
-        self.accept()
-
-    def new_customer_id(self) -> int | None:
-        return self._new_id
 
 
 class CustomerBillToPanel(QFrame):
@@ -418,10 +332,9 @@ class CustomerBillToPanel(QFrame):
         le = self._combo.lineEdit()
         if le is not None:
             hint = le.text().strip()
-        dlg = CustomerQuickAddDialog(self, self._conn, initial_name=hint)
-        if dlg.exec() != QDialog.DialogCode.Accepted:
-            return
-        nid = dlg.new_customer_id()
+        nid = run_new_customer_dialog(
+            self, self._conn, initial_name=hint, show_success_message=False
+        )
         if nid is None:
             return
         self.reload_customers()

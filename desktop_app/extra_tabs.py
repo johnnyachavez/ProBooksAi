@@ -82,6 +82,7 @@ from desktop_app.qt_mnemonic import (
     tip_message_box_buttons,
     tip_qdialog_button_box,
 )
+from desktop_app.new_customer_dialog import run_new_customer_dialog
 from desktop_app.theme import ar_ap_master_tab_stylesheet
 from desktop_app.table_clipboard import (
     CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
@@ -1160,101 +1161,9 @@ class ARTab(QWidget):
             self._clear_detail_card()
 
     def _new_cust(self):
-        d = QDialog(self)
-        d.setWindowTitle("New customer")
-        d.setToolTip("Create a customer record used for AR invoices, payments, and aging.")
-        f = QFormLayout(d)
-        type_cb = QComboBox()
-        type_cb.setToolTip(
-            "Standalone: a normal customer (or future mother ship for jobs). "
-            "Job: bill under this name; choose the parent account to roll up in Receive Payments."
-        )
-        type_cb.addItem("Standalone Customer", "standalone")
-        type_cb.addItem("Job under Existing Customer", "job")
-        parent_lbl = QLabel("Parent customer *")
-        parent_lbl.setToolTip("Top-level (mother ship) customer this job belongs to.")
-        parent_cb = QComboBox()
-        parent_cb.setToolTip(
-            "Open invoices for this job appear when the parent is selected in Receive Payments."
-        )
-
-        def refill_parent_cb() -> None:
-            parent_cb.clear()
-            for r in business.list_parent_customer_choices(self._conn):
-                rid = int(r["id"])
-                nm = (r["name"] or "").strip() or f"#{rid}"
-                parent_cb.addItem(nm, rid)
-
-        def sync_parent_visibility() -> None:
-            is_job = type_cb.currentData() == "job"
-            parent_lbl.setVisible(is_job)
-            parent_cb.setVisible(is_job)
-
-        type_cb.currentIndexChanged.connect(lambda _i=None: sync_parent_visibility())
-        refill_parent_cb()
-        sync_parent_visibility()
-
-        ne = QLineEdit()
-        ne.setToolTip("Customer display name (required).")
-        em = QLineEdit()
-        em.setToolTip("Contact email (optional).")
-        ph = QLineEdit()
-        ph.setToolTip("Phone number (optional).")
-        ad = QPlainTextEdit()
-        ad.setFixedHeight(56)
-        ad.setToolTip("Mailing or service address (optional).")
-        no = QPlainTextEdit()
-        no.setFixedHeight(48)
-        no.setToolTip("Internal notes about this customer (optional).")
-        f.addRow("Customer type", type_cb)
-        f.addRow(parent_lbl, parent_cb)
-        f.addRow("Name *", ne)
-        f.addRow("Email", em)
-        f.addRow("Phone", ph)
-        f.addRow("Address", ad)
-        f.addRow("Notes", no)
-        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        _tip_dialog_ok_cancel(bb, "Add the customer with these details.")
-        bb.accepted.connect(d.accept)
-        bb.rejected.connect(d.reject)
-        f.addRow(bb)
-        if d.exec() != QDialog.DialogCode.Accepted or not ne.text().strip():
+        nid = run_new_customer_dialog(self, self._conn, show_success_message=True)
+        if nid is None:
             return
-        mode = type_cb.currentData()
-        parent_id = None
-        if mode == "job":
-            if parent_cb.count() == 0:
-                message_box_warning_ok(
-                    self,
-                    "Customer",
-                    "Create a standalone customer first to use as the parent (mother ship).",
-                    ok_tip="Close; add a top-level customer, then add this job again.",
-                )
-                return
-            parent_id = coerce_combo_int_id(parent_cb.currentData())
-            if parent_id is None:
-                message_box_warning_ok(
-                    self,
-                    "Customer",
-                    "Choose a parent customer for a job account.",
-                    ok_tip="Close; pick the mother ship customer in Parent customer.",
-                )
-                return
-        business.add_customer(
-            self._conn,
-            ne.text().strip(),
-            email=em.text().strip(),
-            phone=ph.text().strip(),
-            address=ad.toPlainText().strip(),
-            notes=no.toPlainText().strip(),
-            parent_customer_id=parent_id,
-        )
-        message_box_information_ok(
-            self,
-            "Done",
-            "Customer added.",
-            ok_tip="Close; the customer appears in lists and filters.",
-        )
         self._refresh()
 
     def _edit_cust(self):
