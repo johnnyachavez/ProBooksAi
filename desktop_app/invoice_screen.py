@@ -20,6 +20,7 @@ Modal UI for *this* workflow tab is allowed only from explicit header buttons:
 
 No other signal may trigger Save / Export / Print invoice output paths.
 ``desktop_app.invoice_pdf.invoice_html_string`` / ``save_invoice_pdf`` also serve tests and CLI.
+Company identity from ``company_settings`` appears above the Manual Invoice title and in PDF/print HTML.
 """
 
 from __future__ import annotations
@@ -74,6 +75,7 @@ from desktop_app.invoice_intake_text_extract import TextIntakeExtraction
 from desktop_app.invoice_pdf import invoice_html_string, save_invoice_pdf
 from desktop_app.qt_mnemonic import message_box_information_ok
 from probooksai import business
+from probooksai.company_identity import company_identity_plain_block
 from desktop_app.ar_customer_actions import (
     export_invoices_csv,
     open_new_ar_invoice_dialog,
@@ -285,6 +287,7 @@ class InvoiceScreen(QWidget):
         super().showEvent(event)
         if self._ap_conn is not None:
             self._bill_customer_panel.reload_customers()
+        self._refresh_company_identity_header()
         self._sync_invoice_number_suggestion()
         self._refresh_browse_state()
         self._update_new_customer_button_state()
@@ -476,6 +479,22 @@ class InvoiceScreen(QWidget):
         play = QVBoxLayout(page)
         play.setContentsMargins(12, 10, 12, 12)
         play.setSpacing(8)
+
+        # Company letterhead (same ``company_settings`` text as PDF/print via ``company_identity_plain_block``).
+        self._company_identity_label = QLabel("")
+        self._company_identity_label.setWordWrap(True)
+        self._company_identity_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self._company_identity_label.setStyleSheet(
+            f"color: {_INV_TEXT}; font-size: 11px; background: transparent; padding: 0 0 6px 0;"
+        )
+        self._company_identity_label.setVisible(False)
+        self._company_identity_label.setToolTip(
+            "Company identity from your company file (File → Create Company File). "
+            "Matches the top-left block on printed and PDF invoices."
+        )
+        play.addWidget(self._company_identity_label)
 
         # ── Title row (Pay Bills / Receive Payments style: title left, key field right) ──
         title_row = QHBoxLayout()
@@ -837,7 +856,28 @@ class InvoiceScreen(QWidget):
         self._invoice_tabs.currentChanged.connect(self._on_invoice_module_subtab_changed)
         outer.addWidget(self._invoice_tabs, 1)
 
+        self._refresh_company_identity_header()
         self._refresh_browse_state()
+
+    def _refresh_company_identity_header(self) -> None:
+        """Show company name / address / contact from ``company_settings`` when any field is set."""
+        lbl = getattr(self, "_company_identity_label", None)
+        if lbl is None:
+            return
+        if self._ap_conn is None:
+            lbl.clear()
+            lbl.setVisible(False)
+            return
+        try:
+            block = company_identity_plain_block(self._ap_conn).strip()
+        except (sqlite3.Error, OSError, TypeError, ValueError):
+            block = ""
+        if not block:
+            lbl.clear()
+            lbl.setVisible(False)
+            return
+        lbl.setText(block)
+        lbl.setVisible(True)
 
     def apply_intake_item_to_draft(
         self,
