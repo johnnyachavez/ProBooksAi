@@ -3,6 +3,8 @@ Line-level statement vs register matching (AI reconciliation workflow).
 
 Compares *extracted* statement rows to *register* ``bank_transactions``-shaped dicts
 (description / ref_number / memo).
+Classifies rows as **Matched**, **Likely match** (conservative fuzzy / date slip), **Needs review**
+(statement-only with no pair), or **Extra** (register-only).
 Used by the Bank Import tab; does not modify the database or the register grid.
 ``write_line_match_comparison_csv`` exports compare results plus UI reconciled flags (UTF-8 with
 BOM for Excel-friendly open).
@@ -34,7 +36,10 @@ from difflib import SequenceMatcher
 from typing import Any, Optional
 
 STATUS_MATCHED = "Matched"
-STATUS_MISSING = "Missing"
+STATUS_LIKELY_MATCH = "Likely match"
+STATUS_NEEDS_REVIEW = "Needs review"
+# Backward-compatible name (same value as ``STATUS_NEEDS_REVIEW``).
+STATUS_MISSING = STATUS_NEEDS_REVIEW
 STATUS_EXTRA = "Extra"
 
 
@@ -206,6 +211,27 @@ def transaction_pair_matches(stmt: dict[str, Any], reg: dict[str, Any]) -> bool:
     )
 
 
+def transaction_pair_likely(stmt: dict[str, Any], reg: dict[str, Any]) -> bool:
+    """Conservative *likely* pair: same amount, not a full :func:`transaction_pair_matches`.
+
+    Covers (1) description similarity strong enough for full rules but date slip 3–5 days
+    within ±5d, or (2) ±2d date with fuzzy text ratio 0.22–0.35 (below full fuzzy threshold).
+    """
+    if not amounts_equal(stmt.get("amount"), reg.get("amount")):
+        return False
+    ds, dr = str(stmt.get("txn_date") or ""), str(reg.get("txn_date") or "")
+    na = _combined_description_for_match(stmt)
+    nb = _combined_description_for_match(reg)
+    ratio = SequenceMatcher(None, na.casefold(), nb.casefold()).ratio()
+    if dates_within_days(ds, dr, 5) and not dates_within_days(ds, dr, 2):
+        if descriptions_match(na, nb) or ratio >= 0.35:
+            return True
+    if dates_within_days(ds, dr, 2) and not descriptions_match(na, nb):
+        if 0.22 <= ratio < 0.35:
+            return True
+    return False
+
+
 def _description_match_score(stmt: dict[str, Any], reg: dict[str, Any]) -> float:
     na = _combined_description_for_match(stmt).casefold()
     nb = _combined_description_for_match(reg).casefold()
@@ -264,6 +290,22 @@ def compare_statement_to_register(
                 best_j = j
         return best_j
 
+    def pick_best_likely(stmt: dict[str, Any]) -> Optional[int]:
+        best_j: Optional[int] = None
+        best_key: tuple[float, int] = (-1.0, 9999)
+        for j, reg in enumerate(reg_list):
+            if j in used_reg:
+                continue
+            if not transaction_pair_likely(stmt, reg):
+                continue
+            score = _description_match_score(stmt, reg)
+            dd = _date_distance_days(stmt, reg)
+            key = (score, -dd)
+            if best_j is None or key > best_key:
+                best_key = key
+                best_j = j
+        return best_j
+
     def _row_amount_rounded(row: dict[str, Any]) -> float:
         v = _coerce_amount(row.get("amount"))
         if v is not None:
@@ -290,21 +332,48 @@ def compare_statement_to_register(
                     "reg_date": str(reg.get("txn_date") or ""),
                     "reg_amount": _row_amount_rounded(reg),
                     "reg_description": _combined_description_for_match(reg),
+                    "review_notes": str(stmt.get("review_notes") or ""),
                 }
             )
         else:
-            out.append(
-                {
-                    "status": STATUS_MISSING,
-                    "stmt_date": str(stmt.get("txn_date") or ""),
-                    "stmt_amount": _row_amount_rounded(stmt),
-                    "stmt_description": _combined_description_for_match(stmt),
-                    "register_id": None,
-                    "reg_date": "",
-                    "reg_amount": 0.0,
-                    "reg_description": "",
-                }
-            )
+            lj = pick_best_likely(stmt)
+            if lj is not None:
+                used_reg.add(lj)
+                reg = reg_list[lj]
+                rid = reg.get("id")
+                try:
+                    reg_id = int(rid) if rid is not None else None
+                except (TypeError, ValueError):
+                    reg_id = None
+                out.append(
+                    {
+                        "status": STATUS_LIKELY_MATCH,
+                        "stmt_date": str(stmt.get("txn_date") or ""),
+                        "stmt_amount": _row_amount_rounded(stmt),
+                        "stmt_description": _combined_description_for_match(stmt),
+                        "register_id": reg_id,
+                        "reg_date": str(reg.get("txn_date") or ""),
+                        "reg_amount": _row_amount_rounded(reg),
+                        "reg_description": _combined_description_for_match(reg),
+                        "review_notes": str(stmt.get("review_notes") or ""),
+                        "draft_coa_account": str(stmt.get("draft_coa_account") or ""),
+                    }
+                )
+            else:
+                out.append(
+                    {
+                        "status": STATUS_NEEDS_REVIEW,
+                        "stmt_date": str(stmt.get("txn_date") or ""),
+                        "stmt_amount": _row_amount_rounded(stmt),
+                        "stmt_description": _combined_description_for_match(stmt),
+                        "register_id": None,
+                        "reg_date": "",
+                        "reg_amount": 0.0,
+                        "reg_description": "",
+                        "review_notes": str(stmt.get("review_notes") or ""),
+                        "draft_coa_account": str(stmt.get("draft_coa_account") or ""),
+                    }
+                )
 
     for j, reg in enumerate(reg_list):
         if j in used_reg:
@@ -324,6 +393,7 @@ def compare_statement_to_register(
                 "reg_date": str(reg.get("txn_date") or ""),
                 "reg_amount": _row_amount_rounded(reg),
                 "reg_description": _combined_description_for_match(reg),
+                "review_notes": "",
             }
         )
 

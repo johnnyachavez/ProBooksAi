@@ -1,7 +1,8 @@
 """
 AI-assisted statement line reconciliation panel (Bank Import tab).
 
-Shows Matched / Missing / Extra with review checkboxes (UI state only; no DB writes).
+Shows Matched / Likely match / Needs review / Extra buckets, a filterable grid, and a **Needs review**
+draft queue (UI-only edits; no DB writes).
 **Export comparison CSV** writes the current grid (including reconciled yes/no) via
 ``probooksai.statement_line_match.write_line_match_comparison_csv`` (UTF-8 with BOM for Excel);
 the save dialog suggests a
@@ -13,7 +14,6 @@ for Bank Import CSV exports (``bank_import/last_csv_export_dir``; legacy
 
 from __future__ import annotations
 
-import sqlite3
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional
@@ -22,11 +22,14 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QBrush, QGuiApplication
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
+    QDoubleSpinBox,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QFileDialog,
     QLabel,
+    QLineEdit,
     QMenu,
     QPushButton,
     QTableWidget,
@@ -54,13 +57,15 @@ from desktop_app.table_clipboard import (
 from probooksai import business
 from probooksai.statement_line_match import (
     STATUS_EXTRA,
+    STATUS_LIKELY_MATCH,
     STATUS_MATCHED,
-    STATUS_MISSING,
+    STATUS_NEEDS_REVIEW,
     write_line_match_comparison_csv,
 )
 
 if TYPE_CHECKING:
     from probooksai.bank_import import BankDatabase
+    from probooksai.coa_db import COADatabase
 
 _COL_REVIEWED = 0
 _COL_STATUS = 1
@@ -86,6 +91,7 @@ _HEADERS = [
 
 # Subtle row backgrounds (R, G, B)
 _BG_MATCHED = QColor(28, 60, 40)
+_BG_LIKELY = QColor(40, 55, 32)
 _BG_MISSING = QColor(70, 50, 22)
 _BG_EXTRA = QColor(28, 45, 70)
 
@@ -116,13 +122,16 @@ class StatementLineMatchPanel(QGroupBox):
         *,
         bank_import_shortcuts_help: Optional[Callable[[], None]] = None,
         register_tab=None,
+        coa_db: Optional["COADatabase"] = None,
     ):
         super().__init__("Line Reconciliation (AI)", parent)
         self._db = db
+        self._coa_db = coa_db
         self._rows: list[dict] = []
         self._populating = False
         self._bank_import_shortcuts_help = bank_import_shortcuts_help
         self._register_tab = register_tab
+        self._needs_review_master_rows: list[int] = []
         self.setToolTip(
             "Compare mock statement lines to register transactions for the selected batch period "
             "(Matched / Missing / Extra). Reconciled checkboxes are UI-only. "
@@ -157,7 +166,7 @@ class StatementLineMatchPanel(QGroupBox):
                 self,
                 "Business link",
                 "Click a line-reconciliation row first.",
-                ok_tip="Close; pick a row in the Matched / Missing / Extra grid.",
+                ok_tip="Close; pick a row in the line reconciliation grid.",
             )
             return
         if row >= len(self._rows):
@@ -228,6 +237,45 @@ class StatementLineMatchPanel(QGroupBox):
         secondary.addStretch()
         layout.addLayout(secondary)
 
+        flow = QLabel(
+            "<b>Workflow:</b> Intake → <b>Run extract & compare</b> → use buckets below → "
+            "fix <b>Needs review</b> in the queue (draft only) → match against <b>Bank Register</b>."
+        )
+        flow.setWordWrap(True)
+        flow.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        flow.setTextFormat(Qt.TextFormat.RichText)
+        layout.addWidget(flow)
+
+        self._bucket_strip = QLabel("—")
+        self._bucket_strip.setWordWrap(True)
+        self._bucket_strip.setStyleSheet("color: #C8C8D8; font-size: 11px;")
+        self._bucket_strip.setToolTip(
+            "Counts by classification. Nothing posts automatically — Bank Register stays the source of truth."
+        )
+        layout.addWidget(self._bucket_strip)
+
+        filt_row = QHBoxLayout()
+        filt_row.setSpacing(8)
+        filt_lbl = QLabel("Show:")
+        filt_lbl.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        filt_row.addWidget(filt_lbl)
+        self._filter_combo = QComboBox()
+        for t in (
+            "All rows",
+            "Matched",
+            "Likely match",
+            "Needs review",
+            "Extra (register only)",
+        ):
+            self._filter_combo.addItem(t)
+        self._filter_combo.setToolTip(
+            "Filter the line-reconciliation grid by status bucket (import/compare results unchanged)."
+        )
+        self._filter_combo.currentIndexChanged.connect(self._on_bucket_filter_changed)
+        filt_row.addWidget(self._filter_combo)
+        filt_row.addStretch()
+        layout.addLayout(filt_row)
+
         self._table = QTableWidget()
         self._table.setColumnCount(len(_HEADERS))
         self._table.setHorizontalHeaderLabels(_HEADERS)
@@ -244,7 +292,7 @@ class StatementLineMatchPanel(QGroupBox):
                 else QHeaderView.ResizeMode.Stretch,
             )
         self._table.setToolTip(
-            "Status colors: Matched (green tint), Missing statement-side (amber), "
+            "Status colors: Matched (green), Likely match (olive), Needs review (amber), "
             "Extra register-side (blue). Reconciled checkboxes are local UI state only. "
             "Export comparison CSV uses UTF-8 with BOM for Excel. "
             "Right-click: Export comparison CSV when the table has rows; Copy row (TSV) on a data row; "
@@ -264,6 +312,39 @@ class StatementLineMatchPanel(QGroupBox):
             lambda *_: self._refresh_reconciled_action_states()
         )
         layout.addWidget(self._table)
+
+        self._needs_review_box = QGroupBox(
+            "Review queue — Needs review (draft edits; does not post to the company file)"
+        )
+        self._needs_review_box.setStyleSheet(
+            "QGroupBox { font-weight: 600; margin-top: 6px; } "
+            "QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; }"
+        )
+        self._needs_review_box.setToolTip(
+            "Statement-side rows with no confident register match. Edit payee, date, amount, category, "
+            "and notes here to clarify before you work them in Bank Register. Changes update this panel "
+            "and the main grid above only — no silent posting."
+        )
+        nrv = QVBoxLayout(self._needs_review_box)
+        self._needs_review_table = QTableWidget()
+        self._needs_review_table.setColumnCount(6)
+        self._needs_review_table.setHorizontalHeaderLabels(
+            ["#", "Stmt date", "Stmt $", "Payee / description", "Category (COA)", "Notes"]
+        )
+        self._needs_review_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._needs_review_table.verticalHeader().setVisible(False)
+        self._needs_review_table.setMinimumHeight(80)
+        self._needs_review_table.setMaximumHeight(220)
+        hh_nr = self._needs_review_table.horizontalHeader()
+        for c in range(6):
+            hh_nr.setSectionResizeMode(
+                c,
+                QHeaderView.ResizeMode.ResizeToContents
+                if c not in (3, 5)
+                else QHeaderView.ResizeMode.Stretch,
+            )
+        nrv.addWidget(self._needs_review_table)
+        layout.addWidget(self._needs_review_box)
 
         self._summary = QLabel("—")
         self._summary.setStyleSheet("color: #A0A0B0; font-size: 11px;")
@@ -285,10 +366,17 @@ class StatementLineMatchPanel(QGroupBox):
 
     def clear_results(self) -> None:
         self._rows = []
+        self._needs_review_master_rows = []
         self._populating = True
         self._table.setRowCount(0)
+        self._needs_review_table.setRowCount(0)
         self._populating = False
+        self._bucket_strip.setText("—")
+        self._filter_combo.blockSignals(True)
+        self._filter_combo.setCurrentIndex(0)
+        self._filter_combo.blockSignals(False)
         self._summary.setText("—")
+        self._needs_review_box.setVisible(False)
         self._refresh_reconciled_action_states()
 
     def _refresh_reconciled_action_states(self) -> None:
@@ -313,13 +401,15 @@ class StatementLineMatchPanel(QGroupBox):
         self._populating = True
         self._table.blockSignals(True)
         self._table.setRowCount(len(rows))
-        matched = missing = extra = 0
+        matched = likely = needs_rev = extra = 0
         for r, row in enumerate(rows):
             st = row.get("status") or ""
             if st == STATUS_MATCHED:
                 matched += 1
-            elif st == STATUS_MISSING:
-                missing += 1
+            elif st == STATUS_LIKELY_MATCH:
+                likely += 1
+            elif st == STATUS_NEEDS_REVIEW:
+                needs_rev += 1
             elif st == STATUS_EXTRA:
                 extra += 1
 
@@ -336,7 +426,9 @@ class StatementLineMatchPanel(QGroupBox):
             st_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
             if st == STATUS_MATCHED:
                 st_item.setForeground(QColor("#6ecf8a"))
-            elif st == STATUS_MISSING:
+            elif st == STATUS_LIKELY_MATCH:
+                st_item.setForeground(QColor("#c8e6a0"))
+            elif st == STATUS_NEEDS_REVIEW:
                 st_item.setForeground(QColor("#e8b060"))
             elif st == STATUS_EXTRA:
                 st_item.setForeground(QColor("#7eb3e8"))
@@ -357,7 +449,7 @@ class StatementLineMatchPanel(QGroupBox):
 
             self._table.setItem(r, _COL_REG_DATE, _text_item(str(row.get("reg_date") or "")))
             ra = row.get("reg_amount")
-            reg_amt = "" if st == STATUS_MISSING else f"${float(ra):,.2f}"
+            reg_amt = "" if st == STATUS_NEEDS_REVIEW else f"${float(ra):,.2f}"
             self._table.setItem(r, _COL_REG_AMT, _text_item(reg_amt))
             self._table.setItem(
                 r, _COL_REG_DESC, _text_item(str(row.get("reg_description") or ""))
@@ -372,7 +464,9 @@ class StatementLineMatchPanel(QGroupBox):
             bg = None
             if st == STATUS_MATCHED:
                 bg = _BG_MATCHED
-            elif st == STATUS_MISSING:
+            elif st == STATUS_LIKELY_MATCH:
+                bg = _BG_LIKELY
+            elif st == STATUS_NEEDS_REVIEW:
                 bg = _BG_MISSING
             elif st == STATUS_EXTRA:
                 bg = _BG_EXTRA
@@ -385,18 +479,211 @@ class StatementLineMatchPanel(QGroupBox):
 
         self._table.blockSignals(False)
         self._populating = False
-        self._refresh_match_summary_footer(matched, missing, extra)
+        self._update_bucket_strip(matched, likely, needs_rev, extra)
+        self._filter_combo.blockSignals(True)
+        self._filter_combo.setCurrentIndex(0)
+        self._filter_combo.blockSignals(False)
+        self._apply_bucket_filter(0)
+        self._populate_needs_review_queue()
+        self._refresh_match_summary_footer(matched, likely, needs_rev, extra)
         self._refresh_reconciled_action_states()
+
+    def _update_bucket_strip(
+        self,
+        matched: int,
+        likely: int,
+        needs_rev: int,
+        extra: int,
+    ) -> None:
+        self._bucket_strip.setTextFormat(Qt.TextFormat.RichText)
+        self._bucket_strip.setText(
+            f"<b>Matched:</b> {matched} &nbsp;|&nbsp; <b>Likely match:</b> {likely} &nbsp;|&nbsp; "
+            f"<b>Needs review:</b> {needs_rev} &nbsp;|&nbsp; <b>Extra (register only):</b> {extra}"
+        )
+
+    def _apply_bucket_filter(self, filter_index: int) -> None:
+        """filter_index: 0=all, 1=matched, 2=likely, 3=needs review, 4=extra."""
+        for r in range(self._table.rowCount()):
+            if r >= len(self._rows):
+                continue
+            st = (self._rows[r].get("status") or "").strip()
+            show = True
+            if filter_index == 1:
+                show = st == STATUS_MATCHED
+            elif filter_index == 2:
+                show = st == STATUS_LIKELY_MATCH
+            elif filter_index == 3:
+                show = st == STATUS_NEEDS_REVIEW
+            elif filter_index == 4:
+                show = st == STATUS_EXTRA
+            self._table.setRowHidden(r, not show)
+
+    def _on_bucket_filter_changed(self, index: int) -> None:
+        if self._populating:
+            return
+        self._apply_bucket_filter(int(index))
+
+    def _populate_needs_review_queue(self) -> None:
+        self._needs_review_master_rows = []
+        t = self._needs_review_table
+        self._populating = True
+        t.blockSignals(True)
+        t.setRowCount(0)
+        coa_labels: list[str] = []
+        if self._coa_db is not None:
+            try:
+                coa_labels = list(self._coa_db.display_list())
+            except (TypeError, AttributeError, ValueError):
+                coa_labels = []
+
+        nr = 0
+        for master_idx, row in enumerate(self._rows):
+            if (row.get("status") or "") != STATUS_NEEDS_REVIEW:
+                continue
+            self._needs_review_master_rows.append(master_idx)
+            t.insertRow(nr)
+            it_n = QTableWidgetItem(str(nr + 1))
+            it_n.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+            t.setItem(nr, 0, it_n)
+
+            de = QLineEdit(str(row.get("stmt_date") or ""))
+            de.setPlaceholderText("Stmt date")
+            de.editingFinished.connect(
+                lambda mid=master_idx, w=de: self._on_needs_review_date_changed(mid, w)
+            )
+            t.setCellWidget(nr, 1, de)
+
+            sp = QDoubleSpinBox()
+            sp.setRange(-999999999.99, 999999999.99)
+            sp.setDecimals(2)
+            sp.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
+            try:
+                sp.setValue(float(row.get("stmt_amount") or 0.0))
+            except (TypeError, ValueError):
+                sp.setValue(0.0)
+            sp.valueChanged.connect(
+                lambda _v, mid=master_idx, w=sp: self._on_needs_review_amount_changed(mid, w)
+            )
+            t.setCellWidget(nr, 2, sp)
+
+            pe = QLineEdit(str(row.get("stmt_description") or ""))
+            pe.setPlaceholderText("Payee / description")
+            pe.textChanged.connect(
+                lambda _t, mid=master_idx, w=pe: self._on_needs_review_payee_changed(mid, w)
+            )
+            t.setCellWidget(nr, 3, pe)
+
+            cb = QComboBox()
+            cb.setEditable(False)
+            cb.addItem("—", None)
+            for lab in coa_labels:
+                cb.addItem(lab, lab)
+            draft = str(row.get("draft_coa_account") or "").strip()
+            if draft:
+                ix = cb.findText(draft)
+                if ix < 0:
+                    cb.addItem(draft, draft)
+                    cb.setCurrentIndex(cb.count() - 1)
+                else:
+                    cb.setCurrentIndex(ix)
+            cb.currentIndexChanged.connect(
+                lambda _i, mid=master_idx, w=cb: self._on_needs_review_coa_changed(mid, w)
+            )
+            t.setCellWidget(nr, 4, cb)
+
+            ne = QLineEdit(str(row.get("review_notes") or ""))
+            ne.setPlaceholderText("Notes (draft)")
+            ne.textChanged.connect(
+                lambda _t, mid=master_idx, w=ne: self._on_needs_review_notes_changed(mid, w)
+            )
+            t.setCellWidget(nr, 5, ne)
+
+            nr += 1
+
+        t.blockSignals(False)
+        self._populating = False
+        self._needs_review_box.setVisible(nr > 0)
+
+    def _on_needs_review_date_changed(self, master_idx: int, w: QLineEdit) -> None:
+        if self._populating or master_idx >= len(self._rows):
+            return
+        self._rows[master_idx]["stmt_date"] = (w.text() or "").strip()
+        self._refresh_main_stmt_cells(master_idx)
+
+    def _on_needs_review_amount_changed(self, master_idx: int, w: QDoubleSpinBox) -> None:
+        if self._populating or master_idx >= len(self._rows):
+            return
+        self._rows[master_idx]["stmt_amount"] = round(float(w.value()), 2)
+        self._refresh_main_stmt_cells(master_idx)
+
+    def _on_needs_review_payee_changed(self, master_idx: int, w: QLineEdit) -> None:
+        if self._populating or master_idx >= len(self._rows):
+            return
+        self._rows[master_idx]["stmt_description"] = (w.text() or "").strip()
+        self._refresh_main_stmt_cells(master_idx)
+
+    def _on_needs_review_coa_changed(self, master_idx: int, w: QComboBox) -> None:
+        if self._populating or master_idx >= len(self._rows):
+            return
+        data = w.currentData()
+        if data is None:
+            self._rows[master_idx]["draft_coa_account"] = ""
+        else:
+            self._rows[master_idx]["draft_coa_account"] = str(data)
+        self._refresh_main_stmt_cells(master_idx)
+
+    def _on_needs_review_notes_changed(self, master_idx: int, w: QLineEdit) -> None:
+        if self._populating or master_idx >= len(self._rows):
+            return
+        self._rows[master_idx]["review_notes"] = (w.text() or "").strip()
+
+    def _refresh_main_stmt_cells(self, master_idx: int) -> None:
+        """Push draft edits from _rows into the main reconciliation grid row."""
+        if master_idx < 0 or master_idx >= self._table.rowCount():
+            return
+        row = self._rows[master_idx]
+        st = row.get("status") or ""
+        if st != STATUS_NEEDS_REVIEW:
+            return
+        self._populating = True
+        self._table.blockSignals(True)
+        try:
+            d_it = self._table.item(master_idx, _COL_STMT_DATE)
+            if d_it is not None:
+                d_it.setText(str(row.get("stmt_date") or ""))
+            sa = row.get("stmt_amount")
+            a_it = self._table.item(master_idx, _COL_STMT_AMT)
+            if a_it is not None:
+                try:
+                    a_it.setText(f"${float(sa):,.2f}")
+                except (TypeError, ValueError):
+                    a_it.setText("")
+            s_it = self._table.item(master_idx, _COL_STMT_DESC)
+            if s_it is not None:
+                desc = str(row.get("stmt_description") or "")
+                notes = str(row.get("review_notes") or "").strip()
+                coa = str(row.get("draft_coa_account") or "").strip()
+                extra = ""
+                if coa:
+                    extra += f" [COA draft: {coa}]"
+                if notes:
+                    extra += f" — Notes: {notes}"
+                s_it.setText(desc + extra if extra else desc)
+        finally:
+            self._table.blockSignals(False)
+            self._populating = False
 
     def _refresh_match_summary_footer(
         self,
         matched: int,
-        missing: int,
+        likely: int,
+        needs_rev: int,
         extra: int,
     ) -> None:
         n = len(self._rows)
         base = (
-            f"Summary: {matched} Matched, {missing} Missing, {extra} Extra ({n} rows)."
+            f"Summary: {matched} Matched, {likely} Likely match, {needs_rev} Needs review, "
+            f"{extra} Extra ({n} rows)."
         )
         nrev = self.reviewed_count()
         if nrev:
@@ -447,7 +734,7 @@ class StatementLineMatchPanel(QGroupBox):
         if row < 0 or row >= len(self._rows):
             return ""
         r = self._rows[row]
-        if (r.get("status") or "") == STATUS_MISSING:
+        if (r.get("status") or "") == STATUS_NEEDS_REVIEW:
             return ""
         return str(r.get("reg_date") or "").strip()
 
@@ -455,7 +742,7 @@ class StatementLineMatchPanel(QGroupBox):
         if row < 0 or row >= len(self._rows):
             return ""
         r = self._rows[row]
-        if (r.get("status") or "") == STATUS_MISSING:
+        if (r.get("status") or "") == STATUS_NEEDS_REVIEW:
             return ""
         ra = r.get("reg_amount")
         if ra is None:
@@ -477,7 +764,7 @@ class StatementLineMatchPanel(QGroupBox):
         if row < 0 or row >= len(self._rows):
             return ""
         r = self._rows[row]
-        if (r.get("status") or "") == STATUS_MISSING:
+        if (r.get("status") or "") == STATUS_NEEDS_REVIEW:
             return ""
         return str(r.get("reg_description") or "").strip()
 
@@ -739,13 +1026,17 @@ class StatementLineMatchPanel(QGroupBox):
         matched = sum(
             1 for r in self._rows if (r.get("status") or "") == STATUS_MATCHED
         )
-        missing = sum(
-            1 for r in self._rows if (r.get("status") or "") == STATUS_MISSING
+        likely = sum(
+            1 for r in self._rows if (r.get("status") or "") == STATUS_LIKELY_MATCH
+        )
+        needs_rev = sum(
+            1 for r in self._rows if (r.get("status") or "") == STATUS_NEEDS_REVIEW
         )
         extra = sum(
             1 for r in self._rows if (r.get("status") or "") == STATUS_EXTRA
         )
-        self._refresh_match_summary_footer(matched, missing, extra)
+        self._update_bucket_strip(matched, likely, needs_rev, extra)
+        self._refresh_match_summary_footer(matched, likely, needs_rev, extra)
 
     def reviewed_count(self) -> int:
         n = 0

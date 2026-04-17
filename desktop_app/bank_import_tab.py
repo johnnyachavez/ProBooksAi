@@ -32,7 +32,7 @@ Tabs / widgets
   ColumnMappingDialog    – map CSV headers (window + combo + OK/Cancel via ``tip_qdialog_button_box``)
   BlankBankRegisterTable – **QTableWidget** (Date…Balance; blank editable rows, or read-only import rows + padded blanks when a batch is selected; populated rows set hover tooltips like the Bank register for elided text)
   ReconciliationPanel    – **Reconciliation Summary** (**QGroupBox** + value labels + status **tooltips**)
-  StatementLineMatchPanel – line reconciliation vs register (**Matched** / **Missing** / **Extra**); **Run extract & compare** syncs **Match overlay** on **Bank register** when wired (**after_stmt_match_sync**).
+  StatementLineMatchPanel – line reconciliation vs register (**Matched** / **Likely match** / **Needs review** / **Extra**); **Run extract & compare** syncs **Match overlay** on **Bank register** when wired (**after_stmt_match_sync**).
 """
 
 from __future__ import annotations
@@ -1192,7 +1192,7 @@ class BankImportTab(QWidget):
         self.setToolTip(
             "Bank CSV/PDF import and reconciliation: choose an account, import batches, transactions, "
             "and match statement balances. "
-            "**Line Reconciliation (AI)** (Matched / Missing / Extra) can update Bank register Match overlay "
+            "**Line Reconciliation (AI)** (Matched / Likely match / Needs review / Extra) can update Bank register Match overlay "
             "when you run extract & compare (Help → Bank import shortcuts…); exported CSV uses UTF-8 BOM for Excel "
             "(F5 refreshes when this tab has focus). "
             "View → Bank Register (Ctrl+5) shows the Match overlay after compare. "
@@ -1329,7 +1329,7 @@ class BankImportTab(QWidget):
         review_intro.setWordWrap(True)
         review_intro.setStyleSheet("color: #A0A0B0; font-size: 12px;")
         review_intro.setToolTip(
-            "Matched / Missing / Extra and tolerance behave as before; extract & compare can sync the register overlay."
+            "Buckets: Matched, Likely match, Needs review, Extra; extract & compare can sync the register overlay."
         )
         review_lay.addWidget(review_intro)
 
@@ -1454,6 +1454,7 @@ class BankImportTab(QWidget):
             parent=self,
             bank_import_shortcuts_help=self._show_bank_import_keyboard_shortcuts_help,
             register_tab=self._register_tab,
+            coa_db=self._coa_db,
         )
         recon_col_layout.addWidget(self._line_match_panel)
         self._line_match_panel.set_context(None, None)

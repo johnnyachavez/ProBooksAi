@@ -105,8 +105,9 @@ from probooksai.coa_ai_suggest import coa_hints
 from probooksai.bank_import import BankDatabase, parse_amount
 from probooksai.statement_line_match import (
     STATUS_EXTRA,
+    STATUS_LIKELY_MATCH,
     STATUS_MATCHED,
-    STATUS_MISSING,
+    STATUS_NEEDS_REVIEW,
     compare_statement_to_register,
     mock_statement_lines_for_comparison,
 )
@@ -1520,8 +1521,12 @@ class RegisterTab(QWidget):
                 st = (self._recon_txn_status.get(tid, "") or "").strip()
                 if st == STATUS_MATCHED:
                     stmt_tip = f"{src}: matched this register transaction."
-                elif st == STATUS_MISSING:
-                    stmt_tip = f"{src}: no register match (demo)."
+                elif st == STATUS_LIKELY_MATCH:
+                    stmt_tip = (
+                        f"{src}: likely match — review the pair in Reconcile → Bank statements."
+                    )
+                elif st == STATUS_NEEDS_REVIEW:
+                    stmt_tip = f"{src}: needs review — no confident register match."
                 elif st == STATUS_EXTRA:
                     stmt_tip = (
                         f"{src}: register line with no statement counterpart (demo)."

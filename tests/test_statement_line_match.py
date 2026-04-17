@@ -11,14 +11,17 @@ import pytest
 
 from probooksai.statement_line_match import (
     STATUS_EXTRA,
+    STATUS_LIKELY_MATCH,
     STATUS_MATCHED,
     STATUS_MISSING,
+    STATUS_NEEDS_REVIEW,
     amounts_equal,
     compare_statement_to_register,
     dates_within_days,
     descriptions_match,
     mock_statement_lines_for_comparison,
     transaction_pair_matches,
+    transaction_pair_likely,
     write_line_match_comparison_csv,
 )
 
@@ -208,7 +211,24 @@ def test_compare_missing_statement_only() -> None:
     reg: list = []
     out = compare_statement_to_register(stmt, reg)
     assert len(out) == 1
-    assert out[0]["status"] == STATUS_MISSING
+    assert out[0]["status"] == STATUS_NEEDS_REVIEW
+    assert out[0]["status"] == STATUS_MISSING  # alias
+
+
+def test_compare_likely_match_date_slip_beyond_two_days() -> None:
+    stmt = [{"txn_date": "2024-01-13", "amount": 100.0, "description": "Deposit"}]
+    reg = [{"id": 1, "txn_date": "2024-01-10", "amount": 100.0, "description": "Deposit"}]
+    out = compare_statement_to_register(stmt, reg)
+    assert len(out) == 1
+    assert out[0]["status"] == STATUS_LIKELY_MATCH
+    assert out[0]["register_id"] == 1
+
+
+def test_transaction_pair_likely_weak_fuzzy_same_date() -> None:
+    """Weak fuzzy ratio (0.22–0.35) with ±2d date — see ``transaction_pair_likely``."""
+    stmt = {"txn_date": "2024-01-10", "amount": -10.0, "description": "AAA0"}
+    reg = {"txn_date": "2024-01-10", "amount": -10.0, "description": "BBB0"}
+    assert transaction_pair_likely(stmt, reg)
 
 
 def test_compare_missing_includes_combined_stmt_description() -> None:
