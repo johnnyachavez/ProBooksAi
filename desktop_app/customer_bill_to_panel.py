@@ -8,9 +8,10 @@ in ``notes`` for quick-add contact name.
 from __future__ import annotations
 
 import sqlite3
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QTimer, Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
+    QCompleter,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -161,7 +162,12 @@ class CustomerQuickAddDialog(QDialog):
 
 
 class CustomerBillToPanel(QFrame):
-    """Bill To: type-ahead customer combo + details text; quick-add when needed."""
+    """Bill To: type-ahead customer combo + details text; quick-add when needed.
+
+    Focus in the customer field opens the dropdown immediately; typing filters the list
+    (completer ``MatchContains``). Enter confirms the highlighted row; Tab confirms when
+    the popup is open, then moves focus.
+    """
 
     customerIdChanged = Signal(object)
 
@@ -205,10 +211,14 @@ class CustomerBillToPanel(QFrame):
         le = self._combo.lineEdit()
         if le is not None:
             le.setPlaceholderText("Type to find customer…")
+            le.installEventFilter(self)
         comp = self._combo.completer()
         if comp is not None:
             comp.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
             comp.setFilterMode(Qt.MatchFlag.MatchContains)
+            comp.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+
+        self._combo.setMaxVisibleItems(20)
 
         self._btn_new = QPushButton("New customer…")
         self._btn_new.setToolTip(
@@ -248,6 +258,48 @@ class CustomerBillToPanel(QFrame):
         self._apply_conn_state()
         if self._conn is not None:
             self.reload_customers()
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        le = self._combo.lineEdit()
+        if le is not None and obj is le:
+            et = event.type()
+            if et == QEvent.Type.FocusIn:
+                if (
+                    not self._filling_combo
+                    and self._conn is not None
+                    and self._combo.count() > 0
+                ):
+                    QTimer.singleShot(0, self._bill_to_show_popup_deferred)
+            elif et == QEvent.Type.KeyPress:
+                ke = event
+                if (
+                    ke.key() == Qt.Key.Key_Tab
+                    and ke.modifiers() == Qt.KeyboardModifier.NoModifier
+                    and self._combo.view().isVisible()
+                ):
+                    view = self._combo.view()
+                    row = view.currentIndex().row()
+                    if row < 0:
+                        row = self._combo.currentIndex()
+                    if row < 0:
+                        row = 0
+                    if 0 <= row < self._combo.count():
+                        self._combo.setCurrentIndex(row)
+                        self._combo.hidePopup()
+                        ke.accept()
+                        return True
+        return super().eventFilter(obj, event)
+
+    def _bill_to_show_popup_deferred(self) -> None:
+        """Open customer list on first focus (after line edit receives focus)."""
+        if self._filling_combo:
+            return
+        le = self._combo.lineEdit()
+        if le is None or not le.hasFocus():
+            return
+        if self._conn is None or self._combo.count() < 1:
+            return
+        self._combo.showPopup()
 
     def bill_text_edit(self) -> QPlainTextEdit:
         return self._bill_te
