@@ -444,6 +444,34 @@ def write_line_match_comparison_csv(
             )
 
 
+def statement_rows_for_line_compare(
+    bank_transaction_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Build *statement*-side rows for :func:`compare_statement_to_register` from imported activity.
+
+    Each item is a ``bank_transactions``-shaped dict (typically from
+    :meth:`~probooksai.bank_import.BankDatabase.list_transactions` with ``import_batch_id`` set).
+    Dates and amounts match the stored import; description fields follow the same join rules
+    as register rows in matching.
+    """
+    out: list[dict[str, Any]] = []
+    for raw in bank_transaction_rows:
+        d = dict(raw)
+        raw_amt = _coerce_amount(d.get("amount"))
+        amt = round(raw_amt, 2) if raw_amt is not None else 0.0
+        date_s = str(d.get("txn_date") or "").strip()[:10]
+        out.append(
+            {
+                "txn_date": date_s,
+                "amount": amt,
+                "description": d.get("description"),
+                "ref_number": d.get("ref_number"),
+                "memo": d.get("memo"),
+            }
+        )
+    return out
+
+
 def mock_statement_lines_for_comparison(register_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     Deterministic mock “PDF extract” from register rows for UI demos and tests.

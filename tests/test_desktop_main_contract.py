@@ -5753,6 +5753,8 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
     assert bit.count('QKeySequence("Ctrl+Shift+B")') == 2
     run_sm = sm.split("def _on_run_clicked", 1)[1].split("def _mark_reviewed_selected", 1)[0]
     assert "coerce_combo_int_id(b.get(\"bank_account_id\"))" in run_sm
+    assert "import_batch_id=batch_id" in run_sm
+    assert "statement_rows_for_line_compare" in run_sm
     assert "line_match_results_ready = Signal(int, list)" in sm
     assert "Run extract & compare" in sm
     assert "compare_statement_to_register" in sm

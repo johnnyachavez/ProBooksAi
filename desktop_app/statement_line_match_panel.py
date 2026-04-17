@@ -9,7 +9,7 @@ the save dialog suggests a
 basename from the import batch filename (or batch id) and re-opens in the last folder used
 for Bank Import CSV exports (``bank_import/last_csv_export_dir``; legacy
 ``bank_import/line_compare_csv_export_dir`` is still read if unset).
-**Right-click** the grid for **Keyboard shortcuts…** (when wired from Bank Import), **Copy row** (TSV), **Copy statement date** / amount / description when the mock statement side is filled (**Matched** / **Missing**), **Copy register date** / amount / description when the register side is filled (**Matched** / **Extra**), **Copy register transaction id** when **Reg #** is set, and **Open linked Business record…** when Bank Import wires the register tab and that transaction has a **complete bank link**. **Double-click** a row when **Reg #** is set uses the same **Business link** prompts as **Bank register** (opens **Business** when the link is complete; otherwise an explanatory message).
+**Right-click** the grid for **Keyboard shortcuts…** (when wired from Bank Import), **Copy row** (TSV), **Copy statement date** / amount / description when the imported statement side is filled (**Matched** / **Missing**), **Copy register date** / amount / description when the register side is filled (**Matched** / **Extra**), **Copy register transaction id** when **Reg #** is set, and **Open linked Business record…** when Bank Import wires the register tab and that transaction has a **complete bank link**. **Double-click** a row when **Reg #** is set uses the same **Business link** prompts as **Bank register** (opens **Business** when the link is complete; otherwise an explanatory message).
 """
 
 from __future__ import annotations
@@ -110,7 +110,7 @@ def _suggested_line_compare_csv_filename(batch: Optional[dict]) -> str:
 
 
 class StatementLineMatchPanel(QGroupBox):
-    """Table + controls for mock statement extract vs register classification."""
+    """Table + controls for imported statement lines vs register classification."""
 
     #: Emitted after a successful compare: ``(bank_account_id, results)`` for Register **Match overlay** sync.
     line_match_results_ready = Signal(int, list)
@@ -133,8 +133,8 @@ class StatementLineMatchPanel(QGroupBox):
         self._register_tab = register_tab
         self._needs_review_master_rows: list[int] = []
         self.setToolTip(
-            "Compare mock statement lines to register transactions for the selected batch period "
-            "(Matched / Missing / Extra). Reconciled checkboxes are UI-only. "
+            "Compare imported statement lines (this import batch) to register transactions for the batch period "
+            "(Matched / Likely match / Needs review / Extra). Reconciled checkboxes are UI-only. "
             "**Run extract & compare** updates **Bank register → Match overlay** when wired, "
             "then focuses the register tab and shows a short **status bar** message; "
             "the usual company line returns after. "
@@ -190,8 +190,9 @@ class StatementLineMatchPanel(QGroupBox):
         primary.setSpacing(8)
         self._btn_run = QPushButton("Run extract & compare")
         self._btn_run.setToolTip(
-            "Build mock statement lines from the register (same period as the batch), "
-            "classify Matched / Missing / Extra, and fill the table below. "
+            "Load statement-side lines from this import batch (CSV/PDF/paste intake stored in the batch), "
+            "compare to all register lines in the batch date range, classify Matched / Likely match / "
+            "Needs review / Extra, and fill the table below. "
             "Syncs **Bank register → Match overlay** for this account when wired, switches there, "
             "and shows a brief status message."
         )
@@ -840,7 +841,7 @@ class StatementLineMatchPanel(QGroupBox):
                     "Copy statement date", partial(self._copy_line_match_stmt_date, row)
                 )
                 act_sd.setToolTip(
-                    "Copy the statement-side date for this row (mock extract; **Stmt date** column). "
+                    "Copy the statement-side date for this row (imported batch line; **Stmt date** column). "
                     + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
                 )
             sa = self._line_match_stmt_amount_plain(row)
@@ -964,7 +965,7 @@ class StatementLineMatchPanel(QGroupBox):
     def _on_run_clicked(self) -> None:
         from probooksai.statement_line_match import (
             compare_statement_to_register,
-            mock_statement_lines_for_comparison,
+            statement_rows_for_line_compare,
         )
 
         if self._account_id is None or self._batch is None:
@@ -973,13 +974,22 @@ class StatementLineMatchPanel(QGroupBox):
         acct = coerce_combo_int_id(b.get("bank_account_id"))
         if acct is None:
             return
-        txns = self._db.list_transactions(
+        batch_id = coerce_combo_int_id(b.get("id"))
+        if batch_id is None:
+            return
+        txns_reg = self._db.list_transactions(
             acct,
             statement_start=b.get("statement_start"),
             statement_end=b.get("statement_end"),
         )
-        reg = [dict(t) for t in txns]
-        stmt = mock_statement_lines_for_comparison(reg)
+        reg = [dict(t) for t in txns_reg]
+        txns_stmt = self._db.list_transactions(
+            acct,
+            statement_start=b.get("statement_start"),
+            statement_end=b.get("statement_end"),
+            import_batch_id=batch_id,
+        )
+        stmt = statement_rows_for_line_compare([dict(t) for t in txns_stmt])
         results = compare_statement_to_register(stmt, reg)
         self.populate(results)
         self.line_match_results_ready.emit(acct, results)

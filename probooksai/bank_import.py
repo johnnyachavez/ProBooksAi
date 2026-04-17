@@ -871,11 +871,17 @@ class BankDatabase:
         statement_start: Optional[str] = None,
         statement_end: Optional[str] = None,
         register_filter: Optional[str] = None,
+        *,
+        import_batch_id: Optional[int] = None,
     ) -> list:
         """
         Return transactions for *bank_account_id*, optionally filtered by date.
 
         Dates are ISO-8601 strings (YYYY-MM-DD), inclusive on both ends.
+
+        *import_batch_id* — when set, only rows whose ``bank_transactions.batch_id`` equals
+        this id (used for Reconcile line compare: statement side = this import batch;
+        register side = all rows in the date range).
 
         *register_filter* (register UI): ``needs_receipt``, ``has_attachment``,
         ``missing_attachment`` (needs_receipt and empty path),
@@ -945,6 +951,9 @@ class BankDatabase:
                 "WHERE b.id = bank_transactions.batch_id "
                 "AND COALESCE(b.is_reconciled, 0) = 0)"
             )
+        if import_batch_id is not None:
+            where += " AND bank_transactions.batch_id = ?"
+            params.append(int(import_batch_id))
         return self._conn.execute(
             f"SELECT * FROM bank_transactions WHERE {where} ORDER BY txn_date, id",
             params,

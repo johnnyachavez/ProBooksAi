@@ -20,6 +20,7 @@ from probooksai.statement_line_match import (
     dates_within_days,
     descriptions_match,
     mock_statement_lines_for_comparison,
+    statement_rows_for_line_compare,
     transaction_pair_matches,
     transaction_pair_likely,
     write_line_match_comparison_csv,
@@ -32,6 +33,26 @@ def test_strip_pasted_breaks_removes_cr_lf_tab() -> None:
     assert _strip_pasted_breaks("a\rb\nc\t") == "abc"
     assert _strip_pasted_breaks("1\u200b234") == "1234"
     assert _strip_pasted_breaks("x") == "x"
+
+
+def test_statement_rows_for_line_compare_maps_bank_transactions() -> None:
+    stmt = statement_rows_for_line_compare(
+        [
+            {
+                "txn_date": "2024-01-05",
+                "amount": -4.5,
+                "description": "Coffee",
+                "ref_number": "R1",
+                "memo": "M1",
+            }
+        ]
+    )
+    assert len(stmt) == 1
+    assert stmt[0]["txn_date"] == "2024-01-05"
+    assert stmt[0]["amount"] == -4.5
+    assert stmt[0]["description"] == "Coffee"
+    assert stmt[0]["ref_number"] == "R1"
+    assert stmt[0]["memo"] == "M1"
 
 
 def test_dates_within_days() -> None:

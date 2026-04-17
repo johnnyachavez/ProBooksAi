@@ -334,6 +334,23 @@ class TestTransactions:
         assert counts["inserted"] == 4
         assert counts["skipped"] == 0
 
+    def test_list_transactions_import_batch_id(self, db):
+        aid = db.add_bank_account("Batch Filter")
+        bid1 = db.create_batch(
+            aid, statement_start="2024-01-01", statement_end="2024-01-31"
+        )
+        bid2 = db.create_batch(
+            aid, statement_start="2024-01-01", statement_end="2024-01-31"
+        )
+        rows1 = parse_csv(CSV_SIMPLE, "Date", "Amount", "Description")
+        db.import_transactions(bid1, aid, rows1)
+        csv2 = """Date,Description,Amount\n2024-01-21,Extra row,-9.99\n"""
+        rows2 = parse_csv(csv2, "Date", "Amount", "Description")
+        db.import_transactions(bid2, aid, rows2)
+        assert len(db.list_transactions(aid)) == 5
+        assert len(db.list_transactions(aid, import_batch_id=bid1)) == 4
+        assert len(db.list_transactions(aid, import_batch_id=bid2)) == 1
+
     def test_duplicate_skipped(self, db):
         aid, bid = self._setup(db)
         rows = parse_csv(CSV_SIMPLE, "Date", "Amount", "Description")
