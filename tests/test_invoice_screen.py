@@ -458,6 +458,19 @@ def test_invoice_screen_bill_to_selects_customer(qapp: QApplication, tmp_path) -
     db.close()
 
 
+def test_invoice_screen_customer_records_changed_emitted_from_bill_to_panel(
+    qapp: QApplication, tmp_path
+) -> None:
+    db_path = tmp_path / "invoice_cust_signal.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    w = InvoiceScreen(ap_conn=db._conn)
+    seen: list[bool] = []
+    w.customerRecordsChanged.connect(lambda: seen.append(True))
+    w.bill_to_customer_panel().customerCreated.emit(1)
+    assert seen == [True]
+
+
 def test_invoice_screen_bill_to_combo_shows_job_hierarchy(
     qapp: QApplication, tmp_path
 ) -> None:

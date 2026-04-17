@@ -104,8 +104,8 @@ class CustomerQuickAddDialog(QDialog):
             f"QDialog QPushButton:pressed {{ background-color: {WORKFLOW_CONTROL_PRESSED}; }}"
         )
         self.setToolTip(
-            "Save a new customer to the company file; Bill To fills from this record. "
-            "Same .db as Business → Customers (File → Backup / Restore, probooks.backup)."
+            "Writes to the live **customers** table (same rows as Customers tab and Receive Payments). "
+            "Bill To refreshes after save. Same .db (File → Backup / Restore, probooks.backup)."
         )
         form = QFormLayout(self)
         self._name = QLineEdit(initial_name.strip())
@@ -171,6 +171,7 @@ class CustomerBillToPanel(QFrame):
     """
 
     customerIdChanged = Signal(object)
+    customerCreated = Signal(int)
 
     def __init__(
         self,
@@ -425,6 +426,7 @@ class CustomerBillToPanel(QFrame):
             return
         self.reload_customers()
         self._apply_customer_id(nid)
+        self.customerCreated.emit(int(nid))
 
 
 def build_customer_bill_to_panel(

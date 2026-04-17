@@ -31,7 +31,7 @@ import os
 import sqlite3
 from typing import Optional
 
-from PySide6.QtCore import QDate, QEvent, QObject, QSettings, Qt, QTimer
+from PySide6.QtCore import QDate, QEvent, QObject, QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QFontMetrics, QHideEvent, QShowEvent, QTextDocument
 from PySide6.QtPrintSupport import QPrinter
 from PySide6.QtWidgets import (
@@ -237,6 +237,8 @@ def _line_total_spin() -> QDoubleSpinBox:
 
 class InvoiceScreen(QWidget):
     """Manual Invoice: header, line grid, totals; persists to ``invoices`` / ``invoice_lines`` when connected."""
+
+    customerRecordsChanged = Signal()
 
     _LINE_COLS = (
         "Date",
@@ -679,6 +681,9 @@ class InvoiceScreen(QWidget):
         self._btn_clear_fields.clicked.connect(self._on_clear_fields, _uc)
         self._btn_new_customer.clicked.connect(
             self._bill_customer_panel.open_new_customer_dialog, _uc
+        )
+        self._bill_customer_panel.customerCreated.connect(
+            lambda _nid: self.customerRecordsChanged.emit()
         )
         self._btn_reverse.clicked.connect(self._on_reverse_invoice, _uc)
         self._btn_forward.clicked.connect(self._on_forward_invoice, _uc)

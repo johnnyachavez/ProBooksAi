@@ -1029,6 +1029,11 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(self._reconcile_root, "Reconcile")
         self._tabs.addTab(self._more_hub, "More")
 
+        self._invoice_screen.customerRecordsChanged.connect(self._customers_tab._refresh)
+        self._invoice_screen.customerRecordsChanged.connect(
+            self._receive_payments_screen._load_invoices_from_db
+        )
+
     def _apply_main_tab_bar_tooltips(self) -> None:
         main_tab_bar = self._tabs.tabBar()
         _main_tab_bar_db_hint = " Same company .db (File → Backup / Restore, probooks.backup)."
