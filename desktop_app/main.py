@@ -22,7 +22,7 @@ also have hover hints. The banner **AppHeaderWidget** (**QFrame**) right-aligns 
 Destructive **Yes**/**No** prompts (new company file exists, database restore) use **tip_message_box_buttons** for button hover hints and **QMessageBox.setToolTip** for the dialog window.
 
 Main window **menu bar**: each ``QAction`` uses ``setStatusTip`` for the **status bar** and the same text via ``setToolTip`` for hover (``_menu_action_tip`` helper).
-Top-level menus: **File** (includes **Create Company File…** for identity + new ``.db``), **View**, **Edit**, **Tools** (e.g. **Invoice…** Ctrl+Shift+I to the **Invoices** tab), **Recon** (bank register bulk actions in submenus), **Help**.
+Top-level menus: **File** (includes **Create Company File…** for identity + new ``.db``; on first launch with no saved company path, a welcome prompt points here), **View**, **Edit**, **Tools** (e.g. **Invoice…** Ctrl+Shift+I to the **Invoices** tab), **Recon** (bank register bulk actions in submenus), **Help**.
 """
 
 from __future__ import annotations
@@ -853,6 +853,7 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._refresh_inbox()
         self._update_company_status()
+        QTimer.singleShot(0, self._maybe_prompt_first_company_file_setup)
 
     def _make_placeholder_shell_tab(self, title: str, body: str) -> QWidget:
         """Step-1 shell for a top-level tab whose full workflow is not migrated yet."""
@@ -2228,6 +2229,35 @@ class MainWindow(QMainWindow):
             "Same engine as probooks restore (probooks.backup).",
             ok_tip="Close; you are now on the restored company database.",
         )
+
+    def _maybe_prompt_first_company_file_setup(self) -> None:
+        """First-run: suggest **File → Create Company File…** when no explicit path is stored yet."""
+        if self._db_path is not None:
+            return
+        settings = QSettings()
+        if settings.value("company_file_setup_prompted", False, type=bool):
+            return
+        prev = (settings.value("company_database_path", "", type=str) or "").strip()
+        if prev:
+            settings.setValue("company_file_setup_prompted", True)
+            return
+        box = QMessageBox(self)
+        box.setWindowTitle("Set up your company file")
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setText(
+            "Welcome. Create a company file to store your business name, address, phone, email, and tax ID. "
+            "They are saved in the database and used on invoices and reports."
+        )
+        box.setInformativeText("You can use File → Create Company File… anytime.")
+        create_btn = box.addButton(
+            "Create Company File…", QMessageBox.ButtonRole.AcceptRole
+        )
+        box.addButton("Not now", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(create_btn)
+        box.exec()
+        if box.clickedButton() == create_btn:
+            self._on_create_company_file()
+        settings.setValue("company_file_setup_prompted", True)
 
     def _on_open_company_database(self):
         prev = QSettings().value("company_database_path", "", type=str) or ""

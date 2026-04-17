@@ -1102,6 +1102,7 @@ def test_main_window_init_wires_databases_build_ui_and_refresh() -> None:
     assert chunk.count("self._build_ui()") == 1
     assert chunk.count("self._refresh_inbox()") == 1
     assert chunk.count("self._update_company_status()") == 1
+    assert chunk.count("QTimer.singleShot(0, self._maybe_prompt_first_company_file_setup)") == 1
     assert chunk.count("self._worker: AIWorker | None = None") == 1
 
 
@@ -1123,6 +1124,7 @@ def test_main_window_init_database_and_ui_bootstrap_order() -> None:
         "self._build_ui()",
         "self._refresh_inbox()",
         "self._update_company_status()",
+        "QTimer.singleShot(0, self._maybe_prompt_first_company_file_setup)",
     )
     positions = [chunk.index(m) for m in markers]
     assert positions == sorted(positions)
@@ -1684,12 +1686,24 @@ def test_main_window_question_and_warning_icons_for_company_dialogs() -> None:
 
 
 def test_main_window_two_stacked_qmessagebox_instances_for_yes_no_flows() -> None:
-    """``MainWindow`` builds two ``QMessageBox(self)`` boxes: new-company file exists, restore confirm."""
+    """``MainWindow`` builds three ``QMessageBox(self)`` boxes: first-run welcome, new-company file exists, restore confirm."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("class MainWindow(QMainWindow):")
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
-    assert chunk.count("box = QMessageBox(self)") == 2
+    assert chunk.count("box = QMessageBox(self)") == 3
+
+
+def test_main_window_maybe_prompt_first_company_file_setup() -> None:
+    """First-run welcome: skip when ``_db_path`` is set or prompt was shown; else offer create-company-file."""
+    text = _MAIN.read_text(encoding="utf-8")
+    start = text.index("    def _maybe_prompt_first_company_file_setup(self) -> None:")
+    end = text.index("    def _on_open_company_database(self):", start)
+    chunk = text[start:end]
+    assert chunk.count("if self._db_path is not None:") == 1
+    assert chunk.count('settings.value("company_file_setup_prompted", False, type=bool)') == 1
+    assert chunk.count('settings.setValue("company_file_setup_prompted", True)') == 2
+    assert chunk.count("self._on_create_company_file()") == 1
 
 
 def test_main_window_on_open_company_database_reads_settings_and_switches() -> None:

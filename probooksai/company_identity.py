@@ -1,8 +1,9 @@
 """
 Company identity (legal / contact) stored in ``company_settings`` (extensions schema).
 
-Used for invoice PDF/print headers and main-window display; edit via **File → Create Company File**
-or by updating the same keys programmatically.
+Used for invoice PDF/print headers and main-window display. Values are stored in the open company file’s
+``company_settings`` table. Capture at setup via **File → Create Company File…** (or update the same keys
+programmatically).
 """
 
 from __future__ import annotations

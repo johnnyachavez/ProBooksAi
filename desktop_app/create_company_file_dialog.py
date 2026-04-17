@@ -23,7 +23,7 @@ class CreateCompanyFileDialog(QDialog):
 
         intro = QLabel(
             "Enter your company details. They are saved inside the new company database "
-            "and used on printed invoices and future reports."
+            "(not in the app code) and used on printed invoices, PDFs, and future reports."
         )
         intro.setWordWrap(True)
 
