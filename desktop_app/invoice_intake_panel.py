@@ -1,7 +1,7 @@
 """Invoice Intake — stage delivery tickets, PDFs, images, and pasted text for draft invoicing.
 
-Foundation only: queue + review placeholders. Source → review → invoice draft is the intended flow;
-full extraction and draft creation are not implemented yet.
+Queue + review; **Send to Manual Invoice** hands off the selected row to the Manual Invoice sub-tab
+as a new draft (memo + visible banner). Full OCR/AI line extraction is not implemented yet.
 """
 
 from __future__ import annotations
@@ -133,7 +133,8 @@ class InvoiceIntakePanel(QWidget):
         lay.addLayout(head)
 
         flow = QLabel(
-            "Flow: source document in → review / edit → invoice draft out (extraction and drafting are next steps)."
+            "Flow: stage a source → review → Send to Manual Invoice for a draft shell (memo + source); "
+            "enter lines and Save."
         )
         flow.setWordWrap(True)
         flow.setStyleSheet(f"color: {_INV_CAPTION}; font-size: 11px; background: transparent;")
@@ -153,11 +154,18 @@ class InvoiceIntakePanel(QWidget):
         self._btn_remove = QPushButton("Remove selected")
         self._btn_remove.setToolTip("Remove the selected queue row.")
         self._btn_remove.clicked.connect(self._on_remove_selected)
+        self._btn_send_draft = QPushButton("Send to Manual Invoice")
+        self._btn_send_draft.setToolTip(
+            "Open the Manual Invoice sub-tab with a new draft carrying this row's source path or "
+            "staged text into the invoice memo (confirm lines and Save)."
+        )
+        self._btn_send_draft.clicked.connect(self._on_send_to_manual_invoice)
         for b in (
             self._btn_pdf,
             self._btn_img,
             self._btn_paste,
             self._btn_remove,
+            self._btn_send_draft,
         ):
             b.setAutoDefault(False)
             b.setDefault(False)
@@ -165,6 +173,7 @@ class InvoiceIntakePanel(QWidget):
         actions.addWidget(self._btn_img)
         actions.addWidget(self._btn_paste)
         actions.addWidget(self._btn_remove)
+        actions.addWidget(self._btn_send_draft)
         actions.addStretch(1)
         lay.addLayout(actions)
 
@@ -282,6 +291,7 @@ class InvoiceIntakePanel(QWidget):
         outer.addWidget(band, 1)
         self._on_selection_changed()
         self._sync_draft_target_hint()
+        self._refresh_send_draft_enabled()
 
     def _sync_draft_target_hint(self) -> None:
         inv = self._invoice_screen
@@ -291,10 +301,76 @@ class InvoiceIntakePanel(QWidget):
             if le is not None:
                 num = (le.text() or "").strip()
         body = (
-            "Future: create or update a draft invoice from the selected intake row.\n"
-            f"Suggested invoice # (current form): {num or '—'}"
+            "Use Send to Manual Invoice to open a new draft with this source in the memo.\n"
+            f"Suggested invoice # (Manual Invoice form): {num or '—'}"
         )
         self._txt_draft.setPlainText(body)
+
+    def _refresh_send_draft_enabled(self) -> None:
+        on = self._invoice_screen is not None and self._table.currentRow() >= 0
+        self._btn_send_draft.setEnabled(on)
+
+    def _row_intake_payload(self, row: int) -> Optional[dict]:
+        if row < 0 or row >= self._table.rowCount():
+            return None
+        src_it = self._table.item(row, 0)
+        kind_it = self._table.item(row, 1)
+        notes_it = self._table.item(row, 4)
+        source_display = src_it.text() if src_it is not None else ""
+        kind = (kind_it.text() if kind_it is not None else "").strip()
+        queue_notes = notes_it.text() if notes_it is not None else ""
+        path: Optional[str] = None
+        payload: Optional[str] = None
+        if src_it is not None:
+            v = src_it.data(_ROLE_PATH)
+            if isinstance(v, str) and v.strip():
+                path = v
+            t = src_it.data(_ROLE_TEXT_PAYLOAD)
+            if isinstance(t, str):
+                payload = t
+        return {
+            "source_display": source_display,
+            "kind": kind,
+            "path": path,
+            "text_payload": payload,
+            "queue_notes": queue_notes,
+        }
+
+    def _on_send_to_manual_invoice(self) -> None:
+        inv = self._invoice_screen
+        if inv is None:
+            return
+        r = self._table.currentRow()
+        if r < 0:
+            message_box_information_ok(
+                self,
+                "Invoice Intake",
+                "Select a row in the queue first.",
+                ok_tip="Click a row, then use Send to Manual Invoice.",
+            )
+            return
+        if getattr(inv, "_ap_conn", None) is None:
+            message_box_information_ok(
+                self,
+                "Invoice Intake",
+                "Open a company file to create an invoice draft.",
+                ok_tip="Close; use File → Open company… then try again.",
+            )
+            return
+        data = self._row_intake_payload(r)
+        if not data:
+            return
+        ok = inv.apply_intake_item_to_draft(
+            source_display=data["source_display"],
+            kind=data["kind"],
+            path=data.get("path"),
+            text_payload=data.get("text_payload"),
+            queue_notes=data.get("queue_notes") or "",
+        )
+        if ok:
+            st = self._table.item(r, 3)
+            if st is not None:
+                st.setText("Sent to draft")
 
     def _on_selection_changed(self) -> None:
         r = self._table.currentRow()
@@ -338,6 +414,7 @@ class InvoiceIntakePanel(QWidget):
             self._txt_attachment.setPlainText("—")
 
         self._sync_draft_target_hint()
+        self._refresh_send_draft_enabled()
 
     def _append_row(
         self,

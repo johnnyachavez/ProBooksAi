@@ -1,6 +1,6 @@
 """Invoice entry workflow screen — intake queue and Manual Invoice with live SQLite persistence; Bill To uses Customer Center data.
 
-**Invoice Intake** (sub-tab): stage PDFs, images, and pasted text for future draft creation; **Manual Invoice** sub-tab saves to ``invoices`` / ``invoice_lines``.
+**Invoice Intake** (sub-tab): stage PDFs, images, and pasted text; **Send to Manual Invoice** opens a new draft with source in memo + banner. **Manual Invoice** sub-tab saves to ``invoices`` / ``invoice_lines``.
 
 Dark navy panel styling matches Customers / Vendors AR/AP master tabs. Line grid uses in-cell widgets
 so editors stay inline (no multiline popup editors). Bill To is wired to
@@ -399,7 +399,7 @@ class InvoiceScreen(QWidget):
         self._invoice_tabs = QTabWidget(self)
         self._invoice_tabs.setObjectName("invoiceModuleTabs")
         self._invoice_tabs.setToolTip(
-            "Manual Invoice: full entry workflow. Invoice Intake: stage documents for future drafting."
+            "Manual Invoice: full entry workflow. Invoice Intake: stage sources and send to a draft invoice."
         )
 
         self._btn_ar_new_inv = QPushButton("New invoice (AR)…")
@@ -628,6 +628,17 @@ class InvoiceScreen(QWidget):
 
         self._sync_invoice_number_suggestion()
 
+        self._invoice_intake_handoff_banner = QLabel("")
+        self._invoice_intake_handoff_banner.setObjectName("invoiceIntakeHandoffBanner")
+        self._invoice_intake_handoff_banner.setWordWrap(True)
+        self._invoice_intake_handoff_banner.setVisible(False)
+        self._invoice_intake_handoff_banner.setStyleSheet(
+            f"QLabel#invoiceIntakeHandoffBanner {{ color: {_INV_TEXT}; font-size: 12px; "
+            f"background-color: {_INV_PANEL}; border: 1px solid {_INV_GRID}; border-radius: 6px; "
+            f"padding: 8px 10px; }}"
+        )
+        play.addWidget(self._invoice_intake_handoff_banner)
+
         line_sec = QLabel("Line items")
         line_sec.setStyleSheet(
             f"color: {_INV_CAPTION}; font-size: 11px; font-weight: 600; "
@@ -786,6 +797,79 @@ class InvoiceScreen(QWidget):
         outer.addWidget(self._invoice_tabs, 1)
 
         self._refresh_browse_state()
+
+    def apply_intake_item_to_draft(
+        self,
+        *,
+        source_display: str,
+        kind: str,
+        path: str | None = None,
+        text_payload: str | None = None,
+        queue_notes: str = "",
+    ) -> bool:
+        """Switch to Manual Invoice with a new draft; carry intake source into memo (saved on Save).
+
+        Only uses data the user staged in Invoice Intake — no inferred customer, lines, or amounts.
+        """
+        if self._ap_conn is None:
+            message_box_information_ok(
+                self,
+                "Invoice",
+                "Open a company file to create an invoice draft.",
+                ok_tip="Close; use File → Open company… then try again.",
+            )
+            return False
+        self._invoice_tabs.setCurrentIndex(0)
+        self._go_to_new_invoice_draft()
+
+        src = (source_display or "").strip() or "(unnamed)"
+        k = (kind or "").strip() or "?"
+        qn = (queue_notes or "").strip()
+        memo_lines: list[str] = [
+            "[Invoice intake] Draft from staged item — review and edit before Save.",
+            f"Source label: {src}",
+            f"Type: {k}",
+        ]
+        p = (path or "").strip()
+        if p:
+            memo_lines.append(f"Attachment path: {os.path.normpath(p)}")
+        if qn:
+            memo_lines.append(f"Queue notes: {qn}")
+        if k == "Text" and (text_payload or "").strip():
+            body = text_payload.strip()
+            if len(body) > 8000:
+                body = body[:8000] + "\n… (truncated for memo; paste more in the line grid if needed)"
+            memo_lines.append("")
+            memo_lines.append("--- Staged text (from clipboard / intake) ---")
+            memo_lines.append(body)
+
+        self._invoice_memo_notes = "\n".join(memo_lines).strip()
+
+        num = (self._inv_number.text() or "").strip()
+        if k == "Text" and (text_payload or "").strip():
+            raw = text_payload.strip()
+            preview = raw if len(raw) <= 500 else raw[:500] + "…"
+            banner = (
+                f"From Invoice Intake — pasted text ({len(raw)} chars). "
+                f"Suggested invoice # {num or '—'}.\n\n"
+                f"Preview (full text is saved on the invoice memo):\n{preview}"
+            )
+        elif p:
+            banner = (
+                f"From Invoice Intake — {k}: {src}. Path is in the invoice memo (Save). "
+                f"Suggested invoice # {num or '—'}."
+            )
+        else:
+            banner = (
+                f"From Invoice Intake — {k}: {src}. Details are in the invoice memo (Save). "
+                f"Suggested invoice # {num or '—'}."
+            )
+        self._invoice_intake_handoff_banner.setText(banner)
+        self._invoice_intake_handoff_banner.setVisible(True)
+
+        self._refresh_browse_state()
+        self._update_browse_buttons()
+        return True
 
     def open_invoice_by_id(self, invoice_id: int) -> bool:
         """Load an invoice into the Manual Invoice sub-tab (register / in-app navigation)."""
@@ -1132,6 +1216,13 @@ class InvoiceScreen(QWidget):
         total = round(sub + tax, 2)
         self._set_totals_labels(sub, tax, total)
 
+    def _hide_invoice_intake_handoff_banner(self) -> None:
+        b = getattr(self, "_invoice_intake_handoff_banner", None)
+        if b is None:
+            return
+        b.setVisible(False)
+        b.setText("")
+
     def _on_clear_fields(self) -> None:
         self._current_invoice_id = None
         self._browse_index = None
@@ -1140,6 +1231,7 @@ class InvoiceScreen(QWidget):
         self._po.clear()
         self._job.clear()
         self._invoice_memo_notes = ""
+        self._hide_invoice_intake_handoff_banner()
         self._bill_customer_panel.clear_bill_to()
         self._clear_line_grid()
         self._inv_number.clear()
@@ -1153,6 +1245,7 @@ class InvoiceScreen(QWidget):
         self._po.clear()
         self._job.clear()
         self._invoice_memo_notes = ""
+        self._hide_invoice_intake_handoff_banner()
         self._bill_customer_panel.clear_bill_to()
         self._clear_line_grid()
         self._inv_number.clear()
@@ -1175,6 +1268,7 @@ class InvoiceScreen(QWidget):
         inv, lines = business.get_invoice_detail(self._ap_conn, invoice_id)
         if inv is None:
             return
+        self._hide_invoice_intake_handoff_banner()
         d = dict(inv)
         num = (d.get("invoice_number") or "").strip()
         self._inv_number.setText(num)

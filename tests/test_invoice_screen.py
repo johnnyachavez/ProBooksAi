@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from unittest.mock import patch
 
@@ -478,3 +479,99 @@ def test_invoice_save_and_print_handlers_require_real_button_sender(
         m_cp.assert_not_called()
     assert business.list_invoices(db._conn) == []
     db.close()
+
+
+def test_apply_intake_item_to_draft_pdf_memo_and_banner(
+    qapp: QApplication, tmp_path
+) -> None:
+    db_path = tmp_path / "apply_intake.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    pdf = tmp_path / "source.pdf"
+    pdf.write_bytes(b"%PDF-1.4")
+    w = InvoiceScreen(ap_conn=db._conn)
+    ok = w.apply_intake_item_to_draft(
+        source_display="source.pdf",
+        kind="PDF",
+        path=str(pdf),
+        queue_notes="Check rates",
+    )
+    assert ok is True
+    assert w._invoice_tabs.currentIndex() == 0
+    assert w._current_invoice_id is None
+    assert "source.pdf" in w._invoice_memo_notes
+    assert os.path.normpath(str(pdf)) in w._invoice_memo_notes
+    assert "Queue notes: Check rates" in w._invoice_memo_notes
+    w.show()
+    qapp.processEvents()
+    assert w._invoice_intake_handoff_banner.isVisible()
+    assert "source.pdf" in w._invoice_intake_handoff_banner.text()
+    db.close()
+
+
+def test_apply_intake_item_to_draft_staged_text_in_memo(
+    qapp: QApplication, tmp_path
+) -> None:
+    db_path = tmp_path / "apply_intake_text.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    w = InvoiceScreen(ap_conn=db._conn)
+    ok = w.apply_intake_item_to_draft(
+        source_display="Pasted text (9 chars)",
+        kind="Text",
+        text_payload="Line one\n",
+        queue_notes="",
+    )
+    assert ok is True
+    assert "Line one" in w._invoice_memo_notes
+    assert "--- Staged text" in w._invoice_memo_notes
+    w.show()
+    qapp.processEvents()
+    assert w._invoice_intake_handoff_banner.isVisible()
+    db.close()
+
+
+def test_apply_intake_item_to_draft_hidden_after_opening_saved_invoice(
+    qapp: QApplication, tmp_path
+) -> None:
+    db_path = tmp_path / "apply_intake_hide.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "Co")
+    inv_id = business.create_invoice(
+        db._conn,
+        cid,
+        "Z-9",
+        "2025-01-01",
+        memo="x",
+        lines=[{"description": "A", "qty": 1.0, "rate": 1.0}],
+    )
+    doc = tmp_path / "doc.pdf"
+    doc.write_bytes(b"%PDF-1.4")
+    w = InvoiceScreen(ap_conn=db._conn)
+    w.apply_intake_item_to_draft(
+        source_display="doc.pdf",
+        kind="PDF",
+        path=str(doc),
+        queue_notes="",
+    )
+    w.show()
+    qapp.processEvents()
+    assert w._invoice_intake_handoff_banner.isVisible()
+    assert w.open_invoice_by_id(inv_id) is True
+    qapp.processEvents()
+    assert not w._invoice_intake_handoff_banner.isVisible()
+    db.close()
+
+
+def test_apply_intake_item_to_draft_requires_company_file(qapp: QApplication) -> None:
+    w = InvoiceScreen(ap_conn=None)
+    with patch("desktop_app.invoice_screen.message_box_information_ok") as m:
+        ok = w.apply_intake_item_to_draft(
+            source_display="a",
+            kind="PDF",
+            path="/tmp/x.pdf",
+            queue_notes="",
+        )
+    assert ok is False
+    m.assert_called_once()
