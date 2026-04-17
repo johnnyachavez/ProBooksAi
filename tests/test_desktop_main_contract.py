@@ -281,6 +281,7 @@ def test_main_menu_action_tip_mentioning_clipboard_includes_backup_suffix() -> N
 _FILE_MENU_QACTION_NAMES: tuple[str, ...] = (
     "act_import_docs",
     "act_open_company",
+    "act_create_company_file",
     "act_new_company",
     "act_backup",
     "act_restore",
@@ -348,6 +349,7 @@ def test_file_menu_dialog_qactions_use_horizontal_ellipsis_in_title() -> None:
     for name in (
         "act_import_docs",
         "act_open_company",
+        "act_create_company_file",
         "act_new_company",
         "act_backup",
         "act_restore",
@@ -400,6 +402,12 @@ def test_file_menu_wires_triggered_slots_for_core_company_actions() -> None:
     assert (
         chunk.count(
             "act_open_company.triggered.connect(self._on_open_company_database)"
+        )
+        == 1
+    )
+    assert (
+        chunk.count(
+            "act_create_company_file.triggered.connect(self._on_create_company_file)"
         )
         == 1
     )
@@ -803,8 +811,11 @@ def test_app_header_tooltips_mention_file_backup() -> None:
 def test_file_menu_company_file_actions_tips_mention_backup_pointer() -> None:
     text = _MAIN.read_text(encoding="utf-8")
     o = text.index("act_open_company = QAction")
-    open_chunk = text[o : text.index("act_new_company = QAction", o)]
+    open_chunk = text[o : text.index("act_create_company_file = QAction", o)]
     assert "probooks backup" in open_chunk
+    ccf = text.index("act_create_company_file = QAction")
+    create_chunk = text[ccf : text.index("act_new_company = QAction", ccf)]
+    assert "File → Backup" in create_chunk
     n = text.index("act_new_company = QAction")
     new_chunk = text[n : text.index("act_backup = QAction", n)]
     assert "File → Backup" in new_chunk
@@ -837,7 +848,7 @@ def test_file_exit_menu_tip_suggests_backup() -> None:
 
 
 def test_main_window_no_toolbar_menu_bar_qaction_counts() -> None:
-    """``_build_ui`` has no main ``QToolBar``; menu bar defines 34 ``QAction``s."""
+    """``_build_ui`` has no main ``QToolBar``; menu bar defines 35 ``QAction``s."""
     text = _MAIN.read_text(encoding="utf-8")
     bu_s = text.index("def _build_ui(self):")
     bu_e = text.index("    def _build_menu_bar(self):", bu_s)
@@ -847,7 +858,7 @@ def test_main_window_no_toolbar_menu_bar_qaction_counts() -> None:
     assert "# Toolbar" not in bu_chunk
     mb_s = text.index("def _build_menu_bar")
     mb_e = text.index("def dragEnterEvent", mb_s)
-    assert text[mb_s:mb_e].count("QAction(") == 34
+    assert text[mb_s:mb_e].count("QAction(") == 35
 
 
 def test_file_menu_import_wires_on_import_and_mentions_ctrl_o() -> None:
@@ -2322,6 +2333,7 @@ def test_main_window_file_menu_qaction_definitions_order() -> None:
     names = (
         "act_import_docs = QAction",
         "act_open_company = QAction",
+        "act_create_company_file = QAction",
         "act_new_company = QAction",
         "act_backup = QAction",
         "act_restore = QAction",
@@ -2395,13 +2407,13 @@ def test_main_window_build_ui_wires_stmt_match_sync_focus_register() -> None:
 
 
 def test_main_window_build_menu_bar_wires_all_action_triggers() -> None:
-    """Every enabled menu ``QAction`` wires ``triggered.connect`` (29 wired; 5 disabled stubs)."""
+    """Every enabled menu ``QAction`` wires ``triggered.connect`` (30 wired; 5 disabled stubs)."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _build_menu_bar(self):")
     end = text.index("    # -- drag & drop on window", start)
     chunk = text[start:end]
-    assert chunk.count("QAction(") == 34
-    assert chunk.count(".triggered.connect(") == 29
+    assert chunk.count("QAction(") == 35
+    assert chunk.count(".triggered.connect(") == 30
     assert (
         chunk.count(
             "lambda checked=False, i=idx: self._set_main_tab_index(i)"
@@ -2828,8 +2840,8 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
         chunk.count("tools_menu.addAction("),
         chunk.count("help_menu.addAction("),
     )
-    assert per_menu_add == (9, 1, 3, 1, 7), (
-        f"expected top-level addAction counts (File,View,Edit,Tools,Help)=(9,1,3,1,7); "
+    assert per_menu_add == (10, 1, 3, 1, 7), (
+        f"expected top-level addAction counts (File,View,Edit,Tools,Help)=(10,1,3,1,7); "
         f"Recon register actions use 13 submenu addAction (counted separately); "
         f"got {per_menu_add}"
     )
@@ -2842,8 +2854,8 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
     )
     assert n_reg_sub_add == 13
     n_add = sum(per_menu_add) + n_reg_sub_add
-    assert n_qa == n_tip == n_add == 34, (
-        f"expected 34 menu QActions, _menu_action_tip calls, and *.addAction( calls "
+    assert n_qa == n_tip == n_add == 35, (
+        f"expected 35 menu QActions, _menu_action_tip calls, and *.addAction( calls "
         f"(QAction={n_qa}, _menu_action_tip={n_tip}, addAction={n_add})"
     )
     n_dis = chunk.count("setEnabled(False)")

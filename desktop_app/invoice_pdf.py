@@ -23,6 +23,7 @@ from desktop_app.invoice_print_html import (
     parse_invoice_line_description,
     parse_invoice_memo_po_job_footer,
 )
+from probooksai.company_identity import company_identity_plain_block
 
 
 def invoice_html_string(conn: sqlite3.Connection, invoice_id: int) -> str:
@@ -60,8 +61,10 @@ def invoice_html_string(conn: sqlite3.Connection, invoice_id: int) -> str:
     total = float(inv_d.get("total") or 0)
     balance_plain = f"${total:,.2f}"
 
+    company_plain = company_identity_plain_block(conn)
+
     return build_invoice_print_html(
-        company_block_plain="",
+        company_block_plain=company_plain,
         invoice_date=inv_date,
         invoice_number=(inv_d.get("invoice_number") or "").strip(),
         bill_to_plain=bill_to_plain,

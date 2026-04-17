@@ -22,7 +22,7 @@ also have hover hints. The banner **AppHeaderWidget** (**QFrame**) right-aligns 
 Destructive **Yes**/**No** prompts (new company file exists, database restore) use **tip_message_box_buttons** for button hover hints and **QMessageBox.setToolTip** for the dialog window.
 
 Main window **menu bar**: each ``QAction`` uses ``setStatusTip`` for the **status bar** and the same text via ``setToolTip`` for hover (``_menu_action_tip`` helper).
-Top-level menus: **File**, **View**, **Edit**, **Tools** (e.g. **Invoice…** Ctrl+Shift+I to the **Invoices** tab), **Recon** (bank register bulk actions in submenus), **Help**.
+Top-level menus: **File** (includes **Create Company File…** for identity + new ``.db``), **View**, **Edit**, **Tools** (e.g. **Invoice…** Ctrl+Shift+I to the **Invoices** tab), **Recon** (bank register bulk actions in submenus), **Help**.
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ from PySide6.QtGui import (
     QShortcut,
 )
 from PySide6.QtWidgets import (
-    QApplication, QComboBox, QDoubleSpinBox, QFileDialog,
+    QApplication, QComboBox, QDialog, QDoubleSpinBox, QFileDialog,
     QFormLayout, QFrame, QGroupBox, QHBoxLayout, QLabel,
     QLineEdit, QMainWindow, QMenu, QMessageBox, QPlainTextEdit,
     QPushButton, QScrollArea, QSizePolicy, QSplitter,
@@ -75,6 +75,7 @@ from probooksai.bank_import import BankDatabase
 from probooksai.coa_db import COADatabase
 from probooksai.extensions_schema import apply_extensions
 from probooksai.gl import GLDatabase
+from probooksai.company_identity import save_company_identity
 from desktop_app.bank_import_tab import (
     BankImportTab,
     show_bank_import_keyboard_shortcuts_dialog,
@@ -94,6 +95,7 @@ from desktop_app.enter_bills_screen import EnterBillsScreen
 from desktop_app.invoice_screen import InvoiceScreen
 from desktop_app.pay_bills_screen import PayBillsScreen
 from desktop_app.receive_checks_screen import ReceiveChecksScreen
+from desktop_app.create_company_file_dialog import CreateCompanyFileDialog
 from desktop_app.theme import apply_dark_theme, STATUS_COLORS as THEME_STATUS_COLORS
 from desktop_app.version import application_version
 from desktop_app.local_docs import resolve_local_roadmap_path
@@ -1183,6 +1185,16 @@ class MainWindow(QMainWindow):
         act_open_company.triggered.connect(self._on_open_company_database)
         file_menu.addAction(act_open_company)
 
+        act_create_company_file = QAction("Create &Company File…", self)
+        _menu_action_tip(
+            act_create_company_file,
+            "Create a new company SQLite file: enter company name, address, phone, email, and tax ID; "
+            "then choose where to save the .db. Identity is stored in the file for invoices and reports. "
+            "Use File → Backup before replacing data you care about.",
+        )
+        act_create_company_file.triggered.connect(self._on_create_company_file)
+        file_menu.addAction(act_create_company_file)
+
         act_new_company = QAction("&New company database\u2026", self)
         _menu_action_tip(
             act_new_company,
@@ -1983,6 +1995,8 @@ class MainWindow(QMainWindow):
             self.setWindowTitle(f"ProBooks+ai – Desktop v{ver}")
 
     def _update_company_status(self) -> None:
+        from probooksai import business
+
         p = getattr(self._bank_db, "_db_path", None) or self._db_path or ""
         _sv = application_version()
         self._status_bar.showMessage(
@@ -1993,7 +2007,14 @@ class MainWindow(QMainWindow):
             + f" ProBooks+ai v{_sv}."
         )
         if p:
-            self._header.set_company_name(Path(p).name)
+            display = Path(p).name
+            try:
+                cn = business.get_setting(self._bank_db._conn, "company_name", "").strip()
+                if cn:
+                    display = cn
+            except (sqlite3.Error, AttributeError, TypeError):
+                pass
+            self._header.set_company_name(display)
         else:
             self._header.set_company_name("No company file")
         self._sync_window_title()
@@ -2219,6 +2240,42 @@ class MainWindow(QMainWindow):
         )
         if path:
             self._switch_company_database(path, create_new=False)
+
+    def _on_create_company_file(self) -> None:
+        if self._worker and self._worker.isRunning():
+            message_box_warning_ok(
+                self,
+                "Busy",
+                "Wait for AI extraction to finish before creating a company file.",
+                ok_tip="Close; wait for AI, then try again.",
+            )
+            return
+        dlg = CreateCompanyFileDialog(self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        v = dlg.identity_values()
+        prev = QSettings().value("company_database_path", "", type=str) or ""
+        start_dir = str(Path(prev).parent) if prev else ""
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save new company file (SQLite)",
+            start_dir,
+            "SQLite Database (*.db);;All Files (*.*)",
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".db"):
+            path += ".db"
+        self._switch_company_database(path, create_new=True)
+        save_company_identity(
+            self._bank_db._conn,
+            name=v["name"],
+            address=v["address"],
+            phone=v["phone"],
+            email=v["email"],
+            tax_id=v["tax_id"],
+        )
+        self._update_company_status()
 
     def _on_new_company_database(self):
         prev = QSettings().value("company_database_path", "", type=str) or ""
