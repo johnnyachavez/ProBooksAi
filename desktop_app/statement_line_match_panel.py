@@ -14,6 +14,7 @@ for Bank Import CSV exports (``bank_import/last_csv_export_dir``; legacy
 
 from __future__ import annotations
 
+import sqlite3
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional
@@ -62,6 +63,8 @@ from probooksai.statement_line_match import (
     STATUS_MATCHED,
     STATUS_NEEDS_REVIEW,
     enrich_line_match_rows_with_suggestions,
+    line_reconcile_review_key,
+    merge_persisted_line_reconcile_review,
     write_line_match_comparison_csv,
 )
 
@@ -132,6 +135,8 @@ class StatementLineMatchPanel(QGroupBox):
         super().__init__("Line Reconciliation (AI)", parent)
         self._db = db
         self._coa_db = coa_db
+        self._account_id: Optional[int] = None
+        self._batch: Optional[dict] = None
         self._rows: list[dict] = []
         self._populating = False
         self._bank_import_shortcuts_help = bank_import_shortcuts_help
@@ -499,6 +504,38 @@ class StatementLineMatchPanel(QGroupBox):
             return True
         return coerce_combo_int_id(rowd.get("register_id")) is not None
 
+    def _current_import_batch_id(self) -> Optional[int]:
+        if self._batch is None:
+            return None
+        return coerce_combo_int_id(self._batch.get("id"))
+
+    def _persist_review_row(self, master_idx: int) -> None:
+        """Save review queue / grid edits for this row to the bank DB (per import batch)."""
+        bid = self._current_import_batch_id()
+        if bid is None or master_idx < 0 or master_idx >= len(self._rows):
+            return
+        row = self._rows[master_idx]
+        key = line_reconcile_review_key(row)
+        if not key:
+            return
+        it = self._table.item(master_idx, _COL_REVIEWED)
+        if it is not None:
+            row["panel_reconciled"] = it.checkState() == Qt.CheckState.Checked
+        try:
+            self._db.upsert_line_reconcile_review(
+                bid,
+                key,
+                stmt_date=str(row.get("stmt_date") or "").strip()[:10],
+                stmt_amount=row.get("stmt_amount"),
+                stmt_description=str(row.get("stmt_description") or ""),
+                review_notes=str(row.get("review_notes") or ""),
+                draft_coa_account=str(row.get("draft_coa_account") or ""),
+                register_draft_handoff=bool(row.get("register_draft_handoff")),
+                panel_reconciled=bool(row.get("panel_reconciled")),
+            )
+        except (OSError, sqlite3.Error, TypeError, ValueError):
+            pass
+
     def populate(self, rows: list[dict]) -> None:
         self._rows = list(rows)
         self._populating = True
@@ -522,7 +559,10 @@ class StatementLineMatchPanel(QGroupBox):
                 | Qt.ItemFlag.ItemIsSelectable
                 | Qt.ItemFlag.ItemIsUserCheckable
             )
-            rev.setCheckState(Qt.CheckState.Unchecked)
+            pr = bool(row.get("panel_reconciled"))
+            rev.setCheckState(
+                Qt.CheckState.Checked if pr else Qt.CheckState.Unchecked
+            )
             self._table.setItem(r, _COL_REVIEWED, rev)
 
             st_item = QTableWidgetItem(st)
@@ -745,18 +785,21 @@ class StatementLineMatchPanel(QGroupBox):
             return
         self._rows[master_idx]["stmt_date"] = (w.text() or "").strip()
         self._refresh_main_stmt_cells(master_idx)
+        self._persist_review_row(master_idx)
 
     def _on_needs_review_amount_changed(self, master_idx: int, w: QDoubleSpinBox) -> None:
         if self._populating or master_idx >= len(self._rows):
             return
         self._rows[master_idx]["stmt_amount"] = round(float(w.value()), 2)
         self._refresh_main_stmt_cells(master_idx)
+        self._persist_review_row(master_idx)
 
     def _on_needs_review_payee_changed(self, master_idx: int, w: QLineEdit) -> None:
         if self._populating or master_idx >= len(self._rows):
             return
         self._rows[master_idx]["stmt_description"] = (w.text() or "").strip()
         self._refresh_main_stmt_cells(master_idx)
+        self._persist_review_row(master_idx)
 
     def _on_needs_review_coa_changed(self, master_idx: int, w: QComboBox) -> None:
         if self._populating or master_idx >= len(self._rows):
@@ -767,11 +810,13 @@ class StatementLineMatchPanel(QGroupBox):
         else:
             self._rows[master_idx]["draft_coa_account"] = str(data)
         self._refresh_main_stmt_cells(master_idx)
+        self._persist_review_row(master_idx)
 
     def _on_needs_review_notes_changed(self, master_idx: int, w: QLineEdit) -> None:
         if self._populating or master_idx >= len(self._rows):
             return
         self._rows[master_idx]["review_notes"] = (w.text() or "").strip()
+        self._persist_review_row(master_idx)
 
     def _refresh_main_stmt_cells(self, master_idx: int) -> None:
         """Push draft edits from _rows into the main reconciliation grid row."""
@@ -833,6 +878,12 @@ class StatementLineMatchPanel(QGroupBox):
     def _on_item_changed(self, item: QTableWidgetItem) -> None:
         if self._populating or item.column() != _COL_REVIEWED:
             return
+        r = item.row()
+        if 0 <= r < len(self._rows):
+            self._rows[r]["panel_reconciled"] = (
+                item.checkState() == Qt.CheckState.Checked
+            )
+            self._persist_review_row(r)
         self._sync_summary_after_review_edit()
 
     def _line_match_register_id_plain(self, row: int) -> str:
@@ -1162,6 +1213,11 @@ class StatementLineMatchPanel(QGroupBox):
         enrich_line_match_rows_with_suggestions(
             self._db._conn, acct, results, coa_labels
         )
+        try:
+            persisted = self._db.fetch_line_reconcile_review(int(batch_id))
+            merge_persisted_line_reconcile_review(results, persisted)
+        except (OSError, sqlite3.Error, TypeError, ValueError):
+            pass
         self.populate(results)
         self.line_match_results_ready.emit(acct, results)
 
@@ -1196,6 +1252,7 @@ class StatementLineMatchPanel(QGroupBox):
             if hit is not None:
                 hit.setText("✓" if ho else "")
                 hit.setToolTip(tip)
+        self._persist_review_row(master_idx)
 
     def _on_send_to_register_draft_clicked(self) -> None:
         if self._register_tab is None:
@@ -1307,6 +1364,9 @@ class StatementLineMatchPanel(QGroupBox):
             it = self._table.item(idx, _COL_REVIEWED)
             if it is not None:
                 it.setCheckState(Qt.CheckState.Checked)
+            if 0 <= idx < len(self._rows):
+                self._rows[idx]["panel_reconciled"] = True
+                self._persist_review_row(idx)
         self._table.blockSignals(False)
         self._populating = False
         self._sync_summary_after_review_edit()
@@ -1321,6 +1381,9 @@ class StatementLineMatchPanel(QGroupBox):
             it = self._table.item(r, _COL_REVIEWED)
             if it is not None:
                 it.setCheckState(Qt.CheckState.Checked)
+            if r < len(self._rows):
+                self._rows[r]["panel_reconciled"] = True
+                self._persist_review_row(r)
         self._table.blockSignals(False)
         self._populating = False
         self._sync_summary_after_review_edit()
@@ -1332,6 +1395,9 @@ class StatementLineMatchPanel(QGroupBox):
             it = self._table.item(r, _COL_REVIEWED)
             if it is not None:
                 it.setCheckState(Qt.CheckState.Unchecked)
+            if r < len(self._rows):
+                self._rows[r]["panel_reconciled"] = False
+                self._persist_review_row(r)
         self._table.blockSignals(False)
         self._populating = False
         self._sync_summary_after_review_edit()

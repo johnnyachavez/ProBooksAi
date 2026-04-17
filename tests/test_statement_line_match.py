@@ -20,6 +20,8 @@ from probooksai.statement_line_match import (
     dates_within_days,
     descriptions_match,
     enrich_line_match_rows_with_suggestions,
+    line_reconcile_review_key,
+    merge_persisted_line_reconcile_review,
     mock_statement_lines_for_comparison,
     statement_rows_for_line_compare,
     transaction_pair_matches,
@@ -154,6 +156,108 @@ def test_statement_rows_for_line_compare_maps_bank_transactions() -> None:
     assert stmt[0]["description"] == "Coffee"
     assert stmt[0]["ref_number"] == "R1"
     assert stmt[0]["memo"] == "M1"
+
+
+def test_statement_rows_for_line_compare_passes_through_transaction_id() -> None:
+    stmt = statement_rows_for_line_compare(
+        [
+            {
+                "id": 42,
+                "txn_date": "2024-01-05",
+                "amount": -4.5,
+                "description": "Coffee",
+            }
+        ]
+    )
+    assert stmt[0].get("id") == 42
+
+
+def test_compare_statement_includes_stmt_transaction_id_when_present() -> None:
+    stmt = [
+        {
+            "id": 99,
+            "txn_date": "2024-01-10",
+            "amount": -10.0,
+            "description": "Gas",
+        }
+    ]
+    reg = [{"id": 1, "txn_date": "2024-01-10", "amount": -10.0, "description": "Gas"}]
+    out = compare_statement_to_register(stmt, reg)
+    assert len(out) == 1
+    assert out[0]["stmt_transaction_id"] == 99
+
+
+def test_line_reconcile_review_key_imported_and_extra() -> None:
+    assert line_reconcile_review_key({"status": STATUS_MATCHED, "stmt_transaction_id": 5}) == "t:5"
+    assert line_reconcile_review_key({"status": STATUS_EXTRA, "register_id": 12}) == "e:12"
+    assert line_reconcile_review_key({"status": STATUS_NEEDS_REVIEW}) is None
+
+
+def test_merge_persisted_line_reconcile_review_restores_fields() -> None:
+    rows = [
+        {
+            "status": STATUS_NEEDS_REVIEW,
+            "stmt_transaction_id": 7,
+            "stmt_date": "2024-01-01",
+            "stmt_amount": -1.0,
+            "stmt_description": "OLD",
+            "review_notes": "",
+            "draft_coa_account": "",
+            "register_draft_handoff": False,
+        }
+    ]
+    merge_persisted_line_reconcile_review(
+        rows,
+        {
+            "t:7": {
+                "stmt_date": "2024-02-02",
+                "stmt_amount": -2.5,
+                "stmt_description": "NEW PAYEE",
+                "review_notes": "n",
+                "draft_coa_account": "Office",
+                "register_draft_handoff": 1,
+                "panel_reconciled": 1,
+            }
+        },
+    )
+    assert rows[0]["stmt_date"] == "2024-02-02"
+    assert rows[0]["stmt_amount"] == -2.5
+    assert rows[0]["stmt_description"] == "NEW PAYEE"
+    assert rows[0]["review_notes"] == "n"
+    assert rows[0]["draft_coa_account"] == "Office"
+    assert rows[0]["register_draft_handoff"] is True
+    assert rows[0]["panel_reconciled"] is True
+
+
+def test_bank_database_line_reconcile_review_roundtrip(tmp_path) -> None:
+    from probooksai.bank_import import BankDatabase
+
+    path = str(tmp_path / "lr.db")
+    db = BankDatabase(db_path=path)
+    try:
+        aid = db.add_bank_account("Chk")
+        bid = db.create_batch(aid)
+        db.upsert_line_reconcile_review(
+            bid,
+            "t:3",
+            stmt_description="Payee",
+            review_notes="x",
+            draft_coa_account="Rent",
+            register_draft_handoff=True,
+            panel_reconciled=True,
+            stmt_amount=-10.0,
+            stmt_date="2024-01-15",
+        )
+        got = db.fetch_line_reconcile_review(bid)
+        assert "t:3" in got
+        row = got["t:3"]
+        assert row["stmt_description"] == "Payee"
+        assert row["review_notes"] == "x"
+        assert row["draft_coa_account"] == "Rent"
+        assert row["register_draft_handoff"] in (1, True)
+        assert row["panel_reconciled"] in (1, True)
+    finally:
+        db.close()
 
 
 def test_dates_within_days() -> None:

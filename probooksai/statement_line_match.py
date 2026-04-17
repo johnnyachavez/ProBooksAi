@@ -262,7 +262,8 @@ def compare_statement_to_register(
     Classify each statement line and unmatched register lines.
 
     Returns dicts with keys:
-      status, stmt_date, stmt_amount, stmt_description,
+      status, stmt_transaction_id (import ``bank_transactions.id`` when present),
+      stmt_date, stmt_amount, stmt_description,
       register_id, reg_date, reg_amount, reg_description
 
     ``stmt_description`` / ``reg_description`` use the same join as matching
@@ -313,6 +314,15 @@ def compare_statement_to_register(
             return round(v, 2)
         return 0.0
 
+    def _stmt_tid(stmt: dict[str, Any]) -> Optional[int]:
+        x = stmt.get("id")
+        if x is None:
+            return None
+        try:
+            return int(x)
+        except (TypeError, ValueError):
+            return None
+
     for stmt in stmt_list:
         j = pick_best_reg(stmt)
         if j is not None:
@@ -323,9 +333,11 @@ def compare_statement_to_register(
                 reg_id = int(rid) if rid is not None else None
             except (TypeError, ValueError):
                 reg_id = None
+            tid = _stmt_tid(stmt)
             out.append(
                 {
                     "status": STATUS_MATCHED,
+                    "stmt_transaction_id": tid,
                     "stmt_date": str(stmt.get("txn_date") or ""),
                     "stmt_amount": _row_amount_rounded(stmt),
                     "stmt_description": _combined_description_for_match(stmt),
@@ -346,9 +358,11 @@ def compare_statement_to_register(
                     reg_id = int(rid) if rid is not None else None
                 except (TypeError, ValueError):
                     reg_id = None
+                tid = _stmt_tid(stmt)
                 out.append(
                     {
                         "status": STATUS_LIKELY_MATCH,
+                        "stmt_transaction_id": tid,
                         "stmt_date": str(stmt.get("txn_date") or ""),
                         "stmt_amount": _row_amount_rounded(stmt),
                         "stmt_description": _combined_description_for_match(stmt),
@@ -361,9 +375,11 @@ def compare_statement_to_register(
                     }
                 )
             else:
+                tid = _stmt_tid(stmt)
                 out.append(
                     {
                         "status": STATUS_NEEDS_REVIEW,
+                        "stmt_transaction_id": tid,
                         "stmt_date": str(stmt.get("txn_date") or ""),
                         "stmt_amount": _row_amount_rounded(stmt),
                         "stmt_description": _combined_description_for_match(stmt),
@@ -387,6 +403,7 @@ def compare_statement_to_register(
         out.append(
             {
                 "status": STATUS_EXTRA,
+                "stmt_transaction_id": None,
                 "stmt_date": "",
                 "stmt_amount": 0.0,
                 "stmt_description": "",
@@ -399,6 +416,50 @@ def compare_statement_to_register(
         )
 
     return out
+
+
+def line_reconcile_review_key(row: dict[str, Any]) -> Optional[str]:
+    """Stable key for persisting Reconcile UI state: imported line ``t:{txn_id}`` or Extra ``e:{reg_id}``."""
+    stid = row.get("stmt_transaction_id")
+    if stid is not None:
+        try:
+            return f"t:{int(stid)}"
+        except (TypeError, ValueError):
+            pass
+    if str(row.get("status") or "") == STATUS_EXTRA:
+        rid = row.get("register_id")
+        if rid is not None:
+            try:
+                return f"e:{int(rid)}"
+            except (TypeError, ValueError):
+                pass
+    return None
+
+
+def merge_persisted_line_reconcile_review(
+    rows: list[dict[str, Any]],
+    persisted: dict[str, dict[str, Any]],
+) -> None:
+    """Apply saved review fields from :meth:`~probooksai.bank_import.BankDatabase.fetch_line_reconcile_review`."""
+    for row in rows:
+        key = line_reconcile_review_key(row)
+        if not key or key not in persisted:
+            continue
+        p = persisted[key]
+        sd = p.get("stmt_date")
+        if sd is not None and str(sd).strip() != "":
+            row["stmt_date"] = str(sd).strip()[:10]
+        sa = p.get("stmt_amount")
+        if sa is not None:
+            try:
+                row["stmt_amount"] = round(float(sa), 2)
+            except (TypeError, ValueError):
+                pass
+        row["stmt_description"] = str(p.get("stmt_description") or "")
+        row["review_notes"] = str(p.get("review_notes") or "")
+        row["draft_coa_account"] = str(p.get("draft_coa_account") or "")
+        row["register_draft_handoff"] = bool(p.get("register_draft_handoff"))
+        row["panel_reconciled"] = bool(p.get("panel_reconciled"))
 
 
 def _norm_desc_key(text: str) -> str:
@@ -602,6 +663,7 @@ def statement_rows_for_line_compare(
         date_s = str(d.get("txn_date") or "").strip()[:10]
         out.append(
             {
+                "id": d.get("id"),
                 "txn_date": date_s,
                 "amount": amt,
                 "description": d.get("description"),
