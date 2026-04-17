@@ -621,7 +621,7 @@ def test_main_window_defines_bank_import_view_pointer_for_intake_tooltips() -> N
     text = _MAIN.read_text(encoding="utf-8")
     assert "_BANK_IMPORT_VIEW_POINTER = (" in text
     assert text.count("+ _BANK_IMPORT_VIEW_POINTER") >= 3
-    assert "Reconcile tab → Bank statements (View → Reconcile, Ctrl+9). " in text
+    assert "Reconcile tab → Bank statements (View → Reconcile, Ctrl+0). " in text
 
 
 def test_main_window_tab_bar_has_tab_tooltips() -> None:
@@ -633,7 +633,7 @@ def test_main_window_tab_bar_has_tab_tooltips() -> None:
     assert "Invoices:" in text[tips : tips + 1200]
     assert "More:" in text[tips : tips + 3500]
     assert "for i, tip in enumerate(tips):" in text
-    assert text.count("_main_tab_bar_db_hint") >= 10
+    assert text.count("_main_tab_bar_db_hint") >= 11
     assert "self._tabs.setToolTip(" in text
     assert "Main workspace:" in text
     assert "intake_widget.setToolTip(" in text
@@ -884,7 +884,7 @@ def test_main_window_build_ui_has_no_toolbar() -> None:
 
 
 def test_main_window_build_ui_sets_central_status_and_assemble_adds_ten_main_tabs() -> None:
-    """``_build_ui`` attaches one central widget, one status bar; ``_assemble_main_tabs`` adds ten ``addTab`` calls."""
+    """``_build_ui`` attaches one central widget, one status bar; ``_assemble_main_tabs`` adds eleven ``addTab`` calls."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("def _build_ui(self):")
     end = text.index("def _build_menu_bar", start)
@@ -895,19 +895,20 @@ def test_main_window_build_ui_sets_central_status_and_assemble_adds_ten_main_tab
     start_a = text.index("def _assemble_main_tabs(self) -> None:")
     end_a = text.index("def _apply_main_tab_bar_tooltips(self) -> None:", start_a)
     chunk_a = text[start_a:end_a]
-    assert chunk_a.count("self._tabs.addTab(") == 10
+    assert chunk_a.count("self._tabs.addTab(") == 11
 
 
 def test_main_window_assemble_tab_strip_titles_fixed_order() -> None:
-    """Ten ``addTab`` lines keep Invoices first and More last, with stable user-visible titles."""
+    """Eleven ``addTab`` lines keep Invoices first and More last, with stable user-visible titles."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("def _assemble_main_tabs(self) -> None:")
     end = text.index("def _apply_main_tab_bar_tooltips(self) -> None:", start)
     chunk = text[start:end]
     lines = [ln.strip() for ln in chunk.splitlines() if "self._tabs.addTab(" in ln]
-    assert len(lines) == 10
+    assert len(lines) == 11
     want = (
         "Invoices",
+        "Codes",
         "Enter Bills",
         "Pay Bills",
         "Receive Payments",
@@ -960,7 +961,7 @@ def test_main_window_build_ui_structural_inline_comments_order() -> None:
 
 
 def test_main_window_build_ui_tab_tooltips_intake_f5_and_window_drops() -> None:
-    """``_apply_main_tab_bar_tooltips`` sets ten tab tooltips; intake F5 lives in ``_build_document_intake_widget``."""
+    """``_apply_main_tab_bar_tooltips`` sets eleven tab tooltips; intake F5 lives in ``_build_document_intake_widget``."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("def _apply_main_tab_bar_tooltips(self) -> None:")
     end = text.index("def _teardown_main_tabs_for_rebuild(self) -> None:", start)
@@ -2934,7 +2935,7 @@ def test_main_help_menu_wires_document_intake_shortcuts_dialog() -> None:
     assert "show_document_intake_keyboard_shortcuts_dialog" in text
     assert "def _document_intake_keyboard_shortcuts_help_text" in text
     assert "Document &intake shortcuts" in text
-    assert "Ctrl+0 More" in text and "Ctrl+9 Reconcile" in text
+    assert "Ctrl+Shift+M" in text and "Ctrl+0 Reconcile" in text
     assert "all tabs share the open" in text
     assert "Help → Business shortcuts" in text
     assert "Import documents" in text and "Ctrl+O" in text
@@ -2946,7 +2947,7 @@ def test_main_help_menu_wires_document_intake_shortcuts_dialog() -> None:
 
 
 def test_main_window_view_menu_enumerates_ctrl_one_through_zero() -> None:
-    """View menu builds ten tab actions with Ctrl+1 … Ctrl+9 and Ctrl+0 in a fixed order."""
+    """View menu builds eleven tab actions: Ctrl+1..Ctrl+9, Ctrl+0, Ctrl+Shift+M."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("# View menu — tab shortcuts")
     end = text.index("# Edit menu", start)
@@ -2954,17 +2955,19 @@ def test_main_window_view_menu_enumerates_ctrl_one_through_zero() -> None:
     for n in range(1, 10):
         assert f'("Ctrl+{n}"' in chunk
     assert '("Ctrl+0"' in chunk
+    assert '("Ctrl+Shift+M"' in chunk
     tuples = (
         '("Ctrl+1", "&Invoices")',
-        '("Ctrl+2", "&Enter Bills")',
-        '("Ctrl+3", "&Pay Bills")',
-        '("Ctrl+4", "&Receive Payments")',
-        '("Ctrl+5", "&Bank Register")',
-        '("Ctrl+6", "Chart of &Accounts")',
-        '("Ctrl+7", "&Customers")',
-        '("Ctrl+8", "&Vendors")',
-        '("Ctrl+9", "&Reconcile")',
-        '("Ctrl+0", "&More")',
+        '("Ctrl+2", "&Codes")',
+        '("Ctrl+3", "&Enter Bills")',
+        '("Ctrl+4", "&Pay Bills")',
+        '("Ctrl+5", "&Receive Payments")',
+        '("Ctrl+6", "&Bank Register")',
+        '("Ctrl+7", "Chart of &Accounts")',
+        '("Ctrl+8", "&Customers")',
+        '("Ctrl+9", "&Vendors")',
+        '("Ctrl+0", "&Reconcile")',
+        '("Ctrl+Shift+M", "&More")',
     )
     for line in tuples:
         assert line in chunk
@@ -3059,8 +3062,8 @@ def test_desktop_main_show_intake_shortcuts_dialog_delegates_to_message_box() ->
     assert (
         'ok_tip="Close; shortcuts apply when Document Intake has focus. "' in chunk
     )
-    assert "Ctrl+9 Reconcile" in chunk and "Bank statements" in chunk
-    assert "Ctrl+5 Bank Register" in chunk
+    assert "Ctrl+0 Reconcile" in chunk and "Bank statements" in chunk
+    assert "Ctrl+6 Bank Register" in chunk
     assert "Company .db: File → Backup / Restore (probooks.backup)." in chunk
 
 
@@ -3607,8 +3610,8 @@ def test_more_main_tabs_shortcuts_module_exposes_help_dialog() -> None:
     assert "UTF-8 with BOM for Excel" in text
     assert "Ctrl+Shift+E" in text
     assert "line-compare" in text
-    assert "Ctrl+0 More" in text
-    assert "Ctrl+9 Reconcile" in text
+    assert "Ctrl+Shift+M" in text
+    assert "Ctrl+0 Reconcile" in text
     assert "Help → Document intake shortcuts" in text
     assert "Register bulk actions" in text and "main **Recon** menu" in text
     assert "Ctrl+Shift+B" in text
@@ -5356,7 +5359,7 @@ def test_extra_tabs_exposes_business_shortcuts_dialog_for_help_menu() -> None:
     assert "UTF-8 with BOM for Excel" in bus_help
     assert "Rules Import CSV" in bus_help and "optional BOM" in bus_help
     assert (
-        "View menu tab focus: Ctrl+1 Invoices … Ctrl+9 Reconcile, Ctrl+0 More (Reports, Journal, Business, Audit log)."
+        "View menu tab focus: Ctrl+1 Invoices, Ctrl+2 Codes, … Ctrl+0 Reconcile, Ctrl+Shift+M More (Reports, Journal, Business, Audit log)."
         in bus_help
     )
     assert "Register bulk actions" in bus_help and "main **Recon** menu" in bus_help
@@ -5540,7 +5543,7 @@ def test_bank_import_keyboard_shortcuts_help_text_lists_view_chords() -> None:
     end = bit.index("\n\n\ndef show_bank_import_keyboard_shortcuts_dialog", start)
     chunk = bit[start:end]
     assert (
-        "View menu tab focus: Ctrl+1 Invoices … Ctrl+9 Reconcile, Ctrl+0 More"
+        "View menu tab focus: Ctrl+1 Invoices, Ctrl+2 Codes, … Ctrl+0 Reconcile, Ctrl+Shift+M More"
         in chunk
     )
     assert "Recon" in chunk and "Register Actions" in chunk
@@ -6335,8 +6338,8 @@ def test_register_keyboard_shortcuts_help_text_matches_wired_chords() -> None:
         "Business shortcuts",
         "Bank import shortcuts",
         "statement/register copies",
-        "Ctrl+9 Reconcile",
-        "Ctrl+5 Bank Register",
+        "Ctrl+0 Reconcile",
+        "Ctrl+6 Bank Register",
         "Ctrl+Shift+I",
         "Invoice…",
         "status bar",

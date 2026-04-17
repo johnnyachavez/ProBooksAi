@@ -24,7 +24,96 @@ from probooksai.audit_log import append_audit
 # Constants
 # ---------------------------------------------------------------------------
 
-COA_ACCOUNT_TYPES = ("asset", "liability", "equity", "income", "expense")
+# Stored ``account_type`` values (lowercase). Includes QuickBooks-style categories (Income, Bank, Loan,
+# etc.) and common type/sub-type pairings so each can be chosen as the account **Type** in the COA editor.
+COA_ACCOUNT_TYPES = (
+    "income",
+    "operating_revenue",
+    "expense",
+    "asset",
+    "current_asset",
+    "fixed_asset",
+    "other_asset",
+    "bank",
+    "liability",
+    "current_liability",
+    "long_term_liability",
+    "loan",
+    "credit_card",
+    "equity",
+    "paid_in_capital",
+    "retained_earnings",
+    "owners_draw",
+)
+
+# Display order / labels for Chart of Accounts **Type** dropdown (Add/Edit Account).
+COA_TYPE_UI_LABELS: tuple[tuple[str, str], ...] = (
+    ("income", "Income"),
+    ("operating_revenue", "Operating revenue"),
+    ("expense", "Expense"),
+    ("asset", "Asset"),
+    ("current_asset", "Current asset"),
+    ("fixed_asset", "Fixed asset (major purchases)"),
+    ("other_asset", "Other asset"),
+    ("bank", "Bank"),
+    ("liability", "Liability"),
+    ("current_liability", "Current liability"),
+    ("long_term_liability", "Long-term liability"),
+    ("loan", "Loan"),
+    ("credit_card", "Credit card"),
+    ("equity", "Equity"),
+    ("paid_in_capital", "Paid-in capital"),
+    ("retained_earnings", "Retained earnings"),
+    ("owners_draw", "Owner's draw"),
+)
+
+# Map granular types to legacy five buckets for P&L and balance sheet aggregation.
+COA_TYPE_REPORT_BUCKET: dict[str, str] = {
+    "income": "income",
+    "operating_revenue": "income",
+    "expense": "expense",
+    "asset": "asset",
+    "bank": "asset",
+    "current_asset": "asset",
+    "fixed_asset": "asset",
+    "other_asset": "asset",
+    "liability": "liability",
+    "loan": "liability",
+    "credit_card": "liability",
+    "current_liability": "liability",
+    "long_term_liability": "liability",
+    "equity": "equity",
+    "paid_in_capital": "equity",
+    "retained_earnings": "equity",
+    "owners_draw": "equity",
+}
+
+
+def coa_type_report_bucket(account_type: str | None) -> str | None:
+    """Map a stored ``coa_accounts.account_type`` to income|expense|asset|liability|equity for reports."""
+    if not account_type:
+        return None
+    return COA_TYPE_REPORT_BUCKET.get(str(account_type).strip().lower())
+
+
+def infer_coa_normal_balance(account_type: str) -> str:
+    """Debit vs credit normal balance for a stored COA type (lowercase ``debit`` / ``credit``)."""
+    t = str(account_type).strip().lower()
+    if t in (
+        "income",
+        "operating_revenue",
+        "liability",
+        "loan",
+        "credit_card",
+        "current_liability",
+        "long_term_liability",
+        "equity",
+        "paid_in_capital",
+        "retained_earnings",
+    ):
+        return "credit"
+    # expense, all asset buckets, owner's draw (contra equity)
+    return "debit"
 
 # ---------------------------------------------------------------------------
 # Schema DDL
@@ -35,7 +124,7 @@ CREATE TABLE IF NOT EXISTS coa_accounts (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     account_number TEXT    NOT NULL,
     account_name   TEXT    NOT NULL,
-    account_type   TEXT    NOT NULL,    -- asset/liability/equity/income/expense
+    account_type   TEXT    NOT NULL,    -- see COA_ACCOUNT_TYPES (income, bank, loan, current_asset, …)
     sub_type       TEXT    NOT NULL DEFAULT '',
     normal_balance TEXT    NOT NULL DEFAULT 'debit',   -- debit / credit
     description    TEXT    NOT NULL DEFAULT '',
@@ -124,6 +213,8 @@ class COADatabase:
         for row in COA_DATA:
             acct_no, name, acct_type, sub_type, normal_bal, description = row[:6]
             acct_type_norm = acct_type.lower().split()[0]
+            if acct_type_norm == "revenue":
+                acct_type_norm = "income"
             if acct_type_norm not in COA_ACCOUNT_TYPES:
                 acct_type_norm = "expense"
             try:

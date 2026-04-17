@@ -2669,7 +2669,7 @@ def _business_keyboard_shortcuts_help_text() -> str:
         "Rules Import CSV… reads UTF-8 with optional BOM (same as files from Export CSV…).\n\n"
         "On Tax % (settings):\n"
         "Ctrl+S — Save default tax name and rate (standard Save shortcut)\n\n"
-        "View menu tab focus: Ctrl+1 Invoices … Ctrl+9 Reconcile, Ctrl+0 More (Reports, Journal, Business, Audit log).\n\n"
+        "View menu tab focus: Ctrl+1 Invoices, Ctrl+2 Codes, … Ctrl+0 Reconcile, Ctrl+Shift+M More (Reports, Journal, Business, Audit log).\n\n"
         "Tools menu: Ctrl+Shift+I — Invoice… (top-level Invoices tab).\n\n"
         "Right-click the Rules or Payroll grid (including empty area) "
         "for Keyboard shortcuts… (same as this dialog).\n\n"

@@ -11,6 +11,7 @@ import csv
 import sqlite3
 from typing import Optional
 
+from probooksai.coa_db import coa_type_report_bucket
 from probooksai.gl import GLDatabase
 
 
@@ -56,11 +57,12 @@ def income_statement(
         acct = row["account"]
         num = _account_number_from_gl_label(acct)
         at = types.get(num)
+        bucket = coa_type_report_bucket(at)
         net = row["net"]
         detail.append({"account": acct, "account_type": at or "unknown", "net": net})
-        if at == "income":
+        if bucket == "income":
             revenue += row["total_credit"] - row["total_debit"]
-        elif at == "expense":
+        elif bucket == "expense":
             expenses += row["total_debit"] - row["total_credit"]
 
     revenue = round(revenue, 2)
@@ -91,13 +93,14 @@ def balance_sheet_summary(
     for row in tb:
         num = _account_number_from_gl_label(row["account"])
         at = types.get(num)
+        bucket = coa_type_report_bucket(at)
         td = row["total_debit"]
         tc = row["total_credit"]
-        if at == "asset":
+        if bucket == "asset":
             assets += td - tc
-        elif at == "liability":
+        elif bucket == "liability":
             liabilities += tc - td
-        elif at == "equity":
+        elif bucket == "equity":
             equity += tc - td
 
     return {

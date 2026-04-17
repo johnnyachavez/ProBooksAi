@@ -173,7 +173,7 @@ def _bank_import_keyboard_shortcuts_help_text() -> str:
         "(same as reconciliation export).\n\n"
         "**Ctrl+Shift+B** when the **batch preview** or **line-reconciliation** grid has keyboard focus "
         "runs the **Business link** flow (**Customers** / **Vendors** / **Business → Payroll** when the **complete bank link** allows it; same as right-click **Open linked Business record…**).\n\n"
-        "View menu tab focus: Ctrl+1 Invoices … Ctrl+9 Reconcile, Ctrl+0 More (Reports, Journal, Business, Audit log).\n\n"
+        "View menu tab focus: Ctrl+1 Invoices, Ctrl+2 Codes, … Ctrl+0 Reconcile, Ctrl+Shift+M More (Reports, Journal, Business, Audit log).\n\n"
         "Tools menu: Ctrl+Shift+I — Invoice… (top-level Invoices tab); full AR list: **Customers** tab.\n\n"
         "Manage Bank Accounts (dialog): right-click the accounts table (including empty area) "
         "for Keyboard shortcuts… (same as this dialog).\n\n"
@@ -1498,7 +1498,7 @@ class BankImportTab(QWidget):
             "AI line-reconciliation grid (empty area where supported) for Keyboard shortcuts…; "
             "preview rows and that grid also offer Copy row and field copies. "
             "Help → Bank import shortcuts…; Register tab: Help → Bank register keyboard shortcuts…. "
-            "View: Ctrl+9 Reconcile → this tab; Ctrl+5 Bank Register (Match overlay). "
+            "View: Ctrl+0 Reconcile → this tab; Ctrl+6 Bank Register (Match overlay). "
             "Company SQLite: File → Backup / Restore (probooks.backup, CLI probooks backup/restore)."
         )
         tip.setWordWrap(True)

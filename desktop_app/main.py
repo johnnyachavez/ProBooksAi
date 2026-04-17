@@ -92,6 +92,7 @@ from desktop_app.extra_tabs import (
 )
 from desktop_app.audit_tab import AuditTab
 from desktop_app.enter_bills_screen import EnterBillsScreen
+from desktop_app.invoice_codes_screen import InvoiceCodesScreen
 from desktop_app.invoice_screen import InvoiceScreen
 from desktop_app.pay_bills_screen import PayBillsScreen
 from desktop_app.receive_checks_screen import ReceiveChecksScreen
@@ -134,11 +135,12 @@ def _document_intake_keyboard_shortcuts_help_text() -> str:
         "Backup company file… / Restore from backup… — SQLite online backup (probooks.backup), "
         "same path as the CLI; no default shortcuts — hover each action for status-bar tips.\n\n"
         "View menu:\n"
-        "Ctrl+1 Invoices … Ctrl+9 Reconcile, Ctrl+0 More (Reports, Journal, Business, Audit log) — all tabs share the open "
+        "Ctrl+1 Invoices, Ctrl+2 Codes, Ctrl+3–Ctrl+9 other main tabs, Ctrl+0 Reconcile, Ctrl+Shift+M More "
+        "(Reports, Journal, Business, Audit log) — all tabs share the open "
         "company SQLite file (File → Backup / Restore, probooks.backup). "
-        "Use **Reconcile** (Ctrl+9) → **Bank statements** for statement import and **Bank Register** (Ctrl+5) for the Match overlay.\n\n"
+        "Use **Reconcile** (Ctrl+0) → **Bank statements** for statement import and **Bank Register** (Ctrl+6) for the Match overlay.\n\n"
         "**Recon** menu — **Bank register** bulk row actions (add transaction, post to GL, export CSV, cleared, "
-        "attachments, splits, transfer, link payment, open linked Business record, receipt flags) when you use Bank Register (Ctrl+5). "
+        "attachments, splits, transfer, link payment, open linked Business record, receipt flags) when you use Bank Register (Ctrl+6). "
         "**Tools** menu — open **Invoice…** (Ctrl+Shift+I; top-level Invoices tab).\n\n"
         "CSV exports on Bank Import (reconciliation report and line-compare), Register, Reports, Journal, Business, "
         "and Audit use UTF-8 with BOM for Excel.\n"
@@ -161,8 +163,8 @@ def show_document_intake_keyboard_shortcuts_dialog(parent: QWidget) -> None:
         "Document intake shortcuts",
         _document_intake_keyboard_shortcuts_help_text(),
         ok_tip="Close; shortcuts apply when Document Intake has focus. "
-        "Bank CSV/PDF and AI line reconciliation: Ctrl+9 Reconcile → Bank statements; "
-        "Register Match overlay: Ctrl+5 Bank Register; register bulk actions: Recon menu. "
+        "Bank CSV/PDF and AI line reconciliation: Ctrl+0 Reconcile → Bank statements; "
+        "Register Match overlay: Ctrl+6 Bank Register; register bulk actions: Recon menu. "
         "Company .db: File → Backup / Restore (probooks.backup).",
     )
 
@@ -175,9 +177,9 @@ STATUS_COLORS = THEME_STATUS_COLORS
 
 INBOX_HEADER_COLOR = "#1F3864"  # dark navy – matches ProBooks+ai branding
 
-# Intake-adjacent tooltips: bank import lives under the Reconcile top-level tab (View Ctrl+9).
+# Intake-adjacent tooltips: bank import lives under the Reconcile top-level tab (View Ctrl+0).
 _BANK_IMPORT_VIEW_POINTER = (
-    "Bank CSV/PDF and AI line reconciliation: Reconcile tab → Bank statements (View → Reconcile, Ctrl+9). "
+    "Bank CSV/PDF and AI line reconciliation: Reconcile tab → Bank statements (View → Reconcile, Ctrl+0). "
 )
 
 # Temporary status bar duration after Bank Import → Register **Match overlay** sync.
@@ -836,9 +838,12 @@ def _menu_action_tip(act: QAction, tip: str) -> None:
 
 
 class MainWindow(QMainWindow):
+    _DEFAULT_WIDTH = 1100
+    _DEFAULT_HEIGHT = 700
+
     def __init__(self, db_path: str | None = None):
         super().__init__()
-        self.resize(1100, 700)
+        self._restore_main_window_geometry()
 
         self._db_path = db_path
         self._db = DocumentDatabase(db_path)
@@ -854,6 +859,19 @@ class MainWindow(QMainWindow):
         self._refresh_inbox()
         self._update_company_status()
         QTimer.singleShot(0, self._maybe_prompt_first_company_file_setup)
+
+    def _restore_main_window_geometry(self) -> None:
+        """Restore size (and position) from last session, or use defaults."""
+        settings = QSettings()
+        geo = settings.value("main_window/geometry")
+        ok = False
+        if geo is not None:
+            try:
+                ok = bool(self.restoreGeometry(geo))
+            except (TypeError, AttributeError):
+                ok = False
+        if not ok:
+            self.resize(self._DEFAULT_WIDTH, self._DEFAULT_HEIGHT)
 
     def _make_placeholder_shell_tab(self, title: str, body: str) -> QWidget:
         """Step-1 shell for a top-level tab whose full workflow is not migrated yet."""
@@ -911,7 +929,7 @@ class MainWindow(QMainWindow):
         )
         lbl_inbox.setToolTip(
             "Imported documents: pick a row to load extraction and categorization in the detail pane. "
-            "Bank statement files: Reconcile → Bank statements (View → Reconcile, Ctrl+9). "
+            "Bank statement files: Reconcile → Bank statements (View → Reconcile, Ctrl+0). "
             "Back up the company file from File → Backup / probooks backup before bulk deletes or experiments."
         )
         left_layout.addWidget(lbl_inbox)
@@ -950,6 +968,7 @@ class MainWindow(QMainWindow):
         """Fixed-order top-level strip + More hub (Reports, Journal, Business, Audit)."""
         conn = self._bank_db._conn
         self._invoice_screen = InvoiceScreen(ap_conn=conn)
+        self._invoice_codes_screen = InvoiceCodesScreen(ap_conn=conn, coa_db=self._coa_db)
         self._enter_bills_screen = EnterBillsScreen(ap_conn=conn)
         self._pay_bills_screen = PayBillsScreen(
             ap_conn=conn, bank_db=self._bank_db
@@ -1019,6 +1038,7 @@ class MainWindow(QMainWindow):
         self._more_hub.addTab(self._audit_tab, "Audit log")
 
         self._tabs.addTab(self._invoice_screen, "Invoices")
+        self._tabs.addTab(self._invoice_codes_screen, "Codes")
         self._tabs.addTab(self._enter_bills_screen, "Enter Bills")
         self._tabs.addTab(self._pay_bills_screen, "Pay Bills")
         self._tabs.addTab(self._receive_payments_screen, "Receive Payments")
@@ -1033,6 +1053,12 @@ class MainWindow(QMainWindow):
         self._invoice_screen.customerRecordsChanged.connect(
             self._receive_payments_screen._load_invoices_from_db
         )
+        self._invoice_screen.openInvoicesChanged.connect(
+            self._receive_payments_screen._load_invoices_from_db
+        )
+        self._invoice_codes_screen.codesChanged.connect(
+            self._invoice_screen.refresh_invoice_item_codes
+        )
 
     def _apply_main_tab_bar_tooltips(self) -> None:
         main_tab_bar = self._tabs.tabBar()
@@ -1041,6 +1067,10 @@ class MainWindow(QMainWindow):
         tips = [
             (
                 "Invoices: invoice entry workflow (line items, Bill To, print/PDF when connected). "
+                + _main_tab_bar_db_hint
+            ),
+            (
+                "Codes: service items, discounts, and default rates / income accounts for invoice line Codes."
                 + _main_tab_bar_db_hint
             ),
             (
@@ -1134,7 +1164,7 @@ class MainWindow(QMainWindow):
 
         self._tabs = QTabWidget()
         self._tabs.setToolTip(
-            "Main workspace: Invoices, Enter Bills, Pay Bills, Receive Payments, Bank Register, "
+            "Main workspace: Invoices, Codes, Enter Bills, Pay Bills, Receive Payments, Bank Register, "
             "Chart of Accounts, Customers, Vendors, Reconcile, and More (hover each tab). "
             "File → Backup / Restore applies to the whole company database (CLI: probooks backup / restore)."
         )
@@ -1154,7 +1184,7 @@ class MainWindow(QMainWindow):
         self._status_bar.showMessage(
             escape_ampersand_for_qt(
                 "Ready \u2013 drag & drop or use Import; bank CSV/PDF and AI line reconciliation: "
-                "Reconcile → Bank statements (Ctrl+9); File → Backup saves the company .db."
+                "Reconcile → Bank statements (Ctrl+0); File → Backup saves the company .db."
             )
             + f" ProBooks+ai v{_boot_ver}."
         )
@@ -1273,33 +1303,38 @@ class MainWindow(QMainWindow):
         )
         _view_tab_tip_extra = {
             0: " Invoice entry workflow.",
-            1: " Enter Bills screen.",
-            2: " Pay Bills screen.",
-            3: " Receive Payments screen.",
-            4: " Bank Register: Match overlay (Bank Import can populate).",
-            5: " Chart of Accounts editor.",
-            6: " AR: customers, invoices, payments (primary route; Business hub is Rules/Payroll/Tax %).",
-            7: " AP: vendors, bills, payments (primary route; Business hub is Rules/Payroll/Tax %).",
-            8: " Reconcile: Bank statements + Documents (intake → review/match).",
+            1: " Codes: service/discount items for invoice lines (default rates and COA labels).",
+            2: " Enter Bills screen.",
+            3: " Pay Bills screen.",
+            4: " Receive Payments screen.",
+            5: " Bank Register: Match overlay (Bank Import can populate).",
+            6: " Chart of Accounts editor.",
+            7: " AR: customers, invoices, payments (primary route; Business hub is Rules/Payroll/Tax %).",
+            8: " AP: vendors, bills, payments (primary route; Business hub is Rules/Payroll/Tax %).",
+            9: " Reconcile: Bank statements + Documents (intake → review/match).",
+            10: " Reports, Journal, Business, Audit log.",
         }
         for idx, (sc, label) in enumerate(
             [
                 ("Ctrl+1", "&Invoices"),
-                ("Ctrl+2", "&Enter Bills"),
-                ("Ctrl+3", "&Pay Bills"),
-                ("Ctrl+4", "&Receive Payments"),
-                ("Ctrl+5", "&Bank Register"),
-                ("Ctrl+6", "Chart of &Accounts"),
-                ("Ctrl+7", "&Customers"),
-                ("Ctrl+8", "&Vendors"),
-                ("Ctrl+9", "&Reconcile"),
-                ("Ctrl+0", "&More"),
+                ("Ctrl+2", "&Codes"),
+                ("Ctrl+3", "&Enter Bills"),
+                ("Ctrl+4", "&Pay Bills"),
+                ("Ctrl+5", "&Receive Payments"),
+                ("Ctrl+6", "&Bank Register"),
+                ("Ctrl+7", "Chart of &Accounts"),
+                ("Ctrl+8", "&Customers"),
+                ("Ctrl+9", "&Vendors"),
+                ("Ctrl+0", "&Reconcile"),
+                ("Ctrl+Shift+M", "&More"),
             ]
         ):
             act = QAction(label, self)
             act.setShortcut(sc)
             act.setShortcutContext(Qt.ApplicationShortcut)
-            extra = _view_tab_tip_extra.get(idx, " Reports, Journal, Business, Audit log.")
+            extra = _view_tab_tip_extra.get(
+                idx, " (see tab tooltip)."
+            )
             _menu_action_tip(
                 act, f"Show this main tab ({sc}).{extra}{_view_tab_tip_suffix}"
             )
@@ -1307,6 +1342,28 @@ class MainWindow(QMainWindow):
                 lambda checked=False, i=idx: self._set_main_tab_index(i)
             )
             view_menu.addAction(act)
+
+        view_menu.addSeparator()
+        m_more_reports = view_menu.addMenu("More &reports")
+        _menu_action_tip(
+            m_more_reports,
+            "Jump to **More** → **Reports** and run receivables/payables views. "
+            "Same data as the Reports tab; **Export CSV…** there saves the last grid you ran. "
+            "Bank Register stays the source of truth for bank activity; these read AR/AP tables in the company file."
+            + _view_tab_tip_suffix,
+        )
+        for label, kind, tip in (
+            ("&A/R aging", "ar_aging", "Open invoice balances by aging bucket (as-of: End date or today)."),
+            ("A/&P aging", "ap_aging", "Open bill balances by aging bucket."),
+            ("&Open invoices", "open_inv", "Invoices with balance due."),
+            ("Open &bills", "open_bill", "Bills with balance due."),
+            ("Recent &customer payments", "ar_pay", "Customer payment records (newest 100)."),
+            ("Recent &vendor payments", "ap_pay", "Vendor payment records (newest 100)."),
+        ):
+            act_mr = QAction(label, self)
+            _menu_action_tip(act_mr, tip + _view_tab_tip_suffix)
+            act_mr.triggered.connect(partial(self._focus_more_report, kind))
+            m_more_reports.addAction(act_mr)
 
         # Edit menu
         edit_menu = mb.addMenu("&Edit")
@@ -1803,6 +1860,8 @@ class MainWindow(QMainWindow):
         coa_display = self._coa_db.display_list()
         self._detail.update_coa(coa_display)
         self._register_tab.refresh_coa_choices()
+        if hasattr(self, "_invoice_codes_screen"):
+            self._invoice_codes_screen.refresh_coa_combos()
 
     def _on_tools_invoice(self) -> None:
         """Tools → Invoice: top-level Invoices tab."""
@@ -1844,6 +1903,19 @@ class MainWindow(QMainWindow):
         if index < 0 or index >= self._tabs.count():
             return
         self._tabs.setCurrentIndex(index)
+
+    def _focus_more_report(self, kind: str) -> None:
+        """View → More reports: show **More** → **Reports** and run an A/R or A/P report."""
+        tabs = getattr(self, "_tabs", None)
+        hub = getattr(self, "_more_hub", None)
+        rt = getattr(self, "_reports_tab", None)
+        if tabs is None or hub is None or rt is None:
+            return
+        idx = tabs.indexOf(hub)
+        if idx >= 0:
+            tabs.setCurrentIndex(idx)
+        hub.setCurrentWidget(rt)
+        rt.activate_report(kind)
 
     def _focus_bank_register_tab(self) -> None:
         """Focus **Bank register** after Bank Import syncs line-match results to the Match overlay.
@@ -2008,7 +2080,7 @@ class MainWindow(QMainWindow):
         self._status_bar.showMessage(
             escape_ampersand_for_qt(
                 f"Company: {p}  \u2013  drag & drop or Import; bank CSV/PDF and AI line reconciliation: "
-                f"Reconcile → Bank statements (Ctrl+9); File → Backup copies this .db."
+                f"Reconcile → Bank statements (Ctrl+0); File → Backup copies this .db."
             )
             + f" ProBooks+ai v{_sv}."
         )
@@ -2327,6 +2399,7 @@ class MainWindow(QMainWindow):
             self._switch_company_database(path, create_new=True)
 
     def closeEvent(self, event):
+        QSettings().setValue("main_window/geometry", self.saveGeometry())
         self._db.close()
         self._bank_db.close()
         super().closeEvent(event)

@@ -13,7 +13,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
-EXTENSION_SCHEMA_VERSION = 5
+EXTENSION_SCHEMA_VERSION = 6
 
 _DDL_VERSION = """
 CREATE TABLE IF NOT EXISTS extension_schema_version (
@@ -231,6 +231,22 @@ _MIGRATION_V5 = """
 ALTER TABLE customers ADD COLUMN parent_customer_id INTEGER REFERENCES customers(id);
 """
 
+# v6 – Invoice item / service codes (master list for Manual Invoice line Code column)
+_MIGRATION_V6 = """
+CREATE TABLE IF NOT EXISTS invoice_item_codes (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    code           TEXT    NOT NULL COLLATE NOCASE,
+    description    TEXT    NOT NULL DEFAULT '',
+    item_type      TEXT    NOT NULL DEFAULT 'Service',
+    coa_account    TEXT    NOT NULL DEFAULT '',
+    rate_value     REAL    NOT NULL DEFAULT 0,
+    rate_kind      TEXT    NOT NULL DEFAULT 'amount',
+    sort_order     INTEGER NOT NULL DEFAULT 0,
+    created_at     TEXT    NOT NULL,
+    UNIQUE (code)
+);
+"""
+
 
 def _seed_payroll_tax_items(conn: sqlite3.Connection) -> None:
     """Default federal/state placeholder codes (amounts entered manually per run)."""
@@ -308,6 +324,13 @@ def apply_extensions(conn: sqlite3.Connection) -> None:
             if s:
                 conn.execute(s)
         current = 5
+
+    if current < 6:
+        for stmt in _MIGRATION_V6.strip().split(";"):
+            s = stmt.strip()
+            if s:
+                conn.execute(s)
+        current = 6
 
     conn.execute(
         "UPDATE extension_schema_version SET version = ? WHERE id = 1",

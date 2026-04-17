@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 from PySide6.QtTest import QTest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSettings
 from PySide6.QtWidgets import (
     QApplication,
     QDoubleSpinBox,
@@ -60,6 +60,8 @@ def test_enter_bills_screen_header_and_line_grid(qapp: QApplication) -> None:
     assert any("Save" in b and "Close" in b for b in btns)
     assert any("Save" in b and "New" in b for b in btns)
     assert "Clear" in btns
+    assert "Export PDF…" in btns
+    assert "Print…" in btns
 
 
 def test_enter_bills_clear_resets_rows(qapp: QApplication) -> None:
@@ -118,6 +120,11 @@ def test_enter_bills_save_persists_bill_and_expense_lines(
     db_path = tmp_path / "enter_bills_save.db"
     db = BankDatabase(str(db_path))
     apply_extensions(db._conn)
+    pdf_dir = tmp_path / "bill_pdf_out"
+    pdf_dir.mkdir()
+    QSettings("ProBooks+ai", "ProBooks+ai").setValue(
+        "bill_prefs/output_folder", str(pdf_dir)
+    )
     vid = business.add_vendor(db._conn, "SuppCo")
     w = EnterBillsScreen(ap_conn=db._conn)
     w._vendor.setCurrentIndex(1)
@@ -149,6 +156,7 @@ def test_enter_bills_save_persists_bill_and_expense_lines(
     assert abs(float(el[0]["amount"]) - 42.5) < 0.01
     assert "Fuel" in (el[0]["memo"] or "")
     assert w._current_bill_id is None
+    assert (pdf_dir / "Bill-INV-900.pdf").is_file()
     db.close()
 
 
@@ -294,6 +302,11 @@ def test_enter_bills_edit_resaves_same_bill(qapp: QApplication, tmp_path) -> Non
     db_path = tmp_path / "enter_bills_edit.db"
     db = BankDatabase(str(db_path))
     apply_extensions(db._conn)
+    pdf_dir = tmp_path / "bill_pdf_edit"
+    pdf_dir.mkdir()
+    QSettings("ProBooks+ai", "ProBooks+ai").setValue(
+        "bill_prefs/output_folder", str(pdf_dir)
+    )
     vid = business.add_vendor(db._conn, "VEdit")
     bid = business.create_bill(
         db._conn,
@@ -325,4 +338,5 @@ def test_enter_bills_edit_resaves_same_bill(qapp: QApplication, tmp_path) -> Non
     el = business.list_bill_expense_lines(db._conn, bid)
     assert len(el) == 1
     assert float(el[0]["amount"]) == 99.0
+    assert (pdf_dir / "Bill-E-1.pdf").is_file()
     db.close()

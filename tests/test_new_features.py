@@ -12,7 +12,12 @@ import pytest
 
 from probooksai.bank_import import BankDatabase, SCHEMA_VERSION
 from probooksai.gl import GLDatabase, write_journal_export_csv
-from probooksai.coa_db import COADatabase, COA_ACCOUNT_TYPES
+from probooksai.coa_db import (
+    COADatabase,
+    COA_ACCOUNT_TYPES,
+    coa_type_report_bucket,
+    infer_coa_normal_balance,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -511,3 +516,12 @@ class TestCOADatabase:
         for i, acct_type in enumerate(COA_ACCOUNT_TYPES):
             acct_id = cdb.add_account(str(1000 + i), f"Account {i}", acct_type)
             assert acct_id > 0
+
+    def test_coa_type_report_bucket_and_normal_balance(self) -> None:
+        assert coa_type_report_bucket("bank") == "asset"
+        assert coa_type_report_bucket("credit_card") == "liability"
+        assert coa_type_report_bucket("operating_revenue") == "income"
+        assert coa_type_report_bucket("owners_draw") == "equity"
+        assert infer_coa_normal_balance("owners_draw") == "debit"
+        assert infer_coa_normal_balance("paid_in_capital") == "credit"
+        assert infer_coa_normal_balance("fixed_asset") == "debit"

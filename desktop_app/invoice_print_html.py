@@ -79,6 +79,9 @@ def build_invoice_print_html(
     """
     Trucking-style invoice layout for QTextDocument print/PDF.
 
+    **Header (above the line grid):** left column — invoice title, date, invoice #, PO/job;
+    right column — company identity block and Bill To (caller supplies plain text from the company file).
+
     ``line_rows`` tuples are
     ``(serviced_on, jl_num, description, bol, rate, qty, amount)`` — caller supplies
     display strings (already formatted numbers where needed).

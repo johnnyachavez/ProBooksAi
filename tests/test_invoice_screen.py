@@ -402,7 +402,8 @@ def test_invoice_screen_open_invoice_by_number(qapp: QApplication, tmp_path) -> 
     assert w.open_invoice_by_number("RT-500") is True
     assert w._current_invoice_id == inv_id
     assert w._inv_number.text() == "RT-500"
-    assert w.open_invoice_by_number("nope") is False
+    with patch("desktop_app.invoice_screen.message_box_information_ok"):
+        assert w.open_invoice_by_number("nope") is False
     db.close()
 
 
@@ -660,3 +661,76 @@ def test_apply_intake_item_to_draft_requires_company_file(qapp: QApplication) ->
         )
     assert ok is False
     m.assert_called_once()
+
+
+def test_manual_invoice_save_persists_without_pdf_folder(
+    qapp: QApplication, tmp_path
+) -> None:
+    """Save writes to ``invoices`` / ``invoice_lines`` even when no invoice PDF folder is set."""
+    db_path = tmp_path / "manual_save_no_pdf.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "SaveCo")
+    w = InvoiceScreen(ap_conn=db._conn)
+    w._bill_customer_panel.select_customer_by_id(cid)
+    w._inv_number.setText("91001")
+    desc = w._table.cellWidget(0, 2)
+    assert isinstance(desc, QLineEdit)
+    desc.setText("Consulting")
+    rate = w._table.cellWidget(0, 4)
+    qty = w._table.cellWidget(0, 5)
+    assert isinstance(rate, QDoubleSpinBox) and isinstance(qty, QDoubleSpinBox)
+    rate.setValue(100.0)
+    qty.setValue(1.0)
+    w.show()
+    qapp.processEvents()
+    with patch("desktop_app.invoice_screen.ensure_invoice_output_folder", return_value=None):
+        QTest.mouseClick(w._btn_save, Qt.MouseButton.LeftButton)
+        qapp.processEvents()
+    rows = business.list_invoices(db._conn)
+    assert len(rows) == 1
+    d = dict(rows[0])
+    assert (d.get("invoice_number") or "").strip() == "91001"
+    assert abs(float(d.get("total") or 0) - 100.0) < 0.02
+    db.close()
+
+
+def test_manual_invoice_save_edit_resave_round_trip(
+    qapp: QApplication, tmp_path
+) -> None:
+    """Load saved invoice, edit line, re-save updates the same DB row."""
+    db_path = tmp_path / "manual_edit.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "EditCo")
+    w = InvoiceScreen(ap_conn=db._conn)
+    w._bill_customer_panel.select_customer_by_id(cid)
+    w._inv_number.setText("92001")
+    desc = w._table.cellWidget(0, 2)
+    assert isinstance(desc, QLineEdit)
+    desc.setText("First")
+    rate = w._table.cellWidget(0, 4)
+    qty = w._table.cellWidget(0, 5)
+    assert isinstance(rate, QDoubleSpinBox) and isinstance(qty, QDoubleSpinBox)
+    rate.setValue(50.0)
+    qty.setValue(1.0)
+    w.show()
+    qapp.processEvents()
+    with patch("desktop_app.invoice_screen.ensure_invoice_output_folder", return_value=None):
+        QTest.mouseClick(w._btn_save, Qt.MouseButton.LeftButton)
+        qapp.processEvents()
+    rows = business.list_invoices(db._conn)
+    iid = int(dict(rows[0])["id"])
+    assert w.open_invoice_by_id(iid) is True
+    qapp.processEvents()
+    desc2 = w._table.cellWidget(0, 2)
+    assert isinstance(desc2, QLineEdit)
+    desc2.setText("Updated work")
+    with patch("desktop_app.invoice_screen.ensure_invoice_output_folder", return_value=None):
+        QTest.mouseClick(w._btn_save, Qt.MouseButton.LeftButton)
+        qapp.processEvents()
+    inv, lines = business.get_invoice_detail(db._conn, iid)
+    assert inv is not None
+    assert len(lines) >= 1
+    assert "Updated work" in (dict(lines[0]).get("description") or "")
+    db.close()

@@ -273,6 +273,85 @@ def write_customers_csv(conn: sqlite3.Connection, path: str) -> int:
     return n
 
 
+# ---------------------------------------------------------------------------
+# Invoice item / service codes (Manual Invoice → Code column)
+# ---------------------------------------------------------------------------
+
+_INVOICE_ITEM_TYPES = ("Service", "Discount", "Other Charge")
+
+
+def list_invoice_item_codes(conn: sqlite3.Connection) -> list:
+    """All rows for the **Codes** tab and invoice line lookups; ordered by sort_order, code."""
+    return conn.execute(
+        """
+        SELECT id, code, description, item_type, coa_account, rate_value, rate_kind, sort_order
+        FROM invoice_item_codes
+        ORDER BY sort_order, code COLLATE NOCASE
+        """
+    ).fetchall()
+
+
+def list_invoice_item_code_strings(conn: sqlite3.Connection) -> list[str]:
+    """Distinct code strings for invoice line QCompleter."""
+    rows = conn.execute(
+        "SELECT code FROM invoice_item_codes ORDER BY sort_order, code COLLATE NOCASE"
+    ).fetchall()
+    return [str(r["code"]).strip() for r in rows if (r["code"] or "").strip()]
+
+
+def get_invoice_item_code_by_code(conn: sqlite3.Connection, code: str) -> Optional[sqlite3.Row]:
+    """Case-insensitive match on ``code``."""
+    raw = (code or "").strip()
+    if not raw:
+        return None
+    return conn.execute(
+        "SELECT * FROM invoice_item_codes WHERE lower(code) = lower(?) LIMIT 1",
+        (raw,),
+    ).fetchone()
+
+
+def replace_invoice_item_codes(
+    conn: sqlite3.Connection,
+    rows: list[dict],
+) -> None:
+    """Replace the entire code list (desktop **Codes** tab Save). *rows* omit ``id``."""
+    conn.execute("DELETE FROM invoice_item_codes")
+    now = _now()
+    for i, r in enumerate(rows):
+        code = (r.get("code") or "").strip()
+        if not code:
+            continue
+        it = (r.get("item_type") or "Service").strip()
+        if it not in _INVOICE_ITEM_TYPES:
+            it = "Service"
+        rk = (r.get("rate_kind") or "amount").strip().lower()
+        if rk not in ("amount", "percent"):
+            rk = "amount"
+        try:
+            rv = float(r.get("rate_value", 0.0))
+        except (TypeError, ValueError):
+            rv = 0.0
+        conn.execute(
+            """
+            INSERT INTO invoice_item_codes (
+                code, description, item_type, coa_account,
+                rate_value, rate_kind, sort_order, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                code,
+                (r.get("description") or "").strip(),
+                it,
+                (r.get("coa_account") or "").strip(),
+                rv,
+                rk,
+                int(r.get("sort_order", i)),
+                now,
+            ),
+        )
+    conn.commit()
+
+
 def create_invoice(
     conn: sqlite3.Connection,
     customer_id: int,
@@ -705,6 +784,68 @@ def write_ap_payments_csv(conn: sqlite3.Connection, path: str) -> int:
             )
             n += 1
     return n
+
+
+def get_ar_payment_detail(
+    conn: sqlite3.Connection, payment_id: int
+) -> tuple[Optional[sqlite3.Row], list]:
+    """Header row for one AR payment plus allocation lines (invoice apply lines)."""
+    row = conn.execute(
+        """
+        SELECT p.*, c.name AS customer_name,
+               b.name AS bank_account_name
+        FROM ar_payments p
+        JOIN customers c ON c.id = p.customer_id
+        LEFT JOIN bank_accounts b ON b.id = p.bank_account_id
+        WHERE p.id = ?
+        """,
+        (payment_id,),
+    ).fetchone()
+    if row is None:
+        return None, []
+    allocs = conn.execute(
+        """
+        SELECT a.id AS allocation_id, a.invoice_id, a.amount AS apply_amount,
+               i.invoice_number, i.invoice_date
+        FROM ar_payment_allocations a
+        JOIN invoices i ON i.id = a.invoice_id
+        WHERE a.payment_id = ?
+        ORDER BY a.id
+        """,
+        (payment_id,),
+    ).fetchall()
+    return row, list(allocs)
+
+
+def get_ap_payment_detail(
+    conn: sqlite3.Connection, payment_id: int
+) -> tuple[Optional[sqlite3.Row], list]:
+    """Header row for one AP payment plus allocation lines (bill apply lines)."""
+    row = conn.execute(
+        """
+        SELECT p.*, v.name AS vendor_name,
+               b.name AS bank_account_name
+        FROM ap_payments p
+        JOIN vendors v ON v.id = p.vendor_id
+        LEFT JOIN bank_accounts b ON b.id = p.bank_account_id
+        WHERE p.id = ?
+        """,
+        (payment_id,),
+    ).fetchone()
+    if row is None:
+        return None, []
+    allocs = conn.execute(
+        """
+        SELECT a.id AS allocation_id, a.bill_id, a.amount AS apply_amount,
+               bl.vendor_invoice_number, bl.bill_date
+        FROM ap_payment_allocations a
+        JOIN bills bl ON bl.id = a.bill_id
+        WHERE a.payment_id = ?
+        ORDER BY a.id
+        """,
+        (payment_id,),
+    ).fetchall()
+    return row, list(allocs)
 
 
 def list_ar_payment_allocations(conn: sqlite3.Connection) -> list:

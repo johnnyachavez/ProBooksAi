@@ -1,16 +1,22 @@
 """Enter Bill workflow screen — vendor-backed header and expense lines persisted to ``bills`` / ``bill_expense_lines``.
 
 Dark navy styling matches :class:`PayBillsScreen` / :class:`InvoiceScreen` workflow theme (Customers / Vendors AR/AP body).
+
+**Print / PDF:** ``Save && Close`` / ``Save && New`` write ``Bill-<ref>.pdf`` to the folder from **Edit → Preferences**
+(``bill_prefs/output_folder`` in ``QSettings``, first-time folder picker via :func:`desktop_app.invoice_preferences.ensure_bill_output_folder`).
+**Export PDF…** uses a Save file dialog; **Print…** uses the same HTML as PDF and :func:`desktop_app.invoice_preferences.configure_printer_for_bill_print`.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 from typing import Optional
 
 from PySide6.QtCore import QDate, Qt
-from PySide6.QtGui import QShowEvent
+from PySide6.QtGui import QShowEvent, QTextDocument
+from PySide6.QtPrintSupport import QPrinter
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -21,6 +27,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QFileDialog,
     QMainWindow,
     QPlainTextEdit,
     QPushButton,
@@ -30,6 +37,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from desktop_app.bill_pdf import bill_html_string, save_bill_pdf
 from desktop_app.flexible_date import (
     attach_line_edit_us_date_normalization,
     format_iso_to_us_display,
@@ -37,10 +45,25 @@ from desktop_app.flexible_date import (
     line_edit_to_iso_or_raw,
     parse_flexible_date_to_ymd,
 )
+from desktop_app.invoice_preferences import (
+    configure_printer_for_bill_print,
+    ensure_bill_output_folder,
+)
 from desktop_app.qt_mnemonic import message_box_information_ok
 from probooksai import business
 
 _LOG = logging.getLogger(__name__)
+
+
+def _safe_bill_pdf_stem(vendor_invoice_number: str, bill_id: int) -> str:
+    raw = (vendor_invoice_number or "").strip()
+    if not raw:
+        raw = f"bill-{bill_id}"
+    forbidden = '<>:"/\\|?*\x00'
+    cleaned = "".join(ch if ch not in forbidden and ord(ch) >= 32 else "_" for ch in raw)
+    cleaned = cleaned.strip(" .") or f"bill-{bill_id}"
+    return cleaned[:120]
+
 
 from desktop_app.theme import (
     WORKFLOW_ALT_ROW as _BILL_STRIPE,
@@ -108,6 +131,7 @@ class EnterBillsScreen(QWidget):
         self._current_bill_id: int | None = None
         self._attachment_path: str = ""
         self._suppress_line_recalc: bool = False
+        self._bill_print_dialog_armed: bool = False
         self.setToolTip(
             "Enter Bills: vendor bill header and expense lines; Save writes to your company file. "
             "Same company .db (File → Backup / Restore, probooks.backup)."
@@ -357,6 +381,15 @@ class EnterBillsScreen(QWidget):
         bot = QHBoxLayout(actions_frame)
         bot.setContentsMargins(12, 10, 12, 10)
         bot.addStretch(1)
+        self._btn_export_pdf = QPushButton("Export PDF…")
+        self._btn_export_pdf.setToolTip(
+            "Save this bill to the company file, then pick a .pdf path (does not change the bills folder in preferences)."
+        )
+        self._btn_print = QPushButton("Print…")
+        self._btn_print.setToolTip(
+            "Save this bill to the company file, then print (same layout as PDF). "
+            "Uses the printer from the print dialog, saved for next time."
+        )
         self._btn_save_close = QPushButton("Save && Close")
         self._btn_save_new = QPushButton("Save && New")
         self._btn_clear = QPushButton("Clear")
@@ -367,12 +400,22 @@ class EnterBillsScreen(QWidget):
             "Save this bill to the company file, then clear the form for a new bill."
         )
         self._btn_clear.setToolTip("Clear the form without saving (new draft).")
+        self._btn_export_pdf.clicked.connect(self._on_export_bill_pdf)
+        self._btn_print.clicked.connect(self._on_print_bill)
         self._btn_save_close.clicked.connect(self._on_save_close)
         self._btn_save_new.clicked.connect(self._on_save_new)
         self._btn_clear.clicked.connect(self._on_clear)
-        for _b in (self._btn_save_close, self._btn_save_new, self._btn_clear):
+        for _b in (
+            self._btn_export_pdf,
+            self._btn_print,
+            self._btn_save_close,
+            self._btn_save_new,
+            self._btn_clear,
+        ):
             _b.setAutoDefault(False)
             _b.setDefault(False)
+        bot.addWidget(self._btn_export_pdf)
+        bot.addWidget(self._btn_print)
         bot.addWidget(self._btn_save_close)
         bot.addWidget(self._btn_save_new)
         bot.addWidget(self._btn_clear)
@@ -388,6 +431,8 @@ class EnterBillsScreen(QWidget):
         on = self._ap_conn is not None
         self._btn_save_close.setEnabled(on)
         self._btn_save_new.setEnabled(on)
+        self._btn_export_pdf.setEnabled(on)
+        self._btn_print.setEnabled(on)
 
     def _feedback(self, msg: str) -> None:
         if not (msg or "").strip():
@@ -727,21 +772,122 @@ class EnterBillsScreen(QWidget):
             self._suppress_line_recalc = False
         self._recalc_total_label()
 
-    def _on_save_close(self) -> None:
+    def _write_bill_pdf_to_prefs_folder(self, bill_id: int) -> None:
+        if self._ap_conn is None:
+            return
+        folder = ensure_bill_output_folder(self)
+        if folder is None:
+            return
+        vinv = self._vendor_inv.text().strip()
+        name = f"Bill-{_safe_bill_pdf_stem(vinv, bill_id)}.pdf"
+        path = os.path.join(folder, name)
+        try:
+            save_bill_pdf(self._ap_conn, bill_id, path)
+        except OSError as exc:
+            self._feedback(f"Bill saved, but the PDF could not be written: {exc}")
+        except Exception as exc:  # noqa: BLE001
+            self._feedback(f"Bill saved, but PDF export failed: {exc}")
+
+    def _on_export_bill_pdf(self) -> None:
+        if self.sender() is not self._btn_export_pdf:
+            return
+        if self._ap_conn is None:
+            self._feedback("Open a company file to export a PDF.")
+            return
+        was_new = self._current_bill_id is None
         ok, msg, bid = self._try_persist_bill()
         if not ok:
             self._feedback(msg)
             return
         assert bid is not None
+        vinv = self._vendor_inv.text().strip()
+        default_name = f"Bill-{_safe_bill_pdf_stem(vinv, bid)}.pdf"
+        path, _filt = QFileDialog.getSaveFileName(
+            self,
+            "Export bill as PDF",
+            default_name,
+            "PDF files (*.pdf);;All files (*.*)",
+        )
+        if not path:
+            if was_new:
+                self._load_bill_into_form(bid)
+            return
+        if not path.lower().endswith(".pdf"):
+            path = f"{path}.pdf"
+        try:
+            save_bill_pdf(self._ap_conn, bid, path)
+        except OSError as exc:
+            self._feedback(f"Bill saved, but the PDF could not be written: {exc}")
+            return
+        except Exception as exc:  # noqa: BLE001
+            self._feedback(f"Bill saved, but PDF export failed: {exc}")
+            return
+        self._feedback("Bill saved.")
+        if was_new:
+            self._reset_form_new_draft()
+        else:
+            self._load_bill_into_form(bid)
+
+    def _run_bill_print_dialog(self, bill_id: int, *, reset_after: bool) -> None:
+        if not self._bill_print_dialog_armed:
+            return
+        if self._ap_conn is None:
+            return
+        doc = QTextDocument()
+        try:
+            doc.setHtml(bill_html_string(self._ap_conn, bill_id))
+        except Exception as exc:  # noqa: BLE001
+            self._feedback(f"Could not prepare the bill for printing: {exc}")
+            return
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        if not configure_printer_for_bill_print(self, printer):
+            return
+        doc.print_(printer)
+        self._feedback("Bill saved.")
+        if reset_after:
+            self._reset_form_new_draft()
+        else:
+            self._load_bill_into_form(bill_id)
+
+    def _on_print_bill(self) -> None:
+        if self.sender() is not self._btn_print:
+            return
+        if self._ap_conn is None:
+            self._feedback("Open a company file to print bills.")
+            return
+        was_new = self._current_bill_id is None
+        self._bill_print_dialog_armed = True
+        try:
+            ok, msg, bid = self._try_persist_bill()
+            if not ok:
+                self._feedback(msg)
+                return
+            assert bid is not None
+            self._run_bill_print_dialog(bid, reset_after=was_new)
+        finally:
+            self._bill_print_dialog_armed = False
+
+    def _on_save_close(self) -> None:
+        if self.sender() is not self._btn_save_close:
+            return
+        ok, msg, bid = self._try_persist_bill()
+        if not ok:
+            self._feedback(msg)
+            return
+        assert bid is not None
+        self._write_bill_pdf_to_prefs_folder(bid)
         self._feedback("Bill saved.")
         self._reset_form_new_draft()
 
     def _on_save_new(self) -> None:
+        if self.sender() is not self._btn_save_new:
+            return
         ok, msg, bid = self._try_persist_bill()
         if not ok:
             self._feedback(msg)
             return
         assert bid is not None
+        self._write_bill_pdf_to_prefs_folder(bid)
         self._feedback("Bill saved.")
         self._reset_form_new_draft()
 

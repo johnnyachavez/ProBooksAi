@@ -129,18 +129,27 @@ class ReportsTab(QWidget):
             row.addWidget(b)
         btn_export = QPushButton("Export CSV…")
         btn_export.setToolTip(
-            "Toolbar Export CSV uses UTF-8 BOM for Excel. "
-            "Exports the last report table you ran (financial or AR/AP)."
+            "Save the **last report table** you ran (trial balance, P&L, or any Receivables & payables button). "
+            "UTF-8 BOM for Excel. You can also use **View → More reports** to jump here and run a report first."
         )
         btn_export.clicked.connect(self._export_csv)
         row.addWidget(btn_export)
         row.addStretch()
         layout.addLayout(row)
 
-        ar_ap = QGroupBox("Receivables & payables")
+        self._report_heading = QLabel("Current report: — (run a report below)")
+        self._report_heading.setWordWrap(True)
+        self._report_heading.setStyleSheet("color: #C8C8D8; font-size: 13px; font-weight: 600;")
+        self._report_heading.setToolTip(
+            "Shows which receivables/payables or financial report is in the grid. "
+            "Bank Register stays the source of truth for bank activity; these read AR/AP tables in the company file."
+        )
+        layout.addWidget(self._report_heading)
+
+        ar_ap = QGroupBox("Receivables & payables (A/R & A/P)")
         ar_ap.setToolTip(
             "Open-item and aging views from the company AR/AP tables (not the Bank Register grid). "
-            "Export CSV… exports the last table you ran. UTF-8 BOM for Excel."
+            "Toolbar **Export CSV…** saves the last table you ran. UTF-8 BOM for Excel."
         )
         ar_ap_lay = QVBoxLayout(ar_ap)
         ar_buttons = (
@@ -220,6 +229,26 @@ class ReportsTab(QWidget):
         sc_f5 = QShortcut(QKeySequence("F5"), self)
         sc_f5.setContext(Qt.WidgetWithChildrenShortcut)
         sc_f5.activated.connect(self._rerun_last_report)
+
+    def activate_report(self, kind: str) -> None:
+        """Run a report by kind string (used from **View → More reports**)."""
+        k = (kind or "").strip().lower().replace("-", "_")
+        dispatch = {
+            "ar_aging": self._show_ar_aging,
+            "ap_aging": self._show_ap_aging,
+            "open_inv": self._show_open_invoices,
+            "open_bill": self._show_open_bills,
+            "open_invoices": self._show_open_invoices,
+            "open_bills": self._show_open_bills,
+            "ar_pay": self._show_recent_ar_payments,
+            "ap_pay": self._show_recent_ap_payments,
+        }
+        fn = dispatch.get(k)
+        if fn is not None:
+            fn()
+
+    def _set_report_heading(self, text: str) -> None:
+        self._report_heading.setText(text)
 
     def _rerun_last_report(self) -> None:
         if self._last_report_kind == "tb":
@@ -308,6 +337,7 @@ class ReportsTab(QWidget):
         headers = ["Account", "Debit", "Credit", "Net (D−C)"]
         self._fill_table(headers, rows, numeric_columns=frozenset({1, 2, 3}))
         self._summary.setText(f"{len(data)} account(s) with activity.")
+        self._set_report_heading("Current report: Trial balance")
         dr = f"{start or '—'} to {end or '—'}"
         self._last_export = {
             "preamble": [
@@ -323,6 +353,7 @@ class ReportsTab(QWidget):
         if not self._start.text().strip() or not self._end.text().strip():
             self._last_export = None
             self._last_report_kind = None
+            self._set_report_heading("Current report: —")
             self._summary.setText(
                 escape_ampersand_for_qt("Enter start and end dates for P&L.")
             )
@@ -342,6 +373,7 @@ class ReportsTab(QWidget):
                 "P&L uses posted journal lines and coa_accounts types (income / expense)."
             )
         )
+        self._set_report_heading("Current report: Income statement (P&L)")
         self._last_export = {
             "preamble": [
                 "ProBooks+ai – Income statement (P&L)",
@@ -371,6 +403,7 @@ class ReportsTab(QWidget):
         self._summary.setText(
             "Balance sheet aggregates by COA account type through the as-of date (end field)."
         )
+        self._set_report_heading("Current report: Balance sheet summary")
         self._last_export = {
             "preamble": [
                 "ProBooks+ai – Balance sheet summary",
@@ -407,6 +440,7 @@ class ReportsTab(QWidget):
         self._summary.setText(
             f"A/R aging as of {as_of}: {len(lines)} open line(s), total {tot:,.2f}. Buckets: {buck_txt}."
         )
+        self._set_report_heading(f"Current report: A/R aging (as of {as_of})")
         self._last_export = {
             "preamble": [
                 "ProBooks+ai – A/R aging",
@@ -444,6 +478,7 @@ class ReportsTab(QWidget):
         self._summary.setText(
             f"A/P aging as of {as_of}: {len(lines)} open line(s), total {tot:,.2f}. Buckets: {buck_txt}."
         )
+        self._set_report_heading(f"Current report: A/P aging (as of {as_of})")
         self._last_export = {
             "preamble": [
                 "ProBooks+ai – A/P aging",
@@ -463,6 +498,7 @@ class ReportsTab(QWidget):
             key=lambda d: (d.get("due_date") or "", d.get("invoice_number") or "")
         )
         headers = [
+            "Invoice id",
             "Invoice #",
             "Customer",
             "Invoice date",
@@ -478,6 +514,7 @@ class ReportsTab(QWidget):
             tot_bal += bd
             rows.append(
                 [
+                    d.get("id"),
                     d.get("invoice_number") or "",
                     d.get("customer_name") or "",
                     d.get("invoice_date") or "",
@@ -487,10 +524,11 @@ class ReportsTab(QWidget):
                     d.get("status") or "",
                 ]
             )
-        self._fill_table(headers, rows, numeric_columns=frozenset({4, 5}))
+        self._fill_table(headers, rows, numeric_columns=frozenset({5, 6}))
         self._summary.setText(
             f"Open invoices: {len(rows)} row(s), total balance due {tot_bal:,.2f}."
         )
+        self._set_report_heading("Current report: Open invoices")
         self._last_export = {
             "preamble": ["ProBooks+ai – Open invoices (balance due > 0)"],
             "headers": headers,
@@ -505,6 +543,7 @@ class ReportsTab(QWidget):
             key=lambda d: (d.get("due_date") or "", d.get("vendor_invoice_number") or "")
         )
         headers = [
+            "Bill id",
             "Vendor inv. #",
             "Vendor",
             "Bill date",
@@ -520,6 +559,7 @@ class ReportsTab(QWidget):
             tot_bal += bd
             rows.append(
                 [
+                    d.get("id"),
                     d.get("vendor_invoice_number") or "",
                     d.get("vendor_name") or "",
                     d.get("bill_date") or "",
@@ -529,10 +569,11 @@ class ReportsTab(QWidget):
                     d.get("status") or "",
                 ]
             )
-        self._fill_table(headers, rows, numeric_columns=frozenset({4, 5}))
+        self._fill_table(headers, rows, numeric_columns=frozenset({5, 6}))
         self._summary.setText(
             f"Open bills: {len(rows)} row(s), total balance due {tot_bal:,.2f}."
         )
+        self._set_report_heading("Current report: Open bills")
         self._last_export = {
             "preamble": ["ProBooks+ai – Open bills (balance due > 0)"],
             "headers": headers,
@@ -543,6 +584,7 @@ class ReportsTab(QWidget):
     def _show_recent_ar_payments(self) -> None:
         rows_raw = business.list_ar_payments(self._conn)[:100]
         headers = [
+            "Payment id",
             "Payment date",
             "Customer",
             "Amount",
@@ -556,6 +598,7 @@ class ReportsTab(QWidget):
             d = dict(r)
             rows.append(
                 [
+                    d.get("id"),
                     d.get("payment_date") or "",
                     d.get("customer_name") or "",
                     float(d.get("amount") or 0),
@@ -565,8 +608,9 @@ class ReportsTab(QWidget):
                     d.get("bank_account_name") or "",
                 ]
             )
-        self._fill_table(headers, rows, numeric_columns=frozenset({2}))
+        self._fill_table(headers, rows, numeric_columns=frozenset({3}))
         self._summary.setText(f"Recent customer (AR) payments: {len(rows)} row(s), newest first.")
+        self._set_report_heading("Current report: Recent customer payments")
         self._last_export = {
             "preamble": ["ProBooks+ai – Recent customer payments (newest first, up to 100)"],
             "headers": headers,
@@ -577,6 +621,7 @@ class ReportsTab(QWidget):
     def _show_recent_ap_payments(self) -> None:
         rows_raw = business.list_ap_payments(self._conn)[:100]
         headers = [
+            "Payment id",
             "Payment date",
             "Vendor",
             "Amount",
@@ -590,6 +635,7 @@ class ReportsTab(QWidget):
             d = dict(r)
             rows.append(
                 [
+                    d.get("id"),
                     d.get("payment_date") or "",
                     d.get("vendor_name") or "",
                     float(d.get("amount") or 0),
@@ -599,8 +645,9 @@ class ReportsTab(QWidget):
                     d.get("bank_account_name") or "",
                 ]
             )
-        self._fill_table(headers, rows, numeric_columns=frozenset({2}))
+        self._fill_table(headers, rows, numeric_columns=frozenset({3}))
         self._summary.setText(f"Recent vendor (AP) payments: {len(rows)} row(s), newest first.")
+        self._set_report_heading("Current report: Recent vendor payments")
         self._last_export = {
             "preamble": ["ProBooks+ai – Recent vendor payments (newest first, up to 100)"],
             "headers": headers,
