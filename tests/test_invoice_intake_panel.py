@@ -79,3 +79,36 @@ def test_invoice_intake_shows_title_and_flow(qapp: QApplication) -> None:
     labels = [lb.text() for lb in w.findChildren(QLabel)]
     assert any("Invoice Intake" in x for x in labels)
     assert any("Send to Manual Invoice" in x for x in labels)
+
+
+def test_invoice_intake_pdf_review_uses_extracted_text_for_fields(
+    qapp: QApplication, tmp_path, monkeypatch
+) -> None:
+    """After PDF text extraction, review panel runs the same labeled-field pass as pasted text."""
+    db_path = tmp_path / "intake_pdf_review.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    pdf = tmp_path / "doc.pdf"
+    pdf.write_bytes(b"%PDF-1.4")
+
+    def fake_extract(kind: str, path: str) -> tuple[str, str | None]:
+        return (
+            "Invoice Date: 2025-06-15\nTicket # T-99\nCustomer: Acme Corp\n",
+            None,
+        )
+
+    monkeypatch.setattr(
+        "desktop_app.invoice_intake_panel.extract_text_for_intake_kind",
+        fake_extract,
+    )
+    screen = InvoiceScreen(ap_conn=db._conn)
+    intake = screen._invoice_intake
+    intake._append_row(source_display="doc.pdf", kind="PDF", path=str(pdf))
+    qapp.processEvents()
+    review = intake._txt_extracted.toPlainText()
+    assert "T-99" in review
+    assert "Acme Corp" in review
+    att = intake._txt_attachment.toPlainText()
+    assert "Extracted text length:" in att
+    assert "Raw extracted text" in att
+    db.close()

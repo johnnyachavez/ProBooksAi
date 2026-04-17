@@ -1,8 +1,10 @@
 """Invoice Intake — stage delivery tickets, PDFs, images, and pasted text for draft invoicing.
 
-Queue + review; pasted **Text** rows get a conservative labeled-field extraction pass (see
-``invoice_intake_text_extract``). **Send to Manual Invoice** opens Manual Invoice with memo, banner,
-and high-confidence fields applied to the form where appropriate. PDF/image staging is unchanged.
+Queue + review; **Text** and **PDF/image** (after text extraction) use the same conservative
+``extract_text_intake_fields`` pass. PDFs use the text layer via ``invoice_intake_file_extract``;
+images use optional OCR when ``pytesseract``/Tesseract are available.
+**Send to Manual Invoice** opens Manual Invoice with memo, banner, and high-confidence fields
+when extraction supports them.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from desktop_app.invoice_intake_file_extract import extract_text_for_intake_kind
 from desktop_app.invoice_intake_text_extract import extract_text_intake_fields
 from desktop_app.qt_mnemonic import message_box_information_ok
 from desktop_app.theme import (
@@ -56,6 +59,10 @@ _INTAKE_COLS = (
 
 _ROLE_PATH = Qt.ItemDataRole.UserRole
 _ROLE_TEXT_PAYLOAD = Qt.ItemDataRole.UserRole + 1
+# Cached PDF/image extraction (avoid re-reading file on each selection)
+_ROLE_FILE_EXTRACTED_TEXT = Qt.ItemDataRole.UserRole + 2
+_ROLE_FILE_EXTRACT_WARN = Qt.ItemDataRole.UserRole + 3
+_ROLE_FILE_EXTRACT_DONE = Qt.ItemDataRole.UserRole + 4
 
 _IMAGE_FILTER = (
     "Images (*.png *.jpg *.jpeg *.gif *.webp *.bmp *.tif *.tiff);;All files (*.*)"
@@ -83,7 +90,7 @@ def _editable_item(text: str) -> QTableWidgetItem:
 
 
 class InvoiceIntakePanel(QWidget):
-    """Queue of staged sources and a review placeholder for the future draft-invoice flow."""
+    """Queue of staged sources (text / PDF / image) with extraction review and handoff to Manual Invoice."""
 
     def __init__(
         self,
@@ -96,8 +103,8 @@ class InvoiceIntakePanel(QWidget):
         self.setObjectName("invoiceIntakePanel")
         self.setMinimumHeight(200)
         self.setToolTip(
-            "Invoice Intake: drop in tickets, PDFs, images, or pasted text. "
-            "Review here, then a future step will map lines to the invoice grid below."
+            "Invoice Intake: stage PDFs, images, or pasted text. "
+            "Review extracted fields and raw text, then Send to Manual Invoice for a draft (memo + optional date/BOL)."
         )
         self._build_ui()
         if self._invoice_screen is not None and hasattr(self._invoice_screen, "_inv_number"):
@@ -145,10 +152,14 @@ class InvoiceIntakePanel(QWidget):
         actions = QHBoxLayout()
         actions.setSpacing(8)
         self._btn_pdf = QPushButton("Import PDF…")
-        self._btn_pdf.setToolTip("Add a PDF to the intake queue (staged for future parsing).")
+        self._btn_pdf.setToolTip(
+            "Add a PDF to the intake queue. Text layer is extracted for review (scanned PDFs may be empty)."
+        )
         self._btn_pdf.clicked.connect(self._on_import_pdf)
         self._btn_img = QPushButton("Import image…")
-        self._btn_img.setToolTip("Add an image (PNG, JPG, …) to the intake queue.")
+        self._btn_img.setToolTip(
+            "Add an image (PNG, JPG, …). OCR runs when pytesseract/Tesseract are installed; otherwise path-only."
+        )
         self._btn_img.clicked.connect(self._on_import_image)
         self._btn_paste = QPushButton("Paste text from clipboard")
         self._btn_paste.setToolTip("Create a text intake row from the current clipboard contents.")
@@ -158,8 +169,8 @@ class InvoiceIntakePanel(QWidget):
         self._btn_remove.clicked.connect(self._on_remove_selected)
         self._btn_send_draft = QPushButton("Send to Manual Invoice")
         self._btn_send_draft.setToolTip(
-            "Open Manual Invoice with a new draft: memo + raw text, and high-confidence text "
-            "extraction applied to date/BOL/memo where applicable (confirm before Save)."
+            "Open Manual Invoice with a new draft: memo + source text, and high-confidence "
+            "extraction applied to date/BOL when available (confirm before Save)."
         )
         self._btn_send_draft.clicked.connect(self._on_send_to_manual_invoice)
         for b in (
@@ -244,7 +255,7 @@ class InvoiceIntakePanel(QWidget):
         self._txt_extracted = QPlainTextEdit()
         self._txt_extracted.setReadOnly(True)
         self._txt_extracted.setPlaceholderText(
-            "Select a text intake row to see labeled-field extraction (Date, Ticket/BOL, Customer, …)."
+            "Select a queue row: Text, PDF, or Image — extracted fields (Date, Ticket/BOL, …) when text is available."
         )
         self._txt_extracted.setMinimumHeight(100)
         self._txt_extracted.setStyleSheet(
@@ -262,7 +273,7 @@ class InvoiceIntakePanel(QWidget):
         self._txt_attachment = QPlainTextEdit()
         self._txt_attachment.setReadOnly(True)
         self._txt_attachment.setPlaceholderText(
-            "For text intake: raw staged source below. For files: path on disk."
+            "Raw source: pasted text, or extracted PDF/image text + file path."
         )
         self._txt_attachment.setFixedHeight(72)
         self._txt_attachment.setStyleSheet(
@@ -340,6 +351,29 @@ class InvoiceIntakePanel(QWidget):
             "queue_notes": queue_notes,
         }
 
+    def _ensure_cached_file_text(
+        self,
+        row: int,
+        kind: str,
+        path: str,
+        src_it: QTableWidgetItem | None,
+    ) -> tuple[str, str | None]:
+        """Load PDF/image text once per queue row; cache on the Source column item."""
+        if src_it is None:
+            return "", None
+        done = src_it.data(_ROLE_FILE_EXTRACT_DONE)
+        if done:
+            t = src_it.data(_ROLE_FILE_EXTRACTED_TEXT)
+            w = src_it.data(_ROLE_FILE_EXTRACT_WARN)
+            out_w = w if isinstance(w, str) and w.strip() else None
+            return (t or ""), out_w
+        text, warn = extract_text_for_intake_kind(kind, path)
+        src_it.setData(_ROLE_FILE_EXTRACTED_TEXT, text or "")
+        if warn:
+            src_it.setData(_ROLE_FILE_EXTRACT_WARN, warn)
+        src_it.setData(_ROLE_FILE_EXTRACT_DONE, True)
+        return text or "", warn
+
     def _on_send_to_manual_invoice(self) -> None:
         inv = self._invoice_screen
         if inv is None:
@@ -364,9 +398,19 @@ class InvoiceIntakePanel(QWidget):
         data = self._row_intake_payload(r)
         if not data:
             return
+        kind = (data.get("kind") or "").strip()
         tex = None
-        if (data.get("kind") or "").strip() == "Text" and data.get("text_payload"):
+        extracted_file_text = ""
+        file_note: str | None = None
+        src_it = self._table.item(r, 0)
+        if kind == "Text" and data.get("text_payload"):
             tex = extract_text_intake_fields(str(data["text_payload"]))
+        elif kind in ("PDF", "Image") and data.get("path"):
+            extracted_file_text, file_note = self._ensure_cached_file_text(
+                r, kind, str(data["path"]), src_it
+            )
+            if extracted_file_text.strip():
+                tex = extract_text_intake_fields(extracted_file_text)
         ok = inv.apply_intake_item_to_draft(
             source_display=data["source_display"],
             kind=data["kind"],
@@ -374,6 +418,8 @@ class InvoiceIntakePanel(QWidget):
             text_payload=data.get("text_payload"),
             queue_notes=data.get("queue_notes") or "",
             text_extraction=tex,
+            extracted_file_text=extracted_file_text or None,
+            file_extract_note=file_note,
         )
         if ok:
             st = self._table.item(r, 3)
@@ -413,10 +459,33 @@ class InvoiceIntakePanel(QWidget):
             self._txt_attachment.setPlainText(
                 "Clipboard / pasted text\n\n--- Raw staged text ---\n" + raw_preview
             )
+        elif path and kind in ("PDF", "Image"):
+            src_it = self._table.item(r, 0)
+            text, warn = self._ensure_cached_file_text(r, kind, path, src_it)
+            if text.strip():
+                ex = extract_text_intake_fields(text)
+                self._txt_extracted.setPlainText(ex.review_panel_text())
+            else:
+                ex0 = extract_text_intake_fields("")
+                header = (
+                    f"Source: {kind} — no extractable text for field parsing.\n"
+                    f"Status: {warn or 'Not extracted.'}\n\n"
+                )
+                self._txt_extracted.setPlainText(header + ex0.review_panel_text())
+            parts_att: list[str] = [
+                f"Path:\n{os.path.normpath(path)}",
+                f"Extracted text length: {len(text)} characters.",
+            ]
+            if warn:
+                parts_att.append(f"Note: {warn}")
+            if text.strip():
+                att_body = text.strip()
+                if len(att_body) > 4000:
+                    att_body = att_body[:4000] + "\n… (truncated)"
+                parts_att.extend(["", "--- Raw extracted text ---", att_body])
+            self._txt_attachment.setPlainText("\n".join(parts_att))
         elif path:
-            self._txt_extracted.setPlainText(
-                "Preview for PDF/image files is not available yet — file is staged on disk."
-            )
+            self._txt_extracted.setPlainText("")
             self._txt_attachment.setPlainText(os.path.normpath(path))
         else:
             self._txt_extracted.setPlainText("")

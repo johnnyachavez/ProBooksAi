@@ -909,11 +909,13 @@ class InvoiceScreen(QWidget):
         text_payload: str | None = None,
         queue_notes: str = "",
         text_extraction: TextIntakeExtraction | None = None,
+        extracted_file_text: str | None = None,
+        file_extract_note: str | None = None,
     ) -> bool:
         """Switch to Manual Invoice with a new draft; carry intake source into memo (saved on Save).
 
-        Uses staged data only. For text intake, optional *text_extraction* may set invoice date / BOL#
-        (high confidence only) and memo lines — no invented line totals.
+        Uses staged data only. *text_extraction* (from pasted text or PDF/image text layer / OCR) may
+        set invoice date / BOL# when confidence is high — no invented line totals.
         """
         if self._ap_conn is None:
             message_box_information_ok(
@@ -939,7 +941,7 @@ class InvoiceScreen(QWidget):
             memo_lines.append(f"Attachment path: {os.path.normpath(p)}")
         if qn:
             memo_lines.append(f"Queue notes: {qn}")
-        ex = text_extraction if k == "Text" else None
+        ex = text_extraction
         if ex is not None:
             applied: list[str] = []
             if ex.date_confidence == "high" and ex.date_display:
@@ -959,6 +961,19 @@ class InvoiceScreen(QWidget):
             memo_lines.append("")
             memo_lines.append("--- Staged text (from clipboard / intake) ---")
             memo_lines.append(body)
+        elif k in ("PDF", "Image") and (extracted_file_text or "").strip():
+            body = (extracted_file_text or "").strip()
+            if len(body) > 8000:
+                body = body[:8000] + "\n… (truncated for memo; paste more in the line grid if needed)"
+            memo_lines.append("")
+            memo_lines.append(
+                f"--- Extracted text ({k} file; same source as intake review panel) ---"
+            )
+            memo_lines.append(body)
+        if k in ("PDF", "Image") and (file_extract_note or "").strip():
+            memo_lines.append("")
+            memo_lines.append("--- Extraction note ---")
+            memo_lines.append((file_extract_note or "").strip())
 
         self._invoice_memo_notes = "\n".join(memo_lines).strip()
 
@@ -990,6 +1005,34 @@ class InvoiceScreen(QWidget):
                 f"Suggested invoice # {num or '—'}.\n\n"
                 f"Preview (full text is saved on the invoice memo):\n{preview}{ext_note}"
             )
+        elif k in ("PDF", "Image") and p:
+            raw_file = (extracted_file_text or "").strip()
+            if raw_file:
+                preview = raw_file if len(raw_file) <= 500 else raw_file[:500] + "…"
+                ext_note = ""
+                if ex is not None:
+                    bits: list[str] = []
+                    if ex.date_confidence == "high":
+                        bits.append("invoice date")
+                    if ex.ticket_confidence == "high":
+                        bits.append("BOL#")
+                    if ex.memo_lines_for_handoff():
+                        bits.append("memo lines")
+                    if bits:
+                        ext_note = f"\n\nApplied from extraction: {', '.join(bits)}."
+                banner = (
+                    f"From Invoice Intake — {k}: {src} ({len(raw_file)} chars extracted). "
+                    f"Suggested invoice # {num or '—'}.\n\n"
+                    f"Preview (extracted text is on the invoice memo):\n{preview}{ext_note}"
+                )
+            else:
+                note = (file_extract_note or "").strip() or (
+                    "No text extracted from this file; path and any note are in the memo."
+                )
+                banner = (
+                    f"From Invoice Intake — {k}: {src}. Suggested invoice # {num or '—'}.\n\n"
+                    f"{note}"
+                )
         elif p:
             banner = (
                 f"From Invoice Intake — {k}: {src}. Path is in the invoice memo (Save). "
