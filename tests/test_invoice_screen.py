@@ -275,7 +275,10 @@ def test_invoice_screen_forward_loads_first_invoice(qapp: QApplication, tmp_path
     db.close()
 
 
-def test_invoice_screen_clear_fields_keeps_invoice_number(qapp: QApplication, tmp_path) -> None:
+def test_invoice_screen_clear_fields_resets_invoice_number_to_next_suggestion(
+    qapp: QApplication, tmp_path
+) -> None:
+    """Clear Fields starts a new draft: lines/header clear and invoice # follows next company default."""
     db_path = tmp_path / "invoice_clear.db"
     db = BankDatabase(str(db_path))
     apply_extensions(db._conn)
@@ -291,7 +294,8 @@ def test_invoice_screen_clear_fields_keeps_invoice_number(qapp: QApplication, tm
     w._on_forward_invoice()
     assert w._inv_number.text() == "15001"
     w._on_clear_fields()
-    assert w._inv_number.text() == "15001"
+    assert w._inv_number.text() == "15002"
+    assert w._current_invoice_id is None
     assert not (w._table.cellWidget(0, 2).text() or "").strip()
     db.close()
 
@@ -348,6 +352,44 @@ def test_invoice_screen_update_existing_does_not_duplicate_row(
     assert int(rows[0]["id"]) == inv_id
     assert w._inv_number.text() == "UP-001"
     assert (pdf_dir / "Invoice-UP-001.pdf").is_file()
+    db.close()
+
+
+def test_get_invoice_id_by_number_matches_db(qapp: QApplication, tmp_path) -> None:
+    db_path = tmp_path / "inv_by_num.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "NumCo")
+    inv_id = business.create_invoice(
+        db._conn,
+        cid,
+        "INV-XYZ-9",
+        "2024-11-15",
+        lines=[{"description": "Line", "qty": 1.0, "rate": 1.0}],
+    )
+    assert business.get_invoice_id_by_number(db._conn, "INV-XYZ-9") == inv_id
+    assert business.get_invoice_id_by_number(db._conn, "  INV-XYZ-9  ") == inv_id
+    assert business.get_invoice_id_by_number(db._conn, "missing") is None
+    db.close()
+
+
+def test_invoice_screen_open_invoice_by_number(qapp: QApplication, tmp_path) -> None:
+    db_path = tmp_path / "inv_open_num.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "RouteCo")
+    inv_id = business.create_invoice(
+        db._conn,
+        cid,
+        "RT-500",
+        "2024-12-01",
+        lines=[{"description": "Svc", "qty": 1.0, "rate": 25.0}],
+    )
+    w = InvoiceScreen(ap_conn=db._conn)
+    assert w.open_invoice_by_number("RT-500") is True
+    assert w._current_invoice_id == inv_id
+    assert w._inv_number.text() == "RT-500"
+    assert w.open_invoice_by_number("nope") is False
     db.close()
 
 

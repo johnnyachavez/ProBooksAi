@@ -819,6 +819,28 @@ class InvoiceScreen(QWidget):
         self._update_browse_buttons()
         return True
 
+    def open_invoice_by_number(self, invoice_number: str) -> bool:
+        """Load an invoice into Manual Invoice by ``invoices.invoice_number`` (register / navigation)."""
+        if self._ap_conn is None:
+            message_box_information_ok(
+                self,
+                "Invoice",
+                "Open a company file to edit invoices.",
+                ok_tip="Close; use File → Open company… then try again.",
+            )
+            return False
+        iid = business.get_invoice_id_by_number(self._ap_conn, invoice_number)
+        if iid is None:
+            num = (invoice_number or "").strip()
+            message_box_information_ok(
+                self,
+                "Invoice",
+                f"No invoice with number {num!r} was found.",
+                ok_tip="Close; check the number or pick the invoice from Customers / Reports.",
+            )
+            return False
+        return self.open_invoice_by_id(iid)
+
     def _sync_ar_toolbar_enabled(self) -> None:
         on = self._ap_conn is not None
         self._btn_ar_new_inv.setEnabled(on)
@@ -1120,6 +1142,9 @@ class InvoiceScreen(QWidget):
         self._invoice_memo_notes = ""
         self._bill_customer_panel.clear_bill_to()
         self._clear_line_grid()
+        self._inv_number.clear()
+        self._invoice_number_autofill_value = ""
+        self._sync_invoice_number_suggestion()
         self._update_browse_buttons()
 
     def _go_to_new_invoice_draft(self) -> None:

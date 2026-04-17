@@ -1,4 +1,4 @@
-"""
+﻿"""
 ProBooks+ai desktop application
 ===============================
 Run with:
@@ -1792,6 +1792,15 @@ class MainWindow(QMainWindow):
         idx = self._tabs.indexOf(self._invoice_screen)
         if idx >= 0:
             self._tabs.setCurrentIndex(idx)
+
+    def open_invoice_by_number(self, invoice_number: str) -> bool:
+        """Focus the Invoices tab and load Manual Invoice for *invoice_number* (live company DB)."""
+        if not hasattr(self, "_tabs") or not hasattr(self, "_invoice_screen"):
+            return False
+        idx = self._tabs.indexOf(self._invoice_screen)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+        return self._invoice_screen.open_invoice_by_number(invoice_number)
 
     def _set_main_tab_index(self, index: int) -> None:
         if not hasattr(self, "_tabs"):

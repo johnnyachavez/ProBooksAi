@@ -382,6 +382,25 @@ def list_invoice_ids_chronological(conn: sqlite3.Connection) -> list[int]:
     return out
 
 
+def get_invoice_id_by_number(
+    conn: sqlite3.Connection, invoice_number: str
+) -> int | None:
+    """Return the invoice primary key for *invoice_number* (exact match after strip), or ``None``."""
+    s = (invoice_number or "").strip()
+    if not s:
+        return None
+    row = conn.execute(
+        "SELECT id FROM invoices WHERE invoice_number = ? LIMIT 1",
+        (s,),
+    ).fetchone()
+    if row is None:
+        return None
+    try:
+        return int(row["id"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def get_invoice_detail(
     conn: sqlite3.Connection, invoice_id: int
 ) -> tuple[Optional[sqlite3.Row], list]:
