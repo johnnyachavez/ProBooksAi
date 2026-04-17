@@ -914,6 +914,48 @@ def list_bill_expense_lines(conn: sqlite3.Connection, bill_id: int) -> list:
     ).fetchall()
 
 
+def get_bill_id_by_vendor_invoice_number(
+    conn: sqlite3.Connection,
+    vendor_invoice_number: str,
+    *,
+    vendor_id: Optional[int] = None,
+) -> Optional[int]:
+    """Return bill id for *vendor_invoice_number* (trimmed).
+
+    With *vendor_id*, matches that vendor only. Without *vendor_id*, returns an id only when
+    exactly one bill in the file has that reference (otherwise ``None`` — ambiguous).
+    """
+    s = (vendor_invoice_number or "").strip()
+    if not s:
+        return None
+    if vendor_id is not None:
+        row = conn.execute(
+            """
+            SELECT id FROM bills
+            WHERE vendor_id = ? AND TRIM(COALESCE(vendor_invoice_number, '')) = ?
+            LIMIT 1
+            """,
+            (int(vendor_id), s),
+        ).fetchone()
+    else:
+        rows = conn.execute(
+            """
+            SELECT id FROM bills
+            WHERE TRIM(COALESCE(vendor_invoice_number, '')) = ?
+            """,
+            (s,),
+        ).fetchall()
+        if len(rows) != 1:
+            return None
+        row = rows[0]
+    if row is None:
+        return None
+    try:
+        return int(row["id"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def get_bill_detail(
     conn: sqlite3.Connection, bill_id: int
 ) -> tuple[Optional[sqlite3.Row], list]:

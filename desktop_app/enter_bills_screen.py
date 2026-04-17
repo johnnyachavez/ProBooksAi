@@ -92,7 +92,7 @@ def _format_vendor_address_row(row: dict) -> str:
 
 
 class EnterBillsScreen(QWidget):
-    """Bill header (vendor + address) and expense-style line grid (visual foundation for A/P entry)."""
+    """Bill header (vendor, dates, vendor invoice #, memo) and expense lines persisted to ``bills`` / ``bill_expense_lines``."""
 
     _LINE_COLS = ("Date", "Ticket Number", "Dollar Amount", "Memo", "Customer:Job")
     _N_EXPENSE_ROWS = 12
@@ -446,6 +446,37 @@ class EnterBillsScreen(QWidget):
         self.refresh_vendors()
         self._load_bill_into_form(bid)
         return True
+
+    def open_bill_by_vendor_invoice_number(
+        self,
+        vendor_invoice_number: str,
+        *,
+        vendor_id: int | None = None,
+    ) -> bool:
+        """Load a bill by ``bills.vendor_invoice_number`` (optional *vendor_id* disambiguates)."""
+        if self._ap_conn is None:
+            message_box_information_ok(
+                self,
+                "Bill",
+                "Open a company file to edit bills.",
+                ok_tip="Close; use File → Open company… then try again.",
+            )
+            return False
+        bid = business.get_bill_id_by_vendor_invoice_number(
+            self._ap_conn,
+            vendor_invoice_number,
+            vendor_id=vendor_id,
+        )
+        if bid is None:
+            ref = (vendor_invoice_number or "").strip()
+            message_box_information_ok(
+                self,
+                "Bill",
+                f"No unique bill with vendor invoice / reference {ref!r} was found.",
+                ok_tip="Close; use Enter Bills after picking the vendor, or open the bill from the Bank register link.",
+            )
+            return False
+        return self.open_bill_by_id(bid)
 
     def _selected_vendor_id(self) -> int | None:
         raw = self._vendor.currentData()

@@ -1802,6 +1802,23 @@ class MainWindow(QMainWindow):
             self._tabs.setCurrentIndex(idx)
         return self._invoice_screen.open_invoice_by_number(invoice_number)
 
+    def open_bill_by_vendor_invoice_number(
+        self,
+        vendor_invoice_number: str,
+        *,
+        vendor_id: int | None = None,
+    ) -> bool:
+        """Focus Enter Bills and load a bill by vendor invoice / reference (live company DB)."""
+        if not hasattr(self, "_tabs") or not hasattr(self, "_enter_bills_screen"):
+            return False
+        idx = self._tabs.indexOf(self._enter_bills_screen)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+        return self._enter_bills_screen.open_bill_by_vendor_invoice_number(
+            vendor_invoice_number,
+            vendor_id=vendor_id,
+        )
+
     def _set_main_tab_index(self, index: int) -> None:
         if not hasattr(self, "_tabs"):
             return

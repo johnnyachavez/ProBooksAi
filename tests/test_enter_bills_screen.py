@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from unittest.mock import patch
 
 import pytest
 from PySide6.QtTest import QTest
@@ -182,6 +183,110 @@ def test_enter_bills_open_bill_by_id_loads_form(qapp: QApplication, tmp_path) ->
     assert w._header_memo.text() == "hdr"
     assert (w._table.cellWidget(0, 1).text() or "").strip() == "R1"
     assert abs(w._table.cellWidget(0, 2).value() - 10.0) < 0.01
+    db.close()
+
+
+def test_get_bill_id_by_vendor_invoice_number(qapp: QApplication, tmp_path) -> None:
+    db_path = tmp_path / "bill_by_vin.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    v1 = business.add_vendor(db._conn, "V1")
+    v2 = business.add_vendor(db._conn, "V2")
+    b1 = business.create_bill(
+        db._conn,
+        v1,
+        "2025-01-01",
+        0.0,
+        vendor_invoice_number="PO-77",
+        expense_lines=[
+            {
+                "line_date": "",
+                "ticket_ref": "",
+                "amount": 5.0,
+                "memo": "a",
+                "customer_job": "",
+            }
+        ],
+    )
+    b2 = business.create_bill(
+        db._conn,
+        v2,
+        "2025-01-02",
+        0.0,
+        vendor_invoice_number="PO-77",
+        expense_lines=[
+            {
+                "line_date": "",
+                "ticket_ref": "",
+                "amount": 6.0,
+                "memo": "b",
+                "customer_job": "",
+            }
+        ],
+    )
+    assert business.get_bill_id_by_vendor_invoice_number(db._conn, "PO-77") is None
+    assert business.get_bill_id_by_vendor_invoice_number(
+        db._conn, "PO-77", vendor_id=v1
+    ) == b1
+    assert (
+        business.get_bill_id_by_vendor_invoice_number(db._conn, "  PO-77  ", vendor_id=v2)
+        == b2
+    )
+    db.close()
+
+
+def test_get_bill_id_by_vendor_invoice_number_unique_globally(qapp: QApplication, tmp_path) -> None:
+    db_path = tmp_path / "bill_vin_unique.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    v = business.add_vendor(db._conn, "OnlyV")
+    sole = business.create_bill(
+        db._conn,
+        v,
+        "2025-01-01",
+        0.0,
+        vendor_invoice_number="UNIQUE-REF",
+        expense_lines=[
+            {
+                "line_date": "",
+                "ticket_ref": "",
+                "amount": 1.0,
+                "memo": "",
+                "customer_job": "",
+            }
+        ],
+    )
+    assert business.get_bill_id_by_vendor_invoice_number(db._conn, "UNIQUE-REF") == sole
+    db.close()
+
+
+def test_enter_bills_open_bill_by_vendor_invoice_number(qapp: QApplication, tmp_path) -> None:
+    db_path = tmp_path / "enter_bills_open_vin.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    vid = business.add_vendor(db._conn, "VOpen2")
+    bid = business.create_bill(
+        db._conn,
+        vid,
+        "2025-04-01",
+        0.0,
+        vendor_invoice_number="REF-ZZ",
+        expense_lines=[
+            {
+                "line_date": "",
+                "ticket_ref": "",
+                "amount": 12.0,
+                "memo": "z",
+                "customer_job": "",
+            }
+        ],
+    )
+    w = EnterBillsScreen(ap_conn=db._conn)
+    assert w.open_bill_by_vendor_invoice_number("REF-ZZ", vendor_id=vid) is True
+    assert w._current_bill_id == bid
+    assert w._vendor_inv.text() == "REF-ZZ"
+    with patch("desktop_app.enter_bills_screen.message_box_information_ok"):
+        assert w.open_bill_by_vendor_invoice_number("missing", vendor_id=vid) is False
     db.close()
 
 
