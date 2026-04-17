@@ -124,20 +124,14 @@ def build_invoice_print_html(
         "<html><head><meta charset=\"utf-8\"/></head><body "
         "style=\"margin:0.4in; font-family: Arial, Helvetica, sans-serif; "
         "font-size:10pt; color:#000;\">",
-        # Top: company (left) + Invoice title / date / number (right)
+        # Top: LEFT = invoice title / date / # / PO / job; RIGHT = company file identity + Bill To
         "<table width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border:none;\">",
         "<tr>",
-        '<td width="58%" valign="top" style="border:none; padding:0 10px 0 0;">',
-        '<table width="100%" cellspacing="0" cellpadding="8" '
-        'style="border:1px solid #000; border-collapse:collapse;">',
-        f'<tr><td valign="top" style="min-height:80px;">{_company_html(company_block_plain)}</td></tr>',
-        "</table>",
-        "</td>",
-        '<td width="42%" valign="top" style="border:none; padding:0;">',
-        '<div style="font-size:20pt; font-weight:bold; text-align:right; letter-spacing:0.02em;">'
+        '<td width="50%" valign="top" style="border:none; padding:0 12px 0 0;">',
+        '<div style="font-size:20pt; font-weight:bold; text-align:left; letter-spacing:0.02em; margin-bottom:8px;">'
         "Invoice</div>",
         '<table width="100%" cellspacing="0" cellpadding="5" '
-        'style="border:2px solid #000; border-collapse:collapse; margin-top:6px;">',
+        'style="border:2px solid #000; border-collapse:collapse;">',
         "<tr>",
         '<th style="text-align:center; font-weight:bold; border:1px solid #000; width:50%;">Date</th>',
         '<th style="text-align:center; font-weight:bold; border:1px solid #000; width:50%;">'
@@ -148,25 +142,8 @@ def build_invoice_print_html(
         f'<td style="text-align:center; border:1px solid #000;">{inv_n}</td>',
         "</tr>",
         "</table>",
-        "</td>",
-        "</tr>",
-        "</table>",
-        # Bill To + PO / Job
-        '<table width="100%" cellspacing="0" cellpadding="0" style="border:none; margin-top:12px;">',
-        "<tr>",
-        '<td width="48%" valign="top" style="border:none; padding:0;">',
         '<table width="100%" cellspacing="0" cellpadding="0" '
-        'style="border:1px solid #000; border-collapse:collapse;">',
-        '<tr><th style="text-align:left; padding:5px 8px; font-weight:bold; border-bottom:1px solid #000;">'
-        "BILL TO</th></tr>",
-        '<tr><td valign="top" style="padding:8px; min-height:64px;">'
-        f"{_bill_to_html(bill_to_plain)}</td></tr>",
-        "</table>",
-        "</td>",
-        '<td width="4%" style="border:none;">&#160;</td>',
-        '<td width="48%" valign="top" style="border:none; padding:0;">',
-        '<table width="100%" cellspacing="0" cellpadding="0" '
-        'style="border:2px solid #000; border-collapse:collapse;">',
+        'style="border:2px solid #000; border-collapse:collapse; margin-top:10px;">',
         "<tr>",
         '<th style="text-align:center; font-weight:bold; padding:5px; border:1px solid #000; width:50%;">'
         "PO/CONTRACT#</th>",
@@ -177,6 +154,21 @@ def build_invoice_print_html(
         f'<td valign="top" style="padding:8px; border:1px solid #000;">{po}</td>',
         f'<td valign="top" style="padding:8px; border:1px solid #000;">{nj}</td>',
         "</tr>",
+        "</table>",
+        "</td>",
+        '<td width="50%" valign="top" style="border:none; padding:0 0 0 4px;">',
+        '<table width="100%" cellspacing="0" cellpadding="8" '
+        'style="border:1px solid #000; border-collapse:collapse;">',
+        '<tr><th style="text-align:left; padding:5px 8px; font-weight:bold; border-bottom:1px solid #000;">'
+        "COMPANY</th></tr>",
+        f'<tr><td valign="top" style="min-height:72px;">{_company_html(company_block_plain)}</td></tr>',
+        "</table>",
+        '<table width="100%" cellspacing="0" cellpadding="0" '
+        'style="border:1px solid #000; border-collapse:collapse; margin-top:10px;">',
+        '<tr><th style="text-align:left; padding:5px 8px; font-weight:bold; border-bottom:1px solid #000;">'
+        "BILL TO</th></tr>",
+        '<tr><td valign="top" style="padding:8px; min-height:64px;">'
+        f"{_bill_to_html(bill_to_plain)}</td></tr>",
         "</table>",
         "</td>",
         "</tr>",
