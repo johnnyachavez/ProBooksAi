@@ -382,6 +382,37 @@ def list_invoice_ids_chronological(conn: sqlite3.Connection) -> list[int]:
     return out
 
 
+def list_invoice_ids_by_invoice_number(conn: sqlite3.Connection) -> list[int]:
+    """Invoice primary keys ordered by *invoice_number* for Manual Invoice navigation.
+
+    All-digit numbers sort numerically ascending (matches :func:`next_default_invoice_number`).
+    Other values sort after digits, case-insensitive by string, then by ``id`` for stability.
+    """
+    try:
+        rows = conn.execute("SELECT id, invoice_number FROM invoices").fetchall()
+    except sqlite3.Error:
+        return []
+
+    def sort_key(r: sqlite3.Row) -> tuple:
+        try:
+            sid = int(r["id"])
+        except (KeyError, TypeError, ValueError):
+            sid = 0
+        s = (r["invoice_number"] or "").strip()
+        if s.isdigit():
+            return (0, int(s), sid)
+        return (1, s.lower(), sid)
+
+    rows = sorted(rows, key=sort_key)
+    out: list[int] = []
+    for r in rows:
+        try:
+            out.append(int(r["id"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
+
+
 def get_invoice_id_by_number(
     conn: sqlite3.Connection, invoice_number: str
 ) -> int | None:

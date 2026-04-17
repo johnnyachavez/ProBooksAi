@@ -62,6 +62,28 @@ def test_list_invoice_ids_chronological_order(db) -> None:
     assert business.list_invoice_ids_chronological(db._conn) == [i2, i1]
 
 
+def test_list_invoice_ids_by_invoice_number_sorts_numeric_strings(db) -> None:
+    """Manual Invoice browse order follows invoice number ascending (not insert id)."""
+    assert business.list_invoice_ids_by_invoice_number(db._conn) == []
+    c1 = business.add_customer(db._conn, "A")
+    c2 = business.add_customer(db._conn, "B")
+    i_high = business.create_invoice(
+        db._conn,
+        c2,
+        "2",
+        "2024-02-01",
+        lines=[{"description": "b", "qty": 1, "rate": 1.0}],
+    )
+    i_low = business.create_invoice(
+        db._conn,
+        c1,
+        "1",
+        "2024-01-01",
+        lines=[{"description": "a", "qty": 1, "rate": 1.0}],
+    )
+    assert business.list_invoice_ids_by_invoice_number(db._conn) == [i_low, i_high]
+
+
 def test_next_default_invoice_number_starts_at_13001(db) -> None:
     assert business.next_default_invoice_number(db._conn) == "13001"
 

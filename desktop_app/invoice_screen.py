@@ -193,6 +193,13 @@ def _cell_line() -> QLineEdit:
     return le
 
 
+def _cell_line_date() -> QLineEdit:
+    """Line **Date** column: same US-date normalization as the invoice header date field."""
+    le = _cell_line()
+    attach_line_edit_us_date_normalization(le)
+    return le
+
+
 def _qty_spin() -> QDoubleSpinBox:
     s = QDoubleSpinBox()
     s.setRange(0.0, 999_999.99)
@@ -249,7 +256,8 @@ class InvoiceScreen(QWidget):
         self._ap_conn = ap_conn
         self._invoice_number_autofill_value = ""
         self._browse_ids: list[int] = []
-        self._browse_index: int | None = None
+        # Browse position among saved invoices (0..n-1), trailing blank draft (n), or None = unpositioned draft.
+        self._browse_slot: int | None = None
         # ``None`` = new draft; when set, Save/Export/Print updates this invoice via ``business.update_invoice``.
         self._current_invoice_id: int | None = None
         # Block line grid valueChanged/textChanged while loading or clearing (avoids footer flicker).
@@ -284,12 +292,39 @@ class InvoiceScreen(QWidget):
         QTimer.singleShot(0, self._sync_invoice_line_total_column_width_safe)
 
     def hideEvent(self, event: QHideEvent) -> None:
+        # Avoid focus landing on Save/Print when switching main tabs (stray Return/Space).
+        self._defocus_invoice_action_buttons()
         tmr = getattr(self, "_line_widths_persist_timer", None)
         if tmr is not None and tmr.isActive():
             tmr.stop()
         # Flush debounced widths when leaving the tab (same pattern as Register header state).
         self._persist_invoice_line_column_widths()
         super().hideEvent(event)
+
+    def _defocus_invoice_action_buttons(self) -> None:
+        """Move keyboard focus off Save / Export / Print / nav so tab changes cannot activate them."""
+        fw = self.focusWidget()
+        if fw is None:
+            return
+        for b in (
+            getattr(self, "_btn_save", None),
+            getattr(self, "_btn_export_pdf", None),
+            getattr(self, "_btn_print", None),
+            getattr(self, "_btn_clear_fields", None),
+            getattr(self, "_btn_reverse", None),
+            getattr(self, "_btn_forward", None),
+        ):
+            if b is not None and fw is b:
+                t = getattr(self, "_table", None)
+                if t is not None:
+                    t.setFocus(Qt.FocusReason.OtherFocusReason)
+                else:
+                    self.setFocus(Qt.FocusReason.OtherFocusReason)
+                return
+
+    def _on_invoice_module_subtab_changed(self, _index: int) -> None:
+        """Manual Invoice ↔ Invoice Intake: keep draft in memory; never prompt save here."""
+        self._defocus_invoice_action_buttons()
 
     def _update_new_customer_button_state(self) -> None:
         on = self._ap_conn is not None
@@ -551,9 +586,13 @@ class InvoiceScreen(QWidget):
         )
         self._btn_reverse = QPushButton("Reverse")
         self._btn_forward = QPushButton("Forward")
-        self._btn_reverse.setToolTip("Open the previous saved invoice (by id).")
+        self._btn_reverse.setToolTip(
+            "Previous invoice by invoice number (stops at the lowest #). "
+            "From an unsaved draft, opens the last saved invoice."
+        )
         self._btn_forward.setToolTip(
-            "Open the next saved invoice, or a new draft after the last one."
+            "Next invoice by invoice number. After the highest saved invoice, opens one blank draft "
+            "(stops there — Forward does not cycle to the first invoice)."
         )
         _strip_h = _top_strip_field_outer_height_px()
         _strip_btn_ss = _top_strip_action_button_qss()
@@ -698,7 +737,7 @@ class InvoiceScreen(QWidget):
         )
 
         for row in range(self._N_LINE_ROWS):
-            dt = _cell_line()
+            dt = _cell_line_date()
             dt.setPlaceholderText("Date")
             self._table.setCellWidget(row, 0, dt)
 
@@ -795,6 +834,7 @@ class InvoiceScreen(QWidget):
         self._invoice_tabs.addTab(page, "Manual Invoice")
         self._invoice_tabs.addTab(self._invoice_intake, "Invoice Intake")
         self._invoice_tabs.setCurrentIndex(0)
+        self._invoice_tabs.currentChanged.connect(self._on_invoice_module_subtab_changed)
         outer.addWidget(self._invoice_tabs, 1)
 
         self._refresh_browse_state()
@@ -932,9 +972,9 @@ class InvoiceScreen(QWidget):
         self._sync_invoice_number_suggestion()
         self._refresh_browse_state()
         try:
-            self._browse_index = self._browse_ids.index(iid)
+            self._browse_slot = self._browse_ids.index(iid)
         except ValueError:
-            self._browse_index = None
+            self._browse_slot = None
         self._update_browse_buttons()
         return True
 
@@ -1146,21 +1186,34 @@ class InvoiceScreen(QWidget):
         self._schedule_persist_invoice_line_column_widths()
 
     def _refresh_browse_state(self) -> None:
+        prev_slot = self._browse_slot
         if self._ap_conn is None:
             self._browse_ids = []
         else:
-            self._browse_ids = business.list_invoice_ids_chronological(self._ap_conn)
-        if self._browse_index is not None and (
-            self._browse_index < 0 or self._browse_index >= len(self._browse_ids)
-        ):
-            self._browse_index = None
+            self._browse_ids = business.list_invoice_ids_by_invoice_number(self._ap_conn)
+        n = len(self._browse_ids)
+        cid = self._current_invoice_id
+        if cid is not None:
+            try:
+                self._browse_slot = self._browse_ids.index(cid)
+            except ValueError:
+                self._browse_slot = None
+        else:
+            if n == 0:
+                self._browse_slot = None
+            elif prev_slot is not None and prev_slot > n:
+                self._browse_slot = n
         self._update_browse_buttons()
 
     def _update_browse_buttons(self) -> None:
         has_db = self._ap_conn is not None
-        has_any = bool(self._browse_ids)
-        self._btn_reverse.setEnabled(has_db and has_any)
-        self._btn_forward.setEnabled(has_db and has_any)
+        n = len(self._browse_ids)
+        has_any = n > 0
+        slot = self._browse_slot
+        rev = has_db and has_any and (slot is None or slot > 0)
+        fwd = has_db and has_any and slot is not None and slot < n
+        self._btn_reverse.setEnabled(rev)
+        self._btn_forward.setEnabled(fwd)
 
     def _clear_line_grid(self) -> None:
         self._suppress_invoice_line_recalc = True
@@ -1260,7 +1313,7 @@ class InvoiceScreen(QWidget):
 
     def _on_clear_fields(self) -> None:
         self._current_invoice_id = None
-        self._browse_index = None
+        self._browse_slot = None
         qd = QDate.currentDate()
         self._date.setText(format_ymd_as_us(qd.month(), qd.day(), qd.year()))
         self._po.clear()
@@ -1276,7 +1329,7 @@ class InvoiceScreen(QWidget):
 
     def _go_to_new_invoice_draft(self) -> None:
         self._current_invoice_id = None
-        self._browse_index = None
+        self._browse_slot = None
         self._po.clear()
         self._job.clear()
         self._invoice_memo_notes = ""
@@ -1288,13 +1341,23 @@ class InvoiceScreen(QWidget):
         qd = QDate.currentDate()
         self._date.setText(format_ymd_as_us(qd.month(), qd.day(), qd.year()))
         self._sync_invoice_number_suggestion()
+        self._refresh_browse_state()
+        self._browse_slot = len(self._browse_ids)
         self._update_browse_buttons()
 
     def _load_invoice_by_list_index(self, list_index: int) -> None:
-        if not self._browse_ids or list_index < 0 or list_index >= len(self._browse_ids):
+        n = len(self._browse_ids)
+        if list_index < 0:
+            return
+        if n == 0:
+            return
+        if list_index == n:
+            self._go_to_new_invoice_draft()
+            return
+        if list_index > n:
             return
         self._load_invoice_into_form(self._browse_ids[list_index])
-        self._browse_index = list_index
+        self._browse_slot = list_index
         self._update_browse_buttons()
 
     def _load_invoice_into_form(self, invoice_id: int) -> None:
@@ -1398,26 +1461,31 @@ class InvoiceScreen(QWidget):
 
     def _on_reverse_invoice(self) -> None:
         self._refresh_browse_state()
-        if not self._browse_ids:
+        n = len(self._browse_ids)
+        if n == 0:
             return
-        if self._browse_index is None:
-            self._load_invoice_by_list_index(len(self._browse_ids) - 1)
+        slot = self._browse_slot
+        if slot is None:
+            self._load_invoice_by_list_index(n - 1)
             return
-        if self._browse_index <= 0:
+        if slot == 0:
             return
-        self._load_invoice_by_list_index(self._browse_index - 1)
+        if slot == n:
+            self._load_invoice_by_list_index(n - 1)
+            return
+        self._load_invoice_by_list_index(slot - 1)
 
     def _on_forward_invoice(self) -> None:
         self._refresh_browse_state()
-        if not self._browse_ids:
+        n = len(self._browse_ids)
+        if n == 0:
             return
-        if self._browse_index is None:
-            self._load_invoice_by_list_index(0)
+        slot = self._browse_slot
+        if slot is None:
             return
-        if self._browse_index >= len(self._browse_ids) - 1:
-            self._go_to_new_invoice_draft()
+        if slot >= n:
             return
-        self._load_invoice_by_list_index(self._browse_index + 1)
+        self._load_invoice_by_list_index(slot + 1)
 
     def _build_invoice_memo(self) -> str:
         parts: list[str] = []

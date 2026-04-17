@@ -961,6 +961,7 @@ class MainWindow(QMainWindow):
             self._coa_db,
             register_tab=self._register_tab,
             after_stmt_match_sync=self._focus_bank_register_tab,
+            focus_bank_register_tab=self._focus_bank_register_tab_for_handoff,
         )
         self._coa_tab = COATab(self._coa_db)
         self._coa_tab.coaChanged.connect(self._on_coa_changed)
@@ -1847,6 +1848,14 @@ class MainWindow(QMainWindow):
                     _STMT_MATCH_SYNC_STATUS_MS,
                     self._update_company_status,
                 )
+
+    def _focus_bank_register_tab_for_handoff(self) -> None:
+        """Switch to **Bank Register** for Reconcile → Open in Bank Register (no Match-overlay status message)."""
+        if not hasattr(self, "_tabs") or not hasattr(self, "_register_tab"):
+            return
+        idx = self._tabs.indexOf(self._register_tab)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
 
     def _navigate_register_bank_match_link(self, link_type: str, link_id: int) -> None:
         """Bank register Match link: AR/AP go to Customers/Vendors; payroll opens More → Business → Payroll."""

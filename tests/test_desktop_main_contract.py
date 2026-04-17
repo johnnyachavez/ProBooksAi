@@ -5747,6 +5747,7 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
     assert "View → Reconcile (Ctrl+9)" in sm
     assert "+ VIEW_BANK_REGISTER_KEYS_TOOLTIP" in sm
     assert "StatementLineMatchPanel(" in bit and "bank_import_shortcuts_help=" in bit
+    assert "focus_bank_register_tab=self._focus_bank_register_tab" in bit
     assert "register_tab=self._register_tab" in bit
     assert "_import_preview_ctrl_shift_b_open_linked_business" in bit
     assert "_on_import_preview_cell_double_clicked" in bit
@@ -5757,6 +5758,8 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
     assert "statement_rows_for_line_compare" in run_sm
     assert "line_match_results_ready = Signal(int, list)" in sm
     assert "Run extract & compare" in sm
+    assert "Open in Bank Register" in sm
+    assert "_on_open_in_bank_register_clicked" in sm
     assert "compare_statement_to_register" in sm
     assert "write_line_match_comparison_csv" in sm
     slm_py = (REPO_ROOT / "probooksai" / "statement_line_match.py").read_text(encoding="utf-8")
@@ -5788,6 +5791,21 @@ def test_bank_import_tab_wires_ai_statement_line_match_panel() -> None:
     assert "status bar" in sm.lower()
     assert "company line" in sm.lower()
     assert "returns after" in sm.lower() or "returns." in sm.lower()
+
+
+def test_main_window_wires_bank_import_handoff_focus_callback() -> None:
+    """Reconcile **Open in Bank Register** switches tabs via a dedicated callback (no overlay status copy)."""
+    text = _MAIN.read_text(encoding="utf-8")
+    assert "focus_bank_register_tab=self._focus_bank_register_tab_for_handoff" in text
+    assert "def _focus_bank_register_tab_for_handoff(self)" in text
+
+
+def test_register_tab_handoffs_line_reconciliation_row() -> None:
+    """Bank Register exposes handoff helpers for Reconcile → Open in Bank Register."""
+    reg = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
+    assert "def handoff_line_reconciliation_row" in reg
+    assert "def _focus_transaction_by_id" in reg
+    assert "def _open_add_transaction_prefilled_from_reconcile" in reg
 
 
 def test_bank_import_recon_panel_empty_hint_when_no_batch_selected() -> None:

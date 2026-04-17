@@ -257,7 +257,8 @@ def test_invoice_screen_print_after_accept_resets_when_connected(
     db.close()
 
 
-def test_invoice_screen_forward_loads_first_invoice(qapp: QApplication, tmp_path) -> None:
+def test_invoice_screen_nav_stops_without_cycling_unpositioned_draft(qapp: QApplication, tmp_path) -> None:
+    """Forward from an unpositioned draft does not jump to the first saved invoice; Reverse opens last by #."""
     db_path = tmp_path / "invoice_nav.db"
     db = BankDatabase(str(db_path))
     apply_extensions(db._conn)
@@ -271,9 +272,17 @@ def test_invoice_screen_forward_loads_first_invoice(qapp: QApplication, tmp_path
     )
     w = InvoiceScreen(ap_conn=db._conn)
     assert w._browse_ids
+    before = w._inv_number.text()
     w._on_forward_invoice()
+    assert w._inv_number.text() == before
+    w._on_reverse_invoice()
     assert w._inv_number.text() == "14001"
     assert "Line A" in (w._table.cellWidget(0, 2).text() or "")
+    w._on_forward_invoice()
+    assert w._current_invoice_id is None
+    assert w._browse_slot == 1
+    w._on_forward_invoice()
+    assert w._current_invoice_id is None
     db.close()
 
 
@@ -293,8 +302,10 @@ def test_invoice_screen_clear_fields_resets_invoice_number_to_next_suggestion(
         lines=[{"description": "X", "qty": 1.0, "rate": 1.0}],
     )
     w = InvoiceScreen(ap_conn=db._conn)
-    w._on_forward_invoice()
+    w._on_reverse_invoice()
     assert w._inv_number.text() == "15001"
+    w._on_forward_invoice()
+    assert w._inv_number.text() == "15002"
     w._on_clear_fields()
     assert w._inv_number.text() == "15002"
     assert w._current_invoice_id is None

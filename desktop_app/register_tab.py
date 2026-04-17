@@ -521,6 +521,10 @@ class ManualTransactionDialog(QDialog):
         conn: sqlite3.Connection,
         initial_coa: str = "",
         initial_txn_date: Optional[str] = None,
+        initial_amount: Optional[float] = None,
+        initial_description: str = "",
+        initial_ref_number: str = "",
+        initial_memo: str = "",
     ):
         super().__init__(parent)
         self.setWindowTitle("Add bank transaction")
@@ -551,9 +555,14 @@ class ManualTransactionDialog(QDialog):
             "(same convention as CSV import). "
             "Keyboard focus starts here when the dialog opens."
         )
+        if initial_amount is not None:
+            self._amount.setText(f"{float(initial_amount):.2f}")
         form.addRow("Amount", self._amount)
         self._desc = QLineEdit()
         self._desc.setToolTip("Payee or description (first line of the Payee column).")
+        idesc = (initial_description or "").strip()
+        if idesc:
+            self._desc.setText(idesc)
         form.addRow("Payee / description", self._desc)
         self._coa = QComboBox()
         self._rebuild_coa_combo()
@@ -567,9 +576,15 @@ class ManualTransactionDialog(QDialog):
         form.addRow("Category (COA)", self._coa)
         self._ref = QLineEdit()
         self._ref.setToolTip("Optional check number or bank reference.")
+        ir = (initial_ref_number or "").strip()
+        if ir:
+            self._ref.setText(ir)
         form.addRow("Number / ref", self._ref)
         self._memo = QLineEdit()
         self._memo.setToolTip("Optional memo (editable later in the register grid).")
+        im = (initial_memo or "").strip()
+        if im:
+            self._memo.setText(im)
         form.addRow("Memo", self._memo)
         bb = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -1454,6 +1469,130 @@ class RegisterTab(QWidget):
         )
         self._load_transactions(want)
         return True
+
+    def handoff_line_reconciliation_row(
+        self,
+        *,
+        bank_account_id: int,
+        row: dict,
+        focus_bank_register_tab: Optional[Callable[[], None]] = None,
+    ) -> bool:
+        """Switch to Bank Register for this account, then select a register line or open **Add transaction** with drafts.
+
+        Does not post except when the user accepts **Add transaction** (same as Recon → Add transaction…).
+        """
+        want = coerce_combo_int_id(bank_account_id)
+        if want is None or not self._select_bank_account_for_overlay(want):
+            return False
+        if focus_bank_register_tab is not None:
+            focus_bank_register_tab()
+        status = str(row.get("status") or "")
+        rid = coerce_combo_int_id(row.get("register_id"))
+        if status == STATUS_NEEDS_REVIEW:
+            self._open_add_transaction_prefilled_from_reconcile(row)
+            return True
+        if rid is not None:
+            if not self._focus_transaction_by_id(rid):
+                message_box_warning_ok(
+                    self,
+                    "Open in Bank Register",
+                    "That register transaction is not on the grid in the current view. "
+                    "The filter was set to **All transactions** once; if it still does not appear, "
+                    "refresh (F5) or check that the line exists for this account.",
+                    ok_tip="Close; set Filter to All transactions and try again.",
+                )
+            return True
+        return False
+
+    def _focus_transaction_by_id(self, txn_id: int) -> bool:
+        tid = coerce_combo_int_id(txn_id)
+        if tid is None:
+            return False
+
+        def scan() -> int:
+            for r in range(self._table.rowCount()):
+                id_it = self._table.item(r, _COL_DATE)
+                if id_it is None:
+                    continue
+                row_tid = coerce_combo_int_id(id_it.data(Qt.ItemDataRole.UserRole))
+                if row_tid == tid:
+                    return r
+            return -1
+
+        row = scan()
+        if row < 0 and self._filter_combo.currentIndex() != 0:
+            self._filter_combo.blockSignals(True)
+            self._filter_combo.setCurrentIndex(0)
+            self._filter_combo.blockSignals(False)
+            self._reload_current()
+            row = scan()
+        if row < 0:
+            return False
+        id_it = self._table.item(row, _COL_DATE)
+        if id_it is None:
+            return False
+        self._table.setCurrentCell(row, _COL_DATE)
+        self._table.scrollToItem(id_it, QAbstractItemView.ScrollHint.PositionAtCenter)
+        return True
+
+    def _open_add_transaction_prefilled_from_reconcile(self, row: dict) -> None:
+        """**Add transaction** with statement-side drafts from line reconciliation (**Needs review**)."""
+        if self._current_account_id is None:
+            return
+        aid = self._current_account_id
+        coa_key = self._register_manual_entry_last_coa_key(aid)
+        raw_saved = QSettings().value(coa_key, "")
+        saved_coa = str(raw_saved or "").strip()
+        draft_coa = str(row.get("draft_coa_account") or "").strip()
+        initial_coa = draft_coa or saved_coa
+        stmt_date = str(row.get("stmt_date") or "").strip()[:10]
+        latest_date = self._db.latest_txn_date_for_account(aid)
+        initial_txn_date = stmt_date if stmt_date else latest_date
+        sa = row.get("stmt_amount")
+        try:
+            initial_amt = float(sa) if sa is not None else None
+        except (TypeError, ValueError):
+            initial_amt = None
+        desc = str(row.get("stmt_description") or "").strip()
+        notes = str(row.get("review_notes") or "").strip()
+        dlg = ManualTransactionDialog(
+            self,
+            coa_choices=self._coa_choices,
+            conn=self._db._conn,
+            initial_coa=initial_coa,
+            initial_txn_date=initial_txn_date or None,
+            initial_amount=initial_amt,
+            initial_description=desc,
+            initial_memo=notes,
+        )
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        v = dlg.values()
+        try:
+            self._db.insert_manual_transaction(
+                aid,
+                v["txn_date"],
+                float(v["amount"]),
+                description=v["description"],
+                ref_number=v["ref_number"],
+                memo=v["memo"],
+                coa_account=v.get("coa_account") or "",
+            )
+        except sqlite3.IntegrityError as exc:
+            message_box_warning_ok(
+                self,
+                "Cannot save",
+                escape_ampersand_for_qt(str(exc)),
+                ok_tip="Close; this row collided with an existing fingerprint (rare). Try again.",
+            )
+            return
+        picked = (v.get("coa_account") or "").strip()
+        s = QSettings()
+        if picked:
+            s.setValue(coa_key, picked)
+        else:
+            s.remove(coa_key)
+        self._reload_current()
 
     def _maybe_fill_demo_reconciliation_overlay(self, register_dicts: list[dict]) -> None:
         """Demo Matched / Missing / Extra from mock statement extract (no separate view)."""

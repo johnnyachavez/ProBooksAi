@@ -19,12 +19,113 @@ from probooksai.statement_line_match import (
     compare_statement_to_register,
     dates_within_days,
     descriptions_match,
+    enrich_line_match_rows_with_suggestions,
     mock_statement_lines_for_comparison,
     statement_rows_for_line_compare,
     transaction_pair_matches,
     transaction_pair_likely,
     write_line_match_comparison_csv,
 )
+
+
+def test_enrich_line_match_rows_with_suggestions_none_conn() -> None:
+    rows = [{"status": STATUS_NEEDS_REVIEW, "stmt_description": "Coffee Shop"}]
+    enrich_line_match_rows_with_suggestions(None, 1, rows, [])
+    assert rows[0].get("suggested_payee") == ""
+    assert rows[0].get("suggested_coa") == ""
+    assert rows[0].get("suggestion_source") == ""
+
+
+def test_enrich_line_match_rows_with_suggestions_from_bank_history(tmp_path) -> None:
+    from probooksai.bank_import import BankDatabase, parse_csv
+
+    db = BankDatabase(str(tmp_path / "enrich_hist.db"))
+    try:
+        aid = db.add_bank_account("Checking")
+        bid = db.create_batch(aid, statement_start="2024-01-01", statement_end="2024-01-31")
+        csv_txt = "Date,Description,Amount\n2024-01-05,Coffee Shop,-4.50\n"
+        imported = parse_csv(csv_txt, "Date", "Amount", "Description")
+        db.import_transactions(bid, aid, imported)
+        txns = db.list_transactions(aid)
+        assert len(txns) == 1
+        db.update_transaction(txns[0]["id"], coa_account="Office Supplies")
+
+        match_row = {
+            "status": STATUS_NEEDS_REVIEW,
+            "stmt_date": "2024-01-05",
+            "stmt_amount": -4.5,
+            "stmt_description": "Coffee Shop",
+            "draft_coa_account": "",
+            "review_notes": "",
+        }
+        enrich_line_match_rows_with_suggestions(db._conn, aid, [match_row], ["Office Supplies"])
+        assert match_row["suggested_coa"] == "Office Supplies"
+        assert "Past similar" in match_row["suggestion_source"]
+        assert match_row.get("draft_coa_account") == "Office Supplies"
+    finally:
+        db.close()
+
+
+def test_enrich_line_match_rows_with_suggestions_does_not_overwrite_draft_coa(tmp_path) -> None:
+    from probooksai.bank_import import BankDatabase, parse_csv
+
+    db = BankDatabase(str(tmp_path / "enrich_draft.db"))
+    try:
+        aid = db.add_bank_account("Checking")
+        bid = db.create_batch(aid, statement_start="2024-01-01", statement_end="2024-01-31")
+        csv_txt = "Date,Description,Amount\n2024-01-05,Coffee Shop,-4.50\n"
+        imported = parse_csv(csv_txt, "Date", "Amount", "Description")
+        db.import_transactions(bid, aid, imported)
+        txns = db.list_transactions(aid)
+        db.update_transaction(txns[0]["id"], coa_account="Office Supplies")
+
+        match_row = {
+            "status": STATUS_NEEDS_REVIEW,
+            "stmt_date": "2024-01-05",
+            "stmt_amount": -4.5,
+            "stmt_description": "Coffee Shop",
+            "draft_coa_account": "Rent",
+            "review_notes": "",
+        }
+        enrich_line_match_rows_with_suggestions(db._conn, aid, [match_row], ["Office Supplies"])
+        assert match_row["draft_coa_account"] == "Rent"
+        assert match_row["suggested_coa"] == "Office Supplies"
+    finally:
+        db.close()
+
+
+def test_enrich_line_match_rows_with_suggestions_likely_match_register_coa(tmp_path) -> None:
+    from probooksai.bank_import import BankDatabase, parse_csv
+
+    db = BankDatabase(str(tmp_path / "enrich_likely.db"))
+    try:
+        aid = db.add_bank_account("Checking")
+        bid = db.create_batch(aid, statement_start="2024-01-01", statement_end="2024-01-31")
+        csv_txt = "Date,Description,Amount\n2024-01-05,ACME SUPPLY,-50.00\n"
+        imported = parse_csv(csv_txt, "Date", "Amount", "Description")
+        db.import_transactions(bid, aid, imported)
+        txns = db.list_transactions(aid)
+        tid = txns[0]["id"]
+        db.update_transaction(tid, coa_account="Supplies")
+
+        likely_row = {
+            "status": STATUS_LIKELY_MATCH,
+            "stmt_date": "2024-01-05",
+            "stmt_amount": -50.0,
+            "stmt_description": "ACME SUPPLY CO",
+            "register_id": tid,
+            "reg_date": "2024-01-05",
+            "reg_amount": -50.0,
+            "reg_description": "ACME SUPPLY",
+            "draft_coa_account": "",
+            "review_notes": "",
+        }
+        enrich_line_match_rows_with_suggestions(db._conn, aid, [likely_row], [])
+        assert likely_row["suggested_coa"] == "Supplies"
+        assert "Register line" in likely_row["suggestion_source"]
+        assert "COA on matched register row" in likely_row["suggestion_source"]
+    finally:
+        db.close()
 
 
 def test_strip_pasted_breaks_removes_cr_lf_tab() -> None:
@@ -1100,6 +1201,65 @@ def test_statement_line_match_panel_run_coerces_string_bank_account_id_in_batch(
         panel.set_context(aid, batch)
         panel._on_run_clicked()
         assert emitted == [aid]
+    finally:
+        db.close()
+        if db_path.exists():
+            db_path.unlink()
+
+
+def test_statement_line_match_panel_open_in_bank_register_delegates_to_register_tab() -> None:
+    """**Open in Bank Register** calls ``RegisterTab.handoff_line_reconciliation_row`` for the selected row."""
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from probooksai.bank_import import BankDatabase
+    from desktop_app.statement_line_match_panel import StatementLineMatchPanel
+
+    db_path = Path(__file__).resolve().parent / "_stmt_line_match_handoff_test.db"
+    if db_path.exists():
+        db_path.unlink()
+    db = BankDatabase(str(db_path))
+    try:
+
+        class MockReg:
+            def __init__(self) -> None:
+                self.kwargs: dict | None = None
+
+            def handoff_line_reconciliation_row(self, **kwargs):
+                self.kwargs = kwargs
+                return True
+
+        reg = MockReg()
+        panel = StatementLineMatchPanel(
+            db, register_tab=reg, focus_bank_register_tab=lambda: None
+        )
+        panel._account_id = 42
+        panel.populate(
+            [
+                {
+                    "status": STATUS_NEEDS_REVIEW,
+                    "stmt_date": "2024-01-01",
+                    "stmt_amount": -10.0,
+                    "stmt_description": "Coffee",
+                    "register_id": None,
+                    "reg_date": "",
+                    "reg_amount": 0.0,
+                    "reg_description": "",
+                    "review_notes": "note",
+                    "draft_coa_account": "",
+                }
+            ]
+        )
+        panel._table.selectRow(0)
+        panel._refresh_reconciled_action_states()
+        assert panel._btn_open_register.isEnabled()
+        panel._on_open_in_bank_register_clicked()
+        assert reg.kwargs is not None
+        assert reg.kwargs["bank_account_id"] == 42
+        assert reg.kwargs["row"]["status"] == STATUS_NEEDS_REVIEW
+        assert callable(reg.kwargs["focus_bank_register_tab"])
     finally:
         db.close()
         if db_path.exists():

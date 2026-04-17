@@ -1146,6 +1146,7 @@ class BankImportTab(QWidget):
         *,
         register_tab=None,
         after_stmt_match_sync: Optional[Callable[[], None]] = None,
+        focus_bank_register_tab: Optional[Callable[[], None]] = None,
         parent=None,
     ):
         super().__init__(parent)
@@ -1153,6 +1154,7 @@ class BankImportTab(QWidget):
         self._coa_db = coa_db
         self._register_tab = register_tab
         self._after_stmt_match_sync = after_stmt_match_sync
+        self._focus_bank_register_tab = focus_bank_register_tab
         self._current_batch_id: Optional[int] = None
         self._current_account_id: Optional[int] = None
         self._import_worker: Optional[CsvImportWorker] = None
@@ -1455,6 +1457,7 @@ class BankImportTab(QWidget):
             bank_import_shortcuts_help=self._show_bank_import_keyboard_shortcuts_help,
             register_tab=self._register_tab,
             coa_db=self._coa_db,
+            focus_bank_register_tab=self._focus_bank_register_tab,
         )
         recon_col_layout.addWidget(self._line_match_panel)
         self._line_match_panel.set_context(None, None)

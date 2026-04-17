@@ -31,6 +31,7 @@ PDF optional hyphenation) are removed.
 from __future__ import annotations
 
 import csv
+import sqlite3
 from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 from typing import Any, Optional
@@ -398,6 +399,145 @@ def compare_statement_to_register(
         )
 
     return out
+
+
+def _norm_desc_key(text: str) -> str:
+    t = _normalize_paste_whitespace(text or "").casefold()
+    return " ".join(t.split())
+
+
+def _history_best_payee_coa(
+    conn: sqlite3.Connection,
+    bank_account_id: int,
+    needle: str,
+    *,
+    max_scan: int = 400,
+) -> tuple[Optional[str], Optional[str], float]:
+    """Return payee text, COA, and similarity ratio for the best past register row on this account."""
+    n = _norm_desc_key(needle)
+    if len(n) < 4:
+        return None, None, 0.0
+    try:
+        rows = conn.execute(
+            """
+            SELECT description, memo, ref_number, coa_account
+            FROM bank_transactions
+            WHERE bank_account_id = ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (int(bank_account_id), int(max_scan)),
+        ).fetchall()
+    except sqlite3.Error:
+        return None, None, 0.0
+    best_ratio = 0.0
+    best_desc = ""
+    best_coa = ""
+    for r in rows:
+        d = _combined_description_for_match(dict(r))
+        rj = _norm_desc_key(d)
+        if not rj:
+            continue
+        ratio = SequenceMatcher(None, n, rj).ratio()
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_desc = d.strip() or (dict(r).get("description") or "").strip()
+            raw_coa = dict(r).get("coa_account")
+            best_coa = (str(raw_coa).strip() if raw_coa is not None else "") or ""
+    if best_ratio < 0.28:
+        return None, None, best_ratio
+    return (best_desc or None), (best_coa or None) if best_coa else None, best_ratio
+
+
+def enrich_line_match_rows_with_suggestions(
+    conn: Optional[sqlite3.Connection],
+    bank_account_id: int,
+    rows: list[dict[str, Any]],
+    coa_labels: list[str],
+) -> None:
+    """Fill suggestion fields on **Needs review** / **Likely match** rows (mutates *rows* in place).
+
+    Uses :func:`~probooksai.coa_ai_suggest.coa_hints` (rules + optional AI), similar past
+    ``bank_transactions`` on the same bank account, and the register line for likely matches.
+    Never writes to the database. Weak matches set ``suggestion_source`` to a clear review note.
+    """
+    if conn is None:
+        for r in rows:
+            if str(r.get("status") or "") in (STATUS_NEEDS_REVIEW, STATUS_LIKELY_MATCH):
+                r.setdefault("suggested_payee", "")
+                r.setdefault("suggested_coa", "")
+                r.setdefault("suggestion_source", "")
+        return
+
+    for row in rows:
+        st = str(row.get("status") or "")
+        if st not in (STATUS_NEEDS_REVIEW, STATUS_LIKELY_MATCH):
+            continue
+        stmt_d = str(row.get("stmt_description") or "").strip()
+        payee_s = ""
+        coa_s = ""
+        notes: list[str] = []
+
+        if st == STATUS_LIKELY_MATCH:
+            reg_d = str(row.get("reg_description") or "").strip()
+            if reg_d:
+                payee_s = reg_d
+                notes.append("Register line (likely match)")
+            rid = row.get("register_id")
+            if rid is not None:
+                try:
+                    tid = int(rid)
+                    cur = conn.execute(
+                        "SELECT coa_account FROM bank_transactions WHERE id = ?",
+                        (tid,),
+                    ).fetchone()
+                    if cur is not None:
+                        ca = (dict(cur).get("coa_account") or "").strip()
+                        if ca:
+                            coa_s = ca
+                            notes.append("COA on matched register row")
+                except (TypeError, ValueError, sqlite3.Error):
+                    pass
+
+        hints: list[str] = []
+        if coa_labels and stmt_d:
+            try:
+                from probooksai.coa_ai_suggest import coa_hints
+
+                hints = coa_hints(conn, stmt_d, coa_labels, limit=3)
+            except (sqlite3.Error, ImportError, TypeError, ValueError):
+                hints = []
+        if hints and not coa_s:
+            coa_s = hints[0]
+            notes.append("Rules / catalog COA")
+        elif hints and coa_s and hints[0] != coa_s:
+            notes.append(f"Alt COA: {hints[0]}")
+
+        hp, hc, ratio = _history_best_payee_coa(conn, bank_account_id, stmt_d)
+        if ratio >= 0.5 and hp:
+            if not payee_s or ratio >= 0.72:
+                payee_s = hp
+            notes.append(f"Past similar txn (~{int(ratio * 100)}%)")
+        if ratio >= 0.5 and hc and not coa_s:
+            coa_s = hc
+            notes.append("COA from similar past txn")
+
+        row["suggested_payee"] = payee_s.strip() if payee_s else ""
+        row["suggested_coa"] = coa_s.strip() if coa_s else ""
+        if notes:
+            uniq: list[str] = []
+            for n in notes:
+                if n not in uniq:
+                    uniq.append(n)
+            row["suggestion_source"] = "; ".join(uniq)
+        elif not coa_s and not payee_s:
+            row["suggestion_source"] = "Needs review — no strong history or rules match"
+        else:
+            row["suggestion_source"] = "Review suggested values"
+
+        draft = str(row.get("draft_coa_account") or "").strip()
+        if not draft and row["suggested_coa"]:
+            row["draft_coa_account"] = row["suggested_coa"]
 
 
 def write_line_match_comparison_csv(

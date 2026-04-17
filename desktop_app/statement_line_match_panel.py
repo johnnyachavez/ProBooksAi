@@ -9,7 +9,7 @@ the save dialog suggests a
 basename from the import batch filename (or batch id) and re-opens in the last folder used
 for Bank Import CSV exports (``bank_import/last_csv_export_dir``; legacy
 ``bank_import/line_compare_csv_export_dir`` is still read if unset).
-**Right-click** the grid for **Keyboard shortcuts…** (when wired from Bank Import), **Copy row** (TSV), **Copy statement date** / amount / description when the imported statement side is filled (**Matched** / **Missing**), **Copy register date** / amount / description when the register side is filled (**Matched** / **Extra**), **Copy register transaction id** when **Reg #** is set, and **Open linked Business record…** when Bank Import wires the register tab and that transaction has a **complete bank link**. **Double-click** a row when **Reg #** is set uses the same **Business link** prompts as **Bank register** (opens **Business** when the link is complete; otherwise an explanatory message).
+**Right-click** the grid for **Keyboard shortcuts…** (when wired from Bank Import), **Open in Bank Register…** (selected row), **Copy row** (TSV), **Copy statement date** / amount / description when the imported statement side is filled (**Matched** / **Missing**), **Copy register date** / amount / description when the register side is filled (**Matched** / **Extra**), **Copy register transaction id** when **Reg #** is set, and **Open linked Business record…** when Bank Import wires the register tab and that transaction has a **complete bank link**. **Double-click** a row when **Reg #** is set uses the same **Business link** prompts as **Bank register** (opens **Business** when the link is complete; otherwise an explanatory message).
 """
 
 from __future__ import annotations
@@ -48,6 +48,7 @@ from desktop_app.qt_mnemonic import (
     escape_ampersand_for_qt,
     message_box_critical_ok,
     message_box_information_ok,
+    message_box_warning_ok,
 )
 from desktop_app.table_clipboard import (
     CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
@@ -60,6 +61,7 @@ from probooksai.statement_line_match import (
     STATUS_LIKELY_MATCH,
     STATUS_MATCHED,
     STATUS_NEEDS_REVIEW,
+    enrich_line_match_rows_with_suggestions,
     write_line_match_comparison_csv,
 )
 
@@ -123,6 +125,7 @@ class StatementLineMatchPanel(QGroupBox):
         bank_import_shortcuts_help: Optional[Callable[[], None]] = None,
         register_tab=None,
         coa_db: Optional["COADatabase"] = None,
+        focus_bank_register_tab: Optional[Callable[[], None]] = None,
     ):
         super().__init__("Line Reconciliation (AI)", parent)
         self._db = db
@@ -131,6 +134,7 @@ class StatementLineMatchPanel(QGroupBox):
         self._populating = False
         self._bank_import_shortcuts_help = bank_import_shortcuts_help
         self._register_tab = register_tab
+        self._focus_bank_register_tab = focus_bank_register_tab
         self._needs_review_master_rows: list[int] = []
         self.setToolTip(
             "Compare imported statement lines (this import batch) to register transactions for the batch period "
@@ -199,6 +203,18 @@ class StatementLineMatchPanel(QGroupBox):
         self._btn_run.clicked.connect(self._on_run_clicked)
         primary.addWidget(self._btn_run)
 
+        self._btn_open_register = QPushButton("Open in Bank Register")
+        self._btn_open_register.setToolTip(
+            "Switch to **Bank Register** for this bank account. "
+            "For **Needs review**, opens **Add transaction** with statement date, amount, payee, notes, and draft COA — "
+            "you confirm before anything is saved. "
+            "For **Matched**, **Likely match**, or **Extra**, selects the register row (Reg #) so you can edit or confirm there. "
+            "Nothing posts automatically."
+        )
+        self._btn_open_register.clicked.connect(self._on_open_in_bank_register_clicked)
+        self._btn_open_register.setEnabled(False)
+        primary.addWidget(self._btn_open_register)
+
         self._btn_mark_sel = QPushButton("Mark reconciled")
         self._btn_mark_sel.setToolTip(
             "Set the reconciled flag for selected rows (this panel only; no register or import DB writes)."
@@ -240,7 +256,8 @@ class StatementLineMatchPanel(QGroupBox):
 
         flow = QLabel(
             "<b>Workflow:</b> Intake → <b>Run extract & compare</b> → use buckets below → "
-            "fix <b>Needs review</b> in the queue (draft only) → match against <b>Bank Register</b>."
+            "<b>Open in Bank Register</b> for the selected row (draft add or focus register line) → "
+            "fix <b>Needs review</b> in the queue (draft only) as needed."
         )
         flow.setWordWrap(True)
         flow.setStyleSheet("color: #A0A0B0; font-size: 11px;")
@@ -315,33 +332,33 @@ class StatementLineMatchPanel(QGroupBox):
         layout.addWidget(self._table)
 
         self._needs_review_box = QGroupBox(
-            "Review queue — Needs review (draft edits; does not post to the company file)"
+            "Review queue — Needs review & Likely match (suggestions from history/rules; draft only)"
         )
         self._needs_review_box.setStyleSheet(
             "QGroupBox { font-weight: 600; margin-top: 6px; } "
             "QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; }"
         )
         self._needs_review_box.setToolTip(
-            "Statement-side rows with no confident register match. Edit payee, date, amount, category, "
-            "and notes here to clarify before you work them in Bank Register. Changes update this panel "
-            "and the main grid above only — no silent posting."
+            "**Needs review** and **Likely match** rows: suggested payee/COA from past register lines, "
+            "rules, and similar transactions (editable). Nothing posts automatically — Bank Register stays "
+            "the source of truth."
         )
         nrv = QVBoxLayout(self._needs_review_box)
         self._needs_review_table = QTableWidget()
-        self._needs_review_table.setColumnCount(6)
+        self._needs_review_table.setColumnCount(7)
         self._needs_review_table.setHorizontalHeaderLabels(
-            ["#", "Stmt date", "Stmt $", "Payee / description", "Category (COA)", "Notes"]
+            ["#", "Stmt date", "Stmt $", "Payee / description", "Category (COA)", "Hint", "Notes"]
         )
         self._needs_review_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._needs_review_table.verticalHeader().setVisible(False)
         self._needs_review_table.setMinimumHeight(80)
         self._needs_review_table.setMaximumHeight(220)
         hh_nr = self._needs_review_table.horizontalHeader()
-        for c in range(6):
+        for c in range(7):
             hh_nr.setSectionResizeMode(
                 c,
                 QHeaderView.ResizeMode.ResizeToContents
-                if c not in (3, 5)
+                if c not in (3, 5, 6)
                 else QHeaderView.ResizeMode.Stretch,
             )
         nrv.addWidget(self._needs_review_table)
@@ -387,6 +404,7 @@ class StatementLineMatchPanel(QGroupBox):
             self._btn_mark_matched.setEnabled(False)
             self._btn_clear.setEnabled(False)
             self._btn_export_csv.setEnabled(False)
+            self._btn_open_register.setEnabled(False)
             return
         self._btn_clear.setEnabled(True)
         self._btn_export_csv.setEnabled(True)
@@ -396,6 +414,22 @@ class StatementLineMatchPanel(QGroupBox):
         self._btn_mark_matched.setEnabled(has_matched)
         rows_sel = self._table.selectionModel().selectedRows()
         self._btn_mark_sel.setEnabled(len(rows_sel) > 0)
+        self._btn_open_register.setEnabled(
+            self._register_tab is not None
+            and len(rows_sel) > 0
+            and self._open_in_register_row_enabled(
+                rows_sel[0].row() if rows_sel else -1
+            )
+        )
+
+    def _open_in_register_row_enabled(self, row: int) -> bool:
+        if row < 0 or row >= len(self._rows):
+            return False
+        rowd = self._rows[row]
+        st = (rowd.get("status") or "").strip()
+        if st == STATUS_NEEDS_REVIEW:
+            return True
+        return coerce_combo_int_id(rowd.get("register_id")) is not None
 
     def populate(self, rows: list[dict]) -> None:
         self._rows = list(rows)
@@ -539,7 +573,8 @@ class StatementLineMatchPanel(QGroupBox):
 
         nr = 0
         for master_idx, row in enumerate(self._rows):
-            if (row.get("status") or "") != STATUS_NEEDS_REVIEW:
+            st_row = (row.get("status") or "").strip()
+            if st_row not in (STATUS_NEEDS_REVIEW, STATUS_LIKELY_MATCH):
                 continue
             self._needs_review_master_rows.append(master_idx)
             t.insertRow(nr)
@@ -569,6 +604,9 @@ class StatementLineMatchPanel(QGroupBox):
 
             pe = QLineEdit(str(row.get("stmt_description") or ""))
             pe.setPlaceholderText("Payee / description")
+            sug = str(row.get("suggested_payee") or "").strip()
+            if sug and sug != (row.get("stmt_description") or "").strip():
+                pe.setToolTip(f"Suggested payee (from history/register): {sug}")
             pe.textChanged.connect(
                 lambda _t, mid=master_idx, w=pe: self._on_needs_review_payee_changed(mid, w)
             )
@@ -592,12 +630,22 @@ class StatementLineMatchPanel(QGroupBox):
             )
             t.setCellWidget(nr, 4, cb)
 
+            hint_it = QTableWidgetItem(str(row.get("suggestion_source") or "—"))
+            hint_it.setFlags(
+                Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+            )
+            hint_it.setToolTip(
+                "How suggestions were derived (rules, similar past transactions, register line). "
+                "Does not post automatically."
+            )
+            t.setItem(nr, 5, hint_it)
+
             ne = QLineEdit(str(row.get("review_notes") or ""))
             ne.setPlaceholderText("Notes (draft)")
             ne.textChanged.connect(
                 lambda _t, mid=master_idx, w=ne: self._on_needs_review_notes_changed(mid, w)
             )
-            t.setCellWidget(nr, 5, ne)
+            t.setCellWidget(nr, 6, ne)
 
             nr += 1
 
@@ -644,7 +692,7 @@ class StatementLineMatchPanel(QGroupBox):
             return
         row = self._rows[master_idx]
         st = row.get("status") or ""
-        if st != STATUS_NEEDS_REVIEW:
+        if st not in (STATUS_NEEDS_REVIEW, STATUS_LIKELY_MATCH):
             return
         self._populating = True
         self._table.blockSignals(True)
@@ -835,6 +883,18 @@ class StatementLineMatchPanel(QGroupBox):
                 "Copy this reconciliation row as tab-separated text for pasting into a spreadsheet or editor. "
                 + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
             )
+            if self._register_tab is not None and self._open_in_register_row_enabled(
+                row
+            ):
+                act_reg = menu.addAction(
+                    "Open in Bank Register\u2026",
+                    partial(self._invoke_open_in_bank_register_for_row, row),
+                )
+                act_reg.setToolTip(
+                    "Switch to Bank Register for this account; focus the register line or open **Add transaction** "
+                    "with drafts (Needs review). Nothing saves until you confirm on the register. "
+                    + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+                )
             sd = self._line_match_stmt_date_plain(row)
             if sd:
                 act_sd = menu.addAction(
@@ -991,8 +1051,68 @@ class StatementLineMatchPanel(QGroupBox):
         )
         stmt = statement_rows_for_line_compare([dict(t) for t in txns_stmt])
         results = compare_statement_to_register(stmt, reg)
+        coa_labels: list[str] = []
+        if self._coa_db is not None:
+            try:
+                coa_labels = list(self._coa_db.display_list())
+            except (TypeError, AttributeError, ValueError):
+                coa_labels = []
+        enrich_line_match_rows_with_suggestions(
+            self._db._conn, acct, results, coa_labels
+        )
         self.populate(results)
         self.line_match_results_ready.emit(acct, results)
+
+    def _invoke_open_in_bank_register_for_row(self, row: int) -> None:
+        self._table.selectRow(row)
+        self._on_open_in_bank_register_clicked()
+
+    def _on_open_in_bank_register_clicked(self) -> None:
+        if self._register_tab is None:
+            message_box_information_ok(
+                self,
+                "Bank Register",
+                "Bank Register is not wired in this window.",
+                ok_tip="Close; open the company in the main window.",
+            )
+            return
+        acct = self._account_id
+        if acct is None:
+            return
+        sel = self._table.selectionModel().selectedRows()
+        if not sel:
+            message_box_information_ok(
+                self,
+                "Open in Bank Register",
+                "Select a row in the line reconciliation grid first.",
+                ok_tip="Close; click a row, then use Open in Bank Register.",
+            )
+            return
+        r = sel[0].row()
+        if r < 0 or r >= len(self._rows):
+            return
+        if not self._open_in_register_row_enabled(r):
+            message_box_information_ok(
+                self,
+                "Open in Bank Register",
+                "This row has no register handoff (no Reg # and not Needs review).",
+                ok_tip="Close; pick Matched, Likely match, Extra, or Needs review.",
+            )
+            return
+        row_data = dict(self._rows[r])
+        ok = self._register_tab.handoff_line_reconciliation_row(
+            bank_account_id=acct,
+            row=row_data,
+            focus_bank_register_tab=self._focus_bank_register_tab,
+        )
+        if not ok:
+            message_box_warning_ok(
+                self,
+                "Open in Bank Register",
+                "Could not select that bank account on Bank Register. "
+                "It may have been removed — try F5 or Manage Accounts.",
+                ok_tip="Close; refresh and try again.",
+            )
 
     def _mark_reviewed_selected(self) -> None:
         self._populating = True
