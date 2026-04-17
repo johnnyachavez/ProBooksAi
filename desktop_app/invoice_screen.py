@@ -76,7 +76,7 @@ from desktop_app.invoice_preferences import (
 from desktop_app.invoice_intake_panel import InvoiceIntakePanel
 from desktop_app.invoice_intake_text_extract import TextIntakeExtraction
 from desktop_app.invoice_pdf import invoice_html_string, save_invoice_pdf
-from desktop_app.qt_mnemonic import message_box_information_ok
+from desktop_app.qt_mnemonic import message_box_information_ok, message_box_warning_ok
 from probooksai import business
 from probooksai.company_identity import company_identity_plain_block
 from desktop_app.ar_customer_actions import (
@@ -1789,11 +1789,14 @@ class InvoiceScreen(QWidget):
         except sqlite3.IntegrityError as exc:
             err = str(exc).upper()
             if "UNIQUE" in err:
-                return (
-                    False,
-                    "That invoice number is already in use. Enter a different number.",
-                    None,
+                message_box_warning_ok(
+                    self,
+                    "Duplicate invoice number",
+                    "That invoice number is already used in this company file. "
+                    "Enter a different invoice number before saving.",
+                    ok_tip="Close; change the Invoice # field to a value that is not already saved.",
                 )
+                return False, "", None
             return False, str(exc), None
         except sqlite3.Error as exc:
             return False, str(exc), None

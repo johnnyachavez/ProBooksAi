@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from desktop_app.customer_bill_to_panel import CustomerBillToPanel
 from desktop_app.invoice_intake_text_extract import extract_text_intake_fields
+from desktop_app import invoice_screen as invoice_screen_module
 from desktop_app.invoice_screen import (
     InvoiceScreen,
     _INVOICE_LINE_ROW_MIN_HEIGHT_PX,
@@ -72,7 +73,7 @@ def test_invoice_screen_line_grid_and_headers(qapp: QApplication) -> None:
     assert isinstance(w._date, QLineEdit)
     assert isinstance(w._inv_number, QLineEdit)
     assert w._inv_number.placeholderText() == "INVOICE #"
-    assert w._inv_number.text() == "13001"
+    assert w._inv_number.text() == "1"
     labels = [lb.text() for lb in w.findChildren(QLabel)]
     assert "Invoice Number" not in labels
     assert "Invoice Date" in labels
@@ -733,4 +734,43 @@ def test_manual_invoice_save_edit_resave_round_trip(
     assert inv is not None
     assert len(lines) >= 1
     assert "Updated work" in (dict(lines[0]).get("description") or "")
+    db.close()
+
+
+def test_invoice_save_duplicate_invoice_number_shows_modal_warning(
+    qapp: QApplication, tmp_path, monkeypatch
+) -> None:
+    """Duplicate invoice # on save shows a clear modal warning (SQLite UNIQUE on ``invoice_number``)."""
+    warnings: list[tuple[str, str]] = []
+
+    def _warn(parent, title, text, *, ok_tip: str = "") -> None:
+        warnings.append((title, text))
+
+    monkeypatch.setattr(invoice_screen_module, "message_box_warning_ok", _warn)
+
+    db_path = tmp_path / "inv_dup_warn.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    c1 = business.add_customer(db._conn, "CustA")
+    c2 = business.add_customer(db._conn, "CustB")
+    business.create_invoice(
+        db._conn,
+        c1,
+        "100",
+        "2024-01-01",
+        lines=[{"description": "existing", "qty": 1, "rate": 1.0}],
+    )
+    w = InvoiceScreen(ap_conn=db._conn)
+    w.show()
+    qapp.processEvents()
+    w._bill_customer_panel.select_customer_by_id(c2)
+    w._inv_number.setText("100")
+    w._date.setText("02/01/2024")
+    ok, msg, iid = w._try_persist_invoice()
+    assert ok is False
+    assert iid is None
+    assert msg == ""
+    assert len(warnings) == 1
+    assert warnings[0][0] == "Duplicate invoice number"
+    assert "already used" in warnings[0][1]
     db.close()

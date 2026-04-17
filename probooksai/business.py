@@ -484,15 +484,16 @@ def list_invoices(conn: sqlite3.Connection) -> list:
     ).fetchall()
 
 
-_DEFAULT_FIRST_INVOICE_NUMBER = "13001"
+_DEFAULT_FIRST_INVOICE_NUMBER = "1"
 
 
 def next_default_invoice_number(conn: sqlite3.Connection | None) -> str:
-    """Suggested next *invoice_number* for a new invoice (desktop default).
+    """Suggested next *invoice_number* for a new invoice (desktop Manual Invoice).
 
     Uses the maximum existing *invoice_number* whose trimmed value is all digits,
-    plus one. Non-numeric values are ignored for sequencing. If none qualify,
-    returns ``13001``. With *conn* ``None`` (no company file), returns ``13001``.
+    plus one. Non-digit strings are ignored for sequencing (user may use ``INV-1``,
+    etc.). If no all-digit numbers exist yet, returns ``1``. With *conn* ``None``
+    (no company file), returns ``1`` so the empty UI matches a fresh company.
     """
     if conn is None:
         return _DEFAULT_FIRST_INVOICE_NUMBER
