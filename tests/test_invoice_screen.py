@@ -774,3 +774,56 @@ def test_invoice_save_duplicate_invoice_number_shows_modal_warning(
     assert warnings[0][0] == "Duplicate invoice number"
     assert "already used" in warnings[0][1]
     db.close()
+
+
+def test_invoice_line_code_applies_rate_from_invoice_item_codes(
+    qapp: QApplication, tmp_path
+) -> None:
+    """Code column uses ``invoice_item_codes``; matching code fills Rate; unknown code leaves Rate."""
+    db_path = tmp_path / "inv_codes_wire.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    business.replace_invoice_item_codes(
+        db._conn,
+        [
+            {
+                "code": "SRV-A",
+                "description": "Service A",
+                "item_type": "Service",
+                "coa_account": "",
+                "rate_value": 75.5,
+                "rate_kind": "amount",
+                "sort_order": 0,
+            },
+            {
+                "code": "SRV-B",
+                "description": "Service B",
+                "item_type": "Service",
+                "coa_account": "",
+                "rate_value": 20.0,
+                "rate_kind": "amount",
+                "sort_order": 1,
+            },
+        ],
+    )
+    w = InvoiceScreen(ap_conn=db._conn)
+    w.show()
+    qapp.processEvents()
+    w.refresh_invoice_item_codes()
+    code_w = w._table.cellWidget(0, 1)
+    rate_w = w._table.cellWidget(0, 4)
+    assert isinstance(code_w, QLineEdit) and isinstance(rate_w, QDoubleSpinBox)
+    code_w.setText("SRV-A")
+    w._on_invoice_line_code_committed(0)
+    assert abs(rate_w.value() - 75.5) < 0.01
+    rate_w.setValue(12.0)
+    w._on_invoice_line_code_committed(0)
+    assert abs(rate_w.value() - 12.0) < 0.01
+    code_w.setText("SRV-B")
+    w._on_invoice_line_code_committed(0)
+    assert abs(rate_w.value() - 20.0) < 0.01
+    rate_w.setValue(99.0)
+    code_w.setText("NOPE")
+    w._on_invoice_line_code_committed(0)
+    assert abs(rate_w.value() - 99.0) < 0.01
+    db.close()

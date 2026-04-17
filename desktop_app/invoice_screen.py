@@ -274,6 +274,8 @@ class InvoiceScreen(QWidget):
         self._invoice_memo_notes: str = ""
         # Set True only inside Print click handler while QPrintDialog may run (blocks stray callers).
         self._invoice_print_dialog_armed: bool = False
+        # Last committed Code column text per line (strip); avoids re-applying saved Code rate when only Rate changed.
+        self._invoice_line_code_committed: list[str] = [""] * self._N_LINE_ROWS
         self.setToolTip(
             "Manual Invoice: enter lines and totals; Save writes to your company file. "
             "Invoice # suggests the next number from your company file (editable). "
@@ -1275,6 +1277,8 @@ class InvoiceScreen(QWidget):
         self._btn_forward.setEnabled(fwd)
 
     def _clear_line_grid(self) -> None:
+        for r in range(self._N_LINE_ROWS):
+            self._invoice_line_code_committed[r] = ""
         self._suppress_invoice_line_recalc = True
         try:
             for r in range(self._N_LINE_ROWS):
@@ -1325,7 +1329,7 @@ class InvoiceScreen(QWidget):
                     )
 
     def _setup_invoice_code_helpers(self) -> None:
-        """QCompleter + apply saved **Codes** when the Code field commits (Tab/Enter)."""
+        """QCompleter from ``invoice_item_codes``; apply default rate/description when Code text changes."""
         self._invoice_code_completers: list[QCompleter] = []
         for row in range(self._N_LINE_ROWS):
             code_w = self._table.cellWidget(row, 1)
@@ -1337,7 +1341,10 @@ class InvoiceScreen(QWidget):
             code_w.setCompleter(comp)
             self._invoice_code_completers.append(comp)
             code_w.editingFinished.connect(
-                partial(self._on_invoice_code_editing_finished, row)
+                partial(self._on_invoice_line_code_committed, row)
+            )
+            comp.activated.connect(
+                partial(self._on_invoice_line_code_completer_activated, row)
             )
         self.refresh_invoice_item_codes()
 
@@ -1365,19 +1372,33 @@ class InvoiceScreen(QWidget):
                 total += round(float(rate_w.value()) * float(qty_w.value()), 2)
         return total
 
-    def _on_invoice_code_editing_finished(self, row: int) -> None:
-        if self._ap_conn is None:
+    def _on_invoice_line_code_completer_activated(self, row: int, _choice: str) -> None:
+        """Popup pick updates the line edit; apply saved Code row when it differs from last commit."""
+        self._on_invoice_line_code_committed(row)
+
+    def _on_invoice_line_code_committed(self, row: int) -> None:
+        """Tab/Enter or completer pick: if Code text changed, fill Rate/Description from **Codes** (or record free text)."""
+        if self._suppress_invoice_line_recalc:
             return
         code_w = self._table.cellWidget(row, 1)
         if not isinstance(code_w, QLineEdit):
             return
         raw = code_w.text().strip()
+        if raw == self._invoice_line_code_committed[row]:
+            return
+        if self._ap_conn is None:
+            self._invoice_line_code_committed[row] = raw
+            return
         if not raw:
+            self._invoice_line_code_committed[row] = ""
             return
         item = business.get_invoice_item_code_by_code(self._ap_conn, raw)
         if item is None:
+            self._invoice_line_code_committed[row] = raw
             return
-        self._apply_invoice_item_code_row(row, dict(item))
+        d = dict(item)
+        self._apply_invoice_item_code_row(row, d)
+        self._invoice_line_code_committed[row] = (d.get("code") or "").strip()
 
     def _apply_invoice_item_code_row(self, row: int, d: dict) -> None:
         """Fill Code/Description/Rate/Qty from a **Codes** row."""
@@ -1601,6 +1622,11 @@ class InvoiceScreen(QWidget):
         for r in range(self._N_LINE_ROWS):
             self._sync_invoice_line_row_total(r)
         self._recalc_invoice_footer_from_grid()
+        for i in range(self._N_LINE_ROWS):
+            cw = self._table.cellWidget(i, 1)
+            self._invoice_line_code_committed[i] = (
+                cw.text().strip() if isinstance(cw, QLineEdit) else ""
+            )
         self._current_invoice_id = invoice_id
         try:
             bd = float(d.get("balance_due") or 0.0)
