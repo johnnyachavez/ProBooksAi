@@ -22,7 +22,7 @@ also have hover hints. The banner **AppHeaderWidget** (**QFrame**) right-aligns 
 Destructive **Yes**/**No** prompts (new company file exists, database restore) use **tip_message_box_buttons** for button hover hints and **QMessageBox.setToolTip** for the dialog window.
 
 Main window **menu bar**: each ``QAction`` uses ``setStatusTip`` for the **status bar** and the same text via ``setToolTip`` for hover (``_menu_action_tip`` helper).
-Top-level menus: **File** (includes **Create Company File…** for identity + new ``.db``; on first launch with no saved company path, a welcome prompt points here), **View**, **Edit**, **Tools** (e.g. **Invoice…** Ctrl+Shift+I to the **Invoices** tab), **Recon** (bank register bulk actions in submenus), **Help**.
+Top-level menus: **File** (includes **New Company…** — the guided setup wizard that captures identity + new ``.db`` + sibling backup folder; on first launch with no saved company path, a welcome prompt routes here), **View**, **Edit**, **Tools** (e.g. **Invoice…** Ctrl+Shift+I to the **Invoices** tab), **Recon** (bank register bulk actions in submenus), **Help**.
 """
 
 from __future__ import annotations
@@ -75,7 +75,7 @@ from probooksai.bank_import import BankDatabase
 from probooksai.coa_db import COADatabase
 from probooksai.extensions_schema import apply_extensions
 from probooksai.gl import GLDatabase
-from probooksai.company_identity import save_company_identity
+from probooksai.company_identity import is_company_setup_complete, save_company_identity
 from desktop_app.bank_import_tab import (
     BankImportTab,
     show_bank_import_keyboard_shortcuts_dialog,
@@ -102,6 +102,7 @@ from desktop_app.invoice_screen import InvoiceScreen
 from desktop_app.pay_bills_screen import PayBillsScreen
 from desktop_app.receive_checks_screen import ReceiveChecksScreen
 from desktop_app.create_company_file_dialog import CreateCompanyFileDialog
+from desktop_app.hover_messages import install_global_hover_message_suppression
 from desktop_app.theme import apply_dark_theme, STATUS_COLORS as THEME_STATUS_COLORS
 from desktop_app.version import application_version
 from desktop_app.local_docs import resolve_local_roadmap_path
@@ -1241,11 +1242,12 @@ class MainWindow(QMainWindow):
         act_open_company.triggered.connect(self._on_open_company_database)
         file_menu.addAction(act_open_company)
 
-        act_create_company_file = QAction("Create &Company File…", self)
+        act_create_company_file = QAction("&New Company…", self)
         _menu_action_tip(
             act_create_company_file,
-            "Create a new company SQLite file: enter company name, address, phone, email, and tax ID; "
-            "then choose where to save the .db. Identity is stored in the file for invoices and reports. "
+            "New Company: guided setup wizard. Captures company name, address, phone, email, "
+            "business type, tax structure, and tax ID; then creates the working .db plus a "
+            "backup folder next to it. Identity is stored in the file for invoices and reports. "
             "Use File → Backup before replacing data you care about.",
         )
         act_create_company_file.triggered.connect(self._on_create_company_file)
@@ -2328,7 +2330,17 @@ class MainWindow(QMainWindow):
         )
 
     def _maybe_prompt_first_company_file_setup(self) -> None:
-        """First-run: suggest **File → Create Company File…** when no explicit path is stored yet."""
+        """First-run welcome → routes into **File → New Company…** setup wizard.
+
+        Shows a one-shot welcome card the first time the app is launched without
+        any saved company database path. Accepting opens the New Company setup
+        wizard via :meth:`_on_create_company_file`; the wizard itself is what
+        enforces the required identity fields (Name, Business Type, Tax
+        Structure). Returning users (``db_path`` already set, prompt already
+        shown) are *not* re-prompted here — they can revisit the wizard from
+        File → New Company… at any time, or use
+        :meth:`_route_into_setup_if_company_incomplete` directly.
+        """
         if self._db_path is not None:
             return
         settings = QSettings()
@@ -2339,15 +2351,19 @@ class MainWindow(QMainWindow):
             settings.setValue("company_file_setup_prompted", True)
             return
         box = QMessageBox(self)
-        box.setWindowTitle("Set up your company file")
+        box.setWindowTitle("Welcome to ProBooks+ai")
         box.setIcon(QMessageBox.Icon.Information)
         box.setText(
-            "Welcome. Create a company file to store your business name, address, phone, email, and tax ID. "
-            "They are saved in the database and used on invoices and reports."
+            "Let's set up your company. The New Company wizard captures your business name, address, "
+            "phone, email, business type, tax structure, and tax ID, then creates the working "
+            "company file and a matching backup folder."
         )
-        box.setInformativeText("You can use File → Create Company File… anytime.")
+        box.setInformativeText(
+            "Setup is required before invoices and reports can use your company identity. "
+            "You can revisit it anytime from File → New Company…"
+        )
         create_btn = box.addButton(
-            "Create Company File…", QMessageBox.ButtonRole.AcceptRole
+            "New Company…", QMessageBox.ButtonRole.AcceptRole
         )
         box.addButton("Not now", QMessageBox.ButtonRole.RejectRole)
         box.setDefaultButton(create_btn)
@@ -2355,6 +2371,31 @@ class MainWindow(QMainWindow):
         if box.clickedButton() == create_btn:
             self._on_create_company_file()
         settings.setValue("company_file_setup_prompted", True)
+
+    def _is_current_company_setup_complete(self) -> bool:
+        """Return ``True`` when the active company file has identity + business + tax structure saved."""
+        conn = getattr(self._bank_db, "_conn", None)
+        if conn is None:
+            return False
+        try:
+            return is_company_setup_complete(conn)
+        except sqlite3.Error:
+            return False
+
+    def _route_into_setup_if_company_incomplete(self) -> None:
+        """Open the New Company wizard when the loaded file is missing required identity.
+
+        Public entry point intended for callers (e.g. CLI ``--database`` flow,
+        File → Open Company Database) that load a company file outside the
+        first-run welcome card. Not auto-invoked from ``__init__`` to keep
+        construction safe for headless tests; production triggers it from the
+        ``main()`` entry point after the application event loop is ready.
+        """
+        if self._db_path is None:
+            return
+        if self._is_current_company_setup_complete():
+            return
+        self._on_create_company_file()
 
     def _on_open_company_database(self):
         prev = QSettings().value("company_database_path", "", type=str) or ""
@@ -2401,8 +2442,39 @@ class MainWindow(QMainWindow):
             phone=v["phone"],
             email=v["email"],
             tax_id=v["tax_id"],
+            business_type=v.get("business_type", ""),
+            tax_structure=v.get("tax_structure", ""),
         )
         self._update_company_status()
+        self._create_company_backup_structure(path)
+
+    def _create_company_backup_structure(self, db_path: str) -> None:
+        """Create ``<db parent>/backups/`` and write an initial named backup of *db_path*.
+
+        The New Company wizard guarantees on-disk safety on day one by:
+
+        * creating a sibling ``backups/`` folder next to the working ``.db``, and
+        * writing ``<stem>-initial.db`` into that folder via :func:`backup_database`
+          (same engine as ``probooks backup`` / File → Backup).
+
+        Failures are surfaced via :func:`message_box_warning_ok` but never raise —
+        the working company file is already created and saved at this point, so
+        the user can still proceed and run File → Backup manually.
+        """
+        try:
+            src = Path(db_path).resolve()
+            backups_dir = src.parent / "backups"
+            backups_dir.mkdir(parents=True, exist_ok=True)
+            initial = backups_dir / f"{src.stem}-initial.db"
+            backup_database(src, initial)
+        except (OSError, sqlite3.Error, ValueError) as exc:
+            message_box_warning_ok(
+                self,
+                "Backup folder",
+                "Company file was created but the initial backup could not be written: "
+                f"{escape_ampersand_for_qt(str(exc))}",
+                ok_tip="Close; use File → Backup to write a backup manually.",
+            )
 
     def _on_new_company_database(self):
         prev = QSettings().value("company_database_path", "", type=str) or ""
@@ -2479,6 +2551,7 @@ def main():
     app.setApplicationName("ProBooks+ai")
     app.setOrganizationName("ProBooks+ai")
     apply_dark_theme(app)
+    install_global_hover_message_suppression(app)
     db_path = args.database
     if db_path is None:
         last = QSettings().value("company_database_path", "", type=str) or ""
@@ -2486,6 +2559,7 @@ def main():
             db_path = last
     window = MainWindow(db_path=db_path)
     window.show()
+    QTimer.singleShot(0, window._route_into_setup_if_company_incomplete)
     sys.exit(app.exec())
 
 

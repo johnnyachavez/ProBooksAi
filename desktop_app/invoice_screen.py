@@ -536,7 +536,7 @@ class InvoiceScreen(QWidget):
         )
         self._company_identity_label.setVisible(False)
         self._company_identity_label.setToolTip(
-            "Company identity from your company file (File → Create Company File). "
+            "Company identity from your company file (File → New Company). "
             "Matches the top-left block on printed and PDF invoices."
         )
         play.addWidget(self._company_identity_label)

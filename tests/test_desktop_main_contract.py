@@ -1704,7 +1704,10 @@ def test_main_window_maybe_prompt_first_company_file_setup() -> None:
     assert chunk.count("if self._db_path is not None:") == 1
     assert chunk.count('settings.value("company_file_setup_prompted", False, type=bool)') == 1
     assert chunk.count('settings.setValue("company_file_setup_prompted", True)') == 2
-    assert chunk.count("self._on_create_company_file()") == 1
+    # Two call sites: the welcome card's accept branch + the
+    # ``_route_into_setup_if_company_incomplete`` gate (re-routes returning users
+    # whose loaded file is missing required identity / business / tax fields).
+    assert chunk.count("self._on_create_company_file()") == 2
 
 
 def test_main_window_on_open_company_database_reads_settings_and_switches() -> None:
@@ -5119,7 +5122,8 @@ def test_main_window_message_box_warning_critical_and_file_dialog_counts() -> No
     start = text.index("class MainWindow(QMainWindow):")
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
-    assert chunk.count("message_box_warning_ok(") == 9
+    # ``_create_company_backup_structure`` adds one more warning site (initial-backup failure).
+    assert chunk.count("message_box_warning_ok(") == 10
     assert chunk.count("message_box_critical_ok(") == 5
     assert chunk.count("QFileDialog.getOpenFileNames(") == 1
     assert chunk.count("QFileDialog.getOpenFileName(") == 2
