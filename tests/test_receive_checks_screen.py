@@ -226,3 +226,38 @@ def test_receive_payment_post_reduces_balance(qapp: QApplication, db: BankDataba
     assert w._btn_export_ar_pdf.isEnabled()
     assert w._btn_print_ar.isEnabled()
     assert w._last_ar_payment_ids[-1] == pid
+
+
+def test_receive_payment_post_emits_ar_payment_posted_with_invoice_ids(
+    qapp: QApplication, db: BankDatabase
+) -> None:
+    """``arPaymentPosted`` carries the invoice ids that just received an allocation.
+
+    Other screens (Manual Invoice) wire to this signal to refresh the PAID badge /
+    balance for an invoice they currently have open without polling.
+    """
+    db.add_bank_account("Checking")
+    cid = business.add_customer(db._conn, "EmitCo")
+    inv_id = business.create_invoice(
+        db._conn,
+        cid,
+        "INV-EMIT",
+        "2024-08-01",
+        lines=[{"description": "Work", "qty": 1, "rate": 25.0}],
+    )
+    w = ReceiveChecksScreen(ap_conn=db._conn, bank_db=db)
+    received: list[list[int]] = []
+    w.arPaymentPosted.connect(lambda ids: received.append(list(ids)))
+    t = w.findChild(QTableWidget, "receiveChecksTable")
+    assert t is not None
+    cb = t.cellWidget(0, 0)
+    spin = t.cellWidget(0, 6)
+    assert isinstance(cb, QCheckBox)
+    assert isinstance(spin, QDoubleSpinBox)
+    cb.setChecked(True)
+    spin.setValue(25.0)
+    w._deposit_to.setCurrentIndex(1)
+    with patch("desktop_app.receive_checks_screen.message_box_information_ok"):
+        w._on_post_payment()
+    assert received, "arPaymentPosted should fire after a successful post"
+    assert inv_id in received[-1]

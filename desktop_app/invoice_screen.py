@@ -1600,6 +1600,49 @@ class InvoiceScreen(QWidget):
             b.clear()
             b.setVisible(False)
 
+    def refresh_loaded_invoice_payment_status(
+        self, invoice_ids: Optional[list[int]] = None
+    ) -> bool:
+        """Re-sync PAID badge / balance for the currently loaded invoice from the live DB.
+
+        Slot for :data:`ReceiveChecksScreen.arPaymentPosted`. Reads the invoice header
+        only (no edit-field reload, so unsaved manual edits are preserved) and updates:
+
+        * the PAID badge via :meth:`_sync_invoice_status_badge` (status + balance_due), and
+        * browse state (``_browse_ids`` / nav buttons), so paid invoices that drop off
+          the open list are reflected in Reverse / Forward.
+
+        Returns ``True`` when the loaded invoice was refreshed; ``False`` otherwise
+        (no DB connection, no invoice loaded, or *invoice_ids* did not include the
+        currently loaded invoice id).
+        """
+        cid = self._current_invoice_id
+        if cid is None or self._ap_conn is None:
+            return False
+        if invoice_ids is not None:
+            try:
+                wanted = {int(x) for x in invoice_ids}
+            except (TypeError, ValueError):
+                wanted = set()
+            if cid not in wanted:
+                return False
+        try:
+            inv, _lines = business.get_invoice_detail(self._ap_conn, cid)
+        except sqlite3.Error:
+            return False
+        if inv is None:
+            return False
+        d = dict(inv)
+        try:
+            bd = float(d.get("balance_due") or 0.0)
+        except (TypeError, ValueError):
+            bd = None
+        raw_st = d.get("status")
+        st_str = str(raw_st).strip() if raw_st is not None else ""
+        self._sync_invoice_status_badge(status=st_str or None, balance_due=bd)
+        self._refresh_browse_state()
+        return True
+
     def _go_to_new_invoice_draft(self) -> None:
         self._current_invoice_id = None
         self._browse_slot = None

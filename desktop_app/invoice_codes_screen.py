@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -29,7 +30,11 @@ from PySide6.QtWidgets import (
 from probooksai import business
 from probooksai.coa_db import COADatabase
 
-from desktop_app.qt_mnemonic import message_box_information_ok, message_box_warning_ok
+from desktop_app.qt_mnemonic import (
+    message_box_information_ok,
+    message_box_warning_ok,
+    tip_message_box_buttons,
+)
 from desktop_app.theme import (
     WORKFLOW_ALT_ROW as _CODE_STRIPE,
     WORKFLOW_CAPTION as _CODE_CAPTION,
@@ -95,6 +100,12 @@ class InvoiceCodesScreen(QWidget):
         super().__init__(parent)
         self._ap_conn = ap_conn
         self._coa_db = coa_db
+        # ``True`` while ``_load_from_db`` / ``_append_row`` are populating the grid programmatically;
+        # used to suppress dirty-tracking signals so the post-load baseline is "clean".
+        self._loading: bool = False
+        # ``True`` once any field in any row was changed by the user since the last load/save.
+        # Drives the Reload "discard unsaved edits?" confirmation prompt.
+        self._dirty: bool = False
         self.setToolTip(
             "Codes: default line items for invoices (Code, description, income account, rate). "
             "Same company .db as Invoices."
@@ -152,12 +163,18 @@ class InvoiceCodesScreen(QWidget):
         self._btn_add.clicked.connect(self._on_add_row)
         self._btn_del = QPushButton("Delete selected")
         self._btn_del.clicked.connect(self._on_delete_rows)
-        self._btn_save = QPushButton("Save to company file")
-        self._btn_save.setToolTip("Persist all rows to this company database (replaces the saved list).")
+        self._btn_save = QPushButton("Save")
+        self._btn_save.setToolTip(
+            "Save all Code rows to this company file (replaces the saved Codes list). "
+            "Saved rows reappear on reopen/Reload."
+        )
         self._btn_save.clicked.connect(self._on_save)
         self._btn_reload = QPushButton("Reload")
-        self._btn_reload.setToolTip("Discard unsaved edits and reload from the database.")
-        self._btn_reload.clicked.connect(self._load_from_db)
+        self._btn_reload.setToolTip(
+            "Reload the saved Codes table from the company file. "
+            "If you have unsaved edits, you will be asked to confirm before they are discarded."
+        )
+        self._btn_reload.clicked.connect(self._on_reload_clicked)
         for b in (self._btn_add, self._btn_del, self._btn_save, self._btn_reload):
             b.setAutoDefault(False)
             b.setDefault(False)
@@ -291,13 +308,36 @@ class InvoiceCodesScreen(QWidget):
         self._table.setCellWidget(r, 3, acct)
         self._table.setCellWidget(r, 4, rate)
 
+        # Dirty-tracking: any user edit flips the screen to "unsaved", which gates Reload.
+        # Programmatic population during ``_load_from_db`` is wrapped in ``self._loading=True``,
+        # so the post-load baseline stays clean.
+        code.textEdited.connect(self._mark_dirty_from_edit)
+        desc.textEdited.connect(self._mark_dirty_from_edit)
+        rate.textEdited.connect(self._mark_dirty_from_edit)
+        typ.activated.connect(self._mark_dirty_from_edit)
+        acct.activated.connect(self._mark_dirty_from_edit)
+
+    def _mark_dirty_from_edit(self, *_args: object) -> None:
+        if self._loading:
+            return
+        self._dirty = True
+
+    def has_unsaved_edits(self) -> bool:
+        """Public read of the unsaved-edits flag (used by Reload + tests)."""
+        return self._dirty
+
     def _on_add_row(self) -> None:
         self._append_row(data=None)
+        # An added empty row at the tail counts as a user edit until Save persists it.
+        self._dirty = True
 
     def _on_delete_rows(self) -> None:
         rows = sorted({i.row() for i in self._table.selectedIndexes()}, reverse=True)
+        if not rows:
+            return
         for r in rows:
             self._table.removeRow(r)
+        self._dirty = True
 
     def _collect_rows(self) -> list[dict]:
         rows: list[dict] = []
@@ -307,7 +347,7 @@ class InvoiceCodesScreen(QWidget):
             c2 = self._table.cellWidget(r, 2)
             c3 = self._table.cellWidget(r, 3)
             c4 = self._table.cellWidget(r, 4)
-            if not all(
+            if not (
                 isinstance(c0, QLineEdit)
                 and isinstance(c1, QLineEdit)
                 and isinstance(c2, QComboBox)
@@ -364,6 +404,9 @@ class InvoiceCodesScreen(QWidget):
                 ok_tip="Close and try again.",
             )
             return
+        # Reload from the DB so saved rows return in canonical alphabetical order;
+        # also clears the dirty flag because the in-grid state now matches the file.
+        self._load_from_db()
         message_box_information_ok(
             self,
             "Codes",
@@ -372,18 +415,53 @@ class InvoiceCodesScreen(QWidget):
         )
         self.codesChanged.emit()
 
+    def _on_reload_clicked(self) -> None:
+        """Reload from the company file; warn first if there are unsaved edits."""
+        if self._dirty and not self._confirm_discard_unsaved_edits():
+            return
+        self._load_from_db()
+
+    def _confirm_discard_unsaved_edits(self) -> bool:
+        """Yes/No prompt before Reload throws away unsaved Code edits."""
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle("Codes")
+        box.setText(
+            "You have unsaved edits to the Codes table.\n\n"
+            "Reload will discard those edits and reload the saved Codes from the company file."
+        )
+        box.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        box.setDefaultButton(QMessageBox.StandardButton.No)
+        box.setToolTip(
+            "Reload replaces the on-screen Codes with the version saved in the company file. "
+            "Use Save first if you want to keep your edits."
+        )
+        tip_message_box_buttons(
+            box,
+            yes="Discard unsaved Code edits and reload the saved Codes from the company file.",
+            no="Keep my unsaved Code edits on screen and cancel the Reload.",
+        )
+        return box.exec() == QMessageBox.StandardButton.Yes
+
     def _load_from_db(self) -> None:
-        self._table.setRowCount(0)
-        db_rows: list = []
-        if self._ap_conn is not None:
-            try:
-                db_rows = list(business.list_invoice_item_codes(self._ap_conn))
-            except sqlite3.Error:
-                db_rows = []
-        db_rows.sort(key=invoice_code_db_row_sort_key)
-        for row in db_rows:
-            self._append_row(data=dict(row))
-        target_rows = max(_DEFAULT_CODES_GRID_ROWS, len(db_rows))
-        while self._table.rowCount() < target_rows:
-            self._append_row(data=None)
-        self._apply_rate_column_width()
+        self._loading = True
+        try:
+            self._table.setRowCount(0)
+            db_rows: list = []
+            if self._ap_conn is not None:
+                try:
+                    db_rows = list(business.list_invoice_item_codes(self._ap_conn))
+                except sqlite3.Error:
+                    db_rows = []
+            db_rows.sort(key=invoice_code_db_row_sort_key)
+            for row in db_rows:
+                self._append_row(data=dict(row))
+            target_rows = max(_DEFAULT_CODES_GRID_ROWS, len(db_rows))
+            while self._table.rowCount() < target_rows:
+                self._append_row(data=None)
+            self._apply_rate_column_width()
+        finally:
+            self._loading = False
+        self._dirty = False

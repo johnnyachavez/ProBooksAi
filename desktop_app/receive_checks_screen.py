@@ -9,7 +9,7 @@ import sqlite3
 from collections import defaultdict
 from typing import TYPE_CHECKING, Optional
 
-from PySide6.QtCore import QDate, Qt
+from PySide6.QtCore import QDate, Qt, Signal
 from PySide6.QtGui import QColor, QTextDocument
 from PySide6.QtPrintSupport import QPrinter
 from PySide6.QtWidgets import (
@@ -96,7 +96,18 @@ def _payment_spin() -> QDoubleSpinBox:
 
 
 class ReceiveChecksScreen(QWidget):
-    """Customer payment header, open invoices from the company DB, post AR + optional bank deposit."""
+    """Customer payment header, open invoices from the company DB, post AR + optional bank deposit.
+
+    Signals
+    -------
+    arPaymentPosted(list[int])
+        Emitted after :meth:`_on_post_payment` successfully records one or more AR payments.
+        Carries the **invoice ids** (``invoice_lines.invoice_id``) that received an allocation in
+        the just-posted batch, so other screens (notably **Manual Invoice**) can refresh PAID
+        badge / balance state for an invoice they currently have open without polling.
+    """
+
+    arPaymentPosted = Signal(list)
 
     _COLS = (
         "",  # checkbox
@@ -704,6 +715,13 @@ class ReceiveChecksScreen(QWidget):
 
         self._load_invoices_from_db()
         self._sync_ar_toolbar()
+
+        # Notify peer screens (Manual Invoice) so an open invoice that just got paid
+        # refreshes its PAID badge / balance without the user navigating away.
+        if posted:
+            posted_invoice_ids = sorted({iid for allocs in by_customer.values() for iid, _ in allocs})
+            if posted_invoice_ids:
+                self.arPaymentPosted.emit(posted_invoice_ids)
 
         if bank_errors:
             message_box_warning_ok(

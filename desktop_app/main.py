@@ -1074,6 +1074,11 @@ class MainWindow(QMainWindow):
         self._invoice_codes_screen.codesChanged.connect(
             self._invoice_screen.refresh_invoice_item_codes
         )
+        # Receive Payments → Manual Invoice: live PAID badge / balance refresh for the
+        # currently open invoice when its row id is in the just-posted batch.
+        self._receive_payments_screen.arPaymentPosted.connect(
+            self._invoice_screen.refresh_loaded_invoice_payment_status
+        )
 
     def _apply_main_tab_bar_tooltips(self) -> None:
         main_tab_bar = self._tabs.tabBar()

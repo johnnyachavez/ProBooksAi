@@ -934,3 +934,95 @@ def test_invoice_line_code_cell_tooltip_documents_dropdown_typeahead(
     assert "type to filter" in tip or "narrows" in tip
     assert "auto-fill" in tip.lower() or "auto fills" in tip.lower()
     db.close()
+
+
+def test_refresh_loaded_invoice_payment_status_updates_paid_badge_for_open_invoice(
+    qapp: QApplication, tmp_path
+) -> None:
+    """After AR payment posts to the loaded invoice, badge flips to PAID without form reload."""
+    db_path = tmp_path / "inv_pay_refresh.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "PayRefreshCo")
+    inv_id = business.create_invoice(
+        db._conn,
+        cid,
+        "PR-1",
+        "2025-03-01",
+        lines=[{"description": "Svc", "qty": 1.0, "rate": 50.0}],
+    )
+    w = InvoiceScreen(ap_conn=db._conn)
+    assert w.open_invoice_by_id(inv_id) is True
+    assert w._current_invoice_id == inv_id
+    assert w._invoice_status_badge.isHidden() is True, (
+        "Open invoice (balance > 0) must not show PAID badge."
+    )
+    assert w._invoice_status_badge.text() == ""
+
+    business.record_ar_payment(
+        db._conn,
+        cid,
+        "2025-03-02",
+        50.0,
+        [(inv_id, 50.0)],
+        bank_account_id=None,
+        method="Check",
+        reference="",
+        memo="",
+    )
+
+    refreshed = w.refresh_loaded_invoice_payment_status([inv_id])
+    assert refreshed is True
+    assert w._invoice_status_badge.isHidden() is False, (
+        "Badge must become visible (PAID) when balance hits zero via Receive Payments."
+    )
+    assert w._invoice_status_badge.text() == "PAID"
+    assert w._current_invoice_id == inv_id, (
+        "Refresh must NOT clobber the loaded invoice id (Save/Print still target the same row)."
+    )
+    db.close()
+
+
+def test_refresh_loaded_invoice_payment_status_ignores_other_invoice_ids(
+    qapp: QApplication, tmp_path
+) -> None:
+    """Posting against an unrelated invoice must not refresh the currently loaded invoice."""
+    db_path = tmp_path / "inv_pay_refresh_ignore.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "OtherCo")
+    open_id = business.create_invoice(
+        db._conn,
+        cid,
+        "OPEN-1",
+        "2025-04-01",
+        lines=[{"description": "A", "qty": 1.0, "rate": 10.0}],
+    )
+    other_id = business.create_invoice(
+        db._conn,
+        cid,
+        "OTHER-1",
+        "2025-04-02",
+        lines=[{"description": "B", "qty": 1.0, "rate": 20.0}],
+    )
+    w = InvoiceScreen(ap_conn=db._conn)
+    assert w.open_invoice_by_id(open_id) is True
+    refreshed = w.refresh_loaded_invoice_payment_status([other_id])
+    assert refreshed is False, (
+        "Refresh must early-return when the posted invoice ids do not include the loaded invoice."
+    )
+    db.close()
+
+
+def test_refresh_loaded_invoice_payment_status_no_op_when_no_invoice_loaded(
+    qapp: QApplication, tmp_path
+) -> None:
+    """No invoice loaded → refresh is a clean no-op (no exception, returns False)."""
+    db_path = tmp_path / "inv_pay_refresh_noop.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    w = InvoiceScreen(ap_conn=db._conn)
+    assert w._current_invoice_id is None
+    assert w.refresh_loaded_invoice_payment_status([1, 2, 3]) is False
+    assert w.refresh_loaded_invoice_payment_status(None) is False
+    db.close()
