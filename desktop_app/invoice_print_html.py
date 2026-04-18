@@ -56,6 +56,55 @@ def _company_html(plain: str) -> str:
     return _he(t).replace("\n", "<br/>")
 
 
+def _company_identity_labeled_html(
+    *,
+    company_name: str,
+    company_address: str,
+    company_phone: str,
+    company_email: str,
+    company_tax_id: str = "",
+) -> str:
+    """Labeled company file block for print/PDF (empty fields show an em dash, not a blank box)."""
+
+    def _field_label(text: str, *, first: bool = False) -> str:
+        mt = "0" if first else "10px"
+        return (
+            f'<div style="font-weight:bold; font-size:9pt; margin-top:{mt}; '
+            f'color:#000;">{_he(text)}</div>'
+        )
+
+    def _field_value_plain(single: str) -> str:
+        t = (single or "").strip()
+        if not t:
+            return '<span style="color:#555;">—</span>'
+        return _he(t)
+
+    def _field_value_multiline(block: str) -> str:
+        t = (block or "").strip()
+        if not t:
+            return '<span style="color:#555;">—</span>'
+        return _he(t).replace("\n", "<br/>")
+
+    parts: list[str] = [
+        _field_label("Company Name", first=True),
+        f'<div style="padding:2px 0 0 0;">{_field_value_plain(company_name)}</div>',
+        _field_label("Address"),
+        f'<div style="padding:2px 0 0 0;">{_field_value_multiline(company_address)}</div>',
+        _field_label("Phone"),
+        f'<div style="padding:2px 0 0 0;">{_field_value_plain(company_phone)}</div>',
+        _field_label("Email"),
+        f'<div style="padding:2px 0 0 0;">{_field_value_plain(company_email)}</div>',
+    ]
+    if (company_tax_id or "").strip():
+        parts.extend(
+            [
+                _field_label("Tax ID"),
+                f'<div style="padding:2px 0 0 0;">{_field_value_plain(company_tax_id)}</div>',
+            ]
+        )
+    return "".join(parts)
+
+
 def _footer_html(plain: str) -> str:
     t = (plain or "").strip()
     if not t:
@@ -65,7 +114,11 @@ def _footer_html(plain: str) -> str:
 
 def build_invoice_print_html(
     *,
-    company_block_plain: str = "",
+    company_name: str = "",
+    company_address: str = "",
+    company_phone: str = "",
+    company_email: str = "",
+    company_tax_id: str = "",
     invoice_date: str = "",
     invoice_number: str = "",
     bill_to_plain: str = "",
@@ -79,8 +132,8 @@ def build_invoice_print_html(
     """
     Trucking-style invoice layout for QTextDocument print/PDF.
 
-    **Header (above the line grid):** left column — invoice title, date, invoice #, PO/job;
-    right column — company identity block and Bill To (caller supplies plain text from the company file).
+    **Header (above the line grid):** **Left** — invoice title, date, invoice #, PO/contract, name/job.
+    **Right** — company file identity (labeled: name, address, phone, email) and Bill To.
 
     ``line_rows`` tuples are
     ``(serviced_on, jl_num, description, bol, rate, qty, amount)`` — caller supplies
@@ -161,7 +214,15 @@ def build_invoice_print_html(
         'style="border:1px solid #000; border-collapse:collapse;">',
         '<tr><th style="text-align:left; padding:5px 8px; font-weight:bold; border-bottom:1px solid #000;">'
         "COMPANY</th></tr>",
-        f'<tr><td valign="top" style="min-height:72px;">{_company_html(company_block_plain)}</td></tr>',
+        "<tr><td valign=\"top\" style=\"min-height:72px; padding:8px;\">"
+        + _company_identity_labeled_html(
+            company_name=company_name,
+            company_address=company_address,
+            company_phone=company_phone,
+            company_email=company_email,
+            company_tax_id=company_tax_id,
+        )
+        + "</td></tr>",
         "</table>",
         '<table width="100%" cellspacing="0" cellpadding="0" '
         'style="border:1px solid #000; border-collapse:collapse; margin-top:10px;">',

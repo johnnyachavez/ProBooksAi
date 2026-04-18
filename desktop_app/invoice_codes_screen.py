@@ -10,6 +10,7 @@ import sqlite3
 from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -42,6 +43,11 @@ from desktop_app.theme import (
 
 _ITEM_TYPES = ("Service", "Discount", "Other Charge")
 
+# Default working grid: at least this many rows (empty tail unless DB has more codes).
+_DEFAULT_CODES_GRID_ROWS = 50
+# Rate column: never narrower than this many "0" digits at the table font (pins visually on the right).
+_RATE_COLUMN_MIN_CHARS = 8
+
 
 def parse_rate_input(raw: str) -> tuple[float, str]:
     """Return ``(rate_value, rate_kind)`` where kind is ``amount`` or ``percent``."""
@@ -63,6 +69,15 @@ def format_rate_display(rate_value: float, rate_kind: str) -> str:
     if (rate_kind or "").lower() == "percent":
         return f"{rate_value:.1f}%"
     return f"{rate_value:.2f}"
+
+
+def invoice_code_db_row_sort_key(row: object) -> tuple:
+    """Sort saved codes alphabetically by Code (case-insensitive), then ``sort_order`` for stability."""
+    d = dict(row)
+    return (
+        (d.get("code") or "").strip().lower(),
+        int(d.get("sort_order") or 0),
+    )
 
 
 class InvoiceCodesScreen(QWidget):
@@ -177,9 +192,11 @@ class InvoiceCodesScreen(QWidget):
             ["Code", "Description", "Type", "Account", "Rate"]
         )
         hh = self._table.horizontalHeader()
-        for c in range(5):
-            hh.setSectionResizeMode(c, QHeaderView.ResizeMode.Interactive)
-        hh.setStretchLastSection(True)
+        # Code–Account stretch; Rate fixed width at the right (min ~8 chars), not absorbing extra width.
+        hh.setStretchLastSection(False)
+        for c in range(4):
+            hh.setSectionResizeMode(c, QHeaderView.ResizeMode.Stretch)
+        hh.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
         self._table.setAlternatingRowColors(True)
         self._table.setShowGrid(True)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -202,6 +219,15 @@ class InvoiceCodesScreen(QWidget):
         )
         play.addWidget(self._table, 1)
         outer.addWidget(page, 1)
+
+    def _rate_column_min_width_px(self) -> int:
+        """Minimum Rate column width: at least eight typical digit widths + cell padding."""
+        fm = QFontMetrics(self._table.font())
+        return fm.horizontalAdvance("0" * _RATE_COLUMN_MIN_CHARS) + 28
+
+    def _apply_rate_column_width(self) -> None:
+        w = max(self._rate_column_min_width_px(), self._table.columnWidth(4))
+        self._table.setColumnWidth(4, w)
 
     def _style_line_edit(self, le: QLineEdit) -> None:
         le.setStyleSheet(
@@ -348,13 +374,16 @@ class InvoiceCodesScreen(QWidget):
 
     def _load_from_db(self) -> None:
         self._table.setRowCount(0)
-        if self._ap_conn is None:
-            return
-        try:
-            db_rows = business.list_invoice_item_codes(self._ap_conn)
-        except sqlite3.Error:
-            return
+        db_rows: list = []
+        if self._ap_conn is not None:
+            try:
+                db_rows = list(business.list_invoice_item_codes(self._ap_conn))
+            except sqlite3.Error:
+                db_rows = []
+        db_rows.sort(key=invoice_code_db_row_sort_key)
         for row in db_rows:
-            d = dict(row)
-            self._append_row(data=d)
-        self._table.resizeColumnsToContents()
+            self._append_row(data=dict(row))
+        target_rows = max(_DEFAULT_CODES_GRID_ROWS, len(db_rows))
+        while self._table.rowCount() < target_rows:
+            self._append_row(data=None)
+        self._apply_rate_column_width()

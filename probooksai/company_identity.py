@@ -37,6 +37,17 @@ def save_company_identity(
     set_setting(conn, KEY_COMPANY_TAX_ID, (tax_id or "").strip())
 
 
+def company_identity_print_fields(conn: sqlite3.Connection) -> dict[str, str]:
+    """Values for invoice print/PDF company header (same keys as :func:`company_identity_plain_block`)."""
+    return {
+        "name": get_setting(conn, KEY_COMPANY_NAME, "").strip(),
+        "address": get_setting(conn, KEY_COMPANY_ADDRESS, "").strip(),
+        "phone": get_setting(conn, KEY_COMPANY_PHONE, "").strip(),
+        "email": get_setting(conn, KEY_COMPANY_EMAIL, "").strip(),
+        "tax_id": get_setting(conn, KEY_COMPANY_TAX_ID, "").strip(),
+    }
+
+
 def company_identity_plain_block(conn: sqlite3.Connection) -> str:
     """Multi-line plain text for invoice/PDF top-left company block (empty lines omitted)."""
     name = get_setting(conn, KEY_COMPANY_NAME, "").strip()
