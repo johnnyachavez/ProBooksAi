@@ -91,6 +91,41 @@ def test_enter_bills_clear_resets_rows(qapp: QApplication) -> None:
     assert job.text() == ""
 
 
+def test_enter_bills_header_and_line_dates_normalize_flexible_input(qapp: QApplication) -> None:
+    """Bill date, due date, and the line-item Date column accept the Invoice-screen flexible formats."""
+    w = EnterBillsScreen()
+
+    w._bill_date.setText("5/21/26")
+    w._bill_date.editingFinished.emit()
+    assert w._bill_date.text() == "05/21/2026"
+
+    w._bill_date.setText("05.21.26")
+    w._bill_date.editingFinished.emit()
+    assert w._bill_date.text() == "05/21/2026"
+
+    w._bill_date.setText("052126")
+    w._bill_date.editingFinished.emit()
+    assert w._bill_date.text() == "05/21/2026"
+
+    w._due_date.setText("12/3/27")
+    w._due_date.editingFinished.emit()
+    assert w._due_date.text() == "12/03/2027"
+
+    t = w._table
+    dt = t.cellWidget(0, 0)
+    assert isinstance(dt, QLineEdit)
+    assert dt.placeholderText() == "MM/DD/YYYY"
+    for typed, expected in (
+        ("5/21/26", "05/21/2026"),
+        ("05.21.26", "05/21/2026"),
+        ("052126", "05/21/2026"),
+        ("12/3/2027", "12/03/2027"),
+    ):
+        dt.setText(typed)
+        dt.editingFinished.emit()
+        assert dt.text() == expected, f"line date {typed!r} → {dt.text()!r}"
+
+
 def test_enter_bills_vendor_selection_fills_address(qapp: QApplication, tmp_path) -> None:
     db_path = tmp_path / "enter_bills_vendors.db"
     db = BankDatabase(str(db_path))

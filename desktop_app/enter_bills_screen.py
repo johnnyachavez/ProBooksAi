@@ -99,6 +99,13 @@ def _table_line_edit() -> QLineEdit:
     return le
 
 
+def _table_line_date_edit() -> QLineEdit:
+    """Line **Date** column: same flexible-typed US-date normalization as the Invoice screen."""
+    le = _table_line_edit()
+    attach_line_edit_us_date_normalization(le)
+    return le
+
+
 def _format_vendor_address_row(row: dict) -> str:
     """Build a multi-line address block from a ``vendors`` row."""
     lines: list[str] = []
@@ -229,6 +236,10 @@ class EnterBillsScreen(QWidget):
         self._bill_date.setText(format_ymd_as_us(qd.month(), qd.day(), qd.year()))
         self._bill_date.setPlaceholderText("MM/DD/YYYY")
         self._bill_date.setStyleSheet(_hdr_le_style)
+        self._bill_date.setToolTip(
+            "Bill date: type flexibly (e.g. 5/21/26, 05.21.26, 052126); "
+            "normalized to MM/DD/YYYY on commit. Stored as YYYY-MM-DD."
+        )
         attach_line_edit_us_date_normalization(self._bill_date)
 
         self._vendor_inv = QLineEdit()
@@ -236,8 +247,12 @@ class EnterBillsScreen(QWidget):
         self._vendor_inv.setStyleSheet(_hdr_le_style)
 
         self._due_date = QLineEdit()
-        self._due_date.setPlaceholderText("Due date (optional)")
+        self._due_date.setPlaceholderText("MM/DD/YYYY (optional)")
         self._due_date.setStyleSheet(_hdr_le_style)
+        self._due_date.setToolTip(
+            "Due date (optional): type flexibly (e.g. 5/21/26, 05.21.26, 052126); "
+            "normalized to MM/DD/YYYY on commit."
+        )
         attach_line_edit_us_date_normalization(self._due_date)
 
         self._header_memo = QLineEdit()
@@ -331,8 +346,12 @@ class EnterBillsScreen(QWidget):
             | Qt.ItemFlag.ItemIsEditable
         )
         for row in range(self._N_EXPENSE_ROWS):
-            dt = _table_line_edit()
-            dt.setPlaceholderText("Date")
+            dt = _table_line_date_edit()
+            dt.setPlaceholderText("MM/DD/YYYY")
+            dt.setToolTip(
+                "Line date: type flexibly (e.g. 5/21/26, 05.21.26, 052126); "
+                "normalized to MM/DD/YYYY on commit."
+            )
             self._table.setCellWidget(row, 0, dt)
 
             ticket = _table_line_edit()
