@@ -3923,6 +3923,29 @@ def test_main_window_intake_coa_display_list_before_detail_pane_ctor_order() -> 
     assert cd < dp
 
 
+def test_desktop_main_detail_pane_doc_dates_use_invoice_style_flexible_typed_input() -> None:
+    """``DetailPane`` Document Date / Due Date use the same flexible typed-input behavior as the Invoice screen."""
+    text = _MAIN.read_text(encoding="utf-8")
+    assert "from desktop_app.flexible_date import (" in text
+    assert "attach_line_edit_us_date_normalization," in text
+    assert "format_iso_to_us_display," in text
+    assert "line_edit_to_iso_or_raw," in text
+    dp = text.index("class DetailPane(QScrollArea):")
+    init = text.index("    def __init__(self, coa_list: list[str], parent=None):", dp)
+    fs = text.index("        # -- Extracted fields ", init)
+    fe = text.index("        form.addRow(\"Vendor / Customer:\", self._f_vendor)", fs)
+    chunk = text[fs:fe]
+    assert chunk.count("attach_line_edit_us_date_normalization(self._f_date)") == 1
+    assert chunk.count("attach_line_edit_us_date_normalization(self._f_due_date)") == 1
+    assert 'self._f_date.setPlaceholderText("MM/DD/YYYY")' in chunk
+    assert 'self._f_due_date.setPlaceholderText("MM/DD/YYYY (optional)")' in chunk
+    cav_s = text.index("    def collect_approved_values(self) -> dict:")
+    cav_e = text.index("    # -- private helpers", cav_s)
+    cav = text[cav_s:cav_e]
+    assert "line_edit_to_iso_or_raw(self._f_date) or None" in cav
+    assert "line_edit_to_iso_or_raw(self._f_due_date) or None" in cav
+
+
 def test_desktop_main_detail_pane_extracted_fields_widget_ctor_vendor_through_notes_order() -> None:
     """``DetailPane.__init__`` constructs extracted-field widgets **vendor → … → notes** before ``form.addRow``."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -4422,7 +4445,9 @@ def test_desktop_main_detail_pane_collect_approved_values_keys_match_approved_va
         assert chunk.count(f'"{key}":') == 1, key
     assert chunk.count("self._coa_combo_raw_value()") == 1
     assert 'self._f_currency.text().strip() or "USD"' in chunk
-    assert chunk.count(".strip() or None") == 6
+    assert chunk.count(".strip() or None") == 4
+    assert chunk.count("line_edit_to_iso_or_raw(self._f_date) or None") == 1
+    assert chunk.count("line_edit_to_iso_or_raw(self._f_due_date) or None") == 1
     assert "self._f_notes.toPlainText().strip() or None" in chunk
 
 
@@ -4539,8 +4564,8 @@ def test_desktop_main_detail_pane_populate_fields_widget_assignment_order() -> N
     dt = chunk.index('idx = self._f_doctype.findText(row["doc_type"] or "")')
     dt_idx = chunk.index("self._f_doctype.setCurrentIndex(idx)")
     inv = chunk.index('self._f_inv_num.setText(row["invoice_number"] or "")')
-    d = chunk.index('self._f_date.setText(row["doc_date"] or "")')
-    due = chunk.index('self._f_due_date.setText(row["due_date"] or "")')
+    d = chunk.index('self._f_date.setText(format_iso_to_us_display(row["doc_date"] or ""))')
+    due = chunk.index('self._f_due_date.setText(format_iso_to_us_display(row["due_date"] or ""))')
     sub = chunk.index('self._f_subtotal.setValue(float(row["subtotal"] or 0))')
     tax = chunk.index('self._f_tax.setValue(float(row["tax"] or 0))')
     tot = chunk.index('self._f_total.setValue(float(row["total"] or 0))')
@@ -4579,8 +4604,8 @@ def test_desktop_main_detail_pane_populate_fields_from_extraction_widget_assignm
     dt = chunk.index('idx = self._f_doctype.findText(result.doc_type or "")')
     dt_idx = chunk.index("self._f_doctype.setCurrentIndex(idx)")
     inv = chunk.index('self._f_inv_num.setText(result.invoice_number or "")')
-    d = chunk.index('self._f_date.setText(result.doc_date or "")')
-    due = chunk.index('self._f_due_date.setText(result.due_date or "")')
+    d = chunk.index('self._f_date.setText(format_iso_to_us_display(result.doc_date or ""))')
+    due = chunk.index('self._f_due_date.setText(format_iso_to_us_display(result.due_date or ""))')
     sub = chunk.index("self._f_subtotal.setValue(float(result.subtotal or 0))")
     tax = chunk.index("self._f_tax.setValue(float(result.tax or 0))")
     tot = chunk.index("self._f_total.setValue(float(result.total or 0))")

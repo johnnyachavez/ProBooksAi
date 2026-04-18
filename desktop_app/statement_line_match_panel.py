@@ -38,6 +38,11 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from desktop_app.flexible_date import (
+    attach_line_edit_us_date_normalization,
+    format_iso_to_us_display,
+    line_edit_to_iso_or_raw,
+)
 from desktop_app.bank_import_csv_export_paths import (
     bank_import_csv_default_save_path,
     remember_bank_import_csv_export_parent,
@@ -699,8 +704,13 @@ class StatementLineMatchPanel(QGroupBox):
             it_n.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
             t.setItem(nr, 0, it_n)
 
-            de = QLineEdit(str(row.get("stmt_date") or ""))
-            de.setPlaceholderText("Stmt date")
+            de = QLineEdit(format_iso_to_us_display(str(row.get("stmt_date") or "")))
+            de.setPlaceholderText("MM/DD/YYYY")
+            de.setToolTip(
+                "Statement date: type flexibly (e.g. 5/21/26, 05.21.26, 052126); "
+                "normalized to MM/DD/YYYY on commit. Stored as YYYY-MM-DD."
+            )
+            attach_line_edit_us_date_normalization(de)
             de.editingFinished.connect(
                 lambda mid=master_idx, w=de: self._on_needs_review_date_changed(mid, w)
             )
@@ -783,7 +793,8 @@ class StatementLineMatchPanel(QGroupBox):
     def _on_needs_review_date_changed(self, master_idx: int, w: QLineEdit) -> None:
         if self._populating or master_idx >= len(self._rows):
             return
-        self._rows[master_idx]["stmt_date"] = (w.text() or "").strip()
+        iso_or_raw = (line_edit_to_iso_or_raw(w) or "").strip()
+        self._rows[master_idx]["stmt_date"] = iso_or_raw
         self._refresh_main_stmt_cells(master_idx)
         self._persist_review_row(master_idx)
 

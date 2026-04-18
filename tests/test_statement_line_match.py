@@ -9,6 +9,28 @@ from unittest.mock import patch
 
 import pytest
 
+_STATEMENT_LINE_MATCH_PANEL = (
+    Path(__file__).resolve().parents[1] / "desktop_app" / "statement_line_match_panel.py"
+)
+
+
+def test_needs_review_stmt_date_uses_invoice_style_flexible_typed_input() -> None:
+    """Needs Review *Stmt date* cell editor follows the same flexible-typed/MM-DD-YYYY convention."""
+    text = _STATEMENT_LINE_MATCH_PANEL.read_text(encoding="utf-8")
+    assert "from desktop_app.flexible_date import (" in text
+    assert "attach_line_edit_us_date_normalization," in text
+    assert "format_iso_to_us_display," in text
+    assert "line_edit_to_iso_or_raw," in text
+    assert (
+        'de = QLineEdit(format_iso_to_us_display(str(row.get("stmt_date") or "")))'
+        in text
+    )
+    assert 'de.setPlaceholderText("MM/DD/YYYY")' in text
+    assert "attach_line_edit_us_date_normalization(de)" in text
+    assert "iso_or_raw = (line_edit_to_iso_or_raw(w) or \"\").strip()" in text
+    assert 'self._rows[master_idx]["stmt_date"] = iso_or_raw' in text
+
+
 from probooksai.statement_line_match import (
     STATUS_EXTRA,
     STATUS_LIKELY_MATCH,

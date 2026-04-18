@@ -81,6 +81,11 @@ from desktop_app.bank_import_tab import (
     show_bank_import_keyboard_shortcuts_dialog,
 )
 from desktop_app.coa_tab import COATab
+from desktop_app.flexible_date import (
+    attach_line_edit_us_date_normalization,
+    format_iso_to_us_display,
+    line_edit_to_iso_or_raw,
+)
 from desktop_app.register_tab import RegisterTab, show_register_keyboard_shortcuts_dialog
 from desktop_app.reports_tab import ReportsTab
 from desktop_app.journal_tab import JournalTab
@@ -436,9 +441,19 @@ class DetailPane(QScrollArea):
         self._f_inv_num  = QLineEdit()
         self._f_inv_num.setToolTip("Invoice, bill, or reference number from extraction.")
         self._f_date     = QLineEdit()
-        self._f_date.setToolTip("Document date (often yyyy-mm-dd; match what appears on the source).")
+        self._f_date.setPlaceholderText("MM/DD/YYYY")
+        self._f_date.setToolTip(
+            "Document date: type flexibly (e.g. 5/21/26, 05.21.26, 052126); "
+            "normalized to MM/DD/YYYY on commit. Stored as YYYY-MM-DD."
+        )
+        attach_line_edit_us_date_normalization(self._f_date)
         self._f_due_date = QLineEdit()
-        self._f_due_date.setToolTip("Due or pay-by date if present on the document.")
+        self._f_due_date.setPlaceholderText("MM/DD/YYYY (optional)")
+        self._f_due_date.setToolTip(
+            "Due or pay-by date if present on the document: type flexibly "
+            "(e.g. 5/21/26, 05.21.26, 052126); normalized to MM/DD/YYYY on commit."
+        )
+        attach_line_edit_us_date_normalization(self._f_due_date)
         self._f_subtotal = QDoubleSpinBox()
         self._f_subtotal.setMaximum(9_999_999)
         self._f_subtotal.setDecimals(2)
@@ -601,8 +616,8 @@ class DetailPane(QScrollArea):
             "vendor":         self._f_vendor.text().strip() or None,
             "doc_type":       self._f_doctype.currentText(),
             "invoice_number": self._f_inv_num.text().strip() or None,
-            "doc_date":       self._f_date.text().strip() or None,
-            "due_date":       self._f_due_date.text().strip() or None,
+            "doc_date":       (line_edit_to_iso_or_raw(self._f_date) or None),
+            "due_date":       (line_edit_to_iso_or_raw(self._f_due_date) or None),
             "subtotal":       self._f_subtotal.value() or None,
             "tax":            self._f_tax.value() or None,
             "total":          self._f_total.value() or None,
@@ -645,8 +660,8 @@ class DetailPane(QScrollArea):
         if idx >= 0:
             self._f_doctype.setCurrentIndex(idx)
         self._f_inv_num.setText(row["invoice_number"] or "")
-        self._f_date.setText(row["doc_date"] or "")
-        self._f_due_date.setText(row["due_date"] or "")
+        self._f_date.setText(format_iso_to_us_display(row["doc_date"] or ""))
+        self._f_due_date.setText(format_iso_to_us_display(row["due_date"] or ""))
         self._f_subtotal.setValue(float(row["subtotal"] or 0))
         self._f_tax.setValue(float(row["tax"] or 0))
         self._f_total.setValue(float(row["total"] or 0))
@@ -659,8 +674,8 @@ class DetailPane(QScrollArea):
         if idx >= 0:
             self._f_doctype.setCurrentIndex(idx)
         self._f_inv_num.setText(result.invoice_number or "")
-        self._f_date.setText(result.doc_date or "")
-        self._f_due_date.setText(result.due_date or "")
+        self._f_date.setText(format_iso_to_us_display(result.doc_date or ""))
+        self._f_due_date.setText(format_iso_to_us_display(result.due_date or ""))
         self._f_subtotal.setValue(float(result.subtotal or 0))
         self._f_tax.setValue(float(result.tax or 0))
         self._f_total.setValue(float(result.total or 0))
