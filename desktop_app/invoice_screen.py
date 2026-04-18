@@ -198,6 +198,43 @@ def _cell_line() -> QLineEdit:
     return le
 
 
+class _InvoiceCodeLineEdit(QLineEdit):
+    """Manual Invoice line **Code** field: ``QLineEdit`` that opens its completer popup on focus/click.
+
+    Behaves as a dropdown + type-ahead picker backed by the saved **Codes** table:
+
+    * Clicking or focusing the cell shows the full saved-Codes list (when a completer is attached).
+    * Typing narrows the popup live (case-insensitive prefix match via the attached
+      :class:`PySide6.QtWidgets.QCompleter`).
+    * ``isinstance(widget, QLineEdit)`` stays true so existing save/load paths keep using ``.text()``.
+    """
+
+    def _show_invoice_code_completer_popup(self) -> None:
+        comp = self.completer()
+        if comp is None:
+            return
+        comp.setCompletionPrefix(self.text())
+        comp.complete()
+
+    def focusInEvent(self, event) -> None:  # noqa: D401 - Qt signature
+        super().focusInEvent(event)
+        QTimer.singleShot(0, self._show_invoice_code_completer_popup)
+
+    def mousePressEvent(self, event) -> None:  # noqa: D401 - Qt signature
+        super().mousePressEvent(event)
+        self._show_invoice_code_completer_popup()
+
+
+def _cell_line_invoice_code() -> _InvoiceCodeLineEdit:
+    """Manual Invoice line **Code** column widget (dropdown + type-ahead, same styling as ``_cell_line``)."""
+    le = _InvoiceCodeLineEdit()
+    le.setStyleSheet(
+        f"QLineEdit {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_INV_GRID}; "
+        f"padding: 2px 6px; color: {_INV_TEXT}; }}"
+    )
+    return le
+
+
 def _cell_line_date() -> QLineEdit:
     """Line **Date** column: same US-date normalization as the invoice header date field."""
     le = _cell_line()
@@ -780,8 +817,14 @@ class InvoiceScreen(QWidget):
             dt.setPlaceholderText("Date")
             self._table.setCellWidget(row, 0, dt)
 
-            code = _cell_line()
-            code.setPlaceholderText("Code")
+            code = _cell_line_invoice_code()
+            code.setPlaceholderText("Code (click for list)")
+            code.setToolTip(
+                "Pick an invoice code from the saved Codes list, or type to filter. "
+                "Click or focus to open the dropdown; typing narrows choices live. "
+                "Selecting a saved Code auto-fills Description and Rate on this line "
+                "(your manual Rate edits are kept until you change the Code again)."
+            )
             self._table.setCellWidget(row, 1, code)
 
             desc = _cell_line()
@@ -1372,7 +1415,12 @@ class InvoiceScreen(QWidget):
                     )
 
     def _setup_invoice_code_helpers(self) -> None:
-        """QCompleter from ``invoice_item_codes``; apply default rate/description when Code text changes."""
+        """QCompleter from ``invoice_item_codes``; apply default rate/description when Code text changes.
+
+        Each Code cell is an :class:`_InvoiceCodeLineEdit`, so clicking or focusing
+        opens the completer popup as a real dropdown list of saved codes; typing
+        narrows the popup live (case-insensitive prefix filter).
+        """
         self._invoice_code_completers: list[QCompleter] = []
         for row in range(self._N_LINE_ROWS):
             code_w = self._table.cellWidget(row, 1)
@@ -1381,6 +1429,7 @@ class InvoiceScreen(QWidget):
             comp = QCompleter(self)
             comp.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
             comp.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+            comp.setFilterMode(Qt.MatchFlag.MatchContains)
             code_w.setCompleter(comp)
             self._invoice_code_completers.append(comp)
             code_w.editingFinished.connect(

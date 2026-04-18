@@ -25,6 +25,7 @@ from desktop_app import invoice_screen as invoice_screen_module
 from desktop_app.invoice_screen import (
     InvoiceScreen,
     _INVOICE_LINE_ROW_MIN_HEIGHT_PX,
+    _InvoiceCodeLineEdit,
     _invoice_line_table_qsettings,
 )
 from probooksai import business
@@ -826,4 +827,110 @@ def test_invoice_line_code_applies_rate_from_invoice_item_codes(
     code_w.setText("NOPE")
     w._on_invoice_line_code_committed(0)
     assert abs(rate_w.value() - 99.0) < 0.01
+    db.close()
+
+
+def test_invoice_line_code_widget_is_dropdown_typeahead_backed_by_codes_table(
+    qapp: QApplication, tmp_path
+) -> None:
+    """Code column widget is the dropdown/type-ahead :class:`_InvoiceCodeLineEdit` with a populated completer."""
+    db_path = tmp_path / "inv_code_dropdown.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    business.replace_invoice_item_codes(
+        db._conn,
+        [
+            {
+                "code": "SRV-A",
+                "description": "Service A",
+                "item_type": "Service",
+                "coa_account": "",
+                "rate_value": 10.0,
+                "rate_kind": "amount",
+                "sort_order": 0,
+            },
+            {
+                "code": "SRV-B",
+                "description": "Service B",
+                "item_type": "Service",
+                "coa_account": "",
+                "rate_value": 20.0,
+                "rate_kind": "amount",
+                "sort_order": 1,
+            },
+            {
+                "code": "MISC",
+                "description": "Misc",
+                "item_type": "Service",
+                "coa_account": "",
+                "rate_value": 5.0,
+                "rate_kind": "amount",
+                "sort_order": 2,
+            },
+        ],
+    )
+    w = InvoiceScreen(ap_conn=db._conn)
+    w.show()
+    qapp.processEvents()
+    w.refresh_invoice_item_codes()
+
+    code_w = w._table.cellWidget(0, 1)
+    assert isinstance(code_w, _InvoiceCodeLineEdit), (
+        "Manual Invoice Code column must use _InvoiceCodeLineEdit (dropdown + type-ahead)."
+    )
+    assert isinstance(code_w, QLineEdit), (
+        "_InvoiceCodeLineEdit must remain a QLineEdit so save/load paths keep using .text()."
+    )
+
+    comp = code_w.completer()
+    assert comp is not None, "Code cell must have a QCompleter attached."
+    assert comp.caseSensitivity() == Qt.CaseSensitivity.CaseInsensitive
+    model = comp.model()
+    assert model is not None
+    saved_codes = {model.data(model.index(r, 0)) for r in range(model.rowCount())}
+    assert {"SRV-A", "SRV-B", "MISC"} <= saved_codes
+
+    code_w.clear()
+    code_w._show_invoice_code_completer_popup()
+    qapp.processEvents()
+    popup = comp.popup()
+    assert popup is not None and popup.isVisible(), (
+        "Empty Code field must open the saved-Codes dropdown when focused/clicked."
+    )
+    assert comp.completionCount() == len(saved_codes), (
+        "Empty completion prefix should list every saved Code."
+    )
+    popup.hide()
+
+    code_w.setText("SRV")
+    code_w._show_invoice_code_completer_popup()
+    qapp.processEvents()
+    assert comp.completionPrefix() == "SRV"
+    assert comp.completionCount() == 2, (
+        "Typing 'SRV' must narrow the dropdown to the two SRV-* codes."
+    )
+    popup = comp.popup()
+    assert popup is not None and popup.isVisible()
+    popup.hide()
+
+    db.close()
+
+
+def test_invoice_line_code_cell_tooltip_documents_dropdown_typeahead(
+    qapp: QApplication, tmp_path
+) -> None:
+    """Code cell tooltip and placeholder mention the dropdown + type-ahead behavior."""
+    db_path = tmp_path / "inv_code_tooltip.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    w = InvoiceScreen(ap_conn=db._conn)
+    w.show()
+    qapp.processEvents()
+    code_w = w._table.cellWidget(0, 1)
+    assert isinstance(code_w, _InvoiceCodeLineEdit)
+    assert "click" in code_w.placeholderText().lower() or "list" in code_w.placeholderText().lower()
+    tip = code_w.toolTip()
+    assert "saved Codes" in tip
+    assert "type to filter" in tip or "narrows" in tip
+    assert "auto-fill" in tip.lower() or "auto fills" in tip.lower()
     db.close()

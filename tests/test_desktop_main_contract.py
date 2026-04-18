@@ -476,9 +476,9 @@ def test_view_menu_tab_actions_use_menu_action_tip_only() -> None:
     start = text.index("# View menu")
     end = text.index("# Edit menu", start)
     chunk = text[start:end]
-    assert chunk.count('("Ctrl+') == 10
+    assert chunk.count('("Ctrl+') == 11
     assert chunk.count("act = QAction(") == 1
-    assert chunk.count("_menu_action_tip(") == 1
+    assert chunk.count("_menu_action_tip(") == 3
     assert "view_menu.addAction(act)" in chunk
     assert "act.setToolTip(" not in chunk
     assert "act.setStatusTip(" not in chunk
@@ -685,7 +685,7 @@ def test_main_tab_widgets_have_root_hover_tooltips() -> None:
     reg = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
     assert "Bank register for one account:" in reg
     assert "Bank Import AI line reconciliation can populate it" in reg
-    assert "View → Reconcile (Ctrl+9) → Bank statements; Bank Register (Ctrl+5)." in reg
+    assert "View → Reconcile (Ctrl+0) → Bank statements; Bank Register (Ctrl+6)." in reg
     assert "and export CSV (UTF-8 BOM for Excel)" in reg
 
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
@@ -858,7 +858,7 @@ def test_main_window_no_toolbar_menu_bar_qaction_counts() -> None:
     assert "# Toolbar" not in bu_chunk
     mb_s = text.index("def _build_menu_bar")
     mb_e = text.index("def dragEnterEvent", mb_s)
-    assert text[mb_s:mb_e].count("QAction(") == 35
+    assert text[mb_s:mb_e].count("QAction(") == 36
 
 
 def test_file_menu_import_wires_on_import_and_mentions_ctrl_o() -> None:
@@ -1091,7 +1091,7 @@ def test_main_window_init_wires_databases_build_ui_and_refresh() -> None:
     end = text.index("    # -- UI construction", start)
     chunk = text[start:end]
     assert chunk.count("super().__init__()") == 1
-    assert chunk.count("self.resize(1100, 700)") == 1
+    assert chunk.count("self._restore_main_window_geometry()") == 1
     assert chunk.count("self._db_path = db_path") == 1
     assert chunk.count("DocumentDatabase(") == 1
     assert chunk.count("BankDatabase(") == 1
@@ -1132,13 +1132,13 @@ def test_main_window_init_database_and_ui_bootstrap_order() -> None:
 
 
 def test_main_window_init_super_resize_before_db_path_assignment_order() -> None:
-    """``MainWindow.__init__`` calls ``super``, resizes the window, then records ``_db_path``."""
+    """``MainWindow.__init__`` calls ``super``, restores geometry, then records ``_db_path``."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def __init__(self, db_path: str | None = None):")
     end = text.index("    # -- UI construction", start)
     chunk = text[start:end]
     su = chunk.index("super().__init__()")
-    rs = chunk.index("self.resize(1100, 700)")
+    rs = chunk.index("self._restore_main_window_geometry()")
     dp = chunk.index("self._db_path = db_path")
     assert su < rs < dp
 
@@ -1711,7 +1711,7 @@ def test_main_window_on_open_company_database_reads_settings_and_switches() -> N
     """``_on_open_company_database`` uses QSettings start dir and delegates to switch (not create)."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _on_open_company_database(self):")
-    end = text.index("    def _on_new_company_database(self):", start)
+    end = text.index("    def _on_create_company_file(self) -> None:", start)
     chunk = text[start:end]
     assert chunk.count('QSettings().value("company_database_path", "", type=str)') == 1
     assert (
@@ -2422,13 +2422,13 @@ def test_main_window_build_ui_wires_stmt_match_sync_focus_register() -> None:
 
 
 def test_main_window_build_menu_bar_wires_all_action_triggers() -> None:
-    """Every enabled menu ``QAction`` wires ``triggered.connect`` (30 wired; 5 disabled stubs)."""
+    """Every enabled menu ``QAction`` wires ``triggered.connect`` (31 wired; 5 disabled stubs)."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _build_menu_bar(self):")
     end = text.index("    # -- drag & drop on window", start)
     chunk = text[start:end]
-    assert chunk.count("QAction(") == 35
-    assert chunk.count(".triggered.connect(") == 30
+    assert chunk.count("QAction(") == 36
+    assert chunk.count(".triggered.connect(") == 31
     assert (
         chunk.count(
             "lambda checked=False, i=idx: self._set_main_tab_index(i)"
@@ -2523,9 +2523,9 @@ def test_main_window_set_tab_sync_title_and_company_status_helpers() -> None:
     assert 'self._header.set_company_name("No company file")' in chunk
     assert 'self.setWindowTitle(f"ProBooks+ai – Desktop v{ver}")' in chunk
     assert chunk.count("escape_ampersand_for_qt(Path(p).name)") == 1
-    assert chunk.count("self._header.set_company_name(Path(p).name)") == 1
+    assert chunk.count("self._header.set_company_name(display)") == 1
     assert 'f"Company: {p}  \\u2013  drag & drop or Import;' in chunk
-    assert "Reconcile → Bank statements (Ctrl+9)" in chunk
+    assert "Reconcile → Bank statements (Ctrl+0)" in chunk
 
 
 def test_main_window_sync_window_title_includes_company_name_or_desktop_only() -> None:
@@ -2857,8 +2857,8 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
     )
     assert per_menu_add == (10, 1, 3, 1, 7), (
         f"expected top-level addAction counts (File,View,Edit,Tools,Help)=(10,1,3,1,7); "
-        f"Recon register actions use 13 submenu addAction (counted separately); "
-        f"got {per_menu_add}"
+        f"Recon register actions use 13 submenu addAction and More reports adds 1 submenu addAction "
+        f"(counted separately); got {per_menu_add}"
     )
     n_reg_sub_add = (
         chunk.count("m_reg_actions.addAction(")
@@ -2868,10 +2868,18 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
         + chunk.count("m_reg_flags.addAction(")
     )
     assert n_reg_sub_add == 13
-    n_add = sum(per_menu_add) + n_reg_sub_add
-    assert n_qa == n_tip == n_add == 35, (
-        f"expected 35 menu QActions, _menu_action_tip calls, and *.addAction( calls "
-        f"(QAction={n_qa}, _menu_action_tip={n_tip}, addAction={n_add})"
+    n_more_reports_add = chunk.count("m_more_reports.addAction(")
+    assert n_more_reports_add == 1
+    n_add = sum(per_menu_add) + n_reg_sub_add + n_more_reports_add
+    assert n_qa == n_add == 36, (
+        f"expected 36 menu QActions and *.addAction( calls "
+        f"(QAction={n_qa}, addAction={n_add})"
+    )
+    # _menu_action_tip is called once per QAction plus once for the More reports submenu
+    # (which is a QMenu, not a QAction); so n_tip = n_qa + 1.
+    assert n_tip == n_qa + 1 == 37, (
+        f"expected 37 _menu_action_tip calls (one per QAction plus the More reports submenu); "
+        f"got {n_tip}"
     )
     n_dis = chunk.count("setEnabled(False)")
     assert n_dis == 5, (
@@ -2883,8 +2891,8 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
         f"each enabled menu QAction should wire .triggered.connect( "
         f"(QAction={n_qa}, setEnabled(False)={n_dis}, .triggered.connect={n_trig})"
     )
-    assert chunk.count(".addSeparator()") == 3, (
-        "expected file_menu, edit_menu, and help_menu each to call addSeparator() once"
+    assert chunk.count(".addSeparator()") == 4, (
+        "expected file_menu, view_menu, edit_menu, and help_menu each to call addSeparator() once"
     )
     assert chunk.count("self.menuBar()") == 1
     assert chunk.count("mb.addMenu(") == 6, (
@@ -2908,7 +2916,7 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
     assert "_menu_action_tip(" in chunk[ex : ex + 400]
     assert "\n            act_intake_keys,\n" in chunk
     assert "\n            act_more_tab_keys,\n" in chunk
-    assert chunk.count("_view_tab_tip_suffix") == 2
+    assert chunk.count("_view_tab_tip_suffix") == 4
     assert "_view_tab_tip_extra" in chunk
     assert (
         "View → Bank Import and Register status tips mention AI line reconciliation and Match overlay."
@@ -3102,7 +3110,7 @@ def test_desktop_main_document_intake_shortcuts_help_text_sections() -> None:
     assert "reconciliation report and line-compare" in chunk
     assert "Bank Import Import CSV" in chunk and "optional BOM" in chunk
     assert "batch preview, AI line reconciliation" in chunk
-    assert "Use **Reconcile** (Ctrl+9) → **Bank statements**" in chunk
+    assert "Use **Reconcile** (Ctrl+0) → **Bank statements**" in chunk
     assert "**Recon** menu" in chunk and "Bank register" in chunk
     assert "**Tools** menu" in chunk and "Invoice" in chunk
 
@@ -4979,7 +4987,7 @@ def test_extra_tabs_business_qdialog_windows_have_hover_tooltips() -> None:
     ar = _AR_CUSTOMER_ACTIONS.read_text(encoding="utf-8")
     for needle in (
         "higher priority rules are considered first",
-        "Create a customer record used for AR invoices",
+        "Create a new customer record.",
         "Create a vendor record used for AP bills",
         "Review company payroll tax codes",
         "Map wage expense, cash/bank, and withholdings liability",
@@ -5002,7 +5010,7 @@ def test_extra_tabs_dialog_button_boxes_use_tooltip_helpers() -> None:
     assert "def _tip_dialog_save_cancel" in et
     assert "_DIALOG_CANCEL_TIP" in et
     # Count includes ``def _tip_dialog_ok_cancel`` plus call sites (some wrap ``(`` onto the next line).
-    assert et.count("_tip_dialog_ok_cancel(") >= 15
+    assert et.count("_tip_dialog_ok_cancel(") >= 14
     assert ar.count("et._tip_dialog_ok_cancel(") >= 2
     assert "_tip_dialog_save_cancel(\n            bb" in et
     assert "tip_qdialog_button_box(bb, ok=ok_tip, cancel=cancel_tip)" in et
@@ -5111,11 +5119,11 @@ def test_main_window_message_box_warning_critical_and_file_dialog_counts() -> No
     start = text.index("class MainWindow(QMainWindow):")
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
-    assert chunk.count("message_box_warning_ok(") == 8
+    assert chunk.count("message_box_warning_ok(") == 9
     assert chunk.count("message_box_critical_ok(") == 5
     assert chunk.count("QFileDialog.getOpenFileNames(") == 1
     assert chunk.count("QFileDialog.getOpenFileName(") == 2
-    assert chunk.count("QFileDialog.getSaveFileName(") == 2
+    assert chunk.count("QFileDialog.getSaveFileName(") == 3
 
 
 def test_main_window_refresh_inbox_eight_call_sites() -> None:
@@ -5162,8 +5170,8 @@ def test_main_window_banner_tabs_status_bar_and_worker_counts() -> None:
     chunk = text[start:end]
     assert chunk.count("self._header.") == 2
     assert chunk.count("self._status_bar.showMessage(") == 12
-    assert chunk.count("self._tabs.") == 31
-    assert chunk.count("self._worker") == 13
+    assert chunk.count("self._tabs.") == 38
+    assert chunk.count("self._worker") == 15
 
 
 def test_main_window_bank_database_closes_and_applies_extensions_twice() -> None:
@@ -5229,7 +5237,7 @@ def test_main_window_custom_qmessagebox_yes_no_defaults_to_no() -> None:
     start = text.index("class MainWindow(QMainWindow):")
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
-    assert chunk.count("QMessageBox(self)") == 2
+    assert chunk.count("QMessageBox(self)") == 3
     assert chunk.count("box.setDefaultButton(QMessageBox.StandardButton.No)") == 2
 
 
@@ -6214,8 +6222,8 @@ def test_register_journal_reports_audit_grid_hints_mention_csv_utf8_bom_for_exce
     assert "Ctrl+Shift+E export (UTF-8 BOM for Excel)" in reg
     assert "Ctrl+Shift+E exports CSV (UTF-8 BOM for Excel)" in reg
     rep = (_DESKTOP_APP_DIR / "reports_tab.py").read_text(encoding="utf-8")
-    assert rep.count("Toolbar Export CSV uses UTF-8 BOM for Excel") == 1
-    assert "Export CSV uses UTF-8 BOM for Excel" in rep
+    assert "Export CSV… uses UTF-8 BOM for Excel" in rep
+    assert "UTF-8 BOM for Excel" in rep
     jt = (_DESKTOP_APP_DIR / "journal_tab.py").read_text(encoding="utf-8")
     assert jt.count("Toolbar Export CSV uses UTF-8 BOM for Excel") == 2
     assert "Export CSV uses UTF-8 BOM for Excel" in jt
