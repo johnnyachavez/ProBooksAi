@@ -63,6 +63,11 @@ from probooksai.bank_statement_intake import (
     extract_pasted_text_statement,
     extract_pdf_statement,
 )
+from probooksai.bank_statement_intake_categorize import (
+    CategorySuggestion,
+    apply_top_suggestions,
+    suggest_categories_for_rows,
+)
 from probooksai.bank_statement_intake_duplicate_check import (
     RegisterDuplicateMatch,
     find_register_duplicates,
@@ -109,6 +114,10 @@ _REVIEW_COLUMNS: tuple[tuple[str, str], ...] = (
     ("Source ref", "source_ref"),
     ("Confidence", "confidence"),
     ("Needs review", "needs_review"),
+    # Phase-3 step 2: rules-engine COA suggestion / chosen category. Editable
+    # so the bookkeeper can override; persisted with the intake queue and
+    # carried through hand-off into ``bank_transactions.coa_account``.
+    ("Suggested category", "coa_account"),
     # Phase-3 step 1: pre-flight duplicate scan against ``bank_transactions``
     # for the chosen account. Read-only and computed; never serialized into
     # the persisted intake queue.
@@ -207,6 +216,14 @@ class BankStatementIntakePanel(QWidget):
         # Cleared on every table mutation; re-populated by ``_refresh_duplicate_check``
         # whenever the chosen bank account or staged rows change.
         self._dup_matches: dict[int, RegisterDuplicateMatch] = {}
+        # Phase-3 step 2: side-map of {table_row_index -> [CategorySuggestion, ...]}.
+        # Suggestions are computed from ``categorization_rules`` after every
+        # table mutation. They populate the **tooltip** of the "Suggested
+        # category" cell so the user can see *why* a COA was offered, but the
+        # cell value itself is whatever the user has chosen / accepted (or
+        # blank). ``apply_suggestions()`` writes the top suggestion into any
+        # currently-empty cell.
+        self._category_suggestions: dict[int, list[CategorySuggestion]] = {}
         self.setObjectName("bankStatementIntakePanel")
         self.setStyleSheet(
             f"QWidget#bankStatementIntakePanel {{ background-color: {WORKFLOW_PAGE_BG}; "
@@ -352,6 +369,17 @@ class BankStatementIntakePanel(QWidget):
         self._btn_check_duplicates.setDefault(False)
         handoff_row.addWidget(self._btn_check_duplicates)
 
+        # Phase-3 step 2: rules-engine suggestion application action.
+        self._btn_apply_suggestions = QPushButton("Apply suggestions")
+        self._btn_apply_suggestions.setStyleSheet(
+            f"QPushButton {{ background-color: {WORKFLOW_CONTROL_FACE}; "
+            f"color: {WORKFLOW_TEXT}; border: 1px solid {WORKFLOW_GRID}; "
+            f"padding: 4px 12px; border-radius: 4px; }}"
+        )
+        self._btn_apply_suggestions.setAutoDefault(False)
+        self._btn_apply_suggestions.setDefault(False)
+        handoff_row.addWidget(self._btn_apply_suggestions)
+
         # Phase-3 step 1: dedicated label for the duplicate-scan summary so
         # it doesn't fight with the send-result label for screen real estate.
         self._duplicate_status_label = QLabel("")
@@ -360,6 +388,14 @@ class BankStatementIntakePanel(QWidget):
             f"font-size: 11px; }}"
         )
         handoff_row.addWidget(self._duplicate_status_label)
+
+        # Phase-3 step 2: dedicated label for category-suggestion summary.
+        self._suggestion_status_label = QLabel("")
+        self._suggestion_status_label.setStyleSheet(
+            f"QLabel {{ color: {WORKFLOW_TEXT}; background: transparent; "
+            f"font-size: 11px; }}"
+        )
+        handoff_row.addWidget(self._suggestion_status_label)
         handoff_row.addStretch(1)
 
         self._handoff_status_label = QLabel("")
@@ -380,6 +416,9 @@ class BankStatementIntakePanel(QWidget):
         )
         self._btn_check_duplicates.clicked.connect(
             self._on_check_duplicates_clicked
+        )
+        self._btn_apply_suggestions.clicked.connect(
+            self._on_apply_suggestions_clicked
         )
         self._account_combo.currentIndexChanged.connect(
             self._on_account_changed
@@ -408,6 +447,9 @@ class BankStatementIntakePanel(QWidget):
         # Phase-3 step 1: re-scan against the register so the "Possible
         # duplicate" badges stay in sync after every append / edit / clear.
         self._refresh_duplicate_check()
+        # Phase-3 step 2: re-run the rules-engine so each row's suggestion
+        # tooltip reflects the *current* description.
+        self._refresh_category_suggestions()
         self.rowsChanged.emit(self._table.rowCount())
 
     def _on_account_changed(self, *_args) -> None:
@@ -441,6 +483,24 @@ class BankStatementIntakePanel(QWidget):
                 self._btn_check_duplicates.setToolTip(
                     "Pick a company file, account, and stage at least one "
                     "row to enable the duplicate scan."
+                )
+        if hasattr(self, "_btn_apply_suggestions"):
+            # Suggestions don't depend on the selected account, only on
+            # rules in the company DB and at least one staged row.
+            sug_ready = has_db and has_rows
+            self._btn_apply_suggestions.setEnabled(sug_ready)
+            if sug_ready:
+                self._btn_apply_suggestions.setToolTip(
+                    "Apply the top categorization-rule suggestion to every "
+                    "staged row whose category cell is currently empty."
+                )
+            elif not has_db:
+                self._btn_apply_suggestions.setToolTip(
+                    "Categorization suggestions need an open company file."
+                )
+            else:
+                self._btn_apply_suggestions.setToolTip(
+                    "Stage at least one row before applying suggestions."
                 )
         if not has_db:
             self._btn_send_to_register.setToolTip(
@@ -537,6 +597,9 @@ class BankStatementIntakePanel(QWidget):
         # Run the duplicate scan once after hydration so re-opened sessions
         # immediately show "Possible duplicate" badges where they apply.
         self._refresh_duplicate_check()
+        # Same for category suggestions — restored rows should have their
+        # tooltips populated immediately on panel construction.
+        self._refresh_category_suggestions()
 
     # ----------------------------------------------------- duplicate check
     def _refresh_duplicate_check(self) -> None:
@@ -613,6 +676,103 @@ class BankStatementIntakePanel(QWidget):
     ) -> Optional[RegisterDuplicateMatch]:
         """Public read-only accessor (used by tests / future Phase-3 steps)."""
         return self._dup_matches.get(row_index)
+
+    # -------------------------------------- category suggestions (step 2)
+    def _refresh_category_suggestions(self) -> None:
+        """Re-run the rules engine and refresh the suggestion side-map.
+
+        Suggestions surface as **tooltips** on each row's "Suggested
+        category" cell — the cell's *value* is whatever the user has
+        typed or accepted. ``_on_apply_suggestions_clicked`` is what
+        actually writes a suggested COA into the cell.
+        """
+        if not hasattr(self, "_table"):
+            return
+        self._category_suggestions = {}
+        if self._bank_db is None:
+            self._render_suggestion_tooltips()
+            return
+        rows = self.collect_rows()
+        if not rows:
+            self._render_suggestion_tooltips()
+            return
+        try:
+            self._category_suggestions = suggest_categories_for_rows(
+                self._bank_db, rows
+            )
+        except Exception:
+            self._category_suggestions = {}
+        self._render_suggestion_tooltips()
+
+    def _render_suggestion_tooltips(self) -> None:
+        """Write per-row suggestion tooltips on the Suggested category cells."""
+        col = self._suggestion_column_index()
+        if col < 0:
+            return
+        for r in range(self._table.rowCount()):
+            cell = self._table.item(r, col)
+            if cell is None:
+                continue
+            sug_list = self._category_suggestions.get(r) or []
+            if not sug_list:
+                cell.setToolTip("")
+            else:
+                lines = ["Rules-engine suggestions (top first):"]
+                for s in sug_list:
+                    lines.append(
+                        f"  \u2022 {s.coa_account}  (matched '{s.matched_pattern}',"
+                        f" conf {int(round(s.confidence * 100))}%)"
+                    )
+                cell.setToolTip("\n".join(lines))
+        self._refresh_suggestion_status_label()
+
+    def _refresh_suggestion_status_label(self) -> None:
+        if not hasattr(self, "_suggestion_status_label"):
+            return
+        n = sum(1 for _ in self._category_suggestions if self._category_suggestions[_])
+        if n == 0:
+            self._suggestion_status_label.setText("")
+            return
+        self._suggestion_status_label.setText(
+            f"{n} row{'s' if n != 1 else ''} have categorization-rule "
+            f"suggestions."
+        )
+
+    @staticmethod
+    def _suggestion_column_index() -> int:
+        for i, (_, field_name) in enumerate(_REVIEW_COLUMNS):
+            if field_name == "coa_account":
+                return i
+        return -1
+
+    def _on_apply_suggestions_clicked(self) -> None:
+        """Write the top suggestion into every empty Suggested-category cell."""
+        rows = self.collect_rows()
+        if not rows:
+            return
+        # Re-run the scan first so we operate on the latest descriptions.
+        self._refresh_category_suggestions()
+        n = apply_top_suggestions(rows, self._category_suggestions, overwrite=False)
+        if n == 0:
+            return
+        # Repaint the column from the mutated dataclasses.
+        col = self._suggestion_column_index()
+        if col < 0:
+            return
+        for i, row in enumerate(rows):
+            cell = self._table.item(i, col)
+            text = row.coa_account or ""
+            if cell is None:
+                self._table.setItem(i, col, _make_item(text, editable=True))
+            else:
+                cell.setText(text)
+        self._emit_changed()
+
+    def category_suggestions_for_row(
+        self, row_index: int
+    ) -> list[CategorySuggestion]:
+        """Public read-only accessor (used by tests)."""
+        return list(self._category_suggestions.get(row_index, []))
 
     # -------------------------------------------------------------- actions
     def _open_file_path(self, *, caption: str, file_filter: str) -> Optional[str]:
@@ -902,6 +1062,8 @@ class BankStatementIntakePanel(QWidget):
             return _format_confidence(row.confidence)
         if field_name == "needs_review":
             return _format_bool(row.needs_review)
+        if field_name == "coa_account":
+            return row.coa_account or ""
         return ""
 
     def _row_to_dataclass(self, r: int) -> BankStatementIntakeRow:
@@ -929,6 +1091,8 @@ class BankStatementIntakePanel(QWidget):
                 out.confidence = _maybe_confidence(raw)
             elif field_name == "needs_review":
                 out.needs_review = raw.strip().lower() in {"yes", "true", "y", "1"}
+            elif field_name == "coa_account":
+                out.coa_account = raw
         return out
 
 

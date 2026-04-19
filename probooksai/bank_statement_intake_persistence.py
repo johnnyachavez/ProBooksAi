@@ -51,10 +51,18 @@ def _row_to_db_tuple(row: BankStatementIntakeRow, *, sort_order: int) -> tuple:
         float(row.confidence or 0.0),
         1 if row.needs_review else 0,
         sort_order,
+        row.coa_account or "",
     )
 
 
 def _db_row_to_dataclass(db_row: sqlite3.Row) -> BankStatementIntakeRow:
+    # ``coa_account`` was added in extensions_schema v8; tolerate older
+    # rows / older callers that don't supply the column by treating
+    # ``KeyError`` as an empty string.
+    try:
+        coa = db_row["coa_account"] or ""
+    except (KeyError, IndexError):
+        coa = ""
     return BankStatementIntakeRow(
         txn_date=db_row["txn_date"] or "",
         description_raw=db_row["description_raw"] or "",
@@ -66,6 +74,7 @@ def _db_row_to_dataclass(db_row: sqlite3.Row) -> BankStatementIntakeRow:
         source_ref=db_row["source_ref"] or "",
         confidence=float(db_row["confidence"] or 0.0),
         needs_review=bool(db_row["needs_review"]),
+        coa_account=coa,
     )
 
 
@@ -94,8 +103,8 @@ def replace_intake_queue(
                 (created_at, txn_date, description_raw,
                  debit, credit, amount_signed, running_balance,
                  source_type, source_ref, confidence, needs_review,
-                 sort_order)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 sort_order, coa_account)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             payload,
         )
@@ -111,7 +120,7 @@ def load_intake_queue(
         SELECT id, created_at, txn_date, description_raw,
                debit, credit, amount_signed, running_balance,
                source_type, source_ref, confidence, needs_review,
-               sort_order
+               sort_order, coa_account
         FROM {QUEUE_TABLE}
         ORDER BY sort_order, id
         """
@@ -128,7 +137,7 @@ def load_intake_queue_with_ids(
         SELECT id, created_at, txn_date, description_raw,
                debit, credit, amount_signed, running_balance,
                source_type, source_ref, confidence, needs_review,
-               sort_order
+               sort_order, coa_account
         FROM {QUEUE_TABLE}
         ORDER BY sort_order, id
         """

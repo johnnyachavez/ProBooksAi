@@ -13,7 +13,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
-EXTENSION_SCHEMA_VERSION = 7
+EXTENSION_SCHEMA_VERSION = 8
 
 _DDL_VERSION = """
 CREATE TABLE IF NOT EXISTS extension_schema_version (
@@ -270,6 +270,14 @@ CREATE TABLE IF NOT EXISTS bank_statement_intake_queue (
 );
 """
 
+# v8 — Phase 3 step 2: persist the COA suggestion / chosen category
+# alongside each staged review row so it survives panel reload and is
+# carried into ``bank_transactions`` by the Phase-2 hand-off.
+_MIGRATION_V8 = """
+ALTER TABLE bank_statement_intake_queue
+ADD COLUMN coa_account TEXT NOT NULL DEFAULT '';
+"""
+
 
 def _seed_payroll_tax_items(conn: sqlite3.Connection) -> None:
     """Default federal/state placeholder codes (amounts entered manually per run)."""
@@ -361,6 +369,13 @@ def apply_extensions(conn: sqlite3.Connection) -> None:
             if s:
                 conn.execute(s)
         current = 7
+
+    if current < 8:
+        for stmt in _MIGRATION_V8.strip().split(";"):
+            s = stmt.strip()
+            if s:
+                conn.execute(s)
+        current = 8
 
     conn.execute(
         "UPDATE extension_schema_version SET version = ? WHERE id = 1",

@@ -28,8 +28,9 @@ from probooksai.bank_statement_intake import (
 
 
 def test_normalized_field_names_include_all_required_phase1_fields() -> None:
-    """The 10-field schema in the spec must be present in stable order."""
-    expected = (
+    """The 10-field Phase-1 schema must be present in stable order, with any
+    Phase-3+ additions appended after — never re-ordered or removed."""
+    expected_phase1 = (
         "txn_date",
         "description_raw",
         "debit",
@@ -41,7 +42,10 @@ def test_normalized_field_names_include_all_required_phase1_fields() -> None:
         "confidence",
         "needs_review",
     )
-    assert normalized_field_names() == expected
+    actual = normalized_field_names()
+    assert actual[: len(expected_phase1)] == expected_phase1
+    # Phase 3 step 2 appends coa_account; if more grow, they go at the end.
+    assert "coa_account" in actual
 
 
 def test_intake_row_to_dict_round_trip_keeps_all_fields() -> None:

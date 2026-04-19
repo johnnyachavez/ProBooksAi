@@ -79,6 +79,11 @@ class BankStatementIntakeRow:
     source_ref: str = ""
     confidence: float = 0.0
     needs_review: bool = True
+    # Phase-3 step 2: COA chosen for this row. Empty string means "no
+    # category yet". Carried through persistence and through hand-off to
+    # ``bank_transactions.coa_account`` so the rules-engine suggestion the
+    # bookkeeper accepts in the review panel ends up on the register row.
+    coa_account: str = ""
 
     def to_dict(self) -> dict:
         """Plain-dict copy (handy for table population, JSON dumps, tests)."""
@@ -545,7 +550,14 @@ def extract_pdf_statement(
 
 
 def normalized_field_names() -> tuple[str, ...]:
-    """Stable field-name tuple in display order (used by the review table)."""
+    """Stable field-name tuple in display order (used by the review table).
+
+    The first ten names are the Phase-1 review schema and **must not** be
+    re-ordered or dropped — downstream consumers (CSV exports, persistence
+    columns, hand-off mapping) rely on stable positions. Phase 3 step 2
+    appends ``coa_account`` at the end so the rules-engine suggestion is
+    a first-class field of the staged row.
+    """
     return (
         "txn_date",
         "description_raw",
@@ -557,4 +569,5 @@ def normalized_field_names() -> tuple[str, ...]:
         "source_ref",
         "confidence",
         "needs_review",
+        "coa_account",
     )

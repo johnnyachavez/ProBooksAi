@@ -221,7 +221,14 @@ def test_all_invalid_rows_does_not_create_a_batch(tmp_path) -> None:
 
 
 def test_handoff_does_not_classify_to_coa(tmp_path) -> None:
-    """Phase-2 invariant: hand-off must NOT set ``coa_account`` (no AI yet)."""
+    """Hand-off invariant: when the staged row carries no chosen
+    ``coa_account``, the register row must end up with ``coa_account == ''``.
+
+    Phase-3 step 2 lets the bookkeeper pre-fill ``coa_account`` on a
+    staged row from a rules-engine suggestion; that path is covered in
+    :func:`test_handoff_passes_coa_account_through_when_set`. This test
+    locks the *empty* path so we never silently auto-classify.
+    """
     db, aid = _open_db_with_account(tmp_path)
     try:
         post_intake_rows_to_register(
@@ -234,6 +241,24 @@ def test_handoff_does_not_classify_to_coa(tmp_path) -> None:
         assert row is not None
         assert row["coa_account"] == ""
         assert row["memo"] == ""
+    finally:
+        db.close()
+
+
+def test_handoff_passes_coa_account_through_when_set(tmp_path) -> None:
+    """Phase-3 step 2: when the staged row has a chosen ``coa_account``,
+    the hand-off must carry it onto the register row verbatim."""
+    db, aid = _open_db_with_account(tmp_path)
+    try:
+        row = _row(source_ref="coa-set#L1")
+        row.coa_account = "5010 — Office Supplies"
+        post_intake_rows_to_register(db, bank_account_id=aid, rows=[row])
+        register_row = db._conn.execute(
+            "SELECT coa_account FROM bank_transactions WHERE bank_account_id = ?",
+            (aid,),
+        ).fetchone()
+        assert register_row is not None
+        assert register_row["coa_account"] == "5010 — Office Supplies"
     finally:
         db.close()
 

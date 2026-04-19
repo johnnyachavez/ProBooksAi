@@ -93,7 +93,7 @@ def _row_to_register_dict(row: BankStatementIntakeRow) -> dict:
         "amount": float(row.amount_signed or 0.0),
         "ref_number": ref_number,
         "memo": "",
-        "coa_account": "",
+        "coa_account": (row.coa_account or "").strip(),
     }
 
 
