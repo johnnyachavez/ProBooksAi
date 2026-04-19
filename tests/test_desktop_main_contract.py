@@ -1106,6 +1106,13 @@ def test_main_window_reconcile_hub_includes_phase1_statement_intake_subtab() -> 
     add_docs = chunk.index('self._reconcile_hub.addTab(self._intake_widget, "Documents")')
     add_intake = chunk.index('self._statement_intake_panel, "Statement intake (review)"')
     assert add_bank < add_docs < add_intake
+    # The default OpenAI-backed AI provider must be wired into the panel
+    # exactly once per ``_assemble_main_tabs`` so DB-switch rebuilds get
+    # a fresh provider that reads from the new connection. The provider
+    # itself short-circuits when no key is configured, so this is safe
+    # even on a brand-new company file.
+    assert chunk.count("set_ai_provider(") == 1
+    assert "build_default_ai_provider(self._bank_db._conn)" in chunk
 
 
 def test_main_window_build_ui_status_bar_ready_message_and_qstatusbar() -> None:

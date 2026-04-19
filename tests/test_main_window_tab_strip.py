@@ -137,8 +137,12 @@ def test_customers_and_vendors_tabs_use_live_ar_ap_workflows(
         assert tabs.widget(7) is w._customers_tab
         assert tabs.widget(8) is w._vendors_tab
         bh = w._business_hub._business_subtabs
-        assert bh.count() == 3
+        # Step 4 (AI assist for intake) appends an "AI" sub-tab at the end
+        # of the Business hub. Top-level Customers/Vendors are still the
+        # primary AR/AP entry points (asserted above).
+        assert bh.count() == 4
         assert "Rules" in bh.tabText(0) and "Payroll" in bh.tabText(1) and "Tax" in bh.tabText(2)
+        assert bh.tabText(3) == "AI"
     finally:
         w.close()
 
@@ -163,5 +167,31 @@ def test_reconcile_hub_hosts_bank_import_document_intake_and_statement_intake(
         assert rh.tabText(0) == "Bank statements"
         assert rh.tabText(1) == "Documents"
         assert rh.tabText(2) == "Statement intake (review)"
+    finally:
+        w.close()
+
+
+def test_main_window_wires_default_ai_provider_into_statement_intake_panel(
+    qapp: QApplication, tmp_path: Path
+) -> None:
+    """``MainWindow._assemble_main_tabs`` must call ``set_ai_provider`` with
+    the default OpenAI-backed provider so the panel's AI fallback is hot
+    as soon as the user enables it (no app restart required). The
+    provider stays silent until both ``ai_intake_enabled`` AND a key
+    are configured, which is gated by the panel and provider — but the
+    pipe must be plumbed at construction time."""
+    from desktop_app.main import MainWindow
+    from probooksai.bank_statement_intake_ai_provider import OpenAIProvider
+
+    db_path = tmp_path / "ai_wire.db"
+    BankDatabase(str(db_path)).close()
+    w = MainWindow(db_path=str(db_path))
+    try:
+        panel = w._statement_intake_panel
+        assert panel._ai_provider is not None
+        assert isinstance(panel._ai_provider, OpenAIProvider)
+        # Provider reads the *current* company conn; sanity-check it
+        # points at the open window's bank_db.
+        assert panel._ai_provider._conn is w._bank_db._conn
     finally:
         w.close()

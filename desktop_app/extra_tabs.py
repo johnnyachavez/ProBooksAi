@@ -2700,6 +2700,183 @@ def show_business_keyboard_shortcuts_dialog(parent: QWidget) -> None:
     )
 
 
+class AISettingsTab(QWidget):
+    """**AI** sub-tab on the Business hub: opt-in AI fallback for bank
+    statement intake categorization.
+
+    The desktop app ships with the AI fallback **off by default**. This
+    tab is the only user-facing place to:
+
+    * Toggle ``ai_intake_enabled`` (the panel-side gate that decides
+      whether the AI provider is consulted at all).
+    * Provide an OpenAI API key (``openai_api_key``) so the bundled
+      :class:`probooksai.bank_statement_intake_ai_provider.OpenAIProvider`
+      can actually make a request. Without a key the fallback is silent
+      even with the toggle on.
+    * Optionally override the model (``openai_ai_model``), endpoint
+      (``openai_ai_endpoint``) and request timeout
+      (``openai_ai_timeout_sec``) — useful for self-hosted /
+      OpenAI-compatible gateways.
+
+    Settings are read on every suggestion call (no app restart
+    required) and AI suggestions are tagged with ``<ai>`` in the
+    Bank Statement Intake review panel so they are clearly
+    distinguishable from rules-engine matches.
+    """
+
+    SETTING_API_KEY = "openai_api_key"
+    SETTING_MODEL = "openai_ai_model"
+    SETTING_ENDPOINT = "openai_ai_endpoint"
+    SETTING_TIMEOUT = "openai_ai_timeout_sec"
+    SETTING_ENABLED = "ai_intake_enabled"
+
+    DEFAULT_MODEL = "gpt-4o-mini"
+    DEFAULT_ENDPOINT = "https://api.openai.com/v1/chat/completions"
+    DEFAULT_TIMEOUT_SEC = "8"
+
+    def __init__(self, conn: sqlite3.Connection, parent=None):
+        super().__init__(parent)
+        self._conn = conn
+        self.setToolTip(
+            "AI assist for bank statement intake categorization (off by default). "
+            "Suggestions are tagged with <ai> in the Statement intake (review) panel; "
+            "the AI is consulted only when no rule matches and a key is configured."
+        )
+        root = QVBoxLayout(self)
+
+        intro = QLabel(
+            "AI assist (opt-in) suggests a chart-of-accounts entry for "
+            "bank-statement rows when no categorization rule matches. "
+            "Suggestions appear in the Statement intake (review) panel "
+            "tagged with \u201c<ai>\u201d \u2014 they are never posted "
+            "to the Bank Register without your explicit approval."
+        )
+        intro.setWordWrap(True)
+        intro.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        root.addWidget(intro)
+
+        self._enabled_chk = QCheckBox(
+            escape_ampersand_for_qt("Enable AI fallback for bank statement intake")
+        )
+        self._enabled_chk.setToolTip(
+            "When on, the Statement intake panel asks the configured AI provider "
+            "for a category whenever no categorization rule matches a row. "
+            "Off by default; AI never runs without an API key."
+        )
+        self._enabled_chk.setChecked(
+            _coerce_bool_setting(business.get_setting(self._conn, self.SETTING_ENABLED, "0"))
+        )
+        root.addWidget(self._enabled_chk)
+
+        form = QFormLayout()
+        self._key_edit = QLineEdit()
+        self._key_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self._key_edit.setPlaceholderText("sk-\u2026 (kept in this company's settings)")
+        self._key_edit.setText(business.get_setting(self._conn, self.SETTING_API_KEY, "") or "")
+        self._key_edit.setToolTip(
+            "OpenAI-compatible API key. Stored in the company .db only "
+            "(not in any global / user-wide config). Leave blank to keep AI silent."
+        )
+        form.addRow(escape_ampersand_for_qt("OpenAI API key"), self._key_edit)
+
+        self._model_edit = QLineEdit()
+        self._model_edit.setPlaceholderText(self.DEFAULT_MODEL)
+        self._model_edit.setText(business.get_setting(self._conn, self.SETTING_MODEL, "") or "")
+        self._model_edit.setToolTip(
+            "Chat-completions model name. Defaults to gpt-4o-mini when blank."
+        )
+        form.addRow(escape_ampersand_for_qt("Model"), self._model_edit)
+
+        self._endpoint_edit = QLineEdit()
+        self._endpoint_edit.setPlaceholderText(self.DEFAULT_ENDPOINT)
+        self._endpoint_edit.setText(
+            business.get_setting(self._conn, self.SETTING_ENDPOINT, "") or ""
+        )
+        self._endpoint_edit.setToolTip(
+            "Chat-completions endpoint URL. Override only for self-hosted or "
+            "OpenAI-compatible gateways. Defaults to api.openai.com when blank."
+        )
+        form.addRow(escape_ampersand_for_qt("Endpoint URL"), self._endpoint_edit)
+
+        self._timeout_edit = QLineEdit()
+        self._timeout_edit.setPlaceholderText(self.DEFAULT_TIMEOUT_SEC)
+        self._timeout_edit.setText(
+            business.get_setting(self._conn, self.SETTING_TIMEOUT, "") or ""
+        )
+        self._timeout_edit.setToolTip(
+            "Request timeout in seconds (clamped to 1\u201360). "
+            f"Defaults to {self.DEFAULT_TIMEOUT_SEC}s when blank."
+        )
+        form.addRow(escape_ampersand_for_qt("Timeout (seconds)"), self._timeout_edit)
+
+        root.addLayout(form)
+
+        ai_save = QPushButton("Save AI settings")
+        ai_save.setToolTip(
+            "Save AI fallback toggle, API key, model, endpoint, and timeout to "
+            "this company's settings (Ctrl+S does the same)."
+        )
+        ai_save.clicked.connect(self._save)
+        root.addWidget(ai_save)
+
+        ai_tip = QLabel(
+            "AI assist is off by default. Suggestions are advisory: nothing posts "
+            "to the Bank Register without your approval. Per-call settings are "
+            "re-read on every suggestion, so changes here take effect immediately."
+        )
+        ai_tip.setWordWrap(True)
+        ai_tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        ai_tip.setToolTip(
+            "AI fallback is review-only \u2014 the Bank Register is the source of truth."
+        )
+        root.addWidget(ai_tip)
+
+        save_sc = QShortcut(QKeySequence(QKeySequence.StandardKey.Save), self)
+        save_sc.setContext(Qt.WidgetWithChildrenShortcut)
+        save_sc.activated.connect(self._save)
+
+    def _save(self) -> None:
+        business.set_setting(
+            self._conn,
+            self.SETTING_ENABLED,
+            "1" if self._enabled_chk.isChecked() else "0",
+        )
+        business.set_setting(
+            self._conn,
+            self.SETTING_API_KEY,
+            (self._key_edit.text() or "").strip(),
+        )
+        business.set_setting(
+            self._conn,
+            self.SETTING_MODEL,
+            (self._model_edit.text() or "").strip(),
+        )
+        business.set_setting(
+            self._conn,
+            self.SETTING_ENDPOINT,
+            (self._endpoint_edit.text() or "").strip(),
+        )
+        business.set_setting(
+            self._conn,
+            self.SETTING_TIMEOUT,
+            (self._timeout_edit.text() or "").strip(),
+        )
+        message_box_information_ok(
+            self,
+            "AI settings",
+            "Saved.",
+            ok_tip=(
+                "Close; AI fallback applies to new suggestions in the "
+                "Statement intake (review) panel."
+            ),
+        )
+
+
+def _coerce_bool_setting(raw: str) -> bool:
+    """Match :meth:`BankStatementIntakePanel._effective_ai_provider` semantics."""
+    return (raw or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 class BusinessHub(QWidget):
     """Nested tabs for rules, payroll, and tax (AR/AP workflows: main Customers / Vendors tabs)."""
 
@@ -2721,6 +2898,7 @@ class BusinessHub(QWidget):
         self._business_subtabs.addTab(RulesTab(conn), "Rules")
         self._business_subtabs.addTab(PayrollTaxTab(conn), "Payroll")
         self._business_subtabs.addTab(TaxSettingsTab(conn), "Tax %")
+        self._business_subtabs.addTab(AISettingsTab(conn), "AI")
         bar = self._business_subtabs.tabBar()
         bar.setTabToolTip(
             0,
@@ -2733,6 +2911,10 @@ class BusinessHub(QWidget):
         bar.setTabToolTip(
             2,
             "Default sales tax name and rate for new invoices; export sales tax summary CSV (UTF-8 BOM for Excel).",
+        )
+        bar.setTabToolTip(
+            3,
+            "AI fallback for bank statement intake categorization (off by default; needs an API key).",
         )
         raw_idx = QSettings().value(_BUSINESS_HUB_SUBTAB_KEY, 0)
         want_idx = coerce_combo_int_id(raw_idx)

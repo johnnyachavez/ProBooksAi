@@ -81,6 +81,7 @@ from desktop_app.bank_import_tab import (
     show_bank_import_keyboard_shortcuts_dialog,
 )
 from desktop_app.bank_statement_intake_panel import BankStatementIntakePanel
+from probooksai.bank_statement_intake_ai_provider import build_default_ai_provider
 from desktop_app.coa_tab import COATab
 from desktop_app.flexible_date import (
     attach_line_edit_us_date_normalization,
@@ -1023,6 +1024,16 @@ class MainWindow(QMainWindow):
         )
         self._statement_intake_panel.rowsSentToRegister.connect(
             self._on_statement_intake_rows_sent
+        )
+        # Wire the default OpenAI-backed AI provider for bank statement
+        # intake categorization. The provider stays silent until both
+        # ``ai_intake_enabled`` is on (gated inside the panel) AND an
+        # ``openai_api_key`` is configured (gated inside the provider),
+        # so this call is safe even on a brand-new company file. When
+        # the user switches companies, ``_attach_panel_after_db_switch``
+        # re-runs this so the new ``conn`` is what the provider reads.
+        self._statement_intake_panel.set_ai_provider(
+            build_default_ai_provider(self._bank_db._conn)
         )
 
         self._reconcile_hub = QTabWidget()
