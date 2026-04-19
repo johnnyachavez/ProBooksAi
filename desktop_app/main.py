@@ -1164,13 +1164,15 @@ class MainWindow(QMainWindow):
             main_tab_bar.setTabToolTip(i, tip)
 
     def _teardown_main_tabs_for_rebuild(self) -> None:
-        """Remove main tabs and dispose widgets except the shared Document Intake root widget."""
-        old_reg = getattr(self, "_register_tab", None)
-        if old_reg is not None:
-            try:
-                old_reg.reconciliationModeChanged.disconnect()
-            except TypeError:
-                pass
+        """Remove main tabs and dispose widgets except the shared Document Intake root widget.
+
+        No explicit signal disconnect is needed: ``RegisterTab`` is destroyed
+        below via ``deleteLater`` and Qt drops its signal connections on
+        destruction. A previous defensive ``reconciliationModeChanged.disconnect()``
+        call was removed because the signal has no external slots wired in
+        ``main.py`` — calling ``disconnect()`` with nothing connected produces
+        a ``RuntimeWarning`` in PySide6, which only added noise.
+        """
         rh = getattr(self, "_reconcile_hub", None)
         iw = getattr(self, "_intake_widget", None)
         if rh is not None and iw is not None:

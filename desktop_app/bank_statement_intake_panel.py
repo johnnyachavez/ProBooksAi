@@ -63,6 +63,10 @@ from probooksai.bank_statement_intake import (
     extract_pasted_text_statement,
     extract_pdf_statement,
 )
+from probooksai.bank_statement_intake_duplicate_check import (
+    RegisterDuplicateMatch,
+    find_register_duplicates,
+)
 from probooksai.bank_statement_intake_handoff import (
     HandoffResult,
     post_intake_rows_to_register,
@@ -86,6 +90,11 @@ from desktop_app.theme import (
     WORKFLOW_TEXT,
 )
 
+# Phase-3 sentinel field name for the read-only "Possible duplicate" column.
+# It does not map to any :class:`BankStatementIntakeRow` field — the cell is
+# rendered from a panel-side side-map and persisted to nothing.
+_DUP_REGISTER_FIELD = "_dup_register_match"
+
 # Display-order columns for the review table. The header strings are what
 # the user sees; the underlying schema field names live in the column-index
 # map below.
@@ -100,6 +109,10 @@ _REVIEW_COLUMNS: tuple[tuple[str, str], ...] = (
     ("Source ref", "source_ref"),
     ("Confidence", "confidence"),
     ("Needs review", "needs_review"),
+    # Phase-3 step 1: pre-flight duplicate scan against ``bank_transactions``
+    # for the chosen account. Read-only and computed; never serialized into
+    # the persisted intake queue.
+    ("Possible duplicate", _DUP_REGISTER_FIELD),
 )
 
 _HEADERS: tuple[str, ...] = tuple(h for h, _ in _REVIEW_COLUMNS)
@@ -107,14 +120,14 @@ _FIELD_FOR_COLUMN: dict[int, str] = {
     i: field_name for i, (_, field_name) in enumerate(_REVIEW_COLUMNS)
 }
 
-# Read-only provenance columns (source_type / source_ref). Everything else
-# is user-editable so the bookkeeper can correct extraction noise before
-# any phase-2 hand-off.
+# Read-only columns: provenance pair (Phase 1) plus the computed
+# duplicate column (Phase 3 step 1). Everything else is user-editable so
+# the bookkeeper can correct extraction noise before any hand-off.
 _READONLY_COLUMNS: frozenset[int] = frozenset(
     {
         i
         for i, (_, field_name) in enumerate(_REVIEW_COLUMNS)
-        if field_name in {"source_type", "source_ref"}
+        if field_name in {"source_type", "source_ref", _DUP_REGISTER_FIELD}
     }
 )
 
@@ -190,6 +203,10 @@ class BankStatementIntakePanel(QWidget):
         # so headless tests don't have to drive a real modal.
         self._confirm_factory = confirm_factory
         self._info_factory = info_factory
+        # Phase-3 step 1: side-map of {table_row_index -> RegisterDuplicateMatch}.
+        # Cleared on every table mutation; re-populated by ``_refresh_duplicate_check``
+        # whenever the chosen bank account or staged rows change.
+        self._dup_matches: dict[int, RegisterDuplicateMatch] = {}
         self.setObjectName("bankStatementIntakePanel")
         self.setStyleSheet(
             f"QWidget#bankStatementIntakePanel {{ background-color: {WORKFLOW_PAGE_BG}; "
@@ -320,6 +337,29 @@ class BankStatementIntakePanel(QWidget):
         self._btn_send_to_register.setAutoDefault(False)
         self._btn_send_to_register.setDefault(False)
         handoff_row.addWidget(self._btn_send_to_register)
+
+        # Phase-3 step 1: explicit "Check duplicates" action so the user can
+        # re-run the scan after editing rows (the panel also auto-runs the
+        # check on append / account change, but a manual button keeps the
+        # action discoverable).
+        self._btn_check_duplicates = QPushButton("Check duplicates")
+        self._btn_check_duplicates.setStyleSheet(
+            f"QPushButton {{ background-color: {WORKFLOW_CONTROL_FACE}; "
+            f"color: {WORKFLOW_TEXT}; border: 1px solid {WORKFLOW_GRID}; "
+            f"padding: 4px 12px; border-radius: 4px; }}"
+        )
+        self._btn_check_duplicates.setAutoDefault(False)
+        self._btn_check_duplicates.setDefault(False)
+        handoff_row.addWidget(self._btn_check_duplicates)
+
+        # Phase-3 step 1: dedicated label for the duplicate-scan summary so
+        # it doesn't fight with the send-result label for screen real estate.
+        self._duplicate_status_label = QLabel("")
+        self._duplicate_status_label.setStyleSheet(
+            f"QLabel {{ color: {WORKFLOW_TEXT}; background: transparent; "
+            f"font-size: 11px; }}"
+        )
+        handoff_row.addWidget(self._duplicate_status_label)
         handoff_row.addStretch(1)
 
         self._handoff_status_label = QLabel("")
@@ -338,8 +378,11 @@ class BankStatementIntakePanel(QWidget):
         self._btn_send_to_register.clicked.connect(
             self._on_send_to_register_clicked
         )
+        self._btn_check_duplicates.clicked.connect(
+            self._on_check_duplicates_clicked
+        )
         self._account_combo.currentIndexChanged.connect(
-            self._refresh_send_button_state
+            self._on_account_changed
         )
 
         self._refresh_row_count_label()
@@ -362,17 +405,43 @@ class BankStatementIntakePanel(QWidget):
         self._refresh_row_count_label()
         self._refresh_send_button_state()
         self._persist_current_queue()
+        # Phase-3 step 1: re-scan against the register so the "Possible
+        # duplicate" badges stay in sync after every append / edit / clear.
+        self._refresh_duplicate_check()
         self.rowsChanged.emit(self._table.rowCount())
+
+    def _on_account_changed(self, *_args) -> None:
+        """Account change updates Send-button state AND re-runs duplicate scan."""
+        self._refresh_send_button_state()
+        self._refresh_duplicate_check()
 
     # ----------------------------------------------------------- handoff state
     def _refresh_send_button_state(self, *_args) -> None:
-        """Enable Send only when DB + account + at least one staged row exist."""
+        """Enable Send only when DB + account + at least one staged row exist.
+
+        Phase-3 step 1: also gates the **Check duplicates** button on the
+        same precondition (DB + account + rows) so the action is only
+        offered when a meaningful scan is possible.
+        """
         if not hasattr(self, "_btn_send_to_register"):
             return
         has_db = self._bank_db is not None
         has_account = self._selected_bank_account_id() is not None
         has_rows = self._table.rowCount() > 0 if hasattr(self, "_table") else False
-        self._btn_send_to_register.setEnabled(has_db and has_account and has_rows)
+        ready = has_db and has_account and has_rows
+        self._btn_send_to_register.setEnabled(ready)
+        if hasattr(self, "_btn_check_duplicates"):
+            self._btn_check_duplicates.setEnabled(ready)
+            if ready:
+                self._btn_check_duplicates.setToolTip(
+                    "Re-scan staged rows against Bank Register for the "
+                    "selected account."
+                )
+            else:
+                self._btn_check_duplicates.setToolTip(
+                    "Pick a company file, account, and stage at least one "
+                    "row to enable the duplicate scan."
+                )
         if not has_db:
             self._btn_send_to_register.setToolTip(
                 "Bank Register hand-off needs an open company file."
@@ -465,6 +534,85 @@ class BankStatementIntakePanel(QWidget):
             self._append_one(r)
         self._refresh_row_count_label()
         self._refresh_send_button_state()
+        # Run the duplicate scan once after hydration so re-opened sessions
+        # immediately show "Possible duplicate" badges where they apply.
+        self._refresh_duplicate_check()
+
+    # ----------------------------------------------------- duplicate check
+    def _refresh_duplicate_check(self) -> None:
+        """Re-run the register duplicate scan and repaint the column.
+
+        Silent no-op when DB or account is missing — the badge column stays
+        blank in that case so the panel still looks coherent in standalone /
+        Phase-1 mode.
+        """
+        if not hasattr(self, "_table"):
+            return
+        self._dup_matches = {}
+        if self._bank_db is None:
+            self._render_duplicate_column()
+            return
+        account_id = self._selected_bank_account_id()
+        if account_id is None:
+            self._render_duplicate_column()
+            return
+        rows = self.collect_rows()
+        if not rows:
+            self._render_duplicate_column()
+            return
+        try:
+            self._dup_matches = find_register_duplicates(
+                self._bank_db,
+                bank_account_id=account_id,
+                rows=rows,
+            )
+        except Exception:
+            self._dup_matches = {}
+        self._render_duplicate_column()
+
+    def _render_duplicate_column(self) -> None:
+        """Write the current ``_dup_matches`` into the read-only badge column."""
+        col = self._duplicate_column_index()
+        if col < 0:
+            return
+        for r in range(self._table.rowCount()):
+            match = self._dup_matches.get(r)
+            text = match.display_label() if match is not None else ""
+            existing = self._table.item(r, col)
+            if existing is None:
+                self._table.setItem(r, col, _make_item(text, editable=False))
+            else:
+                existing.setText(text)
+        self._refresh_duplicate_status_label()
+
+    def _refresh_duplicate_status_label(self) -> None:
+        if not hasattr(self, "_duplicate_status_label"):
+            return
+        n = len(self._dup_matches)
+        if n == 0:
+            self._duplicate_status_label.setText("")
+            return
+        self._duplicate_status_label.setText(
+            f"{n} possible duplicate{'s' if n != 1 else ''} of existing "
+            f"register rows."
+        )
+
+    @staticmethod
+    def _duplicate_column_index() -> int:
+        for i, (_, field_name) in enumerate(_REVIEW_COLUMNS):
+            if field_name == _DUP_REGISTER_FIELD:
+                return i
+        return -1
+
+    def _on_check_duplicates_clicked(self) -> None:
+        """Manual re-scan trigger (also runs automatically on edits / account change)."""
+        self._refresh_duplicate_check()
+
+    def duplicate_match_for_row(
+        self, row_index: int
+    ) -> Optional[RegisterDuplicateMatch]:
+        """Public read-only accessor (used by tests / future Phase-3 steps)."""
+        return self._dup_matches.get(row_index)
 
     # -------------------------------------------------------------- actions
     def _open_file_path(self, *, caption: str, file_filter: str) -> Optional[str]:
