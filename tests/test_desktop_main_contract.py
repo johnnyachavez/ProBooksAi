@@ -1066,6 +1066,48 @@ def test_main_window_build_ui_intake_f5_shortcut_before_reconcile_add_tab_order(
     assert f5 < add_intake
 
 
+def test_main_window_reconcile_hub_includes_phase1_statement_intake_subtab() -> None:
+    """Bank Statement Intake (phase 1, review-first) is wired as a Reconcile sub-tab.
+
+    The panel is the ``BankStatementIntakePanel`` from
+    :mod:`desktop_app.bank_statement_intake_panel`. It must be added under
+    ``_reconcile_hub`` (not ``_tabs``) so the eleven top-level tabs stay
+    static, and it must come after the existing ``Bank statements`` and
+    ``Documents`` sub-tabs so review-first staging is the rightmost option.
+    """
+    text = _MAIN.read_text(encoding="utf-8")
+    assert (
+        "from desktop_app.bank_statement_intake_panel import BankStatementIntakePanel"
+        in text
+    )
+    asm = text.index("def _assemble_main_tabs(self) -> None:")
+    asm_end = text.index("def _apply_main_tab_bar_tooltips(self) -> None:", asm)
+    chunk = text[asm:asm_end]
+    # Phase 2 wires the persisted-queue + register hand-off, so the panel is
+    # constructed with an explicit ``bank_db`` keyword. Phase 1 used the
+    # zero-arg form; Phase 2 must keep exactly one construction site.
+    assert chunk.count("BankStatementIntakePanel(") == 1
+    assert "BankStatementIntakePanel(\n            bank_db=self._bank_db,\n        )" in chunk
+    # Phase 2 must also wire the ``rowsSentToRegister`` signal so Bank Register
+    # auto-refreshes after a statement intake hand-off.
+    assert (
+        chunk.count(
+            "self._statement_intake_panel.rowsSentToRegister.connect("
+        )
+        == 1
+    )
+    assert (
+        chunk.count(
+            'self._reconcile_hub.addTab(\n            self._statement_intake_panel, "Statement intake (review)"\n        )'
+        )
+        == 1
+    )
+    add_bank = chunk.index('self._reconcile_hub.addTab(self._bank_tab, "Bank statements")')
+    add_docs = chunk.index('self._reconcile_hub.addTab(self._intake_widget, "Documents")')
+    add_intake = chunk.index('self._statement_intake_panel, "Statement intake (review)"')
+    assert add_bank < add_docs < add_intake
+
+
 def test_main_window_build_ui_status_bar_ready_message_and_qstatusbar() -> None:
     """``_build_ui`` creates a ``QStatusBar`` with a ready line that mentions File → Backup."""
     text = _MAIN.read_text(encoding="utf-8")
@@ -2520,7 +2562,10 @@ def test_main_window_set_tab_sync_title_and_company_status_helpers() -> None:
     assert chunk.count("self.setWindowTitle(") == 2
     assert chunk.count("ProBooks+ai –") == 2
     assert chunk.count("self._sync_window_title()") == 1
-    assert chunk.count("self._status_bar.showMessage(") == 2
+    # Phase-2 statement-intake hand-off (``_on_statement_intake_rows_sent``)
+    # adds a third status-bar message in this chunk so the user sees
+    # "posted N rows" right after sending from Statement intake.
+    assert chunk.count("self._status_bar.showMessage(") == 3
     assert "File → Backup copies this .db." in chunk
     assert chunk.count("self._header.set_company_name(") == 2
     assert 'self._header.set_company_name("No company file")' in chunk
@@ -5173,7 +5218,10 @@ def test_main_window_banner_tabs_status_bar_and_worker_counts() -> None:
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
     assert chunk.count("self._header.") == 2
-    assert chunk.count("self._status_bar.showMessage(") == 12
+    # +1 over the previous count: phase-2 statement-intake hand-off posts a
+    # status-bar message after a successful send so the user sees the row
+    # total without flipping tabs.
+    assert chunk.count("self._status_bar.showMessage(") == 13
     assert chunk.count("self._tabs.") == 38
     assert chunk.count("self._worker") == 15
 

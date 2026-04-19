@@ -56,53 +56,43 @@ def _company_html(plain: str) -> str:
     return _he(t).replace("\n", "<br/>")
 
 
-def _company_identity_labeled_html(
+def _company_identity_print_html(
     *,
     company_name: str,
     company_address: str,
     company_phone: str,
     company_email: str,
-    company_tax_id: str = "",
 ) -> str:
-    """Labeled company file block for print/PDF (empty fields show an em dash, not a blank box)."""
+    """Compact public-facing company block for print/PDF.
 
-    def _field_label(text: str, *, first: bool = False) -> str:
-        mt = "0" if first else "10px"
-        return (
-            f'<div style="font-weight:bold; font-size:9pt; margin-top:{mt}; '
-            f'color:#000;">{_he(text)}</div>'
-        )
+    Mirrors :func:`probooksai.company_identity.company_identity_plain_block`:
+    name on the first line, address (multi-line preserved), then ``Phone:`` and
+    ``Email:`` lines. **Tax ID is intentionally excluded** from the printed/PDF
+    output — it remains stored on the company file for internal banking, 1099,
+    and tax/reporting workflows but never appears on customer-facing invoices.
 
-    def _field_value_plain(single: str) -> str:
-        t = (single or "").strip()
-        if not t:
-            return '<span style="color:#555;">—</span>'
-        return _he(t)
-
-    def _field_value_multiline(block: str) -> str:
-        t = (block or "").strip()
-        if not t:
-            return '<span style="color:#555;">—</span>'
-        return _he(t).replace("\n", "<br/>")
-
-    parts: list[str] = [
-        _field_label("Company Name", first=True),
-        f'<div style="padding:2px 0 0 0;">{_field_value_plain(company_name)}</div>',
-        _field_label("Address"),
-        f'<div style="padding:2px 0 0 0;">{_field_value_multiline(company_address)}</div>',
-        _field_label("Phone"),
-        f'<div style="padding:2px 0 0 0;">{_field_value_plain(company_phone)}</div>',
-        _field_label("Email"),
-        f'<div style="padding:2px 0 0 0;">{_field_value_plain(company_email)}</div>',
-    ]
-    if (company_tax_id or "").strip():
-        parts.extend(
-            [
-                _field_label("Tax ID"),
-                f'<div style="padding:2px 0 0 0;">{_field_value_plain(company_tax_id)}</div>',
-            ]
-        )
-    return "".join(parts)
+    Empty fields are dropped (no em-dash placeholder) so the box stays clean
+    when the company file is partially filled in.
+    """
+    lines: list[str] = []
+    name = (company_name or "").strip()
+    if name:
+        lines.append(_he(name))
+    addr = (company_address or "").strip()
+    if addr:
+        for ln in addr.splitlines():
+            ln_stripped = ln.strip()
+            if ln_stripped:
+                lines.append(_he(ln_stripped))
+    phone = (company_phone or "").strip()
+    if phone:
+        lines.append(f"Phone: {_he(phone)}")
+    email = (company_email or "").strip()
+    if email:
+        lines.append(f"Email: {_he(email)}")
+    if not lines:
+        return "&#160;"
+    return "<br/>".join(lines)
 
 
 def _footer_html(plain: str) -> str:
@@ -132,13 +122,27 @@ def build_invoice_print_html(
     """
     Trucking-style invoice layout for QTextDocument print/PDF.
 
-    **Header (above the line grid):** **Left** — invoice title, date, invoice #, PO/contract, name/job.
-    **Right** — company file identity (labeled: name, address, phone, email) and Bill To.
+    **Header (above the line grid):**
+
+    * **Left** — invoice title at the top; the four boxes
+      ``Date`` / ``Invoice #`` / ``PO/CONTRACT#`` / ``NAME/JOB#`` are uniform in
+      size and bottom-aligned within the header band so they line up with the
+      bottom of the right column.
+    * **Right** — Company and Bill To boxes, both rendered with the same width
+      and the same height (no visible container titles; borders preserved).
+      The Company box uses the compact public-facing block from
+      :func:`_company_identity_print_html` — Tax ID is **never** printed.
+
+    ``company_tax_id`` is accepted for source/API compatibility with callers
+    that still pass the full identity dict but is intentionally ignored when
+    generating the printed output.
 
     ``line_rows`` tuples are
     ``(serviced_on, jl_num, description, bol, rate, qty, amount)`` — caller supplies
     display strings (already formatted numbers where needed).
     """
+    # Tax ID is deliberately unused on customer-facing print/PDF output.
+    del company_tax_id
     rows = list(line_rows or [])
     n = max(len(rows), max(0, min_body_rows))
     body_html: list[str] = []
@@ -173,62 +177,85 @@ def build_invoice_print_html(
     nj = _he((name_job or "").strip()) or "&#160;"
     bal = _he((balance_due_plain or "").strip()) or "&#160;"
 
+    # Header-band box dimensions (px). Picked so that:
+    # * Each of the four upper-left boxes (Date / Invoice # / PO/CONTRACT# /
+    #   NAME/JOB#) is uniform: same header height, same body height, same width.
+    # * Company and Bill To boxes share the same width (each side of the page
+    #   table is 50%) and the same body height — together they keep the same
+    #   combined footprint the previous layout used.
+    # * The four-box block is bottom-aligned within the header band by a top
+    #   spacer so its bottom edge meets the bottom of the right-column boxes.
+    _BOX_HEADER_H = 22
+    _BOX_BODY_H = 50
+    _SIDE_BOX_BODY_H = 110
+    _SIDE_BOX_GAP = 10
+    _LEFT_TOP_SPACER_H = 6
+
     parts = [
         "<html><head><meta charset=\"utf-8\"/></head><body "
         "style=\"margin:0.4in; font-family: Arial, Helvetica, sans-serif; "
         "font-size:10pt; color:#000;\">",
-        # Top: LEFT = invoice title / date / # / PO / job; RIGHT = company file identity + Bill To
+        # Top: LEFT = invoice title + (spacer) + four uniform boxes (bottom-aligned);
+        # RIGHT = Company and Bill To, both same width and same height, no titles.
         "<table width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border:none;\">",
         "<tr>",
         '<td width="50%" valign="top" style="border:none; padding:0 12px 0 0;">',
         '<div style="font-size:20pt; font-weight:bold; text-align:left; letter-spacing:0.02em; margin-bottom:8px;">'
         "Invoice</div>",
-        '<table width="100%" cellspacing="0" cellpadding="5" '
+        # Top spacer pushes the four-box group down so it bottom-aligns with
+        # the right column. The four boxes themselves are uniform in size.
+        f'<div style="height:{_LEFT_TOP_SPACER_H}px; line-height:{_LEFT_TOP_SPACER_H}px;">&#160;</div>',
+        '<table width="100%" cellspacing="0" cellpadding="4" '
         'style="border:2px solid #000; border-collapse:collapse;">',
         "<tr>",
-        '<th style="text-align:center; font-weight:bold; border:1px solid #000; width:50%;">Date</th>',
-        '<th style="text-align:center; font-weight:bold; border:1px solid #000; width:50%;">'
-        "Invoice #</th>",
+        f'<th style="text-align:center; font-weight:bold; border:1px solid #000; '
+        f'width:50%; height:{_BOX_HEADER_H}px;">Date</th>',
+        f'<th style="text-align:center; font-weight:bold; border:1px solid #000; '
+        f'width:50%; height:{_BOX_HEADER_H}px;">Invoice #</th>',
         "</tr>",
         "<tr>",
-        f'<td style="text-align:center; border:1px solid #000;">{inv_d}</td>',
-        f'<td style="text-align:center; border:1px solid #000;">{inv_n}</td>',
+        f'<td style="text-align:center; vertical-align:middle; border:1px solid #000; '
+        f'height:{_BOX_BODY_H}px;">{inv_d}</td>',
+        f'<td style="text-align:center; vertical-align:middle; border:1px solid #000; '
+        f'height:{_BOX_BODY_H}px;">{inv_n}</td>',
         "</tr>",
         "</table>",
-        '<table width="100%" cellspacing="0" cellpadding="0" '
+        '<table width="100%" cellspacing="0" cellpadding="4" '
         'style="border:2px solid #000; border-collapse:collapse; margin-top:10px;">',
         "<tr>",
-        '<th style="text-align:center; font-weight:bold; padding:5px; border:1px solid #000; width:50%;">'
-        "PO/CONTRACT#</th>",
-        '<th style="text-align:center; font-weight:bold; padding:5px; border:1px solid #000; width:50%;">'
-        "NAME/JOB#</th>",
+        f'<th style="text-align:center; font-weight:bold; border:1px solid #000; '
+        f'width:50%; height:{_BOX_HEADER_H}px;">PO/CONTRACT#</th>',
+        f'<th style="text-align:center; font-weight:bold; border:1px solid #000; '
+        f'width:50%; height:{_BOX_HEADER_H}px;">NAME/JOB#</th>',
         "</tr>",
         "<tr>",
-        f'<td valign="top" style="padding:8px; border:1px solid #000;">{po}</td>',
-        f'<td valign="top" style="padding:8px; border:1px solid #000;">{nj}</td>',
+        f'<td style="text-align:center; vertical-align:middle; border:1px solid #000; '
+        f'height:{_BOX_BODY_H}px;">{po}</td>',
+        f'<td style="text-align:center; vertical-align:middle; border:1px solid #000; '
+        f'height:{_BOX_BODY_H}px;">{nj}</td>',
         "</tr>",
         "</table>",
         "</td>",
         '<td width="50%" valign="top" style="border:none; padding:0 0 0 4px;">',
-        '<table width="100%" cellspacing="0" cellpadding="8" '
+        # Company box — no title bar, fixed body height (matches Bill To height
+        # exactly so both containers occupy the same footprint).
+        '<table width="100%" cellspacing="0" cellpadding="0" '
         'style="border:1px solid #000; border-collapse:collapse;">',
-        '<tr><th style="text-align:left; padding:5px 8px; font-weight:bold; border-bottom:1px solid #000;">'
-        "COMPANY</th></tr>",
-        "<tr><td valign=\"top\" style=\"min-height:72px; padding:8px;\">"
-        + _company_identity_labeled_html(
+        "<tr>"
+        f'<td valign="top" style="padding:10px 12px; height:{_SIDE_BOX_BODY_H}px;">'
+        + _company_identity_print_html(
             company_name=company_name,
             company_address=company_address,
             company_phone=company_phone,
             company_email=company_email,
-            company_tax_id=company_tax_id,
         )
         + "</td></tr>",
         "</table>",
+        # Bill To box — no title bar, identical body height to the Company box.
         '<table width="100%" cellspacing="0" cellpadding="0" '
-        'style="border:1px solid #000; border-collapse:collapse; margin-top:10px;">',
-        '<tr><th style="text-align:left; padding:5px 8px; font-weight:bold; border-bottom:1px solid #000;">'
-        "BILL TO</th></tr>",
-        '<tr><td valign="top" style="padding:8px; min-height:64px;">'
+        f'style="border:1px solid #000; border-collapse:collapse; margin-top:{_SIDE_BOX_GAP}px;">',
+        "<tr>"
+        f'<td valign="top" style="padding:10px 12px; height:{_SIDE_BOX_BODY_H}px;">'
         f"{_bill_to_html(bill_to_plain)}</td></tr>",
         "</table>",
         "</td>",

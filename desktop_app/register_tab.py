@@ -1004,9 +1004,35 @@ class RegisterTab(QWidget):
         self._apply_register_column_layout()
         self._sync_register_info_footer_visibility()
 
+    def _is_db_alive(self) -> bool:
+        """``True`` when ``self._db`` still has a usable SQLite connection.
+
+        Returns ``False`` if the bank database is missing or has been closed
+        (e.g. while the parent ``MainWindow`` is mid-``_switch_company_database``
+        and the old ``RegisterTab`` is still receiving Qt show events as the
+        tab strip rebuilds). This lets ``showEvent`` and ``_refresh_account_combo``
+        no-op instead of raising ``sqlite3.ProgrammingError`` against the closed
+        connection — the new ``RegisterTab`` built by ``_assemble_main_tabs``
+        owns the next refresh against the freshly opened DB.
+        """
+        db = getattr(self, "_db", None)
+        if db is None:
+            return False
+        if getattr(db, "is_closed", False):
+            return False
+        return getattr(db, "_conn", None) is not None
+
     def showEvent(self, event):
         super().showEvent(event)
-        self._refresh_account_combo()
+        if not self._is_db_alive():
+            # Old register tab being torn down by ``MainWindow._teardown_main_tabs_for_rebuild``
+            # while a sibling tab becomes current; ``self._db`` already points at a closed
+            # ``BankDatabase``. The new tab built by ``_assemble_main_tabs`` will refresh.
+            return
+        try:
+            self._refresh_account_combo()
+        except sqlite3.ProgrammingError:
+            return
         raw = QSettings().value(self._register_table_header_state_key())
         if raw:
             self._table.horizontalHeader().restoreState(raw)
@@ -1183,6 +1209,8 @@ class RegisterTab(QWidget):
         self._reload_current()
 
     def _refresh_account_combo(self):
+        if not self._is_db_alive():
+            return
         self._acct_combo.blockSignals(True)
         prev = self._current_account_id
         self._acct_combo.clear()
@@ -1234,6 +1262,8 @@ class RegisterTab(QWidget):
         self._load_transactions(aid)
 
     def _reload_current(self):
+        if not self._is_db_alive():
+            return
         if self._current_account_id is not None:
             self._load_transactions(self._current_account_id)
         else:

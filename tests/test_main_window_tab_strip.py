@@ -143,7 +143,12 @@ def test_customers_and_vendors_tabs_use_live_ar_ap_workflows(
         w.close()
 
 
-def test_reconcile_hub_hosts_bank_import_and_document_intake(qapp: QApplication, tmp_path: Path) -> None:
+def test_reconcile_hub_hosts_bank_import_document_intake_and_statement_intake(
+    qapp: QApplication, tmp_path: Path
+) -> None:
+    """Reconcile hub hosts the existing Bank statements + Documents tabs and the
+    new phase-1 Bank Statement Intake (review-first) sub-tab as the rightmost
+    option. Top-level tabs are unaffected (still eleven, locked elsewhere)."""
     from desktop_app.main import MainWindow
 
     db_path = tmp_path / "reconcile_hub.db"
@@ -151,8 +156,12 @@ def test_reconcile_hub_hosts_bank_import_and_document_intake(qapp: QApplication,
     w = MainWindow(db_path=str(db_path))
     try:
         rh = w._reconcile_hub
-        assert rh.count() == 2
+        assert rh.count() == 3
         assert rh.widget(0) is w._bank_tab
         assert rh.widget(1) is w._intake_widget
+        assert rh.widget(2) is w._statement_intake_panel
+        assert rh.tabText(0) == "Bank statements"
+        assert rh.tabText(1) == "Documents"
+        assert rh.tabText(2) == "Statement intake (review)"
     finally:
         w.close()

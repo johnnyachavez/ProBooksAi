@@ -80,6 +80,7 @@ from desktop_app.bank_import_tab import (
     BankImportTab,
     show_bank_import_keyboard_shortcuts_dialog,
 )
+from desktop_app.bank_statement_intake_panel import BankStatementIntakePanel
 from desktop_app.coa_tab import COATab
 from desktop_app.flexible_date import (
     attach_line_edit_us_date_normalization,
@@ -870,6 +871,10 @@ class MainWindow(QMainWindow):
         self._coa_db.seed_from_workbook()
         self._coa = load_coa()
         self._worker: AIWorker | None = None
+        # Set True for the duration of ``_switch_company_database`` so any
+        # ``showEvent`` fired on an old tab during ``_teardown_main_tabs_for_rebuild``
+        # can short-circuit before querying the just-closed ``BankDatabase``.
+        self._switching_database = False
 
         self._build_ui()
         self._refresh_inbox()
@@ -1008,6 +1013,18 @@ class MainWindow(QMainWindow):
         self._customers_tab = ARTab(conn)
         self._vendors_tab = APTab(conn)
 
+        # Bank Statement Intake — phase 2: review-first staging plus an
+        # explicit "Send to Bank Register" hand-off bound to the chosen bank
+        # account. The panel never writes to ``bank_transactions`` on its own;
+        # the user confirms a per-send batch first. Persisted queue (table
+        # ``bank_statement_intake_queue``) survives restart so review can resume.
+        self._statement_intake_panel = BankStatementIntakePanel(
+            bank_db=self._bank_db,
+        )
+        self._statement_intake_panel.rowsSentToRegister.connect(
+            self._on_statement_intake_rows_sent
+        )
+
         self._reconcile_hub = QTabWidget()
         self._reconcile_hub.setToolTip(
             "Reconcile: bank statement import, AI line reconciliation, and document intake. "
@@ -1015,6 +1032,9 @@ class MainWindow(QMainWindow):
         )
         self._reconcile_hub.addTab(self._bank_tab, "Bank statements")
         self._reconcile_hub.addTab(self._intake_widget, "Documents")
+        self._reconcile_hub.addTab(
+            self._statement_intake_panel, "Statement intake (review)"
+        )
 
         self._reconcile_root = QWidget()
         self._reconcile_root.setToolTip(
@@ -1162,6 +1182,11 @@ class MainWindow(QMainWindow):
             w = self._tabs.widget(0)
             self._tabs.removeTab(0)
             if w is not None and w is not iw:
+                # Detach from the QTabWidget hierarchy *before* deleteLater so
+                # the next ``removeTab(0)`` cannot mark this widget visible and
+                # fire a stray ``showEvent`` against a now-closed DB connection
+                # (see ``RegisterTab._is_db_alive``).
+                w.setParent(None)
                 w.deleteLater()
 
     # -- UI construction -----------------------------------------------------
@@ -1969,6 +1994,31 @@ class MainWindow(QMainWindow):
         if idx >= 0:
             self._tabs.setCurrentIndex(idx)
 
+    def _on_statement_intake_rows_sent(self, inserted: int) -> None:
+        """Phase-2 hand-off: refresh Bank Register so newly-posted rows appear immediately.
+
+        Triggered by :attr:`BankStatementIntakePanel.rowsSentToRegister` after
+        the user confirms a send. We ask the register tab to reload the current
+        account view so the user can see the new rows without flipping tabs.
+        Status bar notes the count so the action is auditable in passing.
+        """
+        if not hasattr(self, "_register_tab"):
+            return
+        try:
+            self._register_tab._reload_current()
+        except Exception:
+            pass
+        if hasattr(self, "_status_bar"):
+            self._status_bar.showMessage(
+                f"Statement intake \u2192 Bank Register: posted {inserted} "
+                f"row{'s' if inserted != 1 else ''}.",
+                _STMT_MATCH_SYNC_STATUS_MS,
+            )
+            QTimer.singleShot(
+                _STMT_MATCH_SYNC_STATUS_MS,
+                self._update_company_status,
+            )
+
     def _navigate_register_bank_match_link(self, link_type: str, link_id: int) -> None:
         """Bank register Match link: AR/AP go to Customers/Vendors; payroll opens More → Business → Payroll."""
         if not hasattr(self, "_customers_tab") or not hasattr(self, "_vendors_tab"):
@@ -2190,9 +2240,17 @@ class MainWindow(QMainWindow):
             return
 
         resolved = str(p.resolve())
-        self._db.close()
-        self._bank_db.close()
-        self._load_company_at_path(resolved)
+        # Block any showEvent-driven refresh on widgets that still hold a
+        # reference to the about-to-close ``BankDatabase`` (the old
+        # ``RegisterTab`` is removed inside ``_teardown_main_tabs_for_rebuild``,
+        # which is reached via ``_load_company_at_path`` below).
+        self._switching_database = True
+        try:
+            self._db.close()
+            self._bank_db.close()
+            self._load_company_at_path(resolved)
+        finally:
+            self._switching_database = False
 
     def _on_backup_company(self):
         if self._worker and self._worker.isRunning():

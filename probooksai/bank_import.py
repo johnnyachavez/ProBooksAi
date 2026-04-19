@@ -420,11 +420,26 @@ class BankDatabase:
             db_path = str(default_intake_sqlite_path())
         self._db_path = db_path
         self._conn = _connect(db_path)
+        self._closed = False
 
     # -- context manager -----------------------------------------------------
 
     def close(self):
+        if self._closed:
+            return
         self._conn.close()
+        self._closed = True
+
+    @property
+    def is_closed(self) -> bool:
+        """``True`` after :meth:`close` has been called.
+
+        Lets long-lived widgets that hold a reference to a *previous* ``BankDatabase``
+        (e.g. a ``RegisterTab`` whose tab is being torn down during a
+        ``_switch_company_database`` rebuild) probe the handle without raising
+        ``sqlite3.ProgrammingError`` on the next query attempt.
+        """
+        return self._closed
 
     def __enter__(self):
         return self
