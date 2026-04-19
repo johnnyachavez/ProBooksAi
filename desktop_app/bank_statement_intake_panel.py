@@ -64,6 +64,8 @@ from probooksai.bank_statement_intake import (
     extract_pdf_statement,
 )
 from probooksai.bank_statement_intake_categorize import (
+    AI_MATCHED_PATTERN_LABEL,
+    AIProvider,
     CategorySuggestion,
     apply_top_suggestions,
     suggest_categories_for_rows,
@@ -224,6 +226,12 @@ class BankStatementIntakePanel(QWidget):
         # blank). ``apply_suggestions()`` writes the top suggestion into any
         # currently-empty cell.
         self._category_suggestions: dict[int, list[CategorySuggestion]] = {}
+        # Phase-3 step 3: optional AI fallback hook. Gated by the
+        # ``ai_intake_enabled`` company setting so the default install
+        # never reaches outside the box. The default provider returns
+        # ``None`` (no suggestion) — wire a real provider via
+        # :meth:`set_ai_provider` to enable the fallback substantively.
+        self._ai_provider: Optional[AIProvider] = None
         self.setObjectName("bankStatementIntakePanel")
         self.setStyleSheet(
             f"QWidget#bankStatementIntakePanel {{ background-color: {WORKFLOW_PAGE_BG}; "
@@ -685,6 +693,11 @@ class BankStatementIntakePanel(QWidget):
         category" cell — the cell's *value* is whatever the user has
         typed or accepted. ``_on_apply_suggestions_clicked`` is what
         actually writes a suggested COA into the cell.
+
+        Phase-3 step 3 layers two opt-ins on top of the basic rule scan:
+        a normalize-description fallback (always on when DB is present)
+        and an AI fallback (only when both the ``ai_intake_enabled``
+        company setting is truthy AND a provider has been wired).
         """
         if not hasattr(self, "_table"):
             return
@@ -696,13 +709,45 @@ class BankStatementIntakePanel(QWidget):
         if not rows:
             self._render_suggestion_tooltips()
             return
+        ai_provider = self._effective_ai_provider()
         try:
             self._category_suggestions = suggest_categories_for_rows(
-                self._bank_db, rows
+                self._bank_db,
+                rows,
+                use_normalized_fallback=True,
+                ai_provider=ai_provider,
             )
         except Exception:
             self._category_suggestions = {}
         self._render_suggestion_tooltips()
+
+    def _effective_ai_provider(self) -> Optional[AIProvider]:
+        """Return the wired AI provider only if the company setting allows.
+
+        Reads ``ai_intake_enabled`` from ``company_settings`` (default
+        ``"0"`` = off). Treats any of ``"1"``, ``"true"``, ``"yes"``,
+        ``"on"`` (case-insensitive) as enabled.
+        """
+        if self._ai_provider is None or self._bank_db is None:
+            return None
+        try:
+            from probooksai.business import get_setting
+
+            value = get_setting(self._bank_db._conn, "ai_intake_enabled", "0")
+        except Exception:
+            return None
+        return self._ai_provider if str(value).strip().lower() in {
+            "1", "true", "yes", "on",
+        } else None
+
+    def set_ai_provider(self, provider: Optional[AIProvider]) -> None:
+        """Wire (or unwire) the optional Phase-3 step 3 AI fallback hook.
+
+        The provider is only consulted when ``ai_intake_enabled`` is
+        truthy in ``company_settings`` AND a provider has been set here.
+        """
+        self._ai_provider = provider
+        self._refresh_category_suggestions()
 
     def _render_suggestion_tooltips(self) -> None:
         """Write per-row suggestion tooltips on the Suggested category cells."""
@@ -746,7 +791,12 @@ class BankStatementIntakePanel(QWidget):
         return -1
 
     def _on_apply_suggestions_clicked(self) -> None:
-        """Write the top suggestion into every empty Suggested-category cell."""
+        """Write the top suggestion into every empty Suggested-category cell.
+
+        Honours the same Phase-3 step 3 normalize / AI fallback options
+        as the auto-refresh path so a "no rule match on raw" row that
+        only resolves via normalization (or AI) is still applied.
+        """
         rows = self.collect_rows()
         if not rows:
             return

@@ -21,15 +21,28 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from typing import Iterable, Optional, Sequence
+from typing import Callable, Iterable, Optional, Sequence
 
 from probooksai.bank_import import BankDatabase
 from probooksai.bank_statement_intake import BankStatementIntakeRow
+from probooksai.bank_statement_intake_normalize import normalize_description
 
 DEFAULT_SUGGESTION_LIMIT = 3
 # Minimum description length we'll bother scanning. Avoids matching a
 # one-letter pattern against a one-letter description.
 _MIN_DESC_LEN = 2
+
+# Phase-3 step 3: opt-in AI fallback. When ``ai_provider`` is supplied
+# and the rules+normalize path produces zero suggestions for a row, the
+# provider is consulted. The default provider returns ``None`` (no
+# suggestion), so even with the feature flag on the system is silent
+# until a real provider is wired up. AI suggestions are clearly tagged
+# in :class:`CategorySuggestion.matched_pattern` (``"<ai>"``) so the
+# panel UI and downstream logging can distinguish them from rule hits.
+AI_MATCHED_PATTERN_LABEL = "<ai>"
+
+# Type alias: ``ai_provider(description, normalized) -> CategorySuggestion | None``
+AIProvider = Callable[[str, str], Optional["CategorySuggestion"]]
 
 
 @dataclass(frozen=True)
@@ -60,25 +73,14 @@ def _confidence_for_pattern(pattern: str, description: str) -> float:
     return max(0.40, min(0.95, round(base, 3)))
 
 
-def suggest_categories_for_description(
+def _scan_rules_for_text(
     conn: sqlite3.Connection,
-    description: str,
+    text: str,
     *,
-    limit: int = DEFAULT_SUGGESTION_LIMIT,
+    limit: int,
 ) -> list[CategorySuggestion]:
-    """Return up to *limit* :class:`CategorySuggestion` for *description*.
-
-    Walks ``categorization_rules`` in priority order and emits one
-    suggestion per active pattern that occurs (case-insensitive) in
-    *description*. Duplicate COAs are deduped, keeping the highest-priority
-    pattern. Returns ``[]`` for empty / too-short descriptions.
-    """
-    if conn is None or limit < 1:
-        return []
-    desc = (description or "").strip()
-    if len(desc) < _MIN_DESC_LEN:
-        return []
-    desc_l = desc.lower()
+    """Single-pass rule scan against *text* (no normalize / no AI)."""
+    text_l = text.lower()
     rows = conn.execute(
         """
         SELECT pattern, coa_account, priority
@@ -94,7 +96,7 @@ def suggest_categories_for_description(
         coa = (r["coa_account"] or "").strip()
         if not pat or not coa:
             continue
-        if pat.lower() not in desc_l:
+        if pat.lower() not in text_l:
             continue
         if coa in seen_coa:
             continue
@@ -103,7 +105,7 @@ def suggest_categories_for_description(
             CategorySuggestion(
                 coa_account=coa,
                 matched_pattern=pat,
-                confidence=_confidence_for_pattern(pat, desc),
+                confidence=_confidence_for_pattern(pat, text),
             )
         )
         if len(out) >= limit:
@@ -111,16 +113,77 @@ def suggest_categories_for_description(
     return out
 
 
+def suggest_categories_for_description(
+    conn: sqlite3.Connection,
+    description: str,
+    *,
+    limit: int = DEFAULT_SUGGESTION_LIMIT,
+    use_normalized_fallback: bool = False,
+    ai_provider: Optional[AIProvider] = None,
+) -> list[CategorySuggestion]:
+    """Return up to *limit* :class:`CategorySuggestion` for *description*.
+
+    Resolution order:
+
+    1. Run the rules engine against the **raw** description.
+    2. If empty AND ``use_normalized_fallback=True``, re-run against the
+       :func:`normalize_description` form (cleaner for noisy bank memos).
+    3. If still empty AND ``ai_provider`` is supplied, ask the provider
+       for a suggestion. Returned AI suggestions are tagged with
+       :data:`AI_MATCHED_PATTERN_LABEL` so the UI and audit trail can
+       distinguish them from rule hits.
+
+    Returns ``[]`` for empty / too-short descriptions.
+    """
+    if conn is None or limit < 1:
+        return []
+    desc = (description or "").strip()
+    if len(desc) < _MIN_DESC_LEN:
+        return []
+
+    rule_hits = _scan_rules_for_text(conn, desc, limit=limit)
+    if rule_hits:
+        return rule_hits
+
+    if use_normalized_fallback:
+        normalized = normalize_description(desc)
+        if normalized and normalized.lower() != desc.lower():
+            normalized_hits = _scan_rules_for_text(conn, normalized, limit=limit)
+            if normalized_hits:
+                return normalized_hits
+
+    if ai_provider is not None:
+        try:
+            normalized = normalize_description(desc)
+            ai_suggestion = ai_provider(desc, normalized)
+        except Exception:
+            ai_suggestion = None
+        if ai_suggestion is not None:
+            # Force the AI tag so callers can filter by it.
+            tagged = CategorySuggestion(
+                coa_account=ai_suggestion.coa_account,
+                matched_pattern=AI_MATCHED_PATTERN_LABEL,
+                confidence=ai_suggestion.confidence,
+            )
+            return [tagged]
+
+    return []
+
+
 def suggest_categories_for_rows(
     bank_db: BankDatabase,
     rows: Sequence[BankStatementIntakeRow],
     *,
     limit: int = DEFAULT_SUGGESTION_LIMIT,
+    use_normalized_fallback: bool = False,
+    ai_provider: Optional[AIProvider] = None,
 ) -> dict[int, list[CategorySuggestion]]:
     """Return ``{row_index: [CategorySuggestion, ...]}`` for *rows*.
 
-    Rows whose description produces zero suggestions are absent from the
-    result. Never mutates *rows*.
+    Rows whose description produces zero suggestions are absent from
+    the result. Never mutates *rows*. ``use_normalized_fallback`` and
+    ``ai_provider`` are forwarded to
+    :func:`suggest_categories_for_description` per row.
     """
     if bank_db is None:
         return {}
@@ -131,7 +194,11 @@ def suggest_categories_for_rows(
     out: dict[int, list[CategorySuggestion]] = {}
     for i, row in enumerate(rows_list):
         suggestions = suggest_categories_for_description(
-            conn, row.description_raw or "", limit=limit
+            conn,
+            row.description_raw or "",
+            limit=limit,
+            use_normalized_fallback=use_normalized_fallback,
+            ai_provider=ai_provider,
         )
         if suggestions:
             out[i] = suggestions
@@ -163,6 +230,8 @@ def apply_top_suggestions(
 
 
 __all__ = [
+    "AIProvider",
+    "AI_MATCHED_PATTERN_LABEL",
     "CategorySuggestion",
     "DEFAULT_SUGGESTION_LIMIT",
     "apply_top_suggestions",
