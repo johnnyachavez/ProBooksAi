@@ -5,12 +5,13 @@ Cloud-API-driven document extraction for ProBooks+ai.
 
 Environment variables
 ---------------------
-AI_PROVIDER     – Cloud provider to use.  Default: ``openai``
-                  Currently supported: ``openai`` (any OpenAI-compatible endpoint)
-OPENAI_API_KEY  – API key for the OpenAI (or compatible) provider.
-OPENAI_MODEL    – Model name.  Default: ``gpt-4o``
-AI_BASE_URL     – Optional: override the base URL (e.g. for Azure OpenAI,
-                  Ollama, or any OpenAI-compatible proxy).
+AI_PROVIDER         – Cloud provider to use.  Default: ``openai``
+                      Supported: ``openai``, ``anthropic``
+OPENAI_API_KEY      – API key for the OpenAI (or compatible) provider.
+OPENAI_MODEL        – Model name.  Default: ``gpt-4o``
+AI_BASE_URL         – Optional: override the OpenAI base URL (e.g. Azure, Ollama).
+ANTHROPIC_API_KEY   – API key for the Anthropic (Claude) provider.
+ANTHROPIC_MODEL     – Claude model name.  Default: ``claude-sonnet-4-6``
 
 Usage
 -----
@@ -142,6 +143,95 @@ def _call_openai(messages: list[dict]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Anthropic (Claude) caller
+# ---------------------------------------------------------------------------
+
+_ANTHROPIC_IMAGE_MIMES = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+}
+
+
+def _call_anthropic(path: str, mimetype: str) -> str:
+    """Call the Anthropic Claude API for document extraction and return the JSON string.
+
+    Uses native PDF vision for PDFs (no text pre-extraction needed) and standard
+    image vision for JPG/PNG/WEBP. Requires ANTHROPIC_API_KEY in the environment.
+    """
+    try:
+        import anthropic
+    except ImportError as exc:
+        raise RuntimeError(
+            "The 'anthropic' package is required for Claude extraction. "
+            "Install it with: pip install anthropic"
+        ) from exc
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError(
+            "ANTHROPIC_API_KEY environment variable is not set. "
+            "Get a key at console.anthropic.com, then set ANTHROPIC_API_KEY."
+        )
+
+    model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+    client = anthropic.Anthropic(api_key=api_key)
+
+    with open(path, "rb") as fh:
+        raw = fh.read()
+    b64 = base64.b64encode(raw).decode()
+
+    user_text = (
+        f"Extract structured accounting data from this document. "
+        f"Return ONLY valid JSON matching this schema:\n\n{json.dumps(_EXTRACTION_SCHEMA, indent=2)}"
+    )
+
+    if mimetype == "application/pdf":
+        content: list = [
+            {
+                "type": "document",
+                "source": {
+                    "type": "base64",
+                    "media_type": "application/pdf",
+                    "data": b64,
+                },
+            },
+            {"type": "text", "text": user_text},
+        ]
+        msg = client.beta.messages.create(
+            model=model,
+            max_tokens=2048,
+            betas=["pdfs-2024-09-25"],
+            system=_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": content}],
+        )
+    else:
+        ext = Path(path).suffix.lower()
+        actual_mime = _ANTHROPIC_IMAGE_MIMES.get(ext, "image/jpeg")
+        content = [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": actual_mime,
+                    "data": b64,
+                },
+            },
+            {"type": "text", "text": user_text},
+        ]
+        msg = client.messages.create(
+            model=model,
+            max_tokens=2048,
+            system=_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": content}],
+        )
+
+    return msg.content[0].text
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -165,40 +255,40 @@ def extract_document(path: str, mimetype: str) -> ExtractionResult:
     provider = os.environ.get("AI_PROVIDER", "openai").lower()
 
     try:
-        if provider != "openai":
-            raise RuntimeError(
-                f"Unsupported AI_PROVIDER: {provider!r}. Only 'openai' is currently supported."
-            )
-
-        if mimetype == "application/pdf":
-            text = _pdf_to_text(path)
-            if text.strip():
-                # Text-based PDF: send extracted text
+        if provider == "anthropic":
+            if mimetype != "application/pdf" and not mimetype.startswith("image/"):
+                return ExtractionResult(error=f"Unsupported MIME type: {mimetype!r}")
+            raw = _call_anthropic(path, mimetype)
+        elif provider == "openai":
+            if mimetype == "application/pdf":
+                text = _pdf_to_text(path)
+                if text.strip():
+                    messages = [
+                        {"role": "system", "content": _SYSTEM_PROMPT},
+                        {"role": "user", "content": f"Extract data from this document:\n\n{text}"},
+                    ]
+                else:
+                    messages = _messages_for_scanned_pdf(path)
+            elif mimetype.startswith("image/"):
+                data_url = _image_to_data_url(path)
                 messages = [
                     {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": f"Extract data from this document:\n\n{text}"},
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "Extract data from this document image:"},
+                            {"type": "image_url", "image_url": {"url": data_url}},
+                        ],
+                    },
                 ]
             else:
-                # Scanned PDF: convert first page to image (best-effort)
-                messages = _messages_for_scanned_pdf(path)
-        elif mimetype.startswith("image/"):
-            data_url = _image_to_data_url(path)
-            messages = [
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "Extract data from this document image:"},
-                        {"type": "image_url", "image_url": {"url": data_url}},
-                    ],
-                },
-            ]
+                return ExtractionResult(error=f"Unsupported MIME type: {mimetype!r}")
+            raw = _call_openai(messages)
         else:
             return ExtractionResult(
-                error=f"Unsupported MIME type: {mimetype!r}"
+                error=f"Unsupported AI_PROVIDER: {provider!r}. Set AI_PROVIDER to 'anthropic' or 'openai'."
             )
 
-        raw = _call_openai(messages)
         data = _parse_response(raw)
 
         return ExtractionResult(

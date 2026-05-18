@@ -313,6 +313,21 @@ class InvoiceScreen(QWidget):
     def selected_bill_to_customer_id(self) -> Optional[int]:
         return self._bill_customer_panel.selected_customer_id()
 
+    def prefill_from_document(self, data: dict) -> None:
+        """Pre-fill header fields from AI-extracted document data (skips blank values)."""
+        from desktop_app.flexible_date import format_ymd_as_us
+        inv_num = (data.get("invoice_number") or "").strip()
+        if inv_num:
+            self._inv_number.setText(inv_num)
+            self._invoice_number_autofill_value = inv_num
+        iso_date = (data.get("doc_date") or "").strip()
+        if iso_date:
+            try:
+                y, m, d = (int(p) for p in iso_date.split("-"))
+                self._date.setText(format_ymd_as_us(m, d, y))
+            except (ValueError, AttributeError):
+                pass
+
     def _line_edit_header_style(self) -> str:
         return (
             f"QLineEdit {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_INV_GRID}; "

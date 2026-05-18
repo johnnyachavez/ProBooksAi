@@ -353,10 +353,12 @@ _COA_SELECT_LABEL = "– select –"
 class DetailPane(QScrollArea):
     """Shows document preview + extracted fields + action buttons."""
 
-    runAI      = Signal(int)    # doc_id
-    approve    = Signal(int)
-    markPosted = Signal(int)
-    reject     = Signal(int)
+    runAI         = Signal(int)    # doc_id
+    approve       = Signal(int)
+    markPosted    = Signal(int)
+    reject        = Signal(int)
+    routeToInvoice = Signal(dict)  # extracted field values
+    routeToBill    = Signal(dict)
 
     def __init__(self, coa_list: list[str], parent=None):
         super().__init__(parent)
@@ -534,6 +536,32 @@ class DetailPane(QScrollArea):
         self._btn_reject.clicked.connect(self._on_reject)
 
         layout.addLayout(btn_layout)
+
+        # Route buttons \u2014 push extracted fields directly to Invoice or Bills screen
+        route_layout = QHBoxLayout()
+        self._btn_route_invoice = QPushButton("\U0001f4c4 Create Invoice")
+        self._btn_route_invoice.setMinimumHeight(32)
+        self._btn_route_invoice.setToolTip(
+            "Pre-fill the Invoices tab with extracted fields and switch to it."
+        )
+        self._btn_route_invoice.setStyleSheet(
+            "background: #1565C0; color: white; font-weight: bold;"
+        )
+        self._btn_route_invoice.clicked.connect(self._on_route_invoice)
+
+        self._btn_route_bill = QPushButton("\U0001f4e5 Enter as Bill")
+        self._btn_route_bill.setMinimumHeight(32)
+        self._btn_route_bill.setToolTip(
+            "Pre-fill the Enter Bills tab with extracted fields and switch to it."
+        )
+        self._btn_route_bill.setStyleSheet(
+            "background: #6A1B9A; color: white; font-weight: bold;"
+        )
+        self._btn_route_bill.clicked.connect(self._on_route_bill)
+
+        route_layout.addWidget(self._btn_route_invoice)
+        route_layout.addWidget(self._btn_route_bill)
+        layout.addLayout(route_layout)
         layout.addStretch()
 
         self._set_buttons_enabled(False)
@@ -665,7 +693,10 @@ class DetailPane(QScrollArea):
         self._f_confidence.setText(f"{result.confidence:.0%}")
 
     def _set_buttons_enabled(self, enabled: bool):
-        for btn in (self._btn_run, self._btn_approve, self._btn_post, self._btn_reject):
+        for btn in (
+            self._btn_run, self._btn_approve, self._btn_post, self._btn_reject,
+            self._btn_route_invoice, self._btn_route_bill,
+        ):
             btn.setEnabled(enabled)
 
     # -- button slots --------------------------------------------------------
@@ -685,6 +716,14 @@ class DetailPane(QScrollArea):
     def _on_reject(self):
         if self._doc_id is not None:
             self.reject.emit(self._doc_id)
+
+    def _on_route_invoice(self):
+        if self._doc_id is not None:
+            self.routeToInvoice.emit(self.collect_approved_values())
+
+    def _on_route_bill(self):
+        if self._doc_id is not None:
+            self.routeToBill.emit(self.collect_approved_values())
 
     def update_coa(self, coa_list: list[str]):
         """Refresh the COA dropdown with an updated list."""
@@ -926,6 +965,8 @@ class MainWindow(QMainWindow):
         self._detail.approve.connect(self._on_approve)
         self._detail.markPosted.connect(self._on_mark_posted)
         self._detail.reject.connect(self._on_reject)
+        self._detail.routeToInvoice.connect(self._on_route_to_invoice)
+        self._detail.routeToBill.connect(self._on_route_to_bill)
         splitter.addWidget(self._detail)
 
         splitter.setSizes([380, 720])
@@ -1778,6 +1819,36 @@ class MainWindow(QMainWindow):
         self._db.set_status(did, "Needs Review")
         self._refresh_inbox()
         self._status_bar.showMessage("Document flagged \u2013 Needs Review.")
+
+    def _on_route_to_invoice(self, values: dict) -> None:
+        """Switch to Invoices tab and pre-fill header fields from extracted document."""
+        self._invoice_screen.prefill_from_document(values)
+        idx = self._tabs.indexOf(self._invoice_screen)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+        vendor = (values.get("vendor") or "").strip()
+        total = values.get("total")
+        hint = f"Routed to Invoices"
+        if vendor:
+            hint += f" \u2014 {vendor}"
+        if total is not None:
+            hint += f", total ${total:,.2f}"
+        self._status_bar.showMessage(hint)
+
+    def _on_route_to_bill(self, values: dict) -> None:
+        """Switch to Enter Bills tab and pre-fill header fields from extracted document."""
+        self._enter_bills_screen.prefill_from_document(values)
+        idx = self._tabs.indexOf(self._enter_bills_screen)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+        vendor = (values.get("vendor") or "").strip()
+        total = values.get("total")
+        hint = f"Routed to Enter Bills"
+        if vendor:
+            hint += f" \u2014 {vendor}"
+        if total is not None:
+            hint += f", total ${total:,.2f}"
+        self._status_bar.showMessage(hint)
 
     # -- helpers -------------------------------------------------------------
 
