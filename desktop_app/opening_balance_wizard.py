@@ -196,7 +196,11 @@ class OpeningBalanceWizard(QDialog):
     # -- navigation ----------------------------------------------------------
 
     def _go_next(self) -> None:
-        self._populate_accounts_table()
+        try:
+            self._populate_accounts_table()
+        except Exception as exc:
+            message_box_warning_ok(self, "Could not load accounts", str(exc))
+            return
         self._stack.setCurrentIndex(1)
         self._lbl_title.setText("Step 2 of 2 — Enter opening balances")
         self._lbl_sub.setText(
@@ -221,12 +225,43 @@ class OpeningBalanceWizard(QDialog):
 
     # -- account table -------------------------------------------------------
 
+    @staticmethod
+    def _entry_name_type(entry) -> tuple[str, str]:
+        """Extract (display_name, account_type) from any entry format.
+
+        Handles:
+        - sqlite3.Row  → columns account_name / account_number / account_type
+        - COAEntry namedtuple → .display property, .account_type attr
+        - plain dict   → 'display' or 'account_name' key, 'account_type' key
+        """
+        # sqlite3.Row — has keys() method and subscript access
+        try:
+            keys = entry.keys()
+            acct_name = entry["account_name"] if "account_name" in keys else ""
+            acct_num  = entry["account_number"] if "account_number" in keys else ""
+            display   = f"{acct_num} {acct_name}".strip() if acct_num else acct_name
+            atype     = entry["account_type"] if "account_type" in keys else ""
+            return str(display), str(atype)
+        except (TypeError, AttributeError):
+            pass
+        # COAEntry namedtuple / object with .display
+        display = getattr(entry, "display", None)
+        atype   = getattr(entry, "account_type", None)
+        if display is not None:
+            return str(display), str(atype or "")
+        # Plain dict fallback
+        try:
+            display = entry.get("display") or entry.get("account_name") or ""
+            atype   = entry.get("account_type") or ""
+            return str(display), str(atype)
+        except AttributeError:
+            return str(entry), ""
+
     def _populate_accounts_table(self) -> None:
         self._tbl.setRowCount(0)
         self._spins: list[QDoubleSpinBox] = []
         for entry in self._coa_entries:
-            name = str(getattr(entry, "display", None) or entry.get("display", "") or "")
-            atype = str(getattr(entry, "account_type", None) or entry.get("account_type", "") or "")
+            name, atype = self._entry_name_type(entry)
             if not name:
                 continue
             r = self._tbl.rowCount()
