@@ -1276,6 +1276,17 @@ class BankImportTab(QWidget):
         btn_pdf.clicked.connect(self._on_import_pdf)
         hdr_row.addWidget(btn_pdf)
 
+        btn_batch = QPushButton("\U0001f4e6  Import Multiple Statements…")
+        btn_batch.setToolTip(
+            "Import many PDFs, JPGs, or PNGs at once (historical catch-up). "
+            "Dates are inferred from transaction rows; no period dialog needed. "
+            "Scanned/image files are sent to Claude AI when AI_PROVIDER=anthropic is set. "
+            "A progress bar tracks each file."
+        )
+        btn_batch.clicked.connect(self._on_import_batch)
+        hdr_row.addWidget(btn_batch)
+        self._btn_batch = btn_batch
+
         hdr_row.addStretch()
         intake_lay.addLayout(hdr_row)
 
@@ -2170,6 +2181,96 @@ class BankImportTab(QWidget):
             f"Skipped {result['skipped']} duplicate(s).",
             ok_tip="Close; review batches and transactions below.",
         )
+
+    # -----------------------------------------------------------------------
+    # Batch statement import (multi-file historical catch-up)
+    # -----------------------------------------------------------------------
+
+    def _on_import_batch(self):
+        if self._current_account_id is None:
+            message_box_information_ok(
+                self,
+                "No Account",
+                "Please create and select a bank account first (Manage Accounts).",
+                ok_tip="Close; use Manage Accounts to add an account, then select it.",
+            )
+            return
+
+        from desktop_app.bank_import_csv_export_paths import (
+            bank_import_open_dialog_start_dir,
+            remember_bank_import_import_dir,
+        )
+        paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Import Multiple Bank Statements",
+            bank_import_open_dialog_start_dir(),
+            "Statements (*.pdf *.jpg *.jpeg *.png *.webp *.gif *.bmp *.tiff *.tif);;All files (*.*)",
+        )
+        if not paths:
+            return
+        remember_bank_import_import_dir(paths[0])
+
+        from PySide6.QtWidgets import QProgressDialog
+        from PySide6.QtCore import Qt
+
+        prog = QProgressDialog(
+            f"Importing 0 of {len(paths)}…",
+            "Cancel",
+            0,
+            len(paths),
+            self,
+        )
+        prog.setWindowTitle("Batch Statement Import")
+        prog.setWindowModality(Qt.WindowModality.WindowModal)
+        prog.setMinimumDuration(0)
+        prog.setValue(0)
+
+        db_path = self._db._db_path
+
+        from desktop_app.batch_statement_worker import BatchStatementWorker
+        self._batch_worker = BatchStatementWorker(
+            db_path=db_path,
+            account_id=self._current_account_id,
+            file_paths=paths,
+        )
+
+        def _on_file_started(idx, total, name):
+            if prog.wasCanceled():
+                self._batch_worker.request_cancel()
+                return
+            prog.setLabelText(f"Importing {idx} of {total}: {name}")
+            prog.setValue(idx - 1)
+
+        def _on_file_done(idx, total, name, inserted, skipped):
+            prog.setValue(idx)
+
+        def _on_all_done(inserted, skipped, errors):
+            prog.setValue(len(paths))
+            prog.close()
+            self._refresh_batches(self._current_account_id)
+            lines = [
+                f"Batch import complete — {len(paths)} file(s) processed.",
+                f"  Inserted: {inserted} transaction(s)",
+                f"  Skipped (duplicates): {skipped}",
+            ]
+            if errors:
+                lines.append(f"  Errors: {len(errors)}")
+                for fname, err in errors[:5]:
+                    lines.append(f"    {fname}: {err}")
+                if len(errors) > 5:
+                    lines.append(f"    … and {len(errors) - 5} more.")
+            message_box_information_ok(
+                self,
+                "Batch Import Complete",
+                "\n".join(lines),
+                ok_tip="Close; review the imported batches and transactions below.",
+            )
+
+        self._batch_worker.file_started.connect(_on_file_started)
+        self._batch_worker.file_done.connect(_on_file_done)
+        self._batch_worker.all_done.connect(_on_all_done)
+        prog.canceled.connect(self._batch_worker.request_cancel)
+        self._batch_worker.start()
 
     def _on_import_csv(self):
         if self._current_account_id is None:

@@ -90,6 +90,7 @@ from desktop_app.extra_tabs import (
     show_business_keyboard_shortcuts_dialog,
 )
 from desktop_app.audit_tab import AuditTab
+from desktop_app.asset_register_tab import AssetRegisterTab
 from desktop_app.enter_bills_screen import EnterBillsScreen
 from desktop_app.invoice_screen import InvoiceScreen
 from desktop_app.pay_bills_screen import PayBillsScreen
@@ -1044,15 +1045,17 @@ class MainWindow(QMainWindow):
         self._journal_tab = JournalTab(conn)
         self._business_hub = BusinessHub(conn)
         self._audit_tab = AuditTab(conn)
+        self._asset_register_tab = AssetRegisterTab(conn, coa_list=self._coa_db.display_list() if hasattr(self, "_coa_db") else None)
 
         self._more_hub = QTabWidget()
         self._more_hub.setToolTip(
-            "More: Reports, Journal, Business, and Audit log (legacy locations; full migration pending). "
+            "More: Reports, Journal, Business, Asset Register, and Audit log. "
             "Same company .db (File → Backup / Restore, probooks.backup)."
         )
         self._more_hub.addTab(self._reports_tab, "Reports")
         self._more_hub.addTab(self._journal_tab, "Journal")
         self._more_hub.addTab(self._business_hub, "Business")
+        self._more_hub.addTab(self._asset_register_tab, "Assets")
         self._more_hub.addTab(self._audit_tab, "Audit log")
 
         self._tabs.addTab(self._invoice_screen, "Invoices")
@@ -1380,6 +1383,27 @@ class MainWindow(QMainWindow):
         )
         act_tools_invoice.triggered.connect(self._on_tools_invoice)
         tools_menu.addAction(act_tools_invoice)
+
+        tools_menu.addSeparator()
+
+        act_opening_balance = QAction("&Opening Balance Wizard…", self)
+        _menu_action_tip(
+            act_opening_balance,
+            "Open the Opening Balance Wizard to set a historical cut-off date and enter "
+            "per-account opening balances. Posts one balanced GL journal entry. "
+            "More → Assets for the fixed asset register.",
+        )
+        act_opening_balance.triggered.connect(self._on_tools_opening_balance)
+        tools_menu.addAction(act_opening_balance)
+
+        act_payee_categ = QAction("&Bulk Categorize Payees…", self)
+        _menu_action_tip(
+            act_payee_categ,
+            "Assign COA accounts to uncategorized payees in one pass. "
+            "Updates all matching bank transactions and saves categorization rules for future imports.",
+        )
+        act_payee_categ.triggered.connect(self._on_tools_payee_categorize)
+        tools_menu.addAction(act_payee_categ)
 
         # Recon menu — bank register bulk actions (moved from the register tab for a table-focused UI)
         recon_menu = mb.addMenu("&Recon")
@@ -1864,6 +1888,8 @@ class MainWindow(QMainWindow):
         coa_display = self._coa_db.display_list()
         self._detail.update_coa(coa_display)
         self._register_tab.refresh_coa_choices()
+        if hasattr(self, "_asset_register_tab"):
+            self._asset_register_tab.update_coa_list(coa_display)
 
     def _on_tools_invoice(self) -> None:
         """Tools → Invoice: top-level Invoices tab."""
@@ -1872,6 +1898,26 @@ class MainWindow(QMainWindow):
         idx = self._tabs.indexOf(self._invoice_screen)
         if idx >= 0:
             self._tabs.setCurrentIndex(idx)
+
+    def _on_tools_opening_balance(self) -> None:
+        """Tools → Opening Balance Wizard."""
+        if not hasattr(self, "_bank_db"):
+            message_box_warning_ok(self, "No company file", "Open a company file first.")
+            return
+        from desktop_app.opening_balance_wizard import OpeningBalanceWizard
+        coa_entries = self._coa_db.list_accounts() if hasattr(self, "_coa_db") else []
+        dlg = OpeningBalanceWizard(self._bank_db._conn, coa_entries, parent=self)
+        dlg.exec()
+
+    def _on_tools_payee_categorize(self) -> None:
+        """Tools → Bulk Categorize Payees."""
+        if not hasattr(self, "_bank_db"):
+            message_box_warning_ok(self, "No company file", "Open a company file first.")
+            return
+        from desktop_app.payee_categorize_dialog import PayeeCategorizeDialog
+        coa_list = self._coa_db.display_list() if hasattr(self, "_coa_db") else []
+        dlg = PayeeCategorizeDialog(self._bank_db._conn, coa_list, parent=self)
+        dlg.exec()
 
     def _on_company_setup(self) -> None:
         """File → Company Setup: navigate to More → Business → Company sub-tab."""
