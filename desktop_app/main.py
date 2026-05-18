@@ -92,6 +92,7 @@ from desktop_app.extra_tabs import (
 from desktop_app.audit_tab import AuditTab
 from desktop_app.asset_register_tab import AssetRegisterTab
 from desktop_app.dashboard_tab import DashboardTab
+from desktop_app.first_run_wizard import FirstRunWizard, apply_wizard_results
 from desktop_app.enter_bills_screen import EnterBillsScreen
 from desktop_app.invoice_screen import InvoiceScreen
 from desktop_app.pay_bills_screen import PayBillsScreen
@@ -2426,7 +2427,24 @@ def main():
         last = QSettings().value("company_database_path", "", type=str) or ""
         if last and Path(last).is_file():
             db_path = last
+
+    # First run: no company file configured → launch setup wizard
+    _wizard_results: FirstRunWizard | None = None
+    if db_path is None:
+        wiz = FirstRunWizard()
+        if wiz.exec() != FirstRunWizard.DialogCode.Accepted or not wiz.db_path:
+            sys.exit(0)  # user cancelled — exit cleanly
+        db_path = wiz.db_path
+        _wizard_results = wiz
+
     window = MainWindow(db_path=db_path)
+
+    # Apply company info + bank account saved in the wizard
+    if _wizard_results is not None:
+        apply_wizard_results(_wizard_results, window._bank_db)
+        if hasattr(window, "_dashboard_tab"):
+            window._dashboard_tab.refresh()
+
     window.show()
     sys.exit(app.exec())
 
