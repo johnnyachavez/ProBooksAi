@@ -343,6 +343,38 @@ def get_invoice(invoice_id: int):
     }
 
 
+@app.get(
+    "/invoices/{invoice_id}/pdf",
+    tags=["AR — Invoices"],
+    dependencies=[Depends(_check_auth)],
+    response_class=__import__("fastapi.responses", fromlist=["FileResponse"]).FileResponse,
+)
+def download_invoice_pdf(invoice_id: int):
+    """
+    Generate and download a professional PDF for the given invoice.
+    Requires reportlab: pip install reportlab
+    """
+    from fastapi.responses import FileResponse
+    from probooksai.invoice_pdf import render_invoice_pdf
+    from probooksai.business import get_invoice_detail
+    with _bank_conn() as conn:
+        header, _ = get_invoice_detail(conn, invoice_id)
+        if not header:
+            raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found.")
+        try:
+            pdf_path = render_invoice_pdf(conn, invoice_id)
+        except ImportError as exc:
+            raise HTTPException(status_code=501, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+    inv_num = (dict(header).get("invoice_number") or str(invoice_id)).replace("/", "-")
+    return FileResponse(
+        pdf_path,
+        media_type="application/pdf",
+        filename=f"Invoice-{inv_num}.pdf",
+    )
+
+
 @app.post(
     "/invoices",
     response_model=StatusResponse,
