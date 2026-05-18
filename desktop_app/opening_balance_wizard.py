@@ -24,11 +24,11 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QDateEdit,
     QDialog,
-    QDialogButtonBox,
     QDoubleSpinBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QPushButton,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -100,6 +100,18 @@ class OpeningBalanceWizard(QDialog):
         self._gl = GLDatabase(conn)
         self._settings = AssetRegister(conn)  # re-use company_settings table
         self._build_ui()
+
+    def _fresh_coa_entries(self) -> list:
+        """Query COA accounts fresh from the DB (always up to date, bypasses stale passed-in list)."""
+        try:
+            from probooksai.coa_db import COADatabase
+            coa_db = COADatabase(self._conn)
+            rows = coa_db.list_accounts()
+            if rows:
+                return rows
+        except Exception:
+            pass
+        return self._coa_entries  # fall back to whatever was passed in
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -178,28 +190,44 @@ class OpeningBalanceWizard(QDialog):
         p2_lay.addWidget(self._lbl_equity_note)
         self._stack.addWidget(p2)
 
-        # Buttons
-        self._btns = QDialogButtonBox()
-        self._btn_back = self._btns.addButton("Back", QDialogButtonBox.ButtonRole.ResetRole)
-        self._btn_next = self._btns.addButton("Next →", QDialogButtonBox.ButtonRole.ActionRole)
-        self._btn_post = self._btns.addButton("Post Opening Balances", QDialogButtonBox.ButtonRole.AcceptRole)
-        self._btn_cancel = self._btns.addButton(QDialogButtonBox.StandardButton.Cancel)
-        layout.addWidget(self._btns)
-
+        # Plain QPushButton nav row — avoids QDialogButtonBox AcceptRole auto-connecting
+        # to QDialog.accept() which swallowed Next → clicks in PySide6.
+        btn_row = QHBoxLayout()
+        self._btn_back = QPushButton("← Back")
         self._btn_back.setVisible(False)
+        self._btn_next = QPushButton("Next →")
+        self._btn_post = QPushButton("Post Opening Balances")
         self._btn_post.setVisible(False)
+        btn_cancel = QPushButton("Cancel")
+
+        btn_row.addWidget(self._btn_back)
+        btn_row.addStretch(1)
+        btn_row.addWidget(btn_cancel)
+        btn_row.addWidget(self._btn_post)
+        btn_row.addWidget(self._btn_next)
+        layout.addLayout(btn_row)
+
         self._btn_back.clicked.connect(self._go_back)
         self._btn_next.clicked.connect(self._go_next)
         self._btn_post.clicked.connect(self._post)
-        self._btn_cancel.clicked.connect(self.reject)
+        btn_cancel.clicked.connect(self.reject)
 
     # -- navigation ----------------------------------------------------------
 
     def _go_next(self) -> None:
+        # Always pull fresh COA rows from the DB so we don't depend on stale passed-in list
+        self._coa_entries = self._fresh_coa_entries()
         try:
             self._populate_accounts_table()
         except Exception as exc:
             message_box_warning_ok(self, "Could not load accounts", str(exc))
+            return
+        if not self._spins:
+            message_box_warning_ok(
+                self, "No accounts found",
+                "No Chart of Accounts entries were found.\n\n"
+                "Make sure your company file is set up and COA is seeded (More → Chart of Accounts)."
+            )
             return
         self._stack.setCurrentIndex(1)
         self._lbl_title.setText("Step 2 of 2 — Enter opening balances")
