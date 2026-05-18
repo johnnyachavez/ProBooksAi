@@ -288,6 +288,18 @@ class OpeningBalanceWizard(QDialog):
     def _populate_accounts_table(self) -> None:
         self._tbl.setRowCount(0)
         self._spins: list[QDoubleSpinBox] = []
+
+        # Pre-load existing GL balances so the user sees current figures
+        raw_balances: dict[str, tuple[float, float]] = {}
+        try:
+            for row in self._gl.trial_balance():
+                acct = row.get("account", "")
+                td   = float(row.get("total_debit", 0.0) or 0.0)
+                tc   = float(row.get("total_credit", 0.0) or 0.0)
+                raw_balances[acct] = (td, tc)
+        except Exception:
+            pass  # if GL is empty or unavailable, just leave spinners at 0
+
         for entry in self._coa_entries:
             name, atype = self._entry_name_type(entry)
             if not name:
@@ -301,7 +313,17 @@ class OpeningBalanceWizard(QDialog):
             spin = QDoubleSpinBox()
             spin.setMaximum(999_999_999.0)
             spin.setDecimals(2)
-            spin.setValue(0.0)
+
+            # Pre-fill from GL if a balance exists for this account
+            prefill = 0.0
+            if name in raw_balances:
+                td, tc = raw_balances[name]
+                if _normal_balance(atype) == "debit":
+                    prefill = max(0.0, round(td - tc, 2))
+                else:
+                    prefill = max(0.0, round(tc - td, 2))
+            spin.setValue(prefill)
+
             spin.setStyleSheet(f"QDoubleSpinBox {{ background: {WORKFLOW_INPUT_BG}; color: {WORKFLOW_TEXT}; }}")
             self._tbl.setItem(r, 0, n_it)
             self._tbl.setItem(r, 1, t_it)
