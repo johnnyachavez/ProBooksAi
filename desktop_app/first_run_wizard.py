@@ -147,8 +147,8 @@ class FirstRunWizard(QDialog):
         content_layout.addWidget(self._stack, 1)
 
         self._stack.addWidget(self._build_page_welcome())      # 0
-        self._stack.addWidget(self._build_page_file())         # 1
-        self._stack.addWidget(self._build_page_company())      # 2
+        self._stack.addWidget(self._build_page_company())      # 1  ← company name first
+        self._stack.addWidget(self._build_page_file())         # 2  ← path suggested from name
         self._stack.addWidget(self._build_page_bank())         # 3
         self._stack.addWidget(self._build_page_done())         # 4
 
@@ -261,12 +261,12 @@ class FirstRunWizard(QDialog):
 
         lay.addWidget(_label("Where should we save your company database?"))
         lay.addWidget(_caption(
-            "Choose a location on your computer. We recommend a folder like "
-            "Documents\\ProBooksAi\\. The file is a standard SQLite database you can back up any time."
+            "We've suggested a location in your Documents folder. Accept it or click Browse to pick "
+            "a different folder. The file is a standard SQLite database you can back up any time."
         ))
 
         path_row = QHBoxLayout()
-        self._fld_path = _field("e.g. C:\\Users\\johnn\\Documents\\ProBooksAi\\MyCompany.db")
+        self._fld_path = _field("")   # filled by _suggest_db_path() when page opens
         path_row.addWidget(self._fld_path, 1)
         btn_browse = QPushButton("Browse…")
         btn_browse.setStyleSheet(self._ghost_btn_style())
@@ -277,10 +277,16 @@ class FirstRunWizard(QDialog):
         return w
 
     def _browse_file(self) -> None:
-        docs = str(Path.home() / "Documents" / "ProBooksAi")
-        Path(docs).mkdir(parents=True, exist_ok=True)
+        # Start the dialog at whatever is already in the field (the auto-suggestion)
+        current = self._fld_path.text().strip()
+        if not current:
+            self._suggest_db_path()
+            current = self._fld_path.text().strip()
+        start = current if current else str(Path.home() / "Documents" / "ProBooksAi" / "MyCompany.db")
+        # Ensure the parent folder exists so the dialog opens there
+        Path(start).parent.mkdir(parents=True, exist_ok=True)
         path, _ = QFileDialog.getSaveFileName(
-            self, "Create company database", str(Path(docs) / "MyCompany.db"),
+            self, "Save company database as…", start,
             "SQLite Database (*.db);;All Files (*.*)"
         )
         if path:
@@ -394,8 +400,8 @@ class FirstRunWizard(QDialog):
 
     _STEPS = [
         ("Step 1 of 4", "Welcome", "Let's get you set up in under 2 minutes."),
-        ("Step 2 of 4", "Company file", "Where should we store your data?"),
-        ("Step 3 of 4", "Company info", "Tell us about your business."),
+        ("Step 2 of 4", "Company info", "Tell us about your business."),
+        ("Step 3 of 4", "Company file", "Where should we save your data?"),
         ("Step 4 of 4", "Bank account", "Add your primary bank account."),
         ("All done! 🎉", "You're ready to go", "Your company is set up and ready to use."),
     ]
@@ -408,16 +414,20 @@ class FirstRunWizard(QDialog):
         self._lbl_sub.setText(sub)
 
         self._btn_back.setVisible(idx > 0)
-        is_last = idx == 4
-        is_welcome = idx == 0
         self._btn_skip.setVisible(idx == 3)   # only bank step is skippable
-        self._btn_next.setText("Get Started →" if is_last else ("Next →" if not is_last else ""))
         self._btn_next.setVisible(True)
-        if is_last:
+        if idx == 4:
             self._btn_next.setText("Open ProBooks+ai →")
             self._btn_next.setStyleSheet(
                 self._primary_btn_style().replace(_ACCENT, "#2E7D32")
             )
+        else:
+            self._btn_next.setText("Next →")
+            self._btn_next.setStyleSheet(self._primary_btn_style())
+
+        # When arriving at the file-path page, suggest a path from the company name
+        if idx == 2:
+            self._suggest_db_path()
 
     def _go_next(self) -> None:
         idx = self._stack.currentIndex()
@@ -436,19 +446,7 @@ class FirstRunWizard(QDialog):
             self._goto(1)
 
         elif idx == 1:
-            # Validate file path
-            path = self._fld_path.text().strip()
-            if not path:
-                message_box_warning_ok(self, "File path required",
-                    "Please enter or browse to a location for your company database.")
-                return
-            if not path.lower().endswith(".db"):
-                path += ".db"
-            self.db_path = path
-            self._goto(2)
-
-        elif idx == 2:
-            # Save company info (required: name)
+            # Company info (now before file path) — required: name
             name = self._co_name.text().strip()
             if not name:
                 message_box_warning_ok(self, "Company name required",
@@ -465,10 +463,22 @@ class FirstRunWizard(QDialog):
                 "company_email": self._co_email.text().strip(),
                 "company_website": self._co_website.text().strip(),
             }
+            self._goto(2)   # → file path page (path auto-suggested from name)
+
+        elif idx == 2:
+            # File path
+            path = self._fld_path.text().strip()
+            if not path:
+                message_box_warning_ok(self, "File path required",
+                    "Please enter or browse to a location for your company database.")
+                return
+            if not path.lower().endswith(".db"):
+                path += ".db"
+            self.db_path = path
             self._goto(3)
 
         elif idx == 3:
-            # Save bank account
+            # Bank account
             bname = self._bank_name.text().strip()
             if not bname:
                 message_box_warning_ok(self, "Account name required",
@@ -484,6 +494,19 @@ class FirstRunWizard(QDialog):
 
         elif idx == 4:
             self.accept()
+
+    def _suggest_db_path(self) -> None:
+        """Auto-populate the file path field from the company name (if not already set)."""
+        current = self._fld_path.text().strip()
+        # Only overwrite if the field is empty or still holds the generic placeholder default
+        company_name = self.company_data.get("company_name", "").strip()
+        slug = "".join(c if c.isalnum() or c in " _-" else "" for c in company_name).strip()
+        slug = slug.replace(" ", "_") or "MyCompany"
+        docs = Path.home() / "Documents" / "ProBooksAi"
+        suggested = str(docs / f"{slug}.db")
+        # Overwrite only if empty or still matching a previous auto-suggestion
+        if not current or current.startswith(str(docs)):
+            self._fld_path.setText(suggested)
 
     def _go_back(self) -> None:
         idx = self._stack.currentIndex()
