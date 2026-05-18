@@ -539,7 +539,7 @@ def test_desktop_main_app_header_banner_branding_and_set_company_name() -> None:
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("class AppHeaderWidget(QFrame):")
     end = text.index(
-        "\n\n# ---------------------------------------------------------------------------\n# Main window",
+        "\n\n# ---------------------------------------------------------------------------\n# Global tooltip toggle",
         start,
     )
     chunk = text[start:end]
@@ -821,7 +821,7 @@ def test_main_window_no_toolbar_menu_bar_qaction_counts() -> None:
     assert "# Toolbar" not in bu_chunk
     mb_s = text.index("def _build_menu_bar")
     mb_e = text.index("def dragEnterEvent", mb_s)
-    assert text[mb_s:mb_e].count("QAction(") == 32
+    assert text[mb_s:mb_e].count("QAction(") == 33
 
 
 def test_file_menu_import_wires_on_import_and_mentions_ctrl_o() -> None:
@@ -2318,8 +2318,8 @@ def test_main_window_build_menu_bar_wires_all_action_triggers() -> None:
     start = text.index("    def _build_menu_bar(self):")
     end = text.index("    # -- drag & drop on window", start)
     chunk = text[start:end]
-    assert chunk.count("QAction(") == 32
-    assert chunk.count(".triggered.connect(") == 29
+    assert chunk.count("QAction(") == 33
+    assert chunk.count(".triggered.connect(") == 30
     assert (
         chunk.count(
             "lambda checked=False, i=idx: self._set_main_tab_index(i)"
@@ -2690,8 +2690,8 @@ def test_help_menu_roadmap_about_seven_actions_and_separator() -> None:
     start = text.index("# Help menu")
     end = text.index("    # -- drag & drop on window", start)
     chunk = text[start:end]
-    assert chunk.count("help_menu.addAction(") == 7
-    assert chunk.count("help_menu.addSeparator()") == 1
+    assert chunk.count("help_menu.addAction(") == 8
+    assert chunk.count("help_menu.addSeparator()") == 2
     assert chunk.count("act_roadmap.triggered.connect(self._on_help_roadmap)") == 1
     assert chunk.count("act_about.triggered.connect(self._on_about)") == 1
     roadmap_ln = next(ln for ln in chunk.splitlines() if "act_roadmap = QAction(" in ln)
@@ -2733,8 +2733,8 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
         chunk.count("tools_menu.addAction("),
         chunk.count("help_menu.addAction("),
     )
-    assert per_menu_add == (5, 1, 3, 3, 7), (
-        f"expected top-level addAction counts (File,View,Edit,Tools,Help)=(5,1,3,3,7); "
+    assert per_menu_add == (5, 1, 3, 3, 8), (
+        f"expected top-level addAction counts (File,View,Edit,Tools,Help)=(5,1,3,3,8); "
         f"Recon register actions use 13 submenu addAction (counted separately); "
         f"got {per_menu_add}"
     )
@@ -2747,7 +2747,7 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
     )
     assert n_reg_sub_add == 13
     n_add = sum(per_menu_add) + n_reg_sub_add
-    assert n_qa == n_tip == n_add == 32, (
+    assert n_qa == n_tip == n_add == 33, (
         f"expected 32 menu QActions, _menu_action_tip calls, and *.addAction( calls "
         f"(QAction={n_qa}, _menu_action_tip={n_tip}, addAction={n_add})"
     )
@@ -2761,8 +2761,8 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
         f"each enabled menu QAction should wire .triggered.connect( "
         f"(QAction={n_qa}, setEnabled(False)={n_dis}, .triggered.connect={n_trig})"
     )
-    assert chunk.count(".addSeparator()") == 6, (
-        "expected file_menu(3), edit_menu(1), tools_menu(1), and help_menu(1) to call addSeparator()"
+    assert chunk.count(".addSeparator()") == 7, (
+        "expected file_menu(3), edit_menu(1), tools_menu(1), and help_menu(2) to call addSeparator()"
     )
     assert chunk.count("self.menuBar()") == 1
     assert chunk.count("mb.addMenu(") == 6, (

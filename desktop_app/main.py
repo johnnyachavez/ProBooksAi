@@ -37,7 +37,9 @@ from pathlib import Path
 
 from PySide6.QtCore import (
     Qt,
+    QEvent,
     QMimeData,
+    QObject,
     QSettings,
     QThread,
     QTimer,
@@ -865,6 +867,42 @@ class AppHeaderWidget(QFrame):
 
 
 # ---------------------------------------------------------------------------
+# Global tooltip toggle
+# ---------------------------------------------------------------------------
+
+_TIPS_QSETTINGS_KEY = "ui/show_hover_tips"
+
+
+class _TipFilter(QObject):
+    """App-level event filter that suppresses all QToolTip popups when tips are disabled.
+
+    Install once on QApplication; toggle ``enabled`` at runtime — no widget code changes needed.
+    """
+
+    def __init__(self, enabled: bool, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self.enabled = enabled
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # type: ignore[override]
+        if not self.enabled and event.type() == QEvent.Type.ToolTip:
+            return True   # consume — tooltip never shows
+        return super().eventFilter(watched, event)
+
+
+_tip_filter: _TipFilter | None = None   # set once in main()
+
+
+def _tips_enabled() -> bool:
+    return QSettings().value(_TIPS_QSETTINGS_KEY, False, type=bool)  # type: ignore[return-value]
+
+
+def _set_tips_enabled(on: bool) -> None:
+    QSettings().setValue(_TIPS_QSETTINGS_KEY, on)
+    if _tip_filter is not None:
+        _tip_filter.enabled = on
+
+
+# ---------------------------------------------------------------------------
 # Main window
 # ---------------------------------------------------------------------------
 
@@ -1581,6 +1619,17 @@ class MainWindow(QMainWindow):
             lambda: show_more_main_tabs_keyboard_shortcuts_dialog(self)
         )
         help_menu.addAction(act_more_tab_keys)
+        help_menu.addSeparator()
+        act_tips = QAction("Show &hover tips", self)
+        act_tips.setCheckable(True)
+        act_tips.setChecked(_tips_enabled())
+        _menu_action_tip(
+            act_tips,
+            "Toggle verbose hover tooltips on/off — takes effect immediately, saved across sessions.",
+        )
+        act_tips.triggered.connect(lambda checked: _set_tips_enabled(checked))
+        help_menu.addAction(act_tips)
+
         help_menu.addSeparator()
         act_about = QAction("&About ProBooks+ai", self)
         _menu_action_tip(
@@ -2378,6 +2427,11 @@ def main():
     app.setApplicationName("ProBooks+ai")
     app.setOrganizationName("ProBooks+ai")
     apply_dark_theme(app)
+
+    # Install global tooltip filter (default: tips off; user can enable in Help menu)
+    global _tip_filter
+    _tip_filter = _TipFilter(enabled=_tips_enabled(), parent=app)
+    app.installEventFilter(_tip_filter)
     db_path = args.database
     if db_path is None:
         last = QSettings().value("company_database_path", "", type=str) or ""
