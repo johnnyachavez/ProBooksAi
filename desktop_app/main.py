@@ -927,6 +927,8 @@ class MainWindow(QMainWindow):
         self._coa_db.seed_from_workbook()
         self._coa = load_coa()
         self._worker: AIWorker | None = None
+        # Ensure COA asset accounts exist in bank_accounts before tabs are built
+        self._sync_coa_assets_to_bank_accounts()
 
         self._build_ui()
         self._refresh_inbox()
