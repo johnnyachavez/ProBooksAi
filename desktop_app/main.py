@@ -929,6 +929,8 @@ class MainWindow(QMainWindow):
         self._worker: AIWorker | None = None
         # Ensure COA asset accounts exist in bank_accounts before tabs are built
         self._sync_coa_assets_to_bank_accounts()
+        # Seed bank_transactions for any existing GL opening-balance entries
+        self._migrate_opening_balances_to_bank_register()
 
         self._build_ui()
         self._refresh_inbox()
@@ -1933,6 +1935,99 @@ class MainWindow(QMainWindow):
             import traceback
             traceback.print_exc()  # visible in console; never blocks a COA save
 
+    def _migrate_opening_balances_to_bank_register(self) -> None:
+        """
+        One-time migration: for every GL journal entry with source='opening_balance'
+        find lines whose account name matches a bank_accounts row and create a
+        bank_transaction so the balance appears in the register.
+
+        Safe to run on every startup — skips lines that already have a transaction
+        (matched by description + date + bank_account_id).
+        """
+        try:
+            from probooksai.bank_import import make_manual_entry_fingerprint
+            conn = self._bank_db._conn
+
+            # GL opening-balance lines (exclude the Retained Earnings offset)
+            gl_rows = conn.execute("""
+                SELECT jel.account, jel.debit, jel.credit, je.entry_date
+                FROM journal_entry_lines jel
+                JOIN journal_entries je ON jel.entry_id = je.id
+                WHERE je.source = 'opening_balance'
+            """).fetchall()
+            if not gl_rows:
+                return
+
+            # Build account-name → bank_account_id lookup
+            bank_rows = conn.execute(
+                "SELECT id, name, gl_display_account FROM bank_accounts"
+            ).fetchall()
+            acct_map: dict[str, int] = {}
+            for ba in bank_rows:
+                k = (ba["gl_display_account"] or "").strip()
+                if k:
+                    acct_map[k] = int(ba["id"])
+                n = (ba["name"] or "").strip()
+                if n and n not in acct_map:
+                    acct_map[n] = int(ba["id"])
+
+            OB_BATCH_NAME = "(Opening Balance)"
+            for gl in gl_rows:
+                acct_key = (gl["account"] or "").strip()
+                bank_id = acct_map.get(acct_key)
+                if bank_id is None:
+                    continue
+                debit  = float(gl["debit"]  or 0.0)
+                credit = float(gl["credit"] or 0.0)
+                amount = round(debit - credit, 2)   # positive = asset increase
+                if abs(amount) < 0.005:
+                    continue
+                txn_date = gl["entry_date"]
+                desc = f"Opening balance as of {txn_date}"
+
+                # Skip if already migrated
+                exists = conn.execute(
+                    """SELECT id FROM bank_transactions
+                       WHERE bank_account_id=? AND description=? AND txn_date=?
+                       LIMIT 1""",
+                    (bank_id, desc, txn_date),
+                ).fetchone()
+                if exists:
+                    continue
+
+                # Get or create opening-balance batch for this account
+                batch_row = conn.execute(
+                    "SELECT id FROM bank_import_batches WHERE bank_account_id=? AND filename=? LIMIT 1",
+                    (bank_id, OB_BATCH_NAME),
+                ).fetchone()
+                if batch_row:
+                    batch_id = int(batch_row["id"])
+                else:
+                    from probooksai.bank_import import _now as _bi_now
+                    cur = conn.execute(
+                        """INSERT INTO bank_import_batches
+                               (bank_account_id, filename, imported_at)
+                           VALUES (?, ?, ?)""",
+                        (bank_id, OB_BATCH_NAME, _bi_now()),
+                    )
+                    conn.commit()
+                    batch_id = int(cur.lastrowid)
+
+                fp = make_manual_entry_fingerprint()
+                conn.execute(
+                    """INSERT INTO bank_transactions
+                           (batch_id, bank_account_id, txn_date,
+                            description, amount, ref_number, fingerprint,
+                            memo, coa_account)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (batch_id, bank_id, txn_date, desc, amount,
+                     "OB", fp, "Opening balance", acct_key),
+                )
+                conn.commit()
+        except Exception:
+            import traceback
+            traceback.print_exc()
+
     def _on_coa_changed(self):
         """Called when the COA editor modifies the chart of accounts."""
         # Sync any new COA asset accounts into bank_accounts so the register sees them
@@ -2179,6 +2274,8 @@ class MainWindow(QMainWindow):
         self._coa = load_coa()
         # Ensure any COA asset accounts are represented in bank_accounts before building tabs
         self._sync_coa_assets_to_bank_accounts()
+        # Seed bank_transactions for any existing GL opening-balance entries
+        self._migrate_opening_balances_to_bank_register()
         self._rebuild_bank_related_tabs()
         self._detail.clear_view()
         self._detail.update_coa(self._coa_db.display_list())

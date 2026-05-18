@@ -414,6 +414,9 @@ class OpeningBalanceWizard(QDialog):
             message_box_warning_ok(self, "Post failed", str(exc))
             return
 
+        # Also seed bank_transactions so the balance appears in the Bank Register
+        self._seed_bank_transactions(lines, cut_off)
+
         message_box_information_ok(
             self,
             "Opening Balances Posted",
@@ -423,3 +426,75 @@ class OpeningBalanceWizard(QDialog):
             ok_tip="Close; review the entry in the Journal tab.",
         )
         self.accept()
+
+    def _seed_bank_transactions(self, lines: list[dict], cut_off: str) -> None:
+        """
+        For each GL line that maps to an asset bank account, insert a
+        bank_transaction so the opening balance appears in the Bank Register.
+        Skips lines already present (idempotent by description+date+account).
+        """
+        try:
+            from probooksai.bank_import import make_manual_entry_fingerprint, _now as _bi_now
+            conn = self._conn
+
+            # Build lookup: account display name → bank_account_id
+            ba_rows = conn.execute(
+                "SELECT id, name, gl_display_account FROM bank_accounts"
+            ).fetchall()
+            acct_map: dict[str, int] = {}
+            for ba in ba_rows:
+                k = (ba["gl_display_account"] or "").strip()
+                if k:
+                    acct_map[k] = int(ba["id"])
+                n = (ba["name"] or "").strip()
+                if n and n not in acct_map:
+                    acct_map[n] = int(ba["id"])
+
+            OB_BATCH = "(Opening Balance)"
+            for ln in lines:
+                acct_key = (ln.get("account") or "").strip()
+                bank_id = acct_map.get(acct_key)
+                if bank_id is None:
+                    continue
+                debit  = float(ln.get("debit",  0.0))
+                credit = float(ln.get("credit", 0.0))
+                amount = round(debit - credit, 2)
+                if abs(amount) < 0.005:
+                    continue
+                desc = f"Opening balance as of {cut_off}"
+
+                # Skip if already inserted
+                if conn.execute(
+                    "SELECT id FROM bank_transactions WHERE bank_account_id=? AND description=? AND txn_date=? LIMIT 1",
+                    (bank_id, desc, cut_off),
+                ).fetchone():
+                    continue
+
+                # Get or create the opening-balance batch
+                batch_row = conn.execute(
+                    "SELECT id FROM bank_import_batches WHERE bank_account_id=? AND filename=? LIMIT 1",
+                    (bank_id, OB_BATCH),
+                ).fetchone()
+                if batch_row:
+                    batch_id = int(batch_row["id"])
+                else:
+                    cur = conn.execute(
+                        "INSERT INTO bank_import_batches (bank_account_id, filename, imported_at) VALUES (?, ?, ?)",
+                        (bank_id, OB_BATCH, _bi_now()),
+                    )
+                    conn.commit()
+                    batch_id = int(cur.lastrowid)
+
+                conn.execute(
+                    """INSERT INTO bank_transactions
+                           (batch_id, bank_account_id, txn_date,
+                            description, amount, ref_number, fingerprint,
+                            memo, coa_account)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (batch_id, bank_id, cut_off, desc, amount,
+                     "OB", make_manual_entry_fingerprint(), "Opening balance", acct_key),
+                )
+                conn.commit()
+        except Exception:
+            import traceback
+            traceback.print_exc()  # never block the wizard on a bank-tx seed error
