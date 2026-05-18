@@ -91,6 +91,7 @@ from desktop_app.extra_tabs import (
 )
 from desktop_app.audit_tab import AuditTab
 from desktop_app.asset_register_tab import AssetRegisterTab
+from desktop_app.dashboard_tab import DashboardTab
 from desktop_app.enter_bills_screen import EnterBillsScreen
 from desktop_app.invoice_screen import InvoiceScreen
 from desktop_app.pay_bills_screen import PayBillsScreen
@@ -1041,6 +1042,9 @@ class MainWindow(QMainWindow):
         reconcile_root_layout.addWidget(reconcile_banner)
         reconcile_root_layout.addWidget(self._reconcile_hub, stretch=1)
 
+        self._dashboard_tab = DashboardTab(conn)
+        self._dashboard_tab.navigateRequested.connect(self._on_dashboard_navigate)
+
         self._reports_tab = ReportsTab(conn)
         self._journal_tab = JournalTab(conn)
         self._business_hub = BusinessHub(conn)
@@ -1058,6 +1062,7 @@ class MainWindow(QMainWindow):
         self._more_hub.addTab(self._asset_register_tab, "Assets")
         self._more_hub.addTab(self._audit_tab, "Audit log")
 
+        self._tabs.addTab(self._dashboard_tab, "Dashboard")
         self._tabs.addTab(self._invoice_screen, "Invoices")
         self._tabs.addTab(self._enter_bills_screen, "Enter Bills")
         self._tabs.addTab(self._pay_bills_screen, "Pay Bills")
@@ -1891,6 +1896,21 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_asset_register_tab"):
             self._asset_register_tab.update_coa_list(coa_display)
 
+    def _on_dashboard_navigate(self, target: str) -> None:
+        """Dashboard quick-action buttons → jump to the requested tab."""
+        if not hasattr(self, "_tabs"):
+            return
+        target_map = {
+            "invoices": getattr(self, "_invoice_screen", None),
+            "bills": getattr(self, "_enter_bills_screen", None),
+            "register": getattr(self, "_register_tab", None),
+        }
+        widget = target_map.get(target)
+        if widget is not None:
+            idx = self._tabs.indexOf(widget)
+            if idx >= 0:
+                self._tabs.setCurrentIndex(idx)
+
     def _on_tools_invoice(self) -> None:
         """Tools → Invoice: top-level Invoices tab."""
         if not hasattr(self, "_tabs") or not hasattr(self, "_invoice_screen"):
@@ -2126,6 +2146,8 @@ class MainWindow(QMainWindow):
         self._detail.update_coa(self._coa_db.display_list())
         self._refresh_inbox()
         self._update_company_status()
+        if hasattr(self, "_dashboard_tab"):
+            self._dashboard_tab.set_connection(self._bank_db._conn)
 
     def _switch_company_database(self, path: str, *, create_new: bool = False) -> None:
         if self._worker and self._worker.isRunning():
