@@ -2332,6 +2332,8 @@ class MainWindow(QMainWindow):
             return
         self._switch_company_database(wiz.db_path, create_new=True)
         apply_wizard_results(wiz, self._bank_db)
+        # Rebuild bank-related tabs now that the wizard has written the bank account
+        self._rebuild_bank_related_tabs()
         if hasattr(self, "_dashboard_tab"):
             self._dashboard_tab.refresh()
 
@@ -2449,9 +2451,11 @@ def main():
 
     window = MainWindow(db_path=db_path)
 
-    # Apply company info + bank account saved in the wizard
+    # Apply company info + bank account saved in the wizard, then refresh UI
     if _wizard_results is not None:
         apply_wizard_results(_wizard_results, window._bank_db)
+        # Bank account was just written — rebuild register/import tabs so they see it
+        window._rebuild_bank_related_tabs()
         if hasattr(window, "_dashboard_tab"):
             window._dashboard_tab.refresh()
 
