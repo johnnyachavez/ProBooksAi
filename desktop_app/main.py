@@ -1915,17 +1915,17 @@ class MainWindow(QMainWindow):
                 if display_key in existing_keys or name in existing_keys:
                     continue  # already present
                 sub = str(row["sub_type"] or "").strip()
-                acct_type = "checking"  # sensible default; user can edit later
-                self._bank_db.create_bank_account(
+                self._bank_db.add_bank_account(
                     name=name,
                     account_number=num,
                     bank_name=sub or "",
-                    account_type=acct_type,
+                    account_type="checking",  # sensible default; user can edit later
                     gl_display_account=display_key,
                 )
                 existing_keys.add(display_key)
-        except Exception:
-            pass  # never block a COA save due to sync errors
+        except Exception as _sync_err:
+            import traceback
+            traceback.print_exc()  # visible in console; never blocks a COA save
 
     def _on_coa_changed(self):
         """Called when the COA editor modifies the chart of accounts."""
