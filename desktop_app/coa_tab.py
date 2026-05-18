@@ -49,6 +49,7 @@ from PySide6.QtWidgets import (
 )
 
 from probooksai.coa_db import COADatabase, COA_ACCOUNT_TYPES
+from probooksai.gl import GLDatabase
 
 from desktop_app.audit_dialog import show_entity_audit_history
 from desktop_app.qt_combo_ids import coerce_combo_int_id
@@ -286,9 +287,10 @@ class COATab(QWidget):
 
     coaChanged = Signal()
 
-    def __init__(self, db: COADatabase, parent=None):
+    def __init__(self, db: COADatabase, gl_db: Optional[GLDatabase] = None, parent=None):
         super().__init__(parent)
         self._db = db
+        self._gl_db = gl_db  # optional — used to show current account balance
         self._build_ui()
         self._refresh()
 
@@ -333,9 +335,9 @@ class COATab(QWidget):
 
         # Table
         self._table = QTableWidget()
-        self._table.setColumnCount(6)
+        self._table.setColumnCount(7)
         self._table.setHorizontalHeaderLabels([
-            "#", "Account Name", "Type", "Sub-type", "Normal Balance", "Active"
+            "#", "Account Name", "Type", "Sub-type", "Normal Balance", "Balance", "Active"
         ])
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -346,7 +348,8 @@ class COATab(QWidget):
         self._table.setColumnWidth(2, 90)
         self._table.setColumnWidth(3, 160)
         self._table.setColumnWidth(4, 120)
-        self._table.setColumnWidth(5, 60)
+        self._table.setColumnWidth(5, 110)
+        self._table.setColumnWidth(6, 60)
         self._table.itemSelectionChanged.connect(self._on_selection)
         self._table.doubleClicked.connect(self._on_edit)
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -393,6 +396,20 @@ class COATab(QWidget):
             for row in rows
             if (aid := coerce_combo_int_id(row["id"])) is not None
         ]
+
+        # Build balance lookup from GL trial balance (account display name → balance)
+        # display name = "<number> <name>" (same format used when posting journal lines)
+        gl_balances: dict[str, float] = {}
+        if self._gl_db is not None:
+            try:
+                for tb_row in self._gl_db.trial_balance():
+                    acct_key = tb_row.get("account", "")
+                    td = float(tb_row.get("total_debit", 0.0) or 0.0)
+                    tc = float(tb_row.get("total_credit", 0.0) or 0.0)
+                    gl_balances[acct_key] = (td, tc)  # type: ignore[assignment]
+            except Exception:
+                pass  # GL unavailable — leave balances blank
+
         self._table.setSortingEnabled(False)
         self._table.setRowCount(len(packed))
         for r, (aid, row) in enumerate(packed):
@@ -406,11 +423,26 @@ class COATab(QWidget):
             self._table.setItem(r, 3, plain_display_table_item(row["sub_type"] or ""))
             nb = (row["normal_balance"] or "").title()
             self._table.setItem(r, 4, plain_display_table_item(nb))
+
+            # Balance column — look up by "number name" display key
+            acct_num  = str(row["account_number"] or "").strip()
+            acct_name = str(row["account_name"] or "").strip()
+            display_key = f"{acct_num} {acct_name}".strip() if acct_num else acct_name
+            bal_text = ""
+            if display_key in gl_balances:
+                td, tc = gl_balances[display_key]  # type: ignore[misc]
+                normal = (row["normal_balance"] or "debit").lower()
+                balance = round(td - tc, 2) if normal == "debit" else round(tc - td, 2)
+                bal_text = f"${balance:,.2f}"
+            bal_item = plain_display_table_item(bal_text)
+            bal_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            self._table.setItem(r, 5, bal_item)
+
             active_item = plain_display_table_item(
                 "✓" if row["is_active"] else "—"
             )
             active_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._table.setItem(r, 5, active_item)
+            self._table.setItem(r, 6, active_item)
         self._table.setSortingEnabled(True)
 
         count = len(packed)

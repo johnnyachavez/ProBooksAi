@@ -1044,7 +1044,7 @@ class MainWindow(QMainWindow):
             register_tab=self._register_tab,
             after_stmt_match_sync=self._focus_bank_register_tab,
         )
-        self._coa_tab = COATab(self._coa_db)
+        self._coa_tab = COATab(self._coa_db, gl_db=self._gl_db)
         self._coa_tab.coaChanged.connect(self._on_coa_changed)
 
         # AR/AP primary UI: top-level Customers / Vendors (Business hub keeps Rules, Payroll, Tax %).

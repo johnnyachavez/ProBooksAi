@@ -2487,7 +2487,7 @@ def test_main_window_assemble_bank_register_coa_tabs_receive_expected_db_deps() 
     assert chunk.count("register_tab=self._register_tab") == 1
     assert chunk.count("after_stmt_match_sync=self._focus_bank_register_tab") == 1
     assert chunk.count("RegisterTab(self._bank_db, self._coa_db, self._gl_db)") == 1
-    assert chunk.count("COATab(self._coa_db)") == 1
+    assert chunk.count("COATab(self._coa_db, gl_db=self._gl_db)") == 1
 
 
 def test_main_window_assemble_register_bank_ctor_before_bank_tab_coa_signal_before_top_level_add() -> None:
@@ -2500,7 +2500,7 @@ def test_main_window_assemble_register_bank_ctor_before_bank_tab_coa_signal_befo
         "self._register_tab = RegisterTab(self._bank_db, self._coa_db, self._gl_db)"
     )
     b_ctor = chunk.index("self._bank_tab = BankImportTab(")
-    c_ctor = chunk.index("self._coa_tab = COATab(self._coa_db)")
+    c_ctor = chunk.index("self._coa_tab = COATab(self._coa_db, gl_db=self._gl_db)")
     c_sig = chunk.index("self._coa_tab.coaChanged.connect(self._on_coa_changed)")
     c_tab = chunk.index('self._tabs.addTab(self._coa_tab, "Chart of Accounts")')
     assert r_ctor < b_ctor < c_ctor < c_sig < c_tab
