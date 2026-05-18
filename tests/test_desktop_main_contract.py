@@ -2322,7 +2322,7 @@ def test_main_window_build_menu_bar_wires_all_action_triggers() -> None:
     assert chunk.count(".triggered.connect(") == 30
     assert (
         chunk.count(
-            "lambda checked=False, i=idx: self._set_main_tab_index(i)"
+            "lambda checked=False, i=tab_idx: self._set_main_tab_index(i)"
         )
         == 1
     )

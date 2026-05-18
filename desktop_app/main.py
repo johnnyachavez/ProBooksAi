@@ -1311,18 +1311,22 @@ class MainWindow(QMainWindow):
         _view_tab_tip_suffix = (
             " Same company SQLite file (File → Backup / Restore, probooks.backup)."
         )
+        # Tab indices: 0=Dashboard, 1=Invoices, 2=Enter Bills, 3=Pay Bills,
+        #              4=Receive Payments, 5=Bank Register, 6=Chart of Accounts,
+        #              7=Customers, 8=Vendors, 9=Reconcile, 10=More
         _view_tab_tip_extra = {
-            0: " Invoice entry workflow.",
-            1: " Enter Bills screen.",
-            2: " Pay Bills screen.",
-            3: " Receive Payments screen.",
-            4: " Bank Register: Match overlay (Bank Import can populate).",
-            5: " Chart of Accounts editor.",
-            6: " AR: customers, invoices, payments (primary route; Business hub is Rules/Payroll/Tax %).",
-            7: " AP: vendors, bills, payments (primary route; Business hub is Rules/Payroll/Tax %).",
-            8: " Reconcile: Bank statements + Documents (intake → review/match).",
+            1: " Invoice entry workflow.",
+            2: " Enter Bills screen.",
+            3: " Pay Bills screen.",
+            4: " Receive Payments screen.",
+            5: " Bank Register: Match overlay (Bank Import can populate).",
+            6: " Chart of Accounts editor.",
+            7: " AR: customers, invoices, payments (primary route; Business hub is Rules/Payroll/Tax %).",
+            8: " AP: vendors, bills, payments (primary route; Business hub is Rules/Payroll/Tax %).",
+            9: " Reconcile: Bank statements + Documents (intake → review/match).",
         }
-        for idx, (sc, label) in enumerate(
+        for tab_idx, (sc, label) in zip(
+            range(1, 11),  # skip Dashboard (index 0); Invoices=1 … More=10
             [
                 ("Ctrl+1", "&Invoices"),
                 ("Ctrl+2", "&Enter Bills"),
@@ -1339,12 +1343,12 @@ class MainWindow(QMainWindow):
             act = QAction(label, self)
             act.setShortcut(sc)
             act.setShortcutContext(Qt.ApplicationShortcut)
-            extra = _view_tab_tip_extra.get(idx, " Reports, Journal, Business, Audit log.")
+            extra = _view_tab_tip_extra.get(tab_idx, " Reports, Journal, Business, Audit log.")
             _menu_action_tip(
                 act, f"Show this main tab ({sc}).{extra}{_view_tab_tip_suffix}"
             )
             act.triggered.connect(
-                lambda checked=False, i=idx: self._set_main_tab_index(i)
+                lambda checked=False, i=tab_idx: self._set_main_tab_index(i)
             )
             view_menu.addAction(act)
 
