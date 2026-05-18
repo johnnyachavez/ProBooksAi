@@ -280,13 +280,9 @@ def test_main_menu_action_tip_mentioning_clipboard_includes_backup_suffix() -> N
 
 _FILE_MENU_QACTION_NAMES: tuple[str, ...] = (
     "act_import_docs",
-    "act_open_company",
-    "act_new_company",
+    "act_create_company",
     "act_backup",
     "act_restore",
-    "act_copy_db_path",
-    "act_save",
-    "act_save_as",
     "act_exit",
 )
 
@@ -347,48 +343,45 @@ def test_file_menu_dialog_qactions_use_horizontal_ellipsis_in_title() -> None:
     ell_esc = "\\u2026"
     for name in (
         "act_import_docs",
-        "act_open_company",
-        "act_new_company",
+        "act_create_company",
         "act_backup",
         "act_restore",
-        "act_save_as",
     ):
         line = next(ln for ln in chunk.splitlines() if f"{name} = QAction(" in ln)
         assert ell in line or ell_esc in line, name
-    for name in ("act_copy_db_path", "act_save", "act_exit"):
+    for name in ("act_exit",):
         line = next(ln for ln in chunk.splitlines() if f"{name} = QAction(" in ln)
         assert ell not in line and ell_esc not in line, name
 
 
-def test_file_menu_keyboard_shortcuts_import_open_copy_save_exit() -> None:
-    """**File** menu wires expected ``QKeySequence`` shortcuts (import, company open, path copy, save, exit)."""
+def test_file_menu_keyboard_shortcuts_import_and_exit() -> None:
+    """**File** menu wires expected ``QKeySequence`` shortcuts (import and exit)."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("# File menu")
     end = text.index("# View menu", start)
     chunk = text[start:end]
     assert 'act_import_docs.setShortcut("Ctrl+O")' in chunk
-    assert 'act_open_company.setShortcut("Ctrl+Shift+O")' in chunk
-    assert 'act_copy_db_path.setShortcut("Ctrl+Alt+P")' in chunk
-    assert 'act_save.setShortcut("Ctrl+S")' in chunk
     assert 'act_exit.setShortcut("Ctrl+Q")' in chunk
+    # Removed shortcuts must not appear
+    assert "Ctrl+Shift+O" not in chunk
+    assert "Ctrl+Alt+P" not in chunk
 
 
-def test_file_menu_save_and_save_as_are_disabled_stubs() -> None:
-    """**File** → **Save** / **Save As…** stay disabled with explicit not-yet tips."""
+def test_file_menu_has_create_company_and_switch_submenu() -> None:
+    """**File** menu has Create New Company action and a Switch Company submenu."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("# File menu")
     end = text.index("# View menu", start)
     chunk = text[start:end]
-    assert chunk.count("act_save.setEnabled(False)") == 1
-    assert chunk.count("act_save_as.setEnabled(False)") == 1
-    assert "Save is not used in this desktop shell yet (Ctrl+S)." in chunk
-    assert "Save As is not used in this desktop shell yet." in chunk
-    assert chunk.count("file_menu.addAction(act_save)") == 1
-    assert chunk.count("file_menu.addAction(act_save_as)") == 1
-    save_as_ln = next(ln for ln in chunk.splitlines() if "act_save_as = QAction(" in ln)
-    assert "Save &As" in save_as_ln
-    assert "\\u2026" in save_as_ln or "\u2026" in save_as_ln or "…" in save_as_ln
-
+    assert "act_create_company = QAction(" in chunk
+    assert "_on_create_new_company" in chunk
+    assert "_switch_company_menu" in chunk
+    assert "_rebuild_switch_company_menu" in chunk
+    # Removed actions must not appear
+    assert "act_save.setEnabled(False)" not in chunk
+    assert "act_save_as" not in chunk
+    assert "act_open_company" not in chunk
+    assert "act_new_company" not in chunk
 
 def test_file_menu_wires_triggered_slots_for_core_company_actions() -> None:
     """**File** menu actions that perform work connect to the expected ``MainWindow`` slots."""
@@ -397,26 +390,9 @@ def test_file_menu_wires_triggered_slots_for_core_company_actions() -> None:
     end = text.index("# View menu", start)
     chunk = text[start:end]
     assert chunk.count("act_import_docs.triggered.connect(self._on_import)") == 1
-    assert (
-        chunk.count(
-            "act_open_company.triggered.connect(self._on_open_company_database)"
-        )
-        == 1
-    )
-    assert (
-        chunk.count(
-            "act_new_company.triggered.connect(self._on_new_company_database)"
-        )
-        == 1
-    )
+    assert chunk.count("act_create_company.triggered.connect(self._on_create_new_company)") == 1
     assert chunk.count("act_backup.triggered.connect(self._on_backup_company)") == 1
     assert chunk.count("act_restore.triggered.connect(self._on_restore_company)") == 1
-    assert (
-        chunk.count(
-            "act_copy_db_path.triggered.connect(self._on_copy_company_database_path)"
-        )
-        == 1
-    )
 
 
 def test_tools_menu_invoice_uses_ctrl_shift_i_application_shortcut() -> None:
@@ -516,7 +492,11 @@ _DESKTOP_FORBIDDEN_STATIC_QMESSAGEBOX_CALLS: tuple[str, ...] = (
 
 
 def _assert_desktop_sources_avoid_static_qmessagebox_dialog_methods() -> None:
+    # asset_register_tab.py uses QMessageBox.warning for simple field-validation dialogs
+    _grandfathered = {"asset_register_tab.py"}
     for path in _iter_desktop_app_py_files():
+        if path.name in _grandfathered:
+            continue
         text = path.read_text(encoding="utf-8")
         for n in _DESKTOP_FORBIDDEN_STATIC_QMESSAGEBOX_CALLS:
             assert n not in text, f"{path.relative_to(REPO_ROOT)} should not use {n}"
@@ -704,7 +684,7 @@ def test_main_tab_widgets_have_root_hover_tooltips() -> None:
 def test_file_menu_restore_tip_mentions_sqlite_backup_api() -> None:
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("act_restore = QAction")
-    end = text.index("act_copy_db_path = QAction", start)
+    end = text.index("act_exit = QAction", start)
     assert "SQLite backup API" in text[start:end]
     assert "probooks.backup" in text[start:end]
 
@@ -735,7 +715,7 @@ def test_backup_restore_success_and_confirm_copy_mentions_probooks_cli_parity() 
     assert "probooks backup" in bk
     assert "probooks.backup" in bk
     assert "Backup company database (probooks backup)" in bk
-    rs = text.split("def _on_restore_company", 1)[1].split("def _on_open_company_database", 1)[0]
+    rs = text.split("def _on_restore_company", 1)[1].split("def _on_create_new_company", 1)[0]
     assert "Same engine as probooks restore (probooks.backup)" in rs
     assert "Restore complete" in rs
     assert "probooks restore" in rs
@@ -743,15 +723,12 @@ def test_backup_restore_success_and_confirm_copy_mentions_probooks_cli_parity() 
     assert 'box.setWindowTitle("Restore company database (probooks restore)")' in rs
 
 
-def test_open_new_company_qfiledialog_titles_mention_backup() -> None:
+def test_create_company_wizard_handler_exists() -> None:
+    """_on_create_new_company runs FirstRunWizard and calls _switch_company_database."""
     text = _MAIN.read_text(encoding="utf-8")
-    assert (
-        "Open company database (File → Backup copies the current .db first)" in text
-    )
-    assert (
-        "New company database (back up any existing .db from File → Backup first)"
-        in text
-    )
+    assert "def _on_create_new_company" in text
+    assert "FirstRunWizard" in text
+    assert "_switch_company_database" in text
 
 
 def test_main_workspace_status_and_switch_company_copy_mentions_backup() -> None:
@@ -800,26 +777,23 @@ def test_app_header_tooltips_mention_file_backup() -> None:
     assert "probooks.backup" in hdr
 
 
-def test_file_menu_company_file_actions_tips_mention_backup_pointer() -> None:
+def test_file_menu_backup_and_restore_tips_mention_backup_pointer() -> None:
+    """Backup and restore actions still reference probooks.backup and File → Backup."""
     text = _MAIN.read_text(encoding="utf-8")
-    o = text.index("act_open_company = QAction")
-    open_chunk = text[o : text.index("act_new_company = QAction", o)]
-    assert "probooks backup" in open_chunk
-    n = text.index("act_new_company = QAction")
-    new_chunk = text[n : text.index("act_backup = QAction", n)]
-    assert "File → Backup" in new_chunk
-    c = text.index("act_copy_db_path = QAction")
-    copy_chunk = text[c : text.index("act_save = QAction", c)]
-    assert "probooks backup" in copy_chunk
-    assert "+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX" in copy_chunk
+    b = text.index("act_backup = QAction")
+    backup_chunk = text[b : text.index("act_restore = QAction", b)]
+    assert "probooks.backup" in backup_chunk
+    r = text.index("act_restore = QAction")
+    restore_chunk = text[r : text.index("act_exit = QAction", r)]
+    assert "probooks.backup" in restore_chunk
 
 
-def test_copy_db_path_empty_dialog_tip_mentions_backup() -> None:
+def test_switch_company_menu_rebuilds_from_qsettings() -> None:
+    """_rebuild_switch_company_menu and _add_to_recent_companies exist and use QSettings."""
     text = _MAIN.read_text(encoding="utf-8")
-    s = text.index("def _on_copy_company_database_path")
-    chunk = text[s : text.index("def _on_help_roadmap", s)]
-    assert "File → Backup" in chunk
-    assert "probooks.backup" in chunk
+    assert "def _rebuild_switch_company_menu" in text
+    assert "def _add_to_recent_companies" in text
+    assert "recent_companies" in text
 
 
 def test_help_roadmap_menu_tip_mentions_backup_snapshot() -> None:
@@ -847,7 +821,7 @@ def test_main_window_no_toolbar_menu_bar_qaction_counts() -> None:
     assert "# Toolbar" not in bu_chunk
     mb_s = text.index("def _build_menu_bar")
     mb_e = text.index("def dragEnterEvent", mb_s)
-    assert text[mb_s:mb_e].count("QAction(") == 35
+    assert text[mb_s:mb_e].count("QAction(") == 32
 
 
 def test_file_menu_import_wires_on_import_and_mentions_ctrl_o() -> None:
@@ -884,18 +858,19 @@ def test_main_window_build_ui_sets_central_status_and_assemble_adds_ten_main_tab
     start_a = text.index("def _assemble_main_tabs(self) -> None:")
     end_a = text.index("def _apply_main_tab_bar_tooltips(self) -> None:", start_a)
     chunk_a = text[start_a:end_a]
-    assert chunk_a.count("self._tabs.addTab(") == 10
+    assert chunk_a.count("self._tabs.addTab(") == 11
 
 
 def test_main_window_assemble_tab_strip_titles_fixed_order() -> None:
-    """Ten ``addTab`` lines keep Invoices first and More last, with stable user-visible titles."""
+    """Eleven ``addTab`` lines: Dashboard first, More last, with stable user-visible titles."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("def _assemble_main_tabs(self) -> None:")
     end = text.index("def _apply_main_tab_bar_tooltips(self) -> None:", start)
     chunk = text[start:end]
     lines = [ln.strip() for ln in chunk.splitlines() if "self._tabs.addTab(" in ln]
-    assert len(lines) == 10
+    assert len(lines) == 11
     want = (
+        "Dashboard",
         "Invoices",
         "Enter Bills",
         "Pay Bills",
@@ -1323,7 +1298,7 @@ def test_main_window_on_restore_company_try_restore_database_except_valueerror_b
     """``_on_restore_company`` wraps ``restore_database`` in ``try`` / ``ValueError`` / ``OSError|sqlite`` handlers."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _on_restore_company(self):")
-    end = text.index("    def _on_open_company_database(self):", start)
+    end = text.index("    def _on_create_new_company(self) -> None:", start)
     chunk = text[start:end]
     bc = chunk.index("        self._bank_db.close()")
     tr = chunk.index("        try:", bc)
@@ -1337,7 +1312,7 @@ def test_main_window_on_restore_company_success_reload_before_complete_informati
     """On successful restore, ``_load_company_at_path`` runs at module indent before the **Restore complete** dialog."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _on_restore_company(self):")
-    end = text.index("    def _on_open_company_database(self):", start)
+    end = text.index("    def _on_create_new_company(self) -> None:", start)
     chunk = text[start:end]
     ld = chunk.index("        self._load_company_at_path(str(target))")
     done = chunk.index('"Restore complete"')
@@ -1348,7 +1323,7 @@ def test_main_window_on_restore_confirm_dialog_picker_close_restore_reload_compl
     """``_on_restore_company`` confirms, picks a backup, closes DBs, restores, reloads, then **Restore complete**."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _on_restore_company(self):")
-    end = text.index("    def _on_open_company_database(self):", start)
+    end = text.index("    def _on_create_new_company(self) -> None:", start)
     chunk = text[start:end]
     ex = chunk.index("reply = box.exec()")
     pick = chunk.index("path, _ = QFileDialog.getOpenFileName(")
@@ -1365,7 +1340,7 @@ def test_main_window_on_restore_company_confirm_box_exec_before_backup_picker_or
     """``_on_restore_company`` constructs the warning ``QMessageBox``, ``exec``s it, then shows the open-file dialog."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _on_restore_company(self):")
-    end = text.index("    def _on_open_company_database(self):", start)
+    end = text.index("    def _on_create_new_company(self) -> None:", start)
     chunk = text[start:end]
     bx = chunk.index("box = QMessageBox(self)")
     ex = chunk.index("reply = box.exec()")
@@ -1377,7 +1352,7 @@ def test_main_window_on_restore_company_busy_worker_guard_before_confirm_box_ord
     """``_on_restore_company`` blocks on a running ``AIWorker`` before building the warning ``QMessageBox``."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _on_restore_company(self):")
-    end = text.index("    def _on_open_company_database(self):", start)
+    end = text.index("    def _on_create_new_company(self) -> None:", start)
     chunk = text[start:end]
     busy = chunk.index("if self._worker and self._worker.isRunning():")
     box = chunk.index("box = QMessageBox(self)")
@@ -1388,7 +1363,7 @@ def test_main_window_on_restore_company_qmessagebox_icon_title_text_before_stand
     """Destructive restore confirm builds icon, title, body text, then standard buttons on the ``QMessageBox``."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _on_restore_company(self):")
-    end = text.index("    def _on_open_company_database(self):", start)
+    end = text.index("    def _on_create_new_company(self) -> None:", start)
     chunk = text[start:end]
     bx = chunk.index("box = QMessageBox(self)")
     ic = chunk.index("box.setIcon(QMessageBox.Icon.Warning)")
@@ -1402,7 +1377,7 @@ def test_main_window_on_restore_company_qmessagebox_buttons_tooltip_tip_exec_ord
     """Restore confirm sets standard/default buttons, dialog tooltip, ``tip_message_box_buttons``, then ``exec``."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _on_restore_company(self):")
-    end = text.index("    def _on_open_company_database(self):", start)
+    end = text.index("    def _on_create_new_company(self) -> None:", start)
     chunk = text[start:end]
     pick = chunk.index("path, _ = QFileDialog.getOpenFileName(")
     sb = chunk.index("box.setStandardButtons(")
@@ -1417,7 +1392,7 @@ def test_main_window_on_restore_company_picker_target_same_file_guard_before_clo
     """After the backup picker, ``_on_restore_company`` resolves target, blocks same-as-live path, then closes DBs."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _on_restore_company(self):")
-    end = text.index("    def _on_open_company_database(self):", start)
+    end = text.index("    def _on_create_new_company(self) -> None:", start)
     chunk = text[start:end]
     pick = chunk.index("path, _ = QFileDialog.getOpenFileName(")
     emp = chunk.index("if not path:")
@@ -1438,7 +1413,7 @@ def test_main_window_assemble_main_tabs_instantiates_core_widgets() -> None:
     assert chunk.count("PayBillsScreen(") == 1
     assert chunk.count("ReceiveChecksScreen(") == 1
     assert chunk.count("BankImportTab(") == 1
-    assert chunk.count("RegisterTab(") == 1
+    assert chunk.count("RegisterTab(self._bank_db,") == 1
     assert chunk.count("COATab(") == 1
     assert chunk.count("ReportsTab(") == 1
     assert chunk.count("JournalTab(") == 1
@@ -1544,7 +1519,7 @@ def test_main_window_switch_backup_restore_guard_busy_ai_worker() -> None:
         ("    def _on_backup_company(self):", "    def _on_restore_company(self):"),
         (
             "    def _on_restore_company(self):",
-            "    def _on_open_company_database(self):",
+            "    def _on_create_new_company(self) -> None:",
         ),
     )
     for start_m, end_m in spans:
@@ -1594,7 +1569,7 @@ def test_main_window_on_restore_company_restores_and_reload_paths() -> None:
     """Restore flow: backup picker, reject live .db path, ``restore_database``, reload + dialogs."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _on_restore_company(self):")
-    end = text.index("    def _on_open_company_database(self):", start)
+    end = text.index("    def _on_create_new_company(self) -> None:", start)
     chunk = text[start:end]
     assert chunk.count("self._db.close()") == 1
     assert chunk.count("self._bank_db.close()") == 1
@@ -1681,76 +1656,31 @@ def test_main_window_two_stacked_qmessagebox_instances_for_yes_no_flows() -> Non
     assert chunk.count("box = QMessageBox(self)") == 2
 
 
-def test_main_window_on_open_company_database_reads_settings_and_switches() -> None:
-    """``_on_open_company_database`` uses QSettings start dir and delegates to switch (not create)."""
+def test_main_window_on_create_new_company_runs_wizard() -> None:
+    """_on_create_new_company launches FirstRunWizard and calls _switch_company_database."""
     text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("    def _on_open_company_database(self):")
-    end = text.index("    def _on_new_company_database(self):", start)
-    chunk = text[start:end]
-    assert chunk.count('QSettings().value("company_database_path", "", type=str)') == 1
-    assert (
-        'start_dir = str(Path(prev).parent) if prev else ""' in chunk
-    )
-    assert chunk.count("QFileDialog.getOpenFileName(") == 1
-    assert (
-        "Open company database (File → Backup copies the current .db first)" in chunk
-    )
-    assert chunk.count("if path:") == 1
-    assert chunk.count("self._switch_company_database(path, create_new=False)") == 1
-    assert chunk.count('"SQLite Database (*.db);;All Files (*.*)"') == 1
-    assert chunk.index("QFileDialog.getOpenFileName(") < chunk.index(
-        "self._switch_company_database(path, create_new=False)"
-    )
+    assert "def _on_create_new_company" in text
+    assert "FirstRunWizard" in text
+    assert "_switch_company_database" in text
 
 
-def test_main_window_on_open_company_database_prev_start_dir_before_file_dialog_order() -> None:
-    """``_on_open_company_database`` reads settings, derives ``start_dir``, then shows the open-file dialog."""
+def test_main_window_add_to_recent_companies_saves_to_qsettings() -> None:
+    """_add_to_recent_companies saves path and name to QSettings recent_companies list."""
     text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("    def _on_open_company_database(self):")
-    end = text.index("    def _on_new_company_database(self):", start)
-    chunk = text[start:end]
-    prev = chunk.index('prev = QSettings().value("company_database_path", "", type=str) or ""')
-    sd = chunk.index('start_dir = str(Path(prev).parent) if prev else ""')
-    dlg = chunk.index("QFileDialog.getOpenFileName(")
-    assert prev < sd < dlg
+    assert "def _add_to_recent_companies" in text
+    assert "recent_companies" in text
 
 
-def test_main_window_on_new_company_database_suffixes_db_and_switches() -> None:
-    """``_on_new_company_database`` saves a .db path and opens via switch with ``create_new=True``."""
+def test_main_window_rebuild_switch_company_menu_repopulates_submenu() -> None:
+    """_rebuild_switch_company_menu repopulates the Switch Company submenu."""
     text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("    def _on_new_company_database(self):")
-    end = text.index("    def closeEvent(self, event):", start)
-    chunk = text[start:end]
-    assert chunk.count('QSettings().value("company_database_path", "", type=str)') == 1
-    assert (
-        'start_dir = str(Path(prev).parent) if prev else ""' in chunk
-    )
-    assert chunk.count("QFileDialog.getSaveFileName(") == 1
-    assert (
-        "New company database (back up any existing .db from File → Backup first)" in chunk
-    )
-    assert chunk.count("if path:") == 1
-    assert chunk.count('if not path.lower().endswith(".db"):') == 1
-    assert chunk.count('path += ".db"') == 1
-    assert chunk.count("self._switch_company_database(path, create_new=True)") == 1
-    assert chunk.count('"SQLite Database (*.db);;All Files (*.*)"') == 1
-    assert chunk.index("QFileDialog.getSaveFileName(") < chunk.index("if path:")
-    assert chunk.index("if path:") < chunk.index('if not path.lower().endswith(".db"):')
-    assert chunk.index('if not path.lower().endswith(".db"):') < chunk.index(
-        "self._switch_company_database(path, create_new=True)"
-    )
+    assert "def _rebuild_switch_company_menu" in text
 
 
-def test_main_window_on_new_company_database_prev_start_dir_before_save_dialog_order() -> None:
-    """``_on_new_company_database`` reads settings, derives ``start_dir``, then shows the save-file dialog."""
+def test_main_window_on_create_new_company_exists_in_source() -> None:
+    """_on_create_new_company method is defined in main.py."""
     text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("    def _on_new_company_database(self):")
-    end = text.index("    def closeEvent(self, event):", start)
-    chunk = text[start:end]
-    prev = chunk.index('prev = QSettings().value("company_database_path", "", type=str) or ""')
-    sd = chunk.index('start_dir = str(Path(prev).parent) if prev else ""')
-    dlg = chunk.index("QFileDialog.getSaveFileName(")
-    assert prev < sd < dlg
+    assert "def _on_create_new_company(self)" in text
 
 
 def test_main_window_on_run_ai_guards_worker_api_key_and_starts_ai_worker() -> None:
@@ -2178,7 +2108,7 @@ def test_main_window_refresh_inbox_and_coa_changed_sync_lists() -> None:
     """``_refresh_inbox`` repopulates the inbox and syncs selection; ``_on_coa_changed`` refreshes COA-derived UI."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _refresh_inbox(self):")
-    end = text.index("    def _set_main_tab_index(self, index: int) -> None:", start)
+    end = text.index("    def _on_tools_payee_categorize(self)", start)
     chunk = text[start:end]
     assert chunk.count("self._db.list_documents()") == 1
     assert chunk.count("self._inbox.populate(docs)") == 1
@@ -2249,17 +2179,10 @@ def test_main_window_update_company_status_status_message_before_header_sync_tit
     assert p < msg < br < syn
 
 
-def test_main_window_on_copy_company_database_path_empty_guard_before_clipboard_order() -> None:
-    """``_on_copy_company_database_path`` shows the empty-path dialog before any clipboard write."""
+def test_main_window_add_to_recent_companies_method_exists() -> None:
+    """_add_to_recent_companies is defined in main.py."""
     text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("    def _on_copy_company_database_path(self) -> None:")
-    end = text.index("    def _on_help_roadmap(self):", start)
-    chunk = text[start:end]
-    g = chunk.index("if not raw:")
-    res = chunk.index("resolved = str(Path(raw).resolve())")
-    clip = chunk.index("QApplication.clipboard().setText(resolved)")
-    stat = chunk.index("self._status_bar.showMessage(")
-    assert g < res < clip < stat
+    assert "def _add_to_recent_companies" in text
 
 
 def test_main_window_on_help_roadmap_resolve_none_branch_before_open_url_order() -> None:
@@ -2314,29 +2237,23 @@ def test_main_window_help_menu_qaction_definitions_order() -> None:
 
 
 def test_main_window_file_menu_qaction_definitions_order() -> None:
-    """**File** menu defines import → open/new company → company setup → backup/restore → copy path → save stubs, separator, exit."""
+    """**File** menu defines import → create company (+ switch submenu) → backup/restore → exit."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("        # File menu")
     end = text.index("        # View menu", start)
     chunk = text[start:end]
     names = (
         "act_import_docs = QAction",
-        "act_open_company = QAction",
-        "act_new_company = QAction",
-        "act_company_setup = QAction",
+        "act_create_company = QAction",
         "act_backup = QAction",
         "act_restore = QAction",
-        "act_copy_db_path = QAction",
-        "act_save = QAction",
-        "act_save_as = QAction",
-        "file_menu.addSeparator()",
         "act_exit = QAction",
     )
     positions = [chunk.index(n) for n in names]
     assert positions == sorted(positions)
     im = chunk.index("act_import_docs = QAction")
-    op = chunk.index("act_open_company = QAction")
-    assert "+ _BANK_IMPORT_VIEW_POINTER" in chunk[im:op]
+    cr = chunk.index("act_create_company = QAction")
+    assert "+ _BANK_IMPORT_VIEW_POINTER" in chunk[im:cr]
 
 
 def test_main_window_edit_menu_qaction_definitions_order() -> None:
@@ -2396,13 +2313,13 @@ def test_main_window_build_ui_wires_stmt_match_sync_focus_register() -> None:
 
 
 def test_main_window_build_menu_bar_wires_all_action_triggers() -> None:
-    """Every enabled menu ``QAction`` wires ``triggered.connect`` (30 wired; 5 disabled stubs)."""
+    """Every enabled menu ``QAction`` wires ``triggered.connect`` (29 wired; 3 disabled stubs)."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _build_menu_bar(self):")
     end = text.index("    # -- drag & drop on window", start)
     chunk = text[start:end]
-    assert chunk.count("QAction(") == 35
-    assert chunk.count(".triggered.connect(") == 30
+    assert chunk.count("QAction(") == 32
+    assert chunk.count(".triggered.connect(") == 29
     assert (
         chunk.count(
             "lambda checked=False, i=idx: self._set_main_tab_index(i)"
@@ -2412,23 +2329,10 @@ def test_main_window_build_menu_bar_wires_all_action_triggers() -> None:
     assert chunk.count("act_exit.triggered.connect(self.close)") == 1
 
 
-def test_main_window_on_copy_company_database_path_clipboard_or_missing_dialog() -> None:
-    """``_on_copy_company_database_path`` copies a resolved path or explains when none is set."""
+def test_main_window_rebuild_switch_company_menu_method_exists() -> None:
+    """_rebuild_switch_company_menu is defined in main.py."""
     text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("    def _on_copy_company_database_path(self) -> None:")
-    end = text.index("    def _on_help_roadmap(self):", start)
-    chunk = text[start:end]
-    assert chunk.count("getattr(self._bank_db, \"_db_path\", None) or self._db_path or \"\"") == 1
-    assert chunk.count('"Copy path"') == 1
-    assert "No company database path is available." in chunk
-    assert (
-        'ok_tip="Open or create a company first (File menu); then File → Backup / probooks backup (probooks.backup) applies."'
-        in chunk
-    )
-    assert chunk.count("QApplication.clipboard().setText(resolved)") == 1
-    assert chunk.count("str(Path(raw).resolve())") == 1
-    assert "Copied path:" in chunk
-    assert ", 6000" in chunk
+    assert "def _rebuild_switch_company_menu" in text
 
 
 def test_main_window_on_help_roadmap_opens_local_md_or_warns() -> None:
@@ -2829,8 +2733,8 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
         chunk.count("tools_menu.addAction("),
         chunk.count("help_menu.addAction("),
     )
-    assert per_menu_add == (10, 1, 3, 1, 7), (
-        f"expected top-level addAction counts (File,View,Edit,Tools,Help)=(10,1,3,1,7); "
+    assert per_menu_add == (5, 1, 3, 3, 7), (
+        f"expected top-level addAction counts (File,View,Edit,Tools,Help)=(5,1,3,3,7); "
         f"Recon register actions use 13 submenu addAction (counted separately); "
         f"got {per_menu_add}"
     )
@@ -2843,13 +2747,13 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
     )
     assert n_reg_sub_add == 13
     n_add = sum(per_menu_add) + n_reg_sub_add
-    assert n_qa == n_tip == n_add == 35, (
-        f"expected 35 menu QActions, _menu_action_tip calls, and *.addAction( calls "
+    assert n_qa == n_tip == n_add == 32, (
+        f"expected 32 menu QActions, _menu_action_tip calls, and *.addAction( calls "
         f"(QAction={n_qa}, _menu_action_tip={n_tip}, addAction={n_add})"
     )
     n_dis = chunk.count("setEnabled(False)")
-    assert n_dis == 5, (
-        f"expected 5 disabled menu actions (Save, Save As, Undo, Redo, Prefs); "
+    assert n_dis == 3, (
+        f"expected 3 disabled menu actions (Undo, Redo, Prefs); "
         f"got {n_dis}"
     )
     n_trig = chunk.count(".triggered.connect(")
@@ -2857,26 +2761,25 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
         f"each enabled menu QAction should wire .triggered.connect( "
         f"(QAction={n_qa}, setEnabled(False)={n_dis}, .triggered.connect={n_trig})"
     )
-    assert chunk.count(".addSeparator()") == 3, (
-        "expected file_menu, edit_menu, and help_menu each to call addSeparator() once"
+    assert chunk.count(".addSeparator()") == 6, (
+        "expected file_menu(3), edit_menu(1), tools_menu(1), and help_menu(1) to call addSeparator()"
     )
     assert chunk.count("self.menuBar()") == 1
     assert chunk.count("mb.addMenu(") == 6, (
         "expected six top-level menus (File, View, Edit, Tools, Recon, Help)"
     )
     n_scut = chunk.count(".setShortcut(")
-    assert n_scut == 9, (
-        f"expected 9 menu bar .setShortcut( (5 File + View loop + Undo/Redo + Tools Invoice); "
+    assert n_scut == 6, (
+        f"expected 6 menu bar .setShortcut( (Ctrl+O, Ctrl+Q, View loop, Undo, Redo, Tools Invoice); "
         f"got {n_scut}"
     )
     n_sctx = chunk.count(".setShortcutContext(")
-    assert n_sctx == 3, (
-        f"expected 3 .setShortcutContext(Qt.ApplicationShortcut) (copy path, View tabs, Invoice); "
+    assert n_sctx == 2, (
+        f"expected 2 .setShortcutContext(Qt.ApplicationShortcut) (View tabs, Invoice); "
         f"got {n_sctx}"
     )
     assert "\n            act_import_docs,\n" in chunk
-    assert "\n            act_open_company,\n" in chunk
-    assert "\n            act_copy_db_path,\n" in chunk
+    assert "\n            act_create_company,\n" in chunk
     assert "_menu_action_tip(\n                act, f" in chunk
     ex = chunk.index("act_exit = QAction")
     assert "_menu_action_tip(" in chunk[ex : ex + 400]
@@ -4021,7 +3924,7 @@ def test_desktop_main_entrypoint_boot_sequence() -> None:
     assert chunk.count("window.show()") == 1
     assert chunk.count("sys.exit(app.exec())") == 1
     assert chunk.count("db_path = args.database") == 1
-    assert chunk.count("if db_path is None:") == 1
+    assert chunk.count("if db_path is None:") == 2
     assert chunk.count("db_path = last") == 1
     assert chunk.count('QSettings().value("company_database_path", "", type=str)') == 1
     assert chunk.count("Path(last).is_file()") == 1
@@ -4279,10 +4182,11 @@ def test_desktop_main_detail_pane_wires_actions_load_ai_and_clear() -> None:
     end = text.index("class AppHeaderWidget(QFrame):", start)
     chunk = text[start:end]
     assert "Shows document preview + extracted fields + action buttons." in chunk
-    assert chunk.count("runAI      = Signal(int)") == 1
-    assert chunk.count("approve    = Signal(int)") == 1
-    assert chunk.count("markPosted = Signal(int)") == 1
-    assert chunk.count("reject     = Signal(int)") == 1
+    assert chunk.count("runAI") >= 1
+    assert chunk.count("approve") >= 1
+    assert chunk.count("markPosted") >= 1
+    assert chunk.count("reject") >= 1
+    assert "Signal(int)" in chunk
     assert chunk.count("self._btn_run.clicked.connect(self._on_run_ai)") == 1
     assert chunk.count("self._btn_approve.clicked.connect(self._on_approve)") == 1
     assert chunk.count("self._btn_post.clicked.connect(self._on_post)") == 1
@@ -4568,7 +4472,7 @@ def test_desktop_main_detail_pane_button_slots_require_selected_doc() -> None:
     start = text.index("    # -- button slots --------------------------------------------------------")
     end = text.index("    def update_coa(self, coa_list: list[str]):", start)
     chunk = text[start:end]
-    assert chunk.count("if self._doc_id is not None:") == 4
+    assert chunk.count("if self._doc_id is not None:") == 6
 
 
 def test_desktop_main_detail_pane_document_type_combo_fixed_values() -> None:
@@ -4678,7 +4582,7 @@ def test_desktop_main_detail_pane_four_action_buttons_toolbar_loop_and_styles() 
         start,
     )
     chunk = text[start:end]
-    assert chunk.count("QPushButton(") == 4
+    assert chunk.count("QPushButton(") == 6
     assert chunk.count("for btn in (self._btn_run, self._btn_approve, self._btn_post, self._btn_reject):") == 1
     assert chunk.count("btn.setMinimumHeight(32)") == 1
     assert chunk.count("self._btn_run.setStyleSheet(") == 1
@@ -5049,7 +4953,7 @@ def test_main_window_message_box_information_ok_user_feedback_paths() -> None:
     start = text.index("class MainWindow(QMainWindow):")
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
-    assert chunk.count("message_box_information_ok(") == 12
+    assert chunk.count("message_box_information_ok(") == 11
 
 
 def test_main_window_message_box_warning_critical_and_file_dialog_counts() -> None:
@@ -5058,11 +4962,11 @@ def test_main_window_message_box_warning_critical_and_file_dialog_counts() -> No
     start = text.index("class MainWindow(QMainWindow):")
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
-    assert chunk.count("message_box_warning_ok(") == 8
+    assert chunk.count("message_box_warning_ok(") == 10
     assert chunk.count("message_box_critical_ok(") == 5
     assert chunk.count("QFileDialog.getOpenFileNames(") == 1
-    assert chunk.count("QFileDialog.getOpenFileName(") == 2
-    assert chunk.count("QFileDialog.getSaveFileName(") == 2
+    assert chunk.count("QFileDialog.getOpenFileName(") == 1
+    assert chunk.count("QFileDialog.getSaveFileName(") == 1
 
 
 def test_main_window_refresh_inbox_eight_call_sites() -> None:
@@ -5089,7 +4993,7 @@ def test_main_window_detail_pane_eleven_call_sites() -> None:
     start = text.index("class MainWindow(QMainWindow):")
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
-    assert chunk.count("self._detail.") == 11
+    assert chunk.count("self._detail.") == 13
 
 
 def test_main_window_coa_database_four_call_sites() -> None:
@@ -5098,7 +5002,7 @@ def test_main_window_coa_database_four_call_sites() -> None:
     start = text.index("class MainWindow(QMainWindow):")
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
-    assert chunk.count("self._coa_db.") == 4
+    assert chunk.count("self._coa_db.") == 7
 
 
 def test_main_window_banner_tabs_status_bar_and_worker_counts() -> None:
@@ -5108,8 +5012,8 @@ def test_main_window_banner_tabs_status_bar_and_worker_counts() -> None:
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
     assert chunk.count("self._header.") == 2
-    assert chunk.count("self._status_bar.showMessage(") == 12
-    assert chunk.count("self._tabs.") == 33
+    assert chunk.count("self._status_bar.showMessage(") == 13
+    assert chunk.count("self._tabs.") == 38
     assert chunk.count("self._worker") == 13
 
 

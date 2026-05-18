@@ -1222,35 +1222,22 @@ class MainWindow(QMainWindow):
         act_import_docs.triggered.connect(self._on_import)
         file_menu.addAction(act_import_docs)
 
-        act_open_company = QAction("Open &company database\u2026", self)
-        act_open_company.setShortcut("Ctrl+Shift+O")
-        _menu_action_tip(
-            act_open_company,
-            "Open a different company SQLite database (Ctrl+Shift+O). "
-            "File → Backup copies the active .db first (same engine as probooks backup).",
-        )
-        act_open_company.triggered.connect(self._on_open_company_database)
-        file_menu.addAction(act_open_company)
+        file_menu.addSeparator()
 
-        act_new_company = QAction("&New company database\u2026", self)
+        act_create_company = QAction("Create &New Company…", self)
         _menu_action_tip(
-            act_new_company,
-            "Create a new empty company SQLite database at a path you choose. "
-            "Use File → Backup / probooks backup on any file you rely on before switching.",
+            act_create_company,
+            "Launch the setup wizard to create a new company database.",
         )
-        act_new_company.triggered.connect(self._on_new_company_database)
-        file_menu.addAction(act_new_company)
+        act_create_company.triggered.connect(self._on_create_new_company)
+        file_menu.addAction(act_create_company)
 
-        act_company_setup = QAction("Company &Setup\u2026", self)
-        _menu_action_tip(
-            act_company_setup,
-            "Open Company Setup (More → Business → Company): name, address, and contact "
-            "used as the letterhead on printed and exported invoices.",
-        )
-        act_company_setup.triggered.connect(self._on_company_setup)
-        file_menu.addAction(act_company_setup)
+        self._switch_company_menu = file_menu.addMenu("S&witch Company →")
+        self._rebuild_switch_company_menu()
 
-        act_backup = QAction("&Backup company file\u2026", self)
+        file_menu.addSeparator()
+
+        act_backup = QAction("&Backup company file…", self)
         _menu_action_tip(
             act_backup,
             "Back up the company database to a file you choose (SQLite online backup via probooks.backup; "
@@ -1259,7 +1246,7 @@ class MainWindow(QMainWindow):
         act_backup.triggered.connect(self._on_backup_company)
         file_menu.addAction(act_backup)
 
-        act_restore = QAction("&Restore from backup\u2026", self)
+        act_restore = QAction("&Restore from backup…", self)
         _menu_action_tip(
             act_restore,
             "Replace the company database from a backup .db file (probooks.backup / probooks restore; "
@@ -1267,33 +1254,6 @@ class MainWindow(QMainWindow):
         )
         act_restore.triggered.connect(self._on_restore_company)
         file_menu.addAction(act_restore)
-
-        act_copy_db_path = QAction("Copy company database &path", self)
-        act_copy_db_path.setShortcut("Ctrl+Alt+P")
-        act_copy_db_path.setShortcutContext(Qt.ApplicationShortcut)
-        _menu_action_tip(
-            act_copy_db_path,
-            "Copy the resolved company .db path to the clipboard (Ctrl+Alt+P); "
-            "matches the file File → Backup and probooks backup read from. "
-            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
-        )
-        act_copy_db_path.triggered.connect(self._on_copy_company_database_path)
-        file_menu.addAction(act_copy_db_path)
-
-        act_save = QAction("&Save", self)
-        act_save.setShortcut("Ctrl+S")
-        _menu_action_tip(
-            act_save, "Save is not used in this desktop shell yet (Ctrl+S)."
-        )
-        act_save.setEnabled(False)
-        file_menu.addAction(act_save)
-
-        act_save_as = QAction("Save &As \u2026", self)
-        _menu_action_tip(
-            act_save_as, "Save As is not used in this desktop shell yet."
-        )
-        act_save_as.setEnabled(False)
-        file_menu.addAction(act_save_as)
 
         file_menu.addSeparator()
 
@@ -1644,22 +1604,6 @@ class MainWindow(QMainWindow):
 
     # -- slots ---------------------------------------------------------------
 
-    def _on_copy_company_database_path(self) -> None:
-        raw = getattr(self._bank_db, "_db_path", None) or self._db_path or ""
-        if not raw:
-            message_box_information_ok(
-                self,
-                "Copy path",
-                "No company database path is available.",
-                ok_tip="Open or create a company first (File menu); then File → Backup / probooks backup (probooks.backup) applies.",
-            )
-            return
-        resolved = str(Path(raw).resolve())
-        QApplication.clipboard().setText(resolved)
-        self._status_bar.showMessage(
-            f"Copied path: {escape_ampersand_for_qt(resolved)}", 6000
-        )
-
     def _on_help_roadmap(self):
         path = resolve_local_roadmap_path()
         if path is None:
@@ -1940,20 +1884,6 @@ class MainWindow(QMainWindow):
         dlg = PayeeCategorizeDialog(self._bank_db._conn, coa_list, parent=self)
         dlg.exec()
 
-    def _on_company_setup(self) -> None:
-        """File → Company Setup: navigate to More → Business → Company sub-tab."""
-        if not hasattr(self, "_tabs") or not hasattr(self, "_more_hub"):
-            return
-        idx = self._tabs.indexOf(self._more_hub)
-        if idx >= 0:
-            self._tabs.setCurrentIndex(idx)
-        if not hasattr(self, "_business_hub"):
-            return
-        biz_idx = self._more_hub.indexOf(self._business_hub)
-        if biz_idx >= 0:
-            self._more_hub.setCurrentIndex(biz_idx)
-        self._business_hub.focus_company_subtab()
-
     def _set_main_tab_index(self, index: int) -> None:
         if not hasattr(self, "_tabs"):
             return
@@ -2149,6 +2079,15 @@ class MainWindow(QMainWindow):
         self._update_company_status()
         if hasattr(self, "_dashboard_tab"):
             self._dashboard_tab.set_connection(self._bank_db._conn)
+        # Track in recent companies
+        try:
+            row = self._bank_db._conn.execute(
+                "SELECT value FROM company_settings WHERE key='company_name'"
+            ).fetchone()
+            _co_name = row[0] if row else Path(resolved).stem
+        except Exception:
+            _co_name = Path(resolved).stem
+        self._add_to_recent_companies(resolved, _co_name)
 
     def _switch_company_database(self, path: str, *, create_new: bool = False) -> None:
         if self._worker and self._worker.isRunning():
@@ -2336,31 +2275,48 @@ class MainWindow(QMainWindow):
             ok_tip="Close; you are now on the restored company database.",
         )
 
-    def _on_open_company_database(self):
-        prev = QSettings().value("company_database_path", "", type=str) or ""
-        start_dir = str(Path(prev).parent) if prev else ""
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Open company database (File → Backup copies the current .db first)",
-            start_dir,
-            "SQLite Database (*.db);;All Files (*.*)",
-        )
-        if path:
-            self._switch_company_database(path, create_new=False)
+    def _on_create_new_company(self) -> None:
+        """File → Create New Company: launch the setup wizard."""
+        from desktop_app.first_run_wizard import FirstRunWizard, apply_wizard_results
+        wiz = FirstRunWizard(parent=self)
+        if wiz.exec() != FirstRunWizard.DialogCode.Accepted or not wiz.db_path:
+            return
+        self._switch_company_database(wiz.db_path, create_new=True)
+        apply_wizard_results(wiz, self._bank_db)
+        if hasattr(self, "_dashboard_tab"):
+            self._dashboard_tab.refresh()
 
-    def _on_new_company_database(self):
-        prev = QSettings().value("company_database_path", "", type=str) or ""
-        start_dir = str(Path(prev).parent) if prev else ""
-        path, _ = QFileDialog.getSaveFileName(
-            self,
-            "New company database (back up any existing .db from File → Backup first)",
-            start_dir,
-            "SQLite Database (*.db);;All Files (*.*)",
-        )
-        if path:
-            if not path.lower().endswith(".db"):
-                path += ".db"
-            self._switch_company_database(path, create_new=True)
+    def _add_to_recent_companies(self, path: str, name: str) -> None:
+        """Prepend path|name to the QSettings recent-companies list (max 10, deduplicated)."""
+        settings = QSettings()
+        raw: list = settings.value("recent_companies", [], type=list)  # type: ignore[assignment]
+        entry = f"{name}|{path}"
+        # Remove any existing entry for this path
+        raw = [r for r in raw if not r.endswith(f"|{path}") and not r == entry]
+        raw.insert(0, entry)
+        settings.setValue("recent_companies", raw[:10])
+        self._rebuild_switch_company_menu()
+
+    def _rebuild_switch_company_menu(self) -> None:
+        """Repopulate the Switch Company submenu from QSettings."""
+        if not hasattr(self, "_switch_company_menu"):
+            return
+        menu = self._switch_company_menu
+        menu.clear()
+        settings = QSettings()
+        raw: list = settings.value("recent_companies", [], type=list)  # type: ignore[assignment]
+        if not raw:
+            placeholder = menu.addAction("(no recent companies)")
+            placeholder.setEnabled(False)
+            return
+        for entry in raw:
+            parts = entry.split("|", 1)
+            if len(parts) != 2:
+                continue
+            display_name, db_path = parts
+            action = menu.addAction(f"{display_name}  —  {db_path}")
+            action.setData(db_path)
+            action.triggered.connect(lambda checked=False, p=db_path: self._switch_company_database(p, create_new=False))
 
     def closeEvent(self, event):
         self._db.close()
