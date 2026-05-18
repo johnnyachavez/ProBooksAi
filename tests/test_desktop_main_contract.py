@@ -5991,7 +5991,7 @@ def test_register_tab_manual_entry_dialog_and_insert_wiring() -> None:
     assert "_register_row_coa_user_data" in text
     assert "_register_clip_txn_string_field" in text
     assert "Statement vs register field copies for AI line reconciliation" in text
-    assert "Bank Import AI line-reconciliation row copies" in text
+    # removed with help-tip paragraph
     assert "_copy_register_row_coa" in text
     assert "_copy_register_row_payee_description" in text
     assert "_copy_register_row_memo" in text
@@ -6042,7 +6042,7 @@ def test_register_journal_reports_audit_grid_hints_mention_csv_utf8_bom_for_exce
     """Main grids / footer hints echo toolbar Export CSV encoding (Excel-friendly BOM)."""
     reg = (_DESKTOP_APP_DIR / "register_tab.py").read_text(encoding="utf-8")
     assert "Ctrl+Shift+E export (UTF-8 BOM for Excel)" in reg
-    assert "Ctrl+Shift+E exports CSV (UTF-8 BOM for Excel)" in reg
+    # removed with help-tip paragraph
     rep = (_DESKTOP_APP_DIR / "reports_tab.py").read_text(encoding="utf-8")
     assert rep.count("Toolbar Export CSV uses UTF-8 BOM for Excel") == 1
     assert "Export CSV uses UTF-8 BOM for Excel" in rep
@@ -6127,8 +6127,8 @@ def test_register_tab_recon_menu_entrypoints_and_link_dialog_tooltips() -> None:
         "lbl_link_suggestions.setToolTip",
         "lbl_link_manual.setToolTip",
         "lbl_current_link.setToolTip",
-        "_lbl_debits.setToolTip",
-        "self._register_help_tip.setToolTip",
+        # "_lbl_debits.setToolTip" removed (labels inline-styled now)
+        # "_register_help_tip.setToolTip" removed with help-tip paragraph
     ):
         assert needle in reg, f"register_tab should set tooltip on {needle!r}"
     assert reg.count("tip_qdialog_button_box(\n            bb,") >= 3

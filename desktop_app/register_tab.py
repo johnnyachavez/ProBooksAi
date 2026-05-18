@@ -761,6 +761,7 @@ class RegisterTab(QWidget):
         self._recon_overlay_bank_import_mode = False
         self._recon_header_snapshot: QByteArray | None = None
         self._cached_register_footer_totals_height = 0
+        self._register_ending_balance: float | None = None
         self._build_ui()
 
     def _build_ui(self):
@@ -774,8 +775,42 @@ class RegisterTab(QWidget):
             "Same company SQLite database as other main tabs; File → Backup / Restore (probooks.backup)."
         )
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 6, 8, 4)
-        layout.setSpacing(6)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # ── Top header strip ─────────────────────────────────────────────────
+        from desktop_app.theme import BG_ELEVATED, REGISTER_GRID_LINE, FG_PRIMARY, ACCENT
+        _hdr = QWidget()
+        _hdr.setFixedHeight(36)
+        _hdr.setStyleSheet(
+            f"QWidget {{ background: {BG_ELEVATED}; "
+            f"border-bottom: 2px solid {REGISTER_GRID_LINE}; }}"
+        )
+        _hdr_row = QHBoxLayout(_hdr)
+        _hdr_row.setContentsMargins(12, 0, 14, 0)
+        _hdr_row.setSpacing(10)
+        _lbl_brand = QLabel("BANK REGISTER")
+        _lbl_brand.setStyleSheet(
+            f"background: transparent; border: none; "
+            f"color: {FG_PRIMARY}; font-size: 12px; font-weight: 700; letter-spacing: 2px;"
+        )
+        _hdr_row.addWidget(_lbl_brand)
+        _hdr_row.addStretch(1)
+        # Account name badge (updated when account combo changes)
+        self._hdr_acct_lbl = QLabel("")
+        self._hdr_acct_lbl.setStyleSheet(
+            f"background: transparent; border: none; "
+            f"color: #A0C4FF; font-size: 11px; font-weight: 600;"
+        )
+        _hdr_row.addWidget(self._hdr_acct_lbl)
+        layout.addWidget(_hdr)
+
+        # ── Controls row ─────────────────────────────────────────────────────
+        _controls_wrap = QWidget()
+        _controls_wrap.setStyleSheet("QWidget { border: none; }")
+        _cw_lay = QVBoxLayout(_controls_wrap)
+        _cw_lay.setContentsMargins(8, 6, 8, 4)
+        _cw_lay.setSpacing(6)
 
         controls = QHBoxLayout()
         controls.setSpacing(8)
@@ -816,7 +851,8 @@ class RegisterTab(QWidget):
         self._filter_combo.currentIndexChanged.connect(self._on_register_filter_changed)
         controls.addWidget(self._filter_combo)
         controls.addStretch(1)
-        layout.addLayout(controls)
+        _cw_lay.addLayout(controls)
+        layout.addWidget(_controls_wrap)
 
         # Reconciliation toggle is hosted on the main window tab bar (corner widget); keep a
         # hidden checkbox for unit tests and until MainWindow.bind_reconciliation_toggle runs.
@@ -918,69 +954,66 @@ class RegisterTab(QWidget):
         sc_open_biz.setContext(Qt.WidgetWithChildrenShortcut)
         sc_open_biz.activated.connect(self.tools_register_open_linked_business_record)
 
-        self._register_info_footer = QWidget()
-        footer_column = QVBoxLayout(self._register_info_footer)
-        footer_column.setContentsMargins(0, 8, 0, 0)
-        footer_column.setSpacing(10)
+        # ── Bottom status bar ────────────────────────────────────────────────
+        # Strong top border separates the grid from the status bar.
+        # Left side: quick Splits button + recon totals (recon mode only).
+        # Right side: ENDING BALANCE — always visible and prominent.
+        from PySide6.QtWidgets import QFrame
+        from desktop_app.theme import REGISTER_GRID_LINE, BG_ELEVATED, FG_PRIMARY, AMOUNT_POSITIVE
 
+        self._register_info_footer = QWidget()
+        self._register_info_footer.setStyleSheet(
+            f"QWidget {{ background: {BG_ELEVATED}; "
+            f"border-top: 2px solid {REGISTER_GRID_LINE}; }}"
+        )
+        footer_row = QHBoxLayout(self._register_info_footer)
+        footer_row.setContentsMargins(10, 6, 14, 6)
+        footer_row.setSpacing(16)
+
+        # Quick-access Splits button
+        self._footer_splits_btn = QPushButton("Splits")
+        self._footer_splits_btn.setFixedWidth(72)
+        self._footer_splits_btn.clicked.connect(self._splits_dialog)
+        footer_row.addWidget(self._footer_splits_btn)
+
+        # Recon totals (only visible in reconciliation mode)
         self._register_footer_totals_wrap = QWidget()
+        self._register_footer_totals_wrap.setStyleSheet("QWidget { background: transparent; border: none; }")
         foot = QHBoxLayout(self._register_footer_totals_wrap)
         foot.setContentsMargins(0, 0, 0, 0)
-        self._lbl_debits = QLabel("Total debits: —")
-        self._lbl_debits.setToolTip(
-            "Sum of debit amounts for rows currently visible in the grid (respects the filter)."
-        )
-        self._lbl_credits = QLabel("Total credits: —")
-        self._lbl_credits.setToolTip(
-            "Sum of credit amounts for rows currently visible in the grid (respects the filter)."
-        )
+        foot.setSpacing(20)
+        self._lbl_debits = QLabel("Debits: —")
+        self._lbl_debits.setStyleSheet("background: transparent; border: none; font-weight: bold;")
+        self._lbl_credits = QLabel("Credits: —")
+        self._lbl_credits.setStyleSheet("background: transparent; border: none; font-weight: bold;")
         self._lbl_net = QLabel("Net: —")
-        self._lbl_net.setToolTip(
-            "Debits minus credits for rows currently visible in the grid (respects the filter)."
-        )
-        for w in (self._lbl_debits, self._lbl_credits, self._lbl_net):
-            w.setStyleSheet("font-weight: bold;")
+        self._lbl_net.setStyleSheet("background: transparent; border: none; font-weight: bold;")
         foot.addWidget(self._lbl_debits)
-        foot.addSpacing(24)
         foot.addWidget(self._lbl_credits)
-        foot.addSpacing(24)
         foot.addWidget(self._lbl_net)
-        foot.addStretch()
-        footer_column.addWidget(self._register_footer_totals_wrap)
+        footer_row.addWidget(self._register_footer_totals_wrap)
 
-        self._register_footer_totals_spacer = QWidget()
-        self._register_footer_totals_spacer.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-        )
-        footer_column.addWidget(self._register_footer_totals_spacer)
+        # Spacer to push ENDING BALANCE to the right
+        footer_row.addStretch(1)
 
-        self._register_help_tip = QLabel(
-            "Deposits show in Debit; payments in Credit (cash-basis register). "
-            "Payee shows description on the upper row band and COA account on the lower band; "
-            "Number shows reference and type tag (DEP / PMT / XFER) together on one line in the upper band. "
-            "Clr shows C when marked cleared here, else R when the CSV batch was reconciled in Bank Import "
-            "(double-click Clr to toggle cleared). "
-            "Assign a COA account to clear the missing-COA band tint. "
-            "Starred (★) items at the top of the COA list are hints from your rules "
-            "and, when OPENAI_API_KEY is set, optional AI picks. "
-            "Balance is the running total in date order for loaded rows. "
-            "Recon → Register Actions → Add Transaction… saves new lines (manual-entry batch). "
-            "Extra visible rows pad the grid (practice typing; not saved). "
-            "Reconciliation mode adds statement line-match status on **Match** (Matched / Missing / Extra) without hiding the register. "
-            "Filter, last bank account, last Add-transaction COA per bank account, and column widths are remembered per company file for the next session. "
-            "With focus on this tab: F5 refreshes, Ctrl+Shift+G posts selected to GL, Ctrl+Shift+B runs the **Business link** flow (opens **Business** when the row has a **complete bank link**), "
-            "Ctrl+Shift+C marks cleared, Ctrl+Shift+U clears cleared, Ctrl+Shift+E exports CSV (UTF-8 BOM for Excel). "
-            "Help → Bank register keyboard shortcuts… (includes Bank import shortcuts pointer), "
-            "Help → Bank import shortcuts…, or right-click the grid (even on empty area)."
+        # ENDING BALANCE — right-aligned, always shown
+        lbl_eb_caption = QLabel("ENDING BALANCE")
+        lbl_eb_caption.setStyleSheet(
+            f"background: transparent; border: none; "
+            f"color: #A0A0B0; font-size: 10px; letter-spacing: 1px;"
         )
-        self._register_help_tip.setWordWrap(True)
-        self._register_help_tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
-        self._register_help_tip.setToolTip(
-            "Register layout, debits/credits, Clr column, COA hints (★), shortcuts (F5, Ctrl+Shift+…), "
-            "and Help / right-click for Keyboard shortcuts…. "
-            "Bank Import AI line-reconciliation row copies: Help → Bank import shortcuts…."
+        footer_row.addWidget(lbl_eb_caption)
+
+        self._lbl_ending_balance = QLabel("—")
+        self._lbl_ending_balance.setStyleSheet(
+            f"background: transparent; border: none; "
+            f"color: {AMOUNT_POSITIVE}; font-size: 17px; font-weight: 700;"
         )
-        footer_column.addWidget(self._register_help_tip)
+        self._lbl_ending_balance.setMinimumWidth(130)
+        self._lbl_ending_balance.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        footer_row.addWidget(self._lbl_ending_balance)
 
         layout.addWidget(self._register_info_footer)
 
@@ -1000,8 +1033,7 @@ class RegisterTab(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._sync_payee_coa_spacer_widths()
-        if self._reconciliation_mode:
-            self._cache_register_footer_totals_height()
+        pass  # footer bar is fixed-height; no height caching needed
 
     def hideEvent(self, event: QHideEvent) -> None:
         self._persist_register_table_header_state()
@@ -1213,6 +1245,10 @@ class RegisterTab(QWidget):
             self._recon_overlay_bank_import_mode = False
             self._recon_txn_status.clear()
         self._current_account_id = aid
+        # Update header badge with current account name
+        acct_text = self._acct_combo.currentText() if aid is not None else ""
+        if hasattr(self, "_hdr_acct_lbl"):
+            self._hdr_acct_lbl.setText(acct_text)
         s = QSettings()
         if aid is None:
             s.remove(self._register_bank_account_settings_key())
@@ -1253,28 +1289,9 @@ class RegisterTab(QWidget):
         checkbox.blockSignals(False)
 
     def _sync_register_info_footer_visibility(self) -> None:
-        """Totals row only in reconciliation mode; spacer preserves the same footer height otherwise."""
+        """Recon totals only visible in reconciliation mode; ENDING BALANCE always shown."""
         recon = self._reconciliation_mode
         self._register_footer_totals_wrap.setVisible(recon)
-        self._register_footer_totals_spacer.setVisible(not recon)
-        if not recon:
-            h = self._cached_register_footer_totals_height
-            if h <= 0:
-                fm = self._lbl_debits.fontMetrics()
-                h = fm.height() + 4
-            self._register_footer_totals_spacer.setFixedHeight(h)
-        else:
-            QTimer.singleShot(0, self._cache_register_footer_totals_height)
-
-    def _cache_register_footer_totals_height(self) -> None:
-        if not self._reconciliation_mode:
-            return
-        self._register_footer_totals_wrap.updateGeometry()
-        h = self._register_footer_totals_wrap.height()
-        if h <= 0:
-            h = self._register_footer_totals_wrap.sizeHint().height()
-        if h > 0:
-            self._cached_register_footer_totals_height = h
 
     def _ensure_payee_column_resize_policy(self) -> None:
         """Payee + COA are fixed-width (synced from slack); unnamed spacer column stretches."""
@@ -1384,6 +1401,7 @@ class RegisterTab(QWidget):
             self._fill_pad_row(r)
         self._table.blockSignals(False)
         self._populating = False
+        self._register_ending_balance = None
         self._set_footer(0.0, 0.0, 0.0)
         self._refresh_all_recon_cells()
 
@@ -2245,12 +2263,31 @@ class RegisterTab(QWidget):
         self._populating = False
         self._table.setSortingEnabled(True)
         net = total_debits - total_credits
-        self._set_footer(total_debits, total_credits, net)
+        ending = running if rows else None  # last running balance after all rows
+        self._set_footer(total_debits, total_credits, net, ending_balance=ending)
 
-    def _set_footer(self, debits: float, credits: float, net: float):
-        self._lbl_debits.setText(f"Total debits: ${debits:,.2f}")
-        self._lbl_credits.setText(f"Total credits: ${credits:,.2f}")
+    def _set_footer(self, debits: float, credits: float, net: float,
+                    ending_balance: float | None = None) -> None:
+        self._lbl_debits.setText(f"Debits: ${debits:,.2f}")
+        self._lbl_credits.setText(f"Credits: ${credits:,.2f}")
         self._lbl_net.setText(f"Net: ${net:,.2f}")
+        if ending_balance is not None:
+            self._register_ending_balance = ending_balance
+        bal = self._register_ending_balance
+        if bal is None:
+            self._lbl_ending_balance.setText("—")
+            self._lbl_ending_balance.setStyleSheet(
+                "background: transparent; border: none; "
+                "color: #A0A0B0; font-size: 17px; font-weight: 700;"
+            )
+        else:
+            from desktop_app.theme import AMOUNT_POSITIVE, AMOUNT_NEGATIVE
+            color = AMOUNT_NEGATIVE if bal < 0 else AMOUNT_POSITIVE
+            self._lbl_ending_balance.setText(f"${bal:,.2f}")
+            self._lbl_ending_balance.setStyleSheet(
+                f"background: transparent; border: none; "
+                f"color: {color}; font-size: 17px; font-weight: 700;"
+            )
 
     def _on_item_changed(self, item: QTableWidgetItem):
         if self._populating:
