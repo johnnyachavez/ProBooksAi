@@ -1012,6 +1012,10 @@ class RegisterTab(QWidget):
         self._coa_choices = self._coa_db.display_list()
         self._reload_current()
 
+    def refresh_bank_accounts(self):
+        """Call after the bank_accounts table changes so the account combo updates."""
+        self._refresh_account_combo()
+
     # --- Recon menu (MainWindow): same handlers as the former on-tab register action buttons ---------
     def tools_register_add_transaction(self) -> None:
         self._on_add_manual_transaction()

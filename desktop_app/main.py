@@ -1880,13 +1880,63 @@ class MainWindow(QMainWindow):
         self._inbox.populate(docs)
         self._on_selection_changed()
 
+    def _sync_coa_assets_to_bank_accounts(self) -> None:
+        """
+        Ensure every active COA Asset account has a matching row in bank_accounts.
+
+        This lets users create accounts via Chart of Accounts (e.g. "Cash – Checking")
+        and immediately see them in the Bank Register account picker — without having to
+        go through a separate bank account creation flow.
+
+        Matching is done by gl_display_account (e.g. "1000 Cash – Checking").
+        Existing bank_accounts rows are never deleted or renamed here.
+        """
+        try:
+            coa_rows = self._coa_db.list_accounts(include_inactive=False)
+            # Build set of gl_display_account keys already in bank_accounts
+            existing_keys: set[str] = set()
+            for ba in self._bank_db.list_bank_accounts(include_inactive=True):
+                key = (ba["gl_display_account"] or "").strip()
+                if key:
+                    existing_keys.add(key)
+                else:
+                    # Fallback: match by name
+                    existing_keys.add((ba["name"] or "").strip())
+
+            for row in coa_rows:
+                atype = (row["account_type"] or "").lower()
+                if atype != "asset":
+                    continue  # only Asset accounts become bank accounts
+                num  = str(row["account_number"] or "").strip()
+                name = str(row["account_name"] or "").strip()
+                if not name:
+                    continue
+                display_key = f"{num} {name}".strip() if num else name
+                if display_key in existing_keys or name in existing_keys:
+                    continue  # already present
+                sub = str(row["sub_type"] or "").strip()
+                acct_type = "checking"  # sensible default; user can edit later
+                self._bank_db.create_bank_account(
+                    name=name,
+                    account_number=num,
+                    bank_name=sub or "",
+                    account_type=acct_type,
+                    gl_display_account=display_key,
+                )
+                existing_keys.add(display_key)
+        except Exception:
+            pass  # never block a COA save due to sync errors
+
     def _on_coa_changed(self):
         """Called when the COA editor modifies the chart of accounts."""
+        # Sync any new COA asset accounts into bank_accounts so the register sees them
+        self._sync_coa_assets_to_bank_accounts()
         # Refresh the dropdown list used in the document intake detail pane
         self._coa = load_coa()
         coa_display = self._coa_db.display_list()
         self._detail.update_coa(coa_display)
         self._register_tab.refresh_coa_choices()
+        self._register_tab.refresh_bank_accounts()
         if hasattr(self, "_asset_register_tab"):
             self._asset_register_tab.update_coa_list(coa_display)
 
@@ -2121,6 +2171,8 @@ class MainWindow(QMainWindow):
         self._coa_db = COADatabase(self._bank_db._conn)
         self._coa_db.seed_from_workbook()
         self._coa = load_coa()
+        # Ensure any COA asset accounts are represented in bank_accounts before building tabs
+        self._sync_coa_assets_to_bank_accounts()
         self._rebuild_bank_related_tabs()
         self._detail.clear_view()
         self._detail.update_coa(self._coa_db.display_list())
