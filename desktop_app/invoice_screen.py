@@ -163,10 +163,15 @@ _INVOICE_SHOW_SHIP_TO_UI = False
 _INVOICE_LINE_ROW_MIN_HEIGHT_PX = 22
 _INVOICE_LINE_ROW_DEFAULT_EXTRA_PX = 10
 # Non-Total columns: minimum width while clamping (matches header minimumSectionSize).
-_INVOICE_LINE_COL_MIN_OTHER_PX = 24
+_INVOICE_LINE_COL_MIN_OTHER_PX = 40
+
+# Default pixel widths for each column (cols 0–5; col 6 Total fills remaining viewport).
+# Order: Date, Code, Description, BOL#, Rate, Qty
+_LINE_COL_DEFAULT_WIDTHS: tuple[int, ...] = (72, 72, 520, 100, 110, 100)
 
 # QSettings value: comma-separated column widths (scoped by company file path).
-_INVOICE_LINE_TABLE_WIDTHS_KEY_PREFIX = "invoice_workflow/line_table_column_widths_v1"
+# Bump suffix version to clear any previously saved widths and apply the new defaults.
+_INVOICE_LINE_TABLE_WIDTHS_KEY_PREFIX = "invoice_workflow/line_table_column_widths_v2"
 
 
 def _invoice_line_table_qsettings() -> QSettings:
@@ -731,8 +736,14 @@ class InvoiceScreen(QWidget):
 
         self._wire_invoice_line_recalc()
 
-        # Column widths: content-based default unless QSettings has saved widths for this company file.
-        self._table.resizeColumnsToContents()
+        # Column widths: apply fixed defaults (Date/Code narrow, Description wide, BOL#/Rate/Qty fixed).
+        # QSettings saved widths (from a previous session) override these on _restore_invoice_line_column_widths().
+        _hh.blockSignals(True)
+        try:
+            for _ci, _w in enumerate(_LINE_COL_DEFAULT_WIDTHS):
+                self._table.setColumnWidth(_ci, _w)
+        finally:
+            _hh.blockSignals(False)
         self._invoice_table_resizing = False
         self._line_widths_persist_timer: QTimer | None = None
         self._invoice_lines_viewport = self._table.viewport()
