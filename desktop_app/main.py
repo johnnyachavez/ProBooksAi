@@ -2954,9 +2954,16 @@ def _suppress_qt_font_pointsize_stderr_spam() -> None:
 
 
 def main():
-    # Load .env from project root if present (sets ANTHROPIC_API_KEY etc. for the session)
-    _env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
-    if os.path.isfile(_env_file):
+    # Load .env — walk up from this file's location until we find one (handles worktrees)
+    _env_file = ""
+    _search = os.path.abspath(__file__)
+    for _ in range(8):
+        _search = os.path.dirname(_search)
+        _candidate = os.path.join(_search, ".env")
+        if os.path.isfile(_candidate):
+            _env_file = _candidate
+            break
+    if _env_file and os.path.isfile(_env_file):
         try:
             with open(_env_file) as _f:
                 for _line in _f:
