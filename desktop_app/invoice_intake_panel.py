@@ -48,11 +48,33 @@ class _ExtractWorker(QThread):
 
     def run(self) -> None:
         import sqlite3 as _sql
+        import logging as _log
         from probooksai import business as _biz
         from desktop_app.invoice_screen import _ai_extract_invoice, _find_or_create_customer
 
-        conn = _sql.connect(self._db_path)
-        conn.row_factory = _sql.Row
+        # Log to file so we can diagnose failures even when the UI is stuck
+        _log_path = os.path.join(os.environ.get("APPDATA", ""), "ProBooksAi", "extraction.log")
+        try:
+            os.makedirs(os.path.dirname(_log_path), exist_ok=True)
+            _fh = _log.FileHandler(_log_path, encoding="utf-8")
+            _fh.setFormatter(_log.Formatter("%(asctime)s %(levelname)s %(message)s"))
+            _logger = _log.getLogger("intake_extract")
+            _logger.handlers.clear()
+            _logger.addHandler(_fh)
+            _logger.setLevel(_log.DEBUG)
+        except Exception:
+            _logger = _log.getLogger("intake_extract")
+
+        _logger.info(f"Worker started — {len(self._paths)} file(s), db={self._db_path}")
+        _logger.info(f"ANTHROPIC_API_KEY set: {bool(os.environ.get('ANTHROPIC_API_KEY','').strip())}")
+
+        try:
+            conn = _sql.connect(self._db_path)
+            conn.row_factory = _sql.Row
+        except Exception as exc:
+            _logger.error(f"Cannot open DB: {exc}")
+            self.all_done.emit(0, 0, [f"Cannot open company file: {exc}"])
+            return
 
         imported = 0
         skipped = 0
@@ -61,12 +83,15 @@ class _ExtractWorker(QThread):
         try:
             for pdf_path in self._paths:
                 fname = os.path.basename(pdf_path)
+                _logger.info(f"Extracting: {fname}")
                 data = _ai_extract_invoice(pdf_path)
                 if not data:
                     msg = f"{fname}: Could not extract (check ANTHROPIC_API_KEY)"
+                    _logger.error(msg)
                     errors.append(msg)
                     self.row_done.emit(pdf_path, "error", msg)
                     continue
+                _logger.info(f"AI returned data for {fname}: inv={data.get('invoice_number')} customer={data.get('customer_name')}")
 
                 inv_num = (data.get("invoice_number") or "").strip()
                 inv_date = (data.get("invoice_date") or "").strip()
@@ -77,6 +102,7 @@ class _ExtractWorker(QThread):
 
                 if not customer_name:
                     msg = f"{fname}: No customer name found"
+                    _logger.error(msg)
                     errors.append(msg)
                     self.row_done.emit(pdf_path, "error", msg)
                     continue
@@ -295,32 +321,27 @@ class InvoiceIntakePanel(QWidget):
         self._btn_remove.setToolTip("Remove the selected queue row.")
         self._btn_remove.clicked.connect(self._on_remove_selected)
 
-        self._btn_extract_selected = QPushButton("⚡ Extract & Create Invoice")
-        self._btn_extract_selected.setToolTip(
-            "Send the selected staged PDF to Claude AI, extract invoice data, "
-            "and create the invoice record (status: Sent)."
-        )
-        self._btn_extract_selected.clicked.connect(self._on_extract_selected)
-        self._btn_extract_selected.setStyleSheet(
-            f"QPushButton {{ background-color: #1a4b8b; color: #fff; "
-            f"border: 1px solid #2a6bd0; border-radius: 4px; padding: 4px 14px; font-weight: 700; }}"
-            f"QPushButton:hover {{ background-color: #2255a0; }}"
-            f"QPushButton:pressed {{ background-color: #143870; }}"
-            f"QPushButton:disabled {{ background-color: #333; color: #666; border-color: #444; }}"
-        )
-
-        self._btn_extract_all = QPushButton("Extract All Staged")
+        self._btn_extract_all = QPushButton("⚡ Extract & Create Invoices")
         self._btn_extract_all.setToolTip(
-            "Process every Staged PDF in the queue through Claude AI and create invoice records."
+            "Send all Staged PDFs to Claude AI, extract invoice data, "
+            "and create invoice records (status: Sent)."
         )
         self._btn_extract_all.clicked.connect(self._on_extract_all)
+        self._btn_extract_all.setStyleSheet(
+            "QPushButton { background-color: #1a4b8b; color: #fff; "
+            "border: 1px solid #2a6bd0; border-radius: 4px; padding: 4px 14px; font-weight: 700; }"
+            "QPushButton:hover { background-color: #2255a0; }"
+            "QPushButton:pressed { background-color: #143870; }"
+            "QPushButton:disabled { background-color: #333; color: #666; border-color: #444; }"
+        )
+        # Keep a stub reference so existing code that checks _btn_extract_selected still works
+        self._btn_extract_selected = self._btn_extract_all
 
         for b in (
             self._btn_pdf,
             self._btn_img,
             self._btn_paste,
             self._btn_remove,
-            self._btn_extract_selected,
             self._btn_extract_all,
         ):
             b.setAutoDefault(False)
@@ -332,7 +353,6 @@ class InvoiceIntakePanel(QWidget):
         actions.addWidget(self._btn_remove)
         actions.addStretch(1)
         actions.addWidget(self._btn_extract_all)
-        actions.addWidget(self._btn_extract_selected)
         lay.addLayout(actions)
 
         split = QSplitter(Qt.Orientation.Horizontal)
@@ -677,7 +697,7 @@ class InvoiceIntakePanel(QWidget):
                 notes_it.setText(msg)
 
         def _on_all_done(imported, skipped, errors):
-            self._btn_extract_all.setText("Extract All Staged")
+            self._btn_extract_all.setText("⚡ Extract & Create Invoices")
             self._update_extract_button_state()
             self._btn_extract_all.setEnabled(True)
             self._save_queue()
