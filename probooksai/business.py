@@ -161,6 +161,7 @@ def create_invoice(
     memo: str = "",
     lines: Optional[list[dict]] = None,
     tax_rate_pct: float = 0.0,
+    status: str = "Open",
 ) -> int:
     lines = lines or [{"description": "Service", "qty": 1.0, "rate": 0.0}]
     subtotal = 0.0
@@ -174,7 +175,7 @@ def create_invoice(
         INSERT INTO invoices (
             customer_id, invoice_number, invoice_date, due_date, memo,
             subtotal, tax_total, total, balance_due, status, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Unpaid', ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             customer_id,
@@ -186,6 +187,7 @@ def create_invoice(
             tax_total,
             total,
             total,
+            status,
             _now(),
         ),
     )
@@ -243,7 +245,7 @@ def update_invoice(
         UPDATE invoices SET
             customer_id = ?, invoice_number = ?, invoice_date = ?, due_date = ?,
             memo = ?, subtotal = ?, tax_total = ?, total = ?, balance_due = ?,
-            status = 'Unpaid'
+            status = 'Open'
         WHERE id = ?
         """,
         (

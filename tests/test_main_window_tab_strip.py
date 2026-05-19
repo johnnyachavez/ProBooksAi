@@ -153,8 +153,9 @@ def test_reconcile_hub_hosts_bank_import_and_document_intake(qapp: QApplication,
     w = MainWindow(db_path=str(db_path))
     try:
         rh = w._reconcile_hub
-        assert rh.count() == 2
+        assert rh.count() == 3
         assert rh.widget(0) is w._bank_tab
         assert rh.widget(1) is w._intake_widget
+        assert rh.tabText(2) == "AR / Invoices"
     finally:
         w.close()

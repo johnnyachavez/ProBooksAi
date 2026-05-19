@@ -981,6 +981,89 @@ class MainWindow(QMainWindow):
         outer.addWidget(lbl)
         return w
 
+    def _build_ar_recon_panel(self, conn) -> "QWidget":
+        """AR / Invoices subtab in the Reconcile hub — view Open/Sent invoices, receive payment."""
+        from PySide6.QtWidgets import (
+            QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
+            QHeaderView, QPushButton, QLabel, QAbstractItemView,
+        )
+        from PySide6.QtCore import Qt
+
+        outer = QWidget()
+        outer.setToolTip("Open and Sent invoices; receive payment here. Status updates automatically when paid.")
+        lay = QVBoxLayout(outer)
+        lay.setContentsMargins(8, 8, 8, 8)
+        lay.setSpacing(6)
+
+        banner = QLabel("<b>AR / Invoices</b> — Open and Sent invoices awaiting payment.")
+        banner.setTextFormat(Qt.TextFormat.RichText)
+        banner.setWordWrap(True)
+        banner.setStyleSheet("color:#A0A0B0; font-size:12px;")
+        lay.addWidget(banner)
+
+        btn_row = QHBoxLayout()
+        btn_refresh = QPushButton("↻ Refresh")
+        btn_refresh.setToolTip("Reload the invoice list from the company file.")
+        btn_receive = QPushButton("Receive Payment…")
+        btn_receive.setToolTip("Go to Customers tab → Receive Payments to post a customer payment against open invoices.")
+        btn_row.addWidget(btn_refresh)
+        btn_row.addWidget(btn_receive)
+        btn_row.addStretch(1)
+        lay.addLayout(btn_row)
+
+        cols = ["Invoice #", "Date", "Customer", "Total", "Balance Due", "Status"]
+        tbl = QTableWidget(0, len(cols))
+        tbl.setHorizontalHeaderLabels(cols)
+        tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        tbl.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        tbl.setAlternatingRowColors(True)
+        tbl.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        tbl.setToolTip("Double-click an invoice to open it in the Invoices tab.")
+        lay.addWidget(tbl, stretch=1)
+
+        def _reload():
+            tbl.setRowCount(0)
+            if conn is None:
+                return
+            try:
+                rows = conn.execute(
+                    """SELECT i.invoice_number, i.invoice_date, c.name, i.total, i.balance_due, i.status, i.id
+                       FROM invoices i
+                       LEFT JOIN customers c ON c.id = i.customer_id
+                       WHERE i.status IN ('Open','Sent','Unpaid')
+                       ORDER BY i.invoice_date DESC, i.id DESC"""
+                ).fetchall()
+            except Exception:
+                return
+            for row in rows:
+                r = tbl.rowCount()
+                tbl.insertRow(r)
+                for c_idx, val in enumerate(row[:6]):
+                    item = QTableWidgetItem(str(val or ""))
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (
+                        Qt.AlignmentFlag.AlignRight if c_idx in (3, 4) else Qt.AlignmentFlag.AlignLeft
+                    ))
+                    if c_idx == 0:
+                        item.setData(Qt.ItemDataRole.UserRole, row[6])  # invoice id
+                    tbl.setItem(r, c_idx, item)
+
+        btn_refresh.clicked.connect(_reload)
+
+        def _go_receive():
+            try:
+                for i in range(self._tabs.count()):
+                    if "Customer" in (self._tabs.tabText(i) or ""):
+                        self._tabs.setCurrentIndex(i)
+                        break
+            except Exception:
+                pass
+
+        btn_receive.clicked.connect(_go_receive)
+
+        _reload()
+        outer._reload_ar = _reload  # attach for external refresh calls
+        return outer
+
     def _build_document_intake_widget(self) -> None:
         """Build the Document Intake UI (hosted under Reconcile → Documents)."""
         intake_widget = QWidget()
@@ -1100,6 +1183,8 @@ class MainWindow(QMainWindow):
         )
         self._reconcile_hub.addTab(self._bank_tab, "Bank statements")
         self._reconcile_hub.addTab(self._intake_widget, "Documents")
+        self._ar_recon_widget = self._build_ar_recon_panel(conn)
+        self._reconcile_hub.addTab(self._ar_recon_widget, "AR / Invoices")
 
         self._reconcile_root = QWidget()
         self._reconcile_root.setToolTip(
@@ -1110,8 +1195,7 @@ class MainWindow(QMainWindow):
         reconcile_root_layout.setContentsMargins(8, 8, 8, 0)
         reconcile_root_layout.setSpacing(6)
         reconcile_banner = QLabel(
-            "<b>Reconcile</b> — intake on the subtabs below, then review and match against <b>Bank Register</b> "
-            "(Ctrl+5; source of truth for posted activity)."
+            "<b>Reconcile</b> — Bank statements (import/match), Documents (intake), and <b>AR / Invoices</b> (receive payment)."
         )
         reconcile_banner.setTextFormat(Qt.TextFormat.RichText)
         reconcile_banner.setWordWrap(True)
@@ -2009,7 +2093,7 @@ class MainWindow(QMainWindow):
                 if not name:
                     continue
                 display_key = f"{num} {name}".strip() if num else name
-                sub = str(row.get("sub_type") or "").strip()
+                sub = str(row["sub_type"] if "sub_type" in row.keys() else "").strip()
 
                 # 1. Already perfectly in sync
                 if display_key in by_gl_key:

@@ -275,6 +275,7 @@ class InvoiceScreen(QWidget):
         self._browse_index: int | None = None
         # ``None`` = new draft; when set, Save/Export/Print updates this invoice via ``business.update_invoice``.
         self._current_invoice_id: int | None = None
+        self._current_status: str = "Open"
         # Block line grid valueChanged/textChanged while loading or clearing (avoids footer flicker).
         self._suppress_invoice_line_recalc: bool = False
         # Memo text from DB when loading (no longer a visible header box after removing blank field).
@@ -559,6 +560,14 @@ class InvoiceScreen(QWidget):
         )
         three_lay.addLayout(fields_h)
 
+        self._status_badge = QLabel("Open")
+        self._status_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._status_badge.setFixedHeight(24)
+        self._status_badge.setMinimumWidth(80)
+        self._status_badge.setStyleSheet(
+            "background:#1a6b1a; color:#fff; border-radius:4px; font-weight:700; font-size:9pt; padding:2px 10px;"
+        )
+
         btns_h = QHBoxLayout()
         btns_h.setContentsMargins(0, 0, 0, 0)
         btns_h.setSpacing(8)
@@ -623,6 +632,7 @@ class InvoiceScreen(QWidget):
             # buttons (Return/Enter from table/header editors must not fire clicked).
             b.setAutoDefault(False)
             b.setDefault(False)
+        btns_h.insertWidget(0, self._status_badge)
         for b in (
             self._btn_clear_fields,
             self._btn_import_pdf,
@@ -1185,9 +1195,25 @@ class InvoiceScreen(QWidget):
         total = round(sub + tax, 2)
         self._set_totals_labels(sub, tax, total)
 
+    def _update_status_badge(self, status: str) -> None:
+        self._current_status = status
+        self._status_badge.setText(status or "Open")
+        colors = {
+            "Open":   "#1a6b1a",
+            "Sent":   "#1a4b8b",
+            "Paid":   "#555",
+            "Unpaid": "#8b1a1a",
+        }
+        bg = colors.get(status, "#555")
+        self._status_badge.setStyleSheet(
+            f"background:{bg}; color:#fff; border-radius:4px; "
+            "font-weight:700; font-size:9pt; padding:2px 10px;"
+        )
+
     def _on_clear_fields(self) -> None:
         self._current_invoice_id = None
         self._browse_index = None
+        self._update_status_badge("Open")
         qd = QDate.currentDate()
         self._date.setText(format_ymd_as_us(qd.month(), qd.day(), qd.year()))
         self._po.clear()
@@ -1200,6 +1226,7 @@ class InvoiceScreen(QWidget):
     def _go_to_new_invoice_draft(self) -> None:
         self._current_invoice_id = None
         self._browse_index = None
+        self._update_status_badge("Open")
         self._po.clear()
         self._job.clear()
         self._invoice_memo_notes = ""
@@ -1299,6 +1326,7 @@ class InvoiceScreen(QWidget):
             self._sync_invoice_line_row_total(r)
         self._recalc_invoice_footer_from_grid()
         self._current_invoice_id = invoice_id
+        self._update_status_badge(d.get("status") or "Open")
 
     def _split_memo_po_job(self, memo: str) -> tuple[str, str, str]:
         """Split stored memo into PO, Job, and remaining free text (matches :meth:`_build_invoice_memo`)."""
@@ -1818,12 +1846,8 @@ Rules: Use empty string for missing fields. qty defaults to 1 if not shown. Only
                     invoice_date=inv_date,
                     memo=memo,
                     lines=inv_lines,
+                    status='Sent',
                 )
-                # Set status to Sent
-                self._ap_conn.execute(
-                    "UPDATE invoices SET status = 'Sent' WHERE id = ?", (inv_id,)
-                )
-                self._ap_conn.commit()
                 imported += 1
             except Exception as exc:
                 errors.append(f"{fname}: Save error — {exc}")
@@ -1840,3 +1864,4 @@ Rules: Use empty string for missing fields. qty defaults to 1 if not shown. Only
         )
         if imported > 0:
             self._sync_invoice_number_suggestion()
+            self._bill_customer_panel.reload_customers()
