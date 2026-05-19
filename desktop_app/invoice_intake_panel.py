@@ -6,8 +6,10 @@ full extraction and draft creation are not implemented yet.
 
 from __future__ import annotations
 
+import json
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import Qt, QThread, Signal
@@ -167,6 +169,27 @@ _INTAKE_COLS = (
     "Notes / Needs Review",
 )
 
+_QUEUE_SAVE_PATH = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "ProBooksAi" / "intake_queue.json"
+
+
+def _load_queue_from_disk() -> list[dict]:
+    """Load persisted intake queue rows from disk. Returns [] if missing or corrupt."""
+    try:
+        if _QUEUE_SAVE_PATH.exists():
+            return json.loads(_QUEUE_SAVE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return []
+
+
+def _save_queue_to_disk(rows: list[dict]) -> None:
+    """Persist the current queue rows to disk."""
+    try:
+        _QUEUE_SAVE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _QUEUE_SAVE_PATH.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
 _ROLE_PATH = Qt.ItemDataRole.UserRole
 _ROLE_TEXT_PAYLOAD = Qt.ItemDataRole.UserRole + 1
 
@@ -214,6 +237,7 @@ class InvoiceIntakePanel(QWidget):
             "Review here, then a future step will map lines to the invoice grid below."
         )
         self._build_ui()
+        self._restore_queue()
         if self._invoice_screen is not None and hasattr(self._invoice_screen, "_inv_number"):
             invn = getattr(self._invoice_screen, "_inv_number", None)
             if invn is not None:
@@ -494,6 +518,54 @@ class InvoiceIntakePanel(QWidget):
 
         self._sync_draft_target_hint()
 
+    def _current_queue_rows(self) -> list[dict]:
+        """Snapshot the table into a list of dicts for persistence."""
+        rows = []
+        for r in range(self._table.rowCount()):
+            src_it = self._table.item(r, 0)
+            kind_it = self._table.item(r, 1)
+            date_it = self._table.item(r, 2)
+            status_it = self._table.item(r, 3)
+            notes_it = self._table.item(r, 4)
+            if src_it is None:
+                continue
+            rows.append({
+                "source": src_it.text(),
+                "path": src_it.data(_ROLE_PATH) or "",
+                "payload": src_it.data(_ROLE_TEXT_PAYLOAD) or "",
+                "kind": kind_it.text() if kind_it else "",
+                "date_added": date_it.text() if date_it else "",
+                "status": status_it.text() if status_it else "Staged",
+                "notes": notes_it.text() if notes_it else "",
+            })
+        return rows
+
+    def _save_queue(self) -> None:
+        _save_queue_to_disk(self._current_queue_rows())
+
+    def _restore_queue(self) -> None:
+        """Reload persisted queue rows from disk into the table."""
+        rows = _load_queue_from_disk()
+        for row in rows:
+            r = self._table.rowCount()
+            self._table.insertRow(r)
+            s0 = _readonly_item(row.get("source", ""))
+            p = row.get("path", "")
+            payload = row.get("payload", "")
+            if p:
+                s0.setData(_ROLE_PATH, p)
+            if payload:
+                s0.setData(_ROLE_TEXT_PAYLOAD, payload)
+            self._table.setItem(r, 0, s0)
+            self._table.setItem(r, 1, _readonly_item(row.get("kind", "PDF")))
+            self._table.setItem(r, 2, _readonly_item(row.get("date_added", _now_display())))
+            status = row.get("status", "Staged")
+            # Re-stage anything that was mid-extraction when app closed
+            if status == "Extracting…":
+                status = "Staged"
+            self._table.setItem(r, 3, _editable_item(status))
+            self._table.setItem(r, 4, _editable_item(row.get("notes", "")))
+
     def _append_row(
         self,
         *,
@@ -517,6 +589,7 @@ class InvoiceIntakePanel(QWidget):
         self._table.setItem(r, 4, _editable_item(notes))
         self._table.selectRow(r)
         self._on_selection_changed()
+        self._save_queue()
 
     def _on_import_pdf(self) -> None:
         paths, _filt = QFileDialog.getOpenFileNames(
@@ -558,6 +631,22 @@ class InvoiceIntakePanel(QWidget):
             message_box_information_ok(self, "Not available", "Invoice screen is not connected.", ok_tip="Close.")
             return
 
+        if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
+            message_box_information_ok(
+                self, "API key missing",
+                "ANTHROPIC_API_KEY is not set.\n\n"
+                "Add it to your .env file in the ProBooksAi folder:\n"
+                "  ANTHROPIC_API_KEY=sk-ant-...\n\n"
+                "Then restart the app.",
+                ok_tip="Close.",
+            )
+            # Reset statuses back to Staged
+            for r in row_map.values():
+                it = self._table.item(r, 3)
+                if it and it.text() == "Extracting…":
+                    it.setText("Staged")
+            return
+
         db_path = self._get_db_path()
         if not db_path:
             message_box_information_ok(self, "No company file", "Open a company file first (File → Open company…).", ok_tip="Close.")
@@ -591,6 +680,7 @@ class InvoiceIntakePanel(QWidget):
             self._btn_extract_all.setText("Extract All Staged")
             self._update_extract_button_state()
             self._btn_extract_all.setEnabled(True)
+            self._save_queue()
             # Refresh the invoice browse queue and customer list on the main thread
             inv = self._invoice_screen
             if inv is not None and imported > 0:
@@ -705,3 +795,4 @@ class InvoiceIntakePanel(QWidget):
             return
         self._table.removeRow(r)
         self._on_selection_changed()
+        self._save_queue()

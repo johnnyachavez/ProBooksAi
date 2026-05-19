@@ -2954,6 +2954,21 @@ def _suppress_qt_font_pointsize_stderr_spam() -> None:
 
 
 def main():
+    # Load .env from project root if present (sets ANTHROPIC_API_KEY etc. for the session)
+    _env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+    if os.path.isfile(_env_file):
+        try:
+            with open(_env_file) as _f:
+                for _line in _f:
+                    _line = _line.strip()
+                    if _line and not _line.startswith("#") and "=" in _line:
+                        _k, _v = _line.split("=", 1)
+                        _k = _k.strip()
+                        _v = _v.strip().strip('"').strip("'")
+                        if _k and _k not in os.environ:
+                            os.environ[_k] = _v
+        except Exception:
+            pass
     _suppress_qt_font_pointsize_stderr_spam()
     ver = application_version()
     parser = argparse.ArgumentParser(
