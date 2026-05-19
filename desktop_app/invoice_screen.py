@@ -257,27 +257,29 @@ def _ai_extract_invoice(pdf_path: str) -> "dict | None":
     Falls back to the PDF beta for older Claude 3.5 models.
     Piggybacks on the ``intake_extract`` logger (already set up by the worker).
     """
-    import anthropic  # noqa: PLC0415
+    # stdlib imports — these always succeed
     import base64  # noqa: PLC0415
     import json  # noqa: PLC0415
     import logging as _logging  # noqa: PLC0415
     import re  # noqa: PLC0415
     import traceback  # noqa: PLC0415
 
+    # Logger FIRST — before anything that might fail, so all errors are captured.
+    _ai_log = _logging.getLogger("intake_extract")
+
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
+        _ai_log.error("_ai_extract_invoice: ANTHROPIC_API_KEY is empty — aborting")
         return None
-
-    # Reuse the worker's logger (already has a FileHandler for extraction.log).
-    # If called outside a worker context, getLogger still works — messages may
-    # only go to the root handler, but at least we won't block on file locks.
-    _ai_log = _logging.getLogger("intake_extract")
 
     model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5")
     fname = os.path.basename(pdf_path)
     _ai_log.info(f"_ai_extract_invoice START: {fname}  model={model}")
 
     try:
+        # anthropic import is inside try so ImportError is caught and logged
+        import anthropic  # noqa: PLC0415
+
         with open(pdf_path, "rb") as f:
             raw_bytes = f.read()
         pdf_data = base64.standard_b64encode(raw_bytes).decode()

@@ -49,10 +49,8 @@ class _ExtractWorker(QThread):
     def run(self) -> None:
         import sqlite3 as _sql
         import logging as _log
-        from probooksai import business as _biz
-        from desktop_app.invoice_screen import _ai_extract_invoice, _find_or_create_customer
 
-        # Log to file so we can diagnose failures even when the UI is stuck
+        # Set up file logger BEFORE any imports that might fail
         _log_path = os.path.join(os.environ.get("APPDATA", ""), "ProBooksAi", "extraction.log")
         try:
             os.makedirs(os.path.dirname(_log_path), exist_ok=True)
@@ -67,6 +65,16 @@ class _ExtractWorker(QThread):
 
         _logger.info(f"Worker started — {len(self._paths)} file(s), db={self._db_path}")
         _logger.info(f"ANTHROPIC_API_KEY set: {bool(os.environ.get('ANTHROPIC_API_KEY','').strip())}")
+
+        # Import business modules — log any ImportError so it's visible in extraction.log
+        try:
+            from probooksai import business as _biz  # noqa: PLC0415
+            from desktop_app.invoice_screen import _ai_extract_invoice, _find_or_create_customer  # noqa: PLC0415
+        except Exception as _imp_exc:
+            import traceback as _tb
+            _logger.error(f"Import failed — extraction cannot run: {_imp_exc}\n{_tb.format_exc()}")
+            self.all_done.emit(0, 0, [f"Import error: {_imp_exc}"])
+            return
 
         try:
             conn = _sql.connect(self._db_path)
