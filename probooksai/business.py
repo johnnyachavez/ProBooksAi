@@ -370,9 +370,11 @@ def write_invoices_csv(
 
 
 def list_invoice_ids_chronological(conn: sqlite3.Connection) -> list[int]:
-    """Invoice primary keys ordered by ``id`` ascending (oldest created first)."""
+    """Invoice primary keys ordered by invoice_date ASC, then invoice_number ASC (oldest first)."""
     try:
-        rows = conn.execute("SELECT id FROM invoices ORDER BY id ASC").fetchall()
+        rows = conn.execute(
+            "SELECT id FROM invoices ORDER BY invoice_date ASC, invoice_number ASC, id ASC"
+        ).fetchall()
     except sqlite3.Error:
         return []
     out: list[int] = []

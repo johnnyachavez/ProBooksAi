@@ -1881,6 +1881,7 @@ Rules: Use empty string for missing fields. qty defaults to 1 if not shown. Only
 
         if imported > 0:
             self._sync_invoice_number_suggestion()
+            self._refresh_browse_state()
             self._bill_customer_panel.reload_customers()
 
         return {"imported": imported, "skipped": skipped, "errors": errors}
