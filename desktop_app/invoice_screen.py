@@ -255,6 +255,7 @@ def _ai_extract_invoice(pdf_path: str) -> "dict | None":
     Returns a dict with invoice fields, or None on failure.
     Uses the standard messages API (no beta required for Claude 3.7+ / Claude 4).
     Falls back to the PDF beta for older Claude 3.5 models.
+    Piggybacks on the ``intake_extract`` logger (already set up by the worker).
     """
     import anthropic  # noqa: PLC0415
     import base64  # noqa: PLC0415
@@ -267,29 +268,25 @@ def _ai_extract_invoice(pdf_path: str) -> "dict | None":
     if not api_key:
         return None
 
-    # Set up file logger so errors are visible even from a background thread
-    _log_path = os.path.join(os.environ.get("APPDATA", ""), "ProBooksAi", "extraction.log")
-    try:
-        os.makedirs(os.path.dirname(_log_path), exist_ok=True)
-        _fh = _logging.FileHandler(_log_path, encoding="utf-8", mode="a")
-        _fh.setFormatter(_logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-        _ai_log = _logging.getLogger("ai_extract")
-        _ai_log.handlers.clear()
-        _ai_log.addHandler(_fh)
-        _ai_log.setLevel(_logging.DEBUG)
-    except Exception:
-        _ai_log = _logging.getLogger("ai_extract")
+    # Reuse the worker's logger (already has a FileHandler for extraction.log).
+    # If called outside a worker context, getLogger still works — messages may
+    # only go to the root handler, but at least we won't block on file locks.
+    _ai_log = _logging.getLogger("intake_extract")
 
     model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5")
     fname = os.path.basename(pdf_path)
-    _ai_log.info(f"_ai_extract_invoice: {fname}  model={model}")
+    _ai_log.info(f"_ai_extract_invoice START: {fname}  model={model}")
 
     try:
         with open(pdf_path, "rb") as f:
-            pdf_data = base64.standard_b64encode(f.read()).decode()
-        _ai_log.info(f"PDF read OK ({len(pdf_data)} base64 chars)")
+            raw_bytes = f.read()
+        pdf_data = base64.standard_b64encode(raw_bytes).decode()
+        _ai_log.info(f"PDF read OK: {len(raw_bytes):,} bytes → {len(pdf_data):,} base64 chars")
 
-        client = anthropic.Anthropic(api_key=api_key)
+        # 120-second hard timeout — prevents the worker from hanging indefinitely
+        # if the API server accepts the TCP connection but never sends a response.
+        client = anthropic.Anthropic(api_key=api_key, timeout=120.0)
+
         prompt = """Extract the invoice data (NOT the Bill of Lading or other attachments — invoice only).
 Return ONLY a valid JSON object with these exact keys:
 {
@@ -319,35 +316,35 @@ Rules: Use empty string for missing fields. qty defaults to 1 if not shown. Only
             {"type": "text", "text": prompt},
         ]
 
-        # Try the standard API first (Claude 3.7+ and Claude 4 support PDFs natively)
+        # Try the standard API first (Claude 3.7+ and Claude 4 support PDFs natively).
         try:
-            _ai_log.info("Trying standard messages.create (no beta)…")
+            _ai_log.info("Calling messages.create (standard, no beta)…")
             response = client.messages.create(
                 model=model,
                 max_tokens=2048,
                 messages=[{"role": "user", "content": content}],
             )
-            _ai_log.info("Standard API call succeeded")
+            _ai_log.info("Standard API call returned OK")
         except Exception as std_exc:
-            _ai_log.warning(f"Standard API failed ({std_exc}), retrying with PDF beta…")
-            # Fall back to the Claude 3.5 PDF beta
+            _ai_log.warning(f"Standard API failed ({type(std_exc).__name__}: {std_exc}) — retrying with PDF beta…")
+            # Fall back to the Claude 3.5 PDF beta for older installs.
             response = client.beta.messages.create(
                 model=model,
                 max_tokens=2048,
                 messages=[{"role": "user", "content": content}],
                 betas=["pdfs-2024-09-25"],
             )
-            _ai_log.info("Beta API call succeeded")
+            _ai_log.info("Beta API call returned OK")
 
         raw = response.content[0].text.strip()
-        _ai_log.info(f"Raw response (first 300 chars): {raw[:300]}")
+        _ai_log.info(f"Raw AI response (first 300 chars): {raw[:300]}")
         raw = re.sub(r'^```[a-zA-Z]*\n?', '', raw)
         raw = re.sub(r'\n?```$', '', raw)
         result = json.loads(raw.strip())
-        _ai_log.info(f"Parsed OK: inv={result.get('invoice_number')} customer={result.get('customer_name')}")
+        _ai_log.info(f"JSON parsed OK — inv={result.get('invoice_number')!r}  customer={result.get('customer_name')!r}")
         return result
     except Exception as exc:
-        _ai_log.error(f"_ai_extract_invoice FAILED for {fname}: {exc}\n{traceback.format_exc()}")
+        _ai_log.error(f"_ai_extract_invoice FAILED for {fname}: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
         return None
 
 
