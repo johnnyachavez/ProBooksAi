@@ -133,16 +133,17 @@ class InvoiceIntakePanel(QWidget):
         lay.addLayout(head)
 
         flow = QLabel(
-            "Flow: source document in → review / edit → invoice draft out (extraction and drafting are next steps)."
+            "Stage PDFs here, then click <b>Extract &amp; Create Invoice</b> to import via Claude AI."
         )
         flow.setWordWrap(True)
+        flow.setTextFormat(Qt.TextFormat.RichText)
         flow.setStyleSheet(f"color: {_INV_CAPTION}; font-size: 11px; background: transparent;")
         lay.addWidget(flow)
 
         actions = QHBoxLayout()
         actions.setSpacing(8)
         self._btn_pdf = QPushButton("Import PDF…")
-        self._btn_pdf.setToolTip("Add a PDF to the intake queue (staged for future parsing).")
+        self._btn_pdf.setToolTip("Add one or more PDFs to the intake queue.")
         self._btn_pdf.clicked.connect(self._on_import_pdf)
         self._btn_img = QPushButton("Import image…")
         self._btn_img.setToolTip("Add an image (PNG, JPG, …) to the intake queue.")
@@ -153,19 +154,45 @@ class InvoiceIntakePanel(QWidget):
         self._btn_remove = QPushButton("Remove selected")
         self._btn_remove.setToolTip("Remove the selected queue row.")
         self._btn_remove.clicked.connect(self._on_remove_selected)
+
+        self._btn_extract_selected = QPushButton("⚡ Extract & Create Invoice")
+        self._btn_extract_selected.setToolTip(
+            "Send the selected staged PDF to Claude AI, extract invoice data, "
+            "and create the invoice record (status: Sent)."
+        )
+        self._btn_extract_selected.clicked.connect(self._on_extract_selected)
+        self._btn_extract_selected.setStyleSheet(
+            f"QPushButton {{ background-color: #1a4b8b; color: #fff; "
+            f"border: 1px solid #2a6bd0; border-radius: 4px; padding: 4px 14px; font-weight: 700; }}"
+            f"QPushButton:hover {{ background-color: #2255a0; }}"
+            f"QPushButton:pressed {{ background-color: #143870; }}"
+            f"QPushButton:disabled {{ background-color: #333; color: #666; border-color: #444; }}"
+        )
+
+        self._btn_extract_all = QPushButton("Extract All Staged")
+        self._btn_extract_all.setToolTip(
+            "Process every Staged PDF in the queue through Claude AI and create invoice records."
+        )
+        self._btn_extract_all.clicked.connect(self._on_extract_all)
+
         for b in (
             self._btn_pdf,
             self._btn_img,
             self._btn_paste,
             self._btn_remove,
+            self._btn_extract_selected,
+            self._btn_extract_all,
         ):
             b.setAutoDefault(False)
             b.setDefault(False)
+
         actions.addWidget(self._btn_pdf)
         actions.addWidget(self._btn_img)
         actions.addWidget(self._btn_paste)
         actions.addWidget(self._btn_remove)
         actions.addStretch(1)
+        actions.addWidget(self._btn_extract_all)
+        actions.addWidget(self._btn_extract_selected)
         lay.addLayout(actions)
 
         split = QSplitter(Qt.Orientation.Horizontal)
@@ -205,6 +232,7 @@ class InvoiceIntakePanel(QWidget):
             " }}"
         )
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
+        self._table.itemSelectionChanged.connect(self._update_extract_button_state)
 
         review = QFrame()
         review.setObjectName("invoiceIntakeReviewPanel")
@@ -282,6 +310,7 @@ class InvoiceIntakePanel(QWidget):
         outer.addWidget(band, 1)
         self._on_selection_changed()
         self._sync_draft_target_hint()
+        self._update_extract_button_state()
 
     def _sync_draft_target_hint(self) -> None:
         inv = self._invoice_screen
@@ -295,6 +324,16 @@ class InvoiceIntakePanel(QWidget):
             f"Suggested invoice # (current form): {num or '—'}"
         )
         self._txt_draft.setPlainText(body)
+
+    def _update_extract_button_state(self) -> None:
+        r = self._table.currentRow()
+        enabled = False
+        if r >= 0:
+            src_it = self._table.item(r, 0)
+            if src_it is not None:
+                path = src_it.data(_ROLE_PATH)
+                enabled = isinstance(path, str) and bool(path.strip())
+        self._btn_extract_selected.setEnabled(enabled)
 
     def _on_selection_changed(self) -> None:
         r = self._table.currentRow()
@@ -364,19 +403,119 @@ class InvoiceIntakePanel(QWidget):
         self._on_selection_changed()
 
     def _on_import_pdf(self) -> None:
-        path, _filt = QFileDialog.getOpenFileName(
+        paths, _filt = QFileDialog.getOpenFileNames(
             self,
-            "Import PDF",
+            "Import PDFs",
             "",
             "PDF files (*.pdf);;All files (*.*)",
         )
-        if not path:
+        for path in paths:
+            self._append_row(
+                source_display=os.path.basename(path),
+                kind="PDF",
+                path=os.path.abspath(path),
+            )
+
+    def _on_extract_selected(self) -> None:
+        """Extract the currently selected staged PDF row via Claude AI and create an invoice."""
+        r = self._table.currentRow()
+        if r < 0:
+            message_box_information_ok(self, "No row selected", "Select a staged PDF row first.", ok_tip="Close.")
             return
-        self._append_row(
-            source_display=os.path.basename(path),
-            kind="PDF",
-            path=os.path.abspath(path),
-        )
+        src_it = self._table.item(r, 0)
+        if src_it is None:
+            return
+        path = src_it.data(_ROLE_PATH)
+        if not isinstance(path, str) or not path.strip():
+            message_box_information_ok(self, "No file", "Selected row has no file path (text rows cannot be extracted).", ok_tip="Close.")
+            return
+        inv_screen = self._invoice_screen
+        if inv_screen is None or not hasattr(inv_screen, "import_pdf_paths"):
+            message_box_information_ok(self, "Not available", "Invoice screen is not connected.", ok_tip="Close.")
+            return
+
+        status_it = self._table.item(r, 3)
+        notes_it = self._table.item(r, 4)
+        if status_it:
+            status_it.setText("Extracting…")
+
+        def _done(pdf_path, outcome, msg):
+            if outcome == "ok":
+                if status_it:
+                    status_it.setText("Imported")
+                if notes_it:
+                    notes_it.setText(msg)
+            elif outcome == "skip":
+                if status_it:
+                    status_it.setText("Duplicate")
+                if notes_it:
+                    notes_it.setText(msg)
+            else:
+                if status_it:
+                    status_it.setText("Error")
+                if notes_it:
+                    notes_it.setText(msg)
+
+        result = inv_screen.import_pdf_paths([path], on_row_done=_done)
+        imported = result["imported"]
+        skipped = result["skipped"]
+        errors = result["errors"]
+
+        if errors:
+            message_box_information_ok(
+                self, "Extraction error",
+                errors[0],
+                ok_tip="Check that ANTHROPIC_API_KEY is set and the file is a readable invoice PDF.",
+            )
+        elif skipped:
+            message_box_information_ok(self, "Already imported", "This invoice number already exists in the company file.", ok_tip="Close.")
+        elif imported:
+            message_box_information_ok(self, "Done", f"Invoice created successfully.", ok_tip="Close.")
+
+    def _on_extract_all(self) -> None:
+        """Extract and import every Staged PDF row in the queue."""
+        inv_screen = self._invoice_screen
+        if inv_screen is None or not hasattr(inv_screen, "import_pdf_paths"):
+            message_box_information_ok(self, "Not available", "Invoice screen is not connected.", ok_tip="Close.")
+            return
+
+        staged_rows: list[tuple[int, str]] = []  # (row_index, path)
+        for r in range(self._table.rowCount()):
+            kind_it = self._table.item(r, 1)
+            status_it = self._table.item(r, 3)
+            src_it = self._table.item(r, 0)
+            if kind_it and kind_it.text() == "PDF" and status_it and status_it.text() == "Staged":
+                if src_it is not None:
+                    path = src_it.data(_ROLE_PATH)
+                    if isinstance(path, str) and path.strip():
+                        staged_rows.append((r, path))
+
+        if not staged_rows:
+            message_box_information_ok(self, "Nothing to extract", "No Staged PDF rows found in the queue.", ok_tip="Close.")
+            return
+
+        row_map = {path: r for r, path in staged_rows}
+
+        def _done(pdf_path, outcome, msg):
+            r = row_map.get(pdf_path)
+            if r is None:
+                return
+            status_it = self._table.item(r, 3)
+            notes_it = self._table.item(r, 4)
+            label = {"ok": "Imported", "skip": "Duplicate", "error": "Error"}.get(outcome, outcome)
+            if status_it:
+                status_it.setText(label)
+            if notes_it:
+                notes_it.setText(msg)
+
+        paths = [p for _, p in staged_rows]
+        result = inv_screen.import_pdf_paths(paths, on_row_done=_done)
+        i, s, e = result["imported"], result["skipped"], result["errors"]
+        parts = [f"Imported: {i}", f"Skipped (duplicates): {s}"]
+        if e:
+            parts.append(f"Errors: {len(e)}")
+            parts.extend(f"  {x}" for x in e[:5])
+        message_box_information_ok(self, "Extract All complete", "\n".join(parts), ok_tip="Close.")
 
     def _on_import_image(self) -> None:
         path, _filt = QFileDialog.getOpenFileName(

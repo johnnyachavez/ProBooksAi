@@ -40,4 +40,4 @@ def test_invoice_intake_shows_title_and_flow(qapp: QApplication) -> None:
     w = InvoiceIntakePanel()
     labels = [lb.text() for lb in w.findChildren(QLabel)]
     assert any("Invoice Intake" in x for x in labels)
-    assert any("source document in" in x for x in labels)
+    assert any("source document in" in x or "Stage PDFs" in x or "Extract" in x for x in labels)

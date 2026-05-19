@@ -1764,23 +1764,41 @@ Rules: Use empty string for missing fields. qty defaults to 1 if not shown. Only
             print(f"Invoice AI extraction failed for {pdf_path}: {exc}")
             return None
 
-    def _on_import_pdf_invoices(self) -> None:
+    def import_pdf_paths(
+        self,
+        paths: list[str],
+        *,
+        on_row_done: "Optional[callable]" = None,
+    ) -> dict:
+        """Extract and import a list of invoice PDF paths via Claude AI.
+
+        Parameters
+        ----------
+        paths:
+            Absolute paths to PDF files.
+        on_row_done:
+            Optional callback called after each file with
+            ``(path, "ok"|"skip"|"error", message)``.
+
+        Returns
+        -------
+        dict with keys ``imported``, ``skipped``, ``errors`` (list of str).
+        """
         if self._ap_conn is None:
-            message_box_information_ok(self, "Not connected", "Open a company file first.", ok_tip="Close.")
-            return
-        paths, _ = QFileDialog.getOpenFileNames(self, "Import Invoice PDFs", "", "PDF files (*.pdf);;All files (*.*)")
-        if not paths:
-            return
+            return {"imported": 0, "skipped": 0, "errors": ["Not connected — open a company file first."]}
 
         imported = 0
         skipped = 0
-        errors = []
+        errors: list[str] = []
 
         for pdf_path in paths:
             fname = os.path.basename(pdf_path)
             data = self._extract_invoice_from_pdf(pdf_path)
             if not data:
-                errors.append(f"{fname}: Could not extract (no API key or AI error)")
+                msg = f"{fname}: Could not extract (check ANTHROPIC_API_KEY)"
+                errors.append(msg)
+                if on_row_done:
+                    on_row_done(pdf_path, "error", msg)
                 continue
 
             inv_num = (data.get("invoice_number") or "").strip()
@@ -1791,17 +1809,23 @@ Rules: Use empty string for missing fields. qty defaults to 1 if not shown. Only
             total = float(data.get("total") or 0.0)
 
             if not customer_name:
-                errors.append(f"{fname}: No customer name found")
+                msg = f"{fname}: No customer name found"
+                errors.append(msg)
+                if on_row_done:
+                    on_row_done(pdf_path, "error", msg)
                 continue
 
-            # Find or create customer
             try:
-                customer_id = _find_or_create_customer(self._ap_conn, customer_name, data.get("customer_address", ""))
+                customer_id = _find_or_create_customer(
+                    self._ap_conn, customer_name, data.get("customer_address", "")
+                )
             except Exception as exc:
-                errors.append(f"{fname}: Customer error — {exc}")
+                msg = f"{fname}: Customer error — {exc}"
+                errors.append(msg)
+                if on_row_done:
+                    on_row_done(pdf_path, "error", msg)
                 continue
 
-            # Build memo from PO/Job
             memo_parts = []
             if po:
                 memo_parts.append(f"PO: {po}")
@@ -1809,7 +1833,6 @@ Rules: Use empty string for missing fields. qty defaults to 1 if not shown. Only
                 memo_parts.append(f"Job: {name_job}")
             memo = "\n".join(memo_parts)
 
-            # Build line dicts (description stored as "serviced_on — jl_num — description — bol")
             inv_lines = []
             for ln in (data.get("lines") or []):
                 so = (ln.get("serviced_on") or "").strip()
@@ -1817,7 +1840,6 @@ Rules: Use empty string for missing fields. qty defaults to 1 if not shown. Only
                 desc = (ln.get("description") or "Service").strip()
                 bol = (ln.get("bol") or "").strip()
                 parts = [so, jl, desc, bol]
-                # Join with em-dash; strip trailing empty segments
                 while parts and not parts[-1]:
                     parts.pop()
                 full_desc = " — ".join(parts)
@@ -1826,33 +1848,56 @@ Rules: Use empty string for missing fields. qty defaults to 1 if not shown. Only
                     "qty": float(ln.get("qty") or 1),
                     "rate": float(ln.get("rate") or total),
                 })
-
             if not inv_lines:
                 inv_lines = [{"description": "Trucking Service", "qty": 1.0, "rate": total}]
 
             try:
-                # Check for duplicate invoice number
                 existing = self._ap_conn.execute(
                     "SELECT id FROM invoices WHERE invoice_number = ?", (inv_num,)
                 ).fetchone()
                 if existing:
                     skipped += 1
+                    if on_row_done:
+                        on_row_done(pdf_path, "skip", f"{fname}: duplicate #{inv_num}")
                     continue
 
-                inv_id = business.create_invoice(
+                business.create_invoice(
                     self._ap_conn,
                     customer_id=customer_id,
                     invoice_number=inv_num,
                     invoice_date=inv_date,
                     memo=memo,
                     lines=inv_lines,
-                    status='Sent',
+                    status="Sent",
                 )
                 imported += 1
+                if on_row_done:
+                    on_row_done(pdf_path, "ok", f"#{inv_num} — {customer_name}")
             except Exception as exc:
-                errors.append(f"{fname}: Save error — {exc}")
+                msg = f"{fname}: Save error — {exc}"
+                errors.append(msg)
+                if on_row_done:
+                    on_row_done(pdf_path, "error", msg)
 
-        # Summary
+        if imported > 0:
+            self._sync_invoice_number_suggestion()
+            self._bill_customer_panel.reload_customers()
+
+        return {"imported": imported, "skipped": skipped, "errors": errors}
+
+    def _on_import_pdf_invoices(self) -> None:
+        if self._ap_conn is None:
+            message_box_information_ok(self, "Not connected", "Open a company file first.", ok_tip="Close.")
+            return
+        paths, _ = QFileDialog.getOpenFileNames(self, "Import Invoice PDFs", "", "PDF files (*.pdf);;All files (*.*)")
+        if not paths:
+            return
+
+        result = self.import_pdf_paths(paths)
+        imported = result["imported"]
+        skipped = result["skipped"]
+        errors = result["errors"]
+
         lines_msg = [f"Imported: {imported}", f"Skipped (duplicates): {skipped}"]
         if errors:
             lines_msg.append(f"Errors: {len(errors)}")
@@ -1862,6 +1907,3 @@ Rules: Use empty string for missing fields. qty defaults to 1 if not shown. Only
             "\n".join(lines_msg),
             ok_tip="Close; review the Invoices list.",
         )
-        if imported > 0:
-            self._sync_invoice_number_suggestion()
-            self._bill_customer_panel.reload_customers()
