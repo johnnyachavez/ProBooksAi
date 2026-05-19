@@ -90,10 +90,10 @@ def test_invoice_screen_line_grid_and_headers(qapp: QApplication) -> None:
         assert hh.sectionResizeMode(c) == QHeaderView.ResizeMode.Interactive
     assert t.columnCount() == 7
     assert t.rowCount() == InvoiceScreen._N_LINE_ROWS
-    assert t.horizontalHeaderItem(0).text() == "Date"
+    assert t.horizontalHeaderItem(0).text() == "Serviced On"
     assert t.horizontalHeaderItem(2).text() == "Description"
     assert t.horizontalHeaderItem(3).text() == "BOL#"
-    assert t.horizontalHeaderItem(6).text() == "Total"
+    assert t.horizontalHeaderItem(6).text() == "Amount"
     assert isinstance(t.cellWidget(0, 0), QLineEdit)
     assert isinstance(t.cellWidget(0, 1), QLineEdit)
     assert isinstance(t.cellWidget(0, 2), QLineEdit)
@@ -150,8 +150,8 @@ def test_invoice_screen_print_and_nav_buttons_exist(qapp: QApplication) -> None:
     assert w._btn_export_pdf.text() == "Export PDF…"
     assert w._btn_print.text() == "Print…"
     assert w._btn_new_customer.text() == "New Customer"
-    assert w._btn_reverse.text() == "Reverse"
-    assert w._btn_forward.text() == "Forward"
+    assert "Prev" in w._btn_reverse.text()
+    assert "Next" in w._btn_forward.text()
 
 
 def test_invoice_screen_export_pdf_saves_to_chosen_path(

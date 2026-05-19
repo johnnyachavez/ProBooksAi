@@ -1,4 +1,4 @@
-"""Phase 7 – OCR/vision stub contract (no external APIs)."""
+"""AI PDF extraction – contract tests (no external API calls needed)."""
 
 from __future__ import annotations
 
@@ -15,14 +15,15 @@ from probooksai.statement_ocr_stub import (
 
 
 def test_extract_rows_from_statement_scan_not_implemented_contract() -> None:
-    """Stub returns structured NOT_IMPLEMENTED (status, code, detail); no rows."""
+    """When no API key is set, returns NOT_IMPLEMENTED with a helpful detail message."""
     r = extract_rows_from_statement_scan("/nonexistent/for_api_shape_only.pdf")
     assert isinstance(r, StatementScanExtractionResult)
     assert r.status == StatementScanStatus.NOT_IMPLEMENTED
     assert r.rows == []
     assert r.error == OCR_NOT_IMPLEMENTED
     assert r.detail
-    assert "Phase 7" in (r.detail or "")
+    # Detail should tell the user how to configure an API key
+    assert "ANTHROPIC_API_KEY" in (r.detail or "") or "OPENAI_API_KEY" in (r.detail or "")
 
 
 def test_statement_scan_extraction_result_is_frozen() -> None:

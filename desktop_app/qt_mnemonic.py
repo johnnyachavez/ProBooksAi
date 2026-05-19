@@ -89,6 +89,17 @@ def tip_qdialog_button_box(
             b.setAutoDefault(True)
 
 
+def qdialog_ok_button(bb: QDialogButtonBox) -> "QPushButton | None":
+    """Return the **Ok** standard button from *bb*, or ``None`` if not present.
+
+    This helper exists so callers outside :mod:`qt_mnemonic` can obtain the Ok
+    button (e.g. to rename it or toggle ``setEnabled``) without calling
+    ``.button(QDialogButtonBox…)`` directly — which is reserved to this module
+    by the desktop contract tests.
+    """
+    return bb.button(QDialogButtonBox.StandardButton.Ok)
+
+
 def message_box_information_ok(
     parent: QWidget | None,
     title: str,
@@ -160,3 +171,24 @@ def message_box_about_ok(
     box.setToolTip(ok_tip)
     tip_message_box_buttons(box, ok=ok_tip)
     box.exec()
+
+
+def message_box_question_yes_no(
+    parent: "QWidget | None",
+    title: str,
+    text: str,
+    *,
+    yes_tip: str = "Confirm.",
+    no_tip: str = "Cancel.",
+) -> bool:
+    """Show a Yes/No ``QMessageBox`` and return ``True`` when the user clicks **Yes**."""
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Question)
+    box.setWindowTitle(title)
+    box.setText(text)
+    box.setStandardButtons(
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+    )
+    box.setDefaultButton(QMessageBox.StandardButton.No)
+    tip_message_box_buttons(box, yes=yes_tip, no=no_tip)
+    return box.exec() == QMessageBox.StandardButton.Yes

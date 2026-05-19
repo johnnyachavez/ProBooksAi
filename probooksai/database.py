@@ -235,6 +235,19 @@ class DocumentDatabase:
             "SELECT * FROM documents ORDER BY import_date DESC"
         ).fetchall()
 
+    def delete_document(self, doc_id: int) -> None:
+        """
+        Permanently delete a document and its extractions/audit log entries.
+
+        Cascades via ON DELETE CASCADE on the ``extractions`` and related tables.
+        Raises ``ValueError`` if the document does not exist.
+        """
+        row = self.get_document(doc_id)
+        if row is None:
+            raise ValueError(f"No document with id={doc_id}")
+        self._conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+        self._conn.commit()
+
     def set_status(self, doc_id: int, new_status: str):
         if new_status not in _VALID_STATUSES:
             raise ValueError(f"Unknown status: {new_status!r}")

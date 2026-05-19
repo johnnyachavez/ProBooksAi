@@ -38,6 +38,8 @@ from desktop_app.qt_mnemonic import (
     escape_ampersand_for_qt,
     message_box_critical_ok,
     message_box_information_ok,
+    message_box_question_yes_no,
+    message_box_warning_ok,
 )
 from desktop_app.flexible_date import (
     attach_line_edit_us_date_normalization,
@@ -56,11 +58,16 @@ from probooksai.gl import GLDatabase, write_journal_export_csv
 
 
 class JournalTab(QWidget):
-    def __init__(self, conn: sqlite3.Connection, parent=None):
+    def __init__(self, conn: sqlite3.Connection, coa_list: list[str] | None = None, parent=None):
         super().__init__(parent)
         self._gl = GLDatabase(conn)
+        self._coa_list: list[str] = coa_list or []
         self._build_ui()
         self._refresh_list()
+
+    def refresh_coa(self, coa_list: list[str]) -> None:
+        """Update the COA list used in the entry editor (called when COA changes)."""
+        self._coa_list = coa_list
 
     def _build_ui(self):
         self.setToolTip(
@@ -111,6 +118,31 @@ class JournalTab(QWidget):
         )
         btn_export.clicked.connect(self._export_csv)
         row.addWidget(btn_export)
+
+        row.addSpacing(16)
+        btn_new = QPushButton("✚  New Entry")
+        btn_new.setToolTip(
+            "Create a new manually balanced journal entry. "
+            "Debits must equal credits to save."
+        )
+        btn_new.clicked.connect(self._on_new_entry)
+        row.addWidget(btn_new)
+
+        self._btn_edit = QPushButton("✏  Edit Entry")
+        self._btn_edit.setToolTip("Edit the selected journal entry's date, memo, and lines.")
+        self._btn_edit.setEnabled(False)
+        self._btn_edit.clicked.connect(self._on_edit_selected)
+        row.addWidget(self._btn_edit)
+
+        self._btn_delete = QPushButton("🗑  Delete Entry")
+        self._btn_delete.setToolTip(
+            "Permanently delete the selected journal entry and all its lines. "
+            "Back up with File → Backup first."
+        )
+        self._btn_delete.setEnabled(False)
+        self._btn_delete.clicked.connect(self._on_delete_selected)
+        row.addWidget(self._btn_delete)
+
         row.addStretch()
         layout.addLayout(row)
 
@@ -122,6 +154,8 @@ class JournalTab(QWidget):
             "Right-click for Keyboard shortcuts… (including on empty area)."
         )
         self._list.currentRowChanged.connect(self._show_lines)
+        self._list.currentRowChanged.connect(self._update_entry_buttons)
+        self._list.doubleClicked.connect(lambda _: self._on_edit_selected())
         self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._list.customContextMenuRequested.connect(self._on_journal_list_context_menu)
         split.addWidget(self._list)
@@ -168,6 +202,73 @@ class JournalTab(QWidget):
 
         self._entries: list = []
 
+    # ── Button state ──────────────────────────────────────────────────────────
+
+    def _update_entry_buttons(self, row: int = -1) -> None:
+        has_sel = row >= 0 and row < self._list.count()
+        self._btn_edit.setEnabled(has_sel)
+        self._btn_delete.setEnabled(has_sel)
+
+    def _selected_entry_id(self) -> int | None:
+        row = self._list.currentRow()
+        if row < 0:
+            return None
+        it = self._list.item(row)
+        return coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole)) if it else None
+
+    # ── New / Edit / Delete ───────────────────────────────────────────────────
+
+    def _on_new_entry(self) -> None:
+        from desktop_app.journal_entry_dialog import JournalEntryDialog
+        dlg = JournalEntryDialog(self._gl, entry_id=None, coa_list=self._coa_list, parent=self)
+        if dlg.exec():
+            self._refresh_list()
+
+    def _on_edit_selected(self) -> None:
+        eid = self._selected_entry_id()
+        if eid is None:
+            return
+        from desktop_app.journal_entry_dialog import JournalEntryDialog
+        dlg = JournalEntryDialog(self._gl, entry_id=eid, coa_list=self._coa_list, parent=self)
+        if dlg.exec():
+            self._refresh_list()
+
+    def _on_delete_selected(self) -> None:
+        eid = self._selected_entry_id()
+        if eid is None:
+            return
+        entry = self._gl.get_journal_entry(eid)
+        if entry is None:
+            return
+        d = dict(entry)
+        date_s = d.get("entry_date") or ""
+        memo_s = (d.get("memo") or "")[:80]
+        lines  = self._gl.get_entry_lines(eid)
+        ans = message_box_question_yes_no(
+            self,
+            "Delete journal entry?",
+            f"Permanently delete journal entry #{eid}?\n\n"
+            f"  Date:  {date_s}\n"
+            f"  Memo:  {escape_ampersand_for_qt(memo_s)}\n"
+            f"  Lines: {len(lines)}\n\n"
+            "All GL lines will be removed. This cannot be undone.\n"
+            "Back up with File → Backup before deleting.",
+            yes_tip="Delete this entry and all its lines permanently.",
+            no_tip="Cancel — keep the entry.",
+        )
+        if not ans:
+            return
+        try:
+            self._gl.delete_journal_entry(eid)
+        except ValueError as exc:
+            message_box_warning_ok(
+                self, "Cannot delete",
+                escape_ampersand_for_qt(str(exc)),
+                ok_tip="Close.",
+            )
+            return
+        self._refresh_list()
+
     def _on_journal_list_context_menu(self, pos):
         idx = self._list.indexAt(pos)
         m = QMenu(self)
@@ -184,6 +285,18 @@ class JournalTab(QWidget):
             m.exec(self._list.viewport().mapToGlobal(pos))
             return
         row = idx.row()
+        it = self._list.item(row)
+        eid = coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole)) if it else None
+        m.addSeparator()
+        act_edit = m.addAction("✏  Edit entry…", self._on_edit_selected)
+        act_edit.setToolTip("Open the entry editor to change date, memo, or lines.")
+        act_edit.setEnabled(eid is not None)
+        act_del = m.addAction("🗑  Delete entry…", self._on_delete_selected)
+        act_del.setToolTip(
+            "Permanently delete this journal entry and all its lines. "
+            "Back up with File → Backup first."
+        )
+        act_del.setEnabled(eid is not None)
         m.addSeparator()
         act_copy = m.addAction(
             "Copy entry line",
@@ -239,6 +352,7 @@ class JournalTab(QWidget):
             self._list.addItem(it)
         if len(self._entries) > 0:
             self._list.setCurrentRow(0)
+        self._update_entry_buttons(self._list.currentRow())
 
     def _export_csv(self):
         start = line_edit_to_iso_or_raw(self._start)

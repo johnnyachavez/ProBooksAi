@@ -7,8 +7,10 @@ PNG, etc.) in one pass.
 Each file is processed in sequence:
   1. PDF text layer extraction (fast, no AI)
   2. If no text / few rows found → Claude vision extraction (AI_PROVIDER)
-  3. Row deduplication against existing bank_transactions
-  4. Batch creation and insert
+  3. Deposit rows (amount > 0) are filtered out — deposits must be entered
+     manually so they can be matched to invoices / received payments.
+  4. Row deduplication against existing bank_transactions
+  5. Batch creation and insert
 
 Emits per-file progress so the UI can show "File 3 of 10: statement_mar.pdf".
 """
@@ -137,45 +139,105 @@ class BatchStatementWorker(QThread):
         return []
 
     def _extract_pdf_rows(self, path: str) -> list[dict]:
-        """Extract rows from a digital (text-layer) PDF."""
+        """Extract rows from a digital (text-layer) PDF.
+
+        Strategy:
+          1. Try section-based parser (Chase-style: DEPOSITS AND ADDITIONS,
+             ATM & DEBIT CARD WITHDRAWALS, ELECTRONIC WITHDRAWALS, FEES …).
+             This handles the vast majority of Chase/JPMorgan statements.
+          2. Fall back to the generic line-regex parser for other banks.
+
+        Deposits and checks are excluded by default; ACH/online payments are
+        flagged but still returned (caller may filter further).
+        """
+        import os
         try:
             from probooksai.statement_pdf import extract_text_from_pdf
-            from probooksai.statement_extract import parse_statement_text
             text = extract_text_from_pdf(path)
             if not (text or "").strip():
                 return []
-            return parse_statement_text(text)
+
+            # ── Pass 1: section-aware parser (Chase format) ──────────────────
+            try:
+                from probooksai.statement_section_parser import parse_section_statement
+                # Infer year from filename (e.g. 20220131-statements-…)
+                import re as _re
+                fname = os.path.basename(path)
+                m = _re.match(r"(\d{4})", fname)
+                default_year = int(m.group(1)) if m else __import__("datetime").date.today().year
+                entries = parse_section_statement(text, default_year=default_year)
+                # Keep only entries that are included by default (excludes deposits,
+                # checks, ACH — exactly what we want for auto-import)
+                rows = [
+                    {
+                        "txn_date":    e.txn_date,
+                        "description": e.description,
+                        "amount":      e.amount,
+                        "ref_number":  "",
+                    }
+                    for e in entries
+                    if e.include and not e.is_ach
+                ]
+                if rows:
+                    return rows
+            except Exception:
+                pass
+
+            # ── Pass 2: generic line-regex parser (other bank formats) ───────
+            from probooksai.statement_extract import parse_statement_text
+            return parse_statement_text(text, filter_deposits=True)
+
         except Exception:
             return []
 
     def _extract_via_claude(self, path: str, mime: str) -> list[dict]:
-        """Use Claude vision to extract transaction rows from a scanned statement."""
-        import json, os
+        """Use Claude vision to extract transaction rows from a scanned statement.
+
+        Deposits (amount > 0) are filtered out — they must be entered manually.
+        """
         try:
-            from ai.extractor import extract_document
-            result = extract_document(path, mime)
-            if result.error or not result.line_items:
-                # If Claude returned line_items, use them; otherwise try notes field
-                if result.line_items:
-                    return self._line_items_to_rows(result)
-                # Fall back: parse any text Claude put in notes
+            import anthropic, base64, json, os
+            client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+            with open(path, "rb") as f:
+                data = base64.standard_b64encode(f.read()).decode()
+            prompt = (
+                "This is a bank statement. Extract ONLY debit/withdrawal/payment transactions "
+                "(not deposits or credits). For each debit transaction return a JSON object with: "
+                '"date" (YYYY-MM-DD or MM/DD/YYYY), "description" (payee/memo), '
+                '"amount" (negative number, e.g. -42.99). '
+                "Return a JSON array. If no debits found, return []."
+            )
+            response = client.messages.create(
+                model="claude-3-5-haiku-20241022",
+                max_tokens=2048,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "document", "source": {"type": "base64", "media_type": mime, "data": data}},
+                        {"type": "text", "text": prompt},
+                    ],
+                }],
+            )
+            raw = response.content[0].text.strip()
+            # Extract JSON array from the response
+            m = __import__("re").search(r"\[.*\]", raw, __import__("re").DOTALL)
+            if not m:
                 return []
-            return self._line_items_to_rows(result)
+            rows_raw = json.loads(m.group())
+            rows = []
+            for item in rows_raw:
+                date_str = str(item.get("date") or "").strip()
+                desc = str(item.get("description") or "Transaction").strip()
+                try:
+                    amt = float(item.get("amount") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if amt >= 0:
+                    continue  # skip deposits
+                from probooksai.bank_import import parse_date
+                date_norm = parse_date(date_str) or date_str
+                rows.append({"txn_date": date_norm, "description": desc,
+                             "amount": round(amt, 2), "ref_number": ""})
+            return rows
         except Exception:
             return []
-
-    def _line_items_to_rows(self, result) -> list[dict]:
-        """Convert ExtractionResult line_items to bank import row dicts."""
-        rows = []
-        for item in (result.line_items or []):
-            desc = item.get("description", "")
-            amt = item.get("amount")
-            if amt is None:
-                continue
-            rows.append({
-                "txn_date": result.doc_date or "",
-                "description": desc,
-                "amount": float(amt),
-                "ref_number": "",
-            })
-        return rows

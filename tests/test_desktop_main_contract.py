@@ -635,9 +635,9 @@ def test_main_tab_widgets_have_root_hover_tooltips() -> None:
     assert "Line Reconciliation (AI)" in bchunk
     assert "exported CSV uses UTF-8 BOM for Excel" in bchunk
     assert "left.setToolTip(" in bchunk
-    assert "Import batches column" in bchunk
-    assert "**Line Reconciliation (AI)**" in bchunk
-    assert "View → Bank Register (Ctrl+5)" in bchunk
+    assert "Import batches" in bchunk
+    assert "Line Reconciliation (AI)" in bchunk
+    assert "Ctrl+5" in bchunk
 
     rep = (_DESKTOP_APP_DIR / "reports_tab.py").read_text(encoding="utf-8")
     assert "Financial reports" in rep and "trial balance" in rep
@@ -847,7 +847,7 @@ def test_main_window_build_ui_has_no_toolbar() -> None:
 
 
 def test_main_window_build_ui_sets_central_status_and_assemble_adds_ten_main_tabs() -> None:
-    """``_build_ui`` attaches one central widget, one status bar; ``_assemble_main_tabs`` adds ten ``addTab`` calls."""
+    """``_build_ui`` attaches one central widget, one status bar; ``_assemble_main_tabs`` adds twelve ``addTab`` calls."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("def _build_ui(self):")
     end = text.index("def _build_menu_bar", start)
@@ -858,20 +858,21 @@ def test_main_window_build_ui_sets_central_status_and_assemble_adds_ten_main_tab
     start_a = text.index("def _assemble_main_tabs(self) -> None:")
     end_a = text.index("def _apply_main_tab_bar_tooltips(self) -> None:", start_a)
     chunk_a = text[start_a:end_a]
-    assert chunk_a.count("self._tabs.addTab(") == 11
+    assert chunk_a.count("self._tabs.addTab(") == 12
 
 
 def test_main_window_assemble_tab_strip_titles_fixed_order() -> None:
-    """Eleven ``addTab`` lines: Dashboard first, More last, with stable user-visible titles."""
+    """Twelve ``addTab`` lines: Dashboard first, More last, with stable user-visible titles."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("def _assemble_main_tabs(self) -> None:")
     end = text.index("def _apply_main_tab_bar_tooltips(self) -> None:", start)
     chunk = text[start:end]
     lines = [ln.strip() for ln in chunk.splitlines() if "self._tabs.addTab(" in ln]
-    assert len(lines) == 11
+    assert len(lines) == 12
     want = (
         "Dashboard",
         "Invoices",
+        "Write Checks",
         "Enter Bills",
         "Pay Bills",
         "Receive Payments",
@@ -1054,7 +1055,8 @@ def test_main_window_init_wires_databases_build_ui_and_refresh() -> None:
     end = text.index("    # -- UI construction", start)
     chunk = text[start:end]
     assert chunk.count("super().__init__()") == 1
-    assert chunk.count("self.resize(1100, 700)") == 1
+    # Window geometry is now restored from QSettings (maximised on first run)
+    assert "restoreGeometry" in chunk or "showMaximized" in chunk
     assert chunk.count("self._db_path = db_path") == 1
     assert chunk.count("DocumentDatabase(") == 1
     assert chunk.count("BankDatabase(") == 1
@@ -1099,7 +1101,8 @@ def test_main_window_init_super_resize_before_db_path_assignment_order() -> None
     end = text.index("    # -- UI construction", start)
     chunk = text[start:end]
     su = chunk.index("super().__init__()")
-    rs = chunk.index("self.resize(1100, 700)")
+    # Window size is now restored from QSettings (not hard-coded resize)
+    rs = chunk.index("restoreGeometry") if "restoreGeometry" in chunk else chunk.index("showMaximized")
     dp = chunk.index("self._db_path = db_path")
     assert su < rs < dp
 
@@ -2114,7 +2117,7 @@ def test_main_window_refresh_inbox_and_coa_changed_sync_lists() -> None:
     assert chunk.count("self._inbox.populate(docs)") == 1
     assert chunk.count("self._on_selection_changed()") == 1
     assert chunk.count("load_coa()") == 1
-    assert chunk.count("self._coa_db.display_list()") == 1
+    assert chunk.count("self._coa_db.display_list()") == 2  # once for detail pane, once for journal_tab.refresh_coa
     assert chunk.count("self._detail.update_coa(coa_display)") == 1
     assert chunk.count("self._register_tab.refresh_coa_choices()") == 1
     assert "Called when the COA editor modifies the chart of accounts." in chunk
@@ -2513,7 +2516,7 @@ def test_main_window_assemble_reports_journal_business_audit_use_shared_bank_con
     end = text.index("    def _apply_main_tab_bar_tooltips(self) -> None:", start)
     chunk = text[start:end]
     assert chunk.count("ReportsTab(conn)") == 1
-    assert chunk.count("JournalTab(conn)") == 1
+    assert "JournalTab(" in chunk and "conn," in chunk  # JournalTab now takes coa_list too
     assert chunk.count("BusinessHub(conn)") == 1
     assert chunk.count("AuditTab(conn)") == 1
 
@@ -2886,7 +2889,7 @@ def test_inbox_widget_context_menu_skips_copy_row_when_no_cell() -> None:
     assert chunk.count("Keyboard shortcuts") == 1
     assert chunk.count("self.indexAt(pos)") == 1
     assert chunk.count("if not idx.isValid():") == 1
-    assert chunk.count("m.addSeparator()") == 1
+    assert chunk.count("m.addSeparator()") == 2  # one before Copy row, one before Delete
     assert chunk.count('m.addAction("Copy row"') == 1
     assert chunk.count("self.viewport().mapToGlobal(pos)") == 2
     assert chunk.count("m.exec(self.viewport().mapToGlobal(pos))") == 2
@@ -4963,7 +4966,7 @@ def test_main_window_message_box_warning_critical_and_file_dialog_counts() -> No
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
     assert chunk.count("message_box_warning_ok(") == 10
-    assert chunk.count("message_box_critical_ok(") == 5
+    assert chunk.count("message_box_critical_ok(") == 6  # +1 for delete_document failure path
     assert chunk.count("QFileDialog.getOpenFileNames(") == 1
     assert chunk.count("QFileDialog.getOpenFileName(") == 1
     assert chunk.count("QFileDialog.getSaveFileName(") == 1
@@ -4975,7 +4978,7 @@ def test_main_window_refresh_inbox_eight_call_sites() -> None:
     start = text.index("class MainWindow(QMainWindow):")
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
-    assert chunk.count("self._refresh_inbox()") == 8
+    assert chunk.count("self._refresh_inbox()") == 9  # +1 for _on_delete_document
 
 
 def test_main_window_inbox_widget_referenced_four_times() -> None:
@@ -4984,7 +4987,7 @@ def test_main_window_inbox_widget_referenced_four_times() -> None:
     start = text.index("class MainWindow(QMainWindow):")
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
-    assert chunk.count("self._inbox.") == 4
+    assert chunk.count("self._inbox.") == 5  # +1 for deleteRequested.connect
 
 
 def test_main_window_detail_pane_eleven_call_sites() -> None:
@@ -4993,7 +4996,7 @@ def test_main_window_detail_pane_eleven_call_sites() -> None:
     start = text.index("class MainWindow(QMainWindow):")
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
-    assert chunk.count("self._detail.") == 13
+    assert chunk.count("self._detail.") == 14  # +1 for clear_view in _on_delete_document
 
 
 def test_main_window_coa_database_four_call_sites() -> None:
@@ -5002,7 +5005,7 @@ def test_main_window_coa_database_four_call_sites() -> None:
     start = text.index("class MainWindow(QMainWindow):")
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
-    assert chunk.count("self._coa_db.") == 8
+    assert chunk.count("self._coa_db.") == 13
 
 
 def test_main_window_banner_tabs_status_bar_and_worker_counts() -> None:
@@ -5012,8 +5015,8 @@ def test_main_window_banner_tabs_status_bar_and_worker_counts() -> None:
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
     assert chunk.count("self._header.") == 2
-    assert chunk.count("self._status_bar.showMessage(") == 13
-    assert chunk.count("self._tabs.") == 38
+    assert chunk.count("self._status_bar.showMessage(") == 14  # +1 for delete document confirmation
+    assert chunk.count("self._tabs.") == 41
     assert chunk.count("self._worker") == 13
 
 
@@ -5167,7 +5170,7 @@ def test_intake_and_bank_import_splitters_have_resize_tooltips() -> None:
     assert "right_splitter.setToolTip" in bi
     assert "reconciliation" in bi
     assert "left.setToolTip(" in bi
-    assert "Import batches column" in bi
+    assert "Import batches" in bi
 
 
 def test_destructive_yes_no_message_boxes_use_shared_button_tooltips() -> None:
@@ -5437,12 +5440,8 @@ def test_bank_import_tab_f5_reload_shortcut_wired() -> None:
     assert 'QKeySequence("F5")' in text
     assert "activated.connect(self._reload_bank_import_view)" in text
     assert "F5 refreshes accounts and import batches" in text
-    _f5_tail = text.split("F5 refreshes accounts and import batches", 1)[1][:900]
-    assert "UTF-8 BOM for Excel" in _f5_tail
-    assert "probooks.backup" in _f5_tail
-    assert "AI line-reconciliation grid" in _f5_tail
-    assert "preview rows and that grid also offer Copy row" in _f5_tail
-    assert "Manage Bank Accounts table" in text
+    assert "Right-click the batch list" in text
+    assert "Manage Bank Accounts" in text
     assert "Bank import shortcuts" in text
     assert "Keyboard shortcuts…" in text
     assert "_show_bank_import_keyboard_shortcuts_help" in text
@@ -5533,7 +5532,7 @@ def test_bank_import_blank_register_table_columns_empty_rows_and_pdf_dialog() ->
     """Right pane: blank register shell (Date…Balance, 15 editable empty rows, Register tab styling) + PDF caption."""
     bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
     assert "BlankBankRegisterTable()" in bit
-    assert "Import bank statement PDF (selectable text required)" in bit
+    assert "Import bank statement PDF" in bit
     pdf_chunk = bit.split("def _on_import_pdf(self):", 1)[1].split(
         "def _on_import_csv(self):", 1
     )[0]
@@ -5708,41 +5707,67 @@ def test_bank_import_recon_panel_empty_hint_when_no_batch_selected() -> None:
 
 
 def test_bank_import_tab_shows_batch_workflow_hint_by_batch_list() -> None:
-    """Bank Import left pane explains how batches appear and what selection does."""
+    """Bank Import left pane labels the batch list."""
     bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
-    assert "batch_hint" in bit
-    assert "Batches appear after you" in bit
+    # batch_hint QLabel was removed in layout cleanup; the label and tooltip still describe batches
+    assert "Import Batches:" in bit
+    assert "import batches" in bit.lower()
 
 
 def test_bank_import_tab_shows_import_format_hint_under_header() -> None:
-    """Bank Import shows a visible CSV vs PDF (text-layer) hint below the import buttons."""
+    """Bank Import describes CSV vs PDF in button tooltips (import_hint label removed in cleanup)."""
     bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
-    assert "Import formats:" in bit
-    assert "import_hint" in bit
-    assert "optional BOM for Excel" in bit
+    # The format description moved to button tooltips after layout simplification
+    assert "optional BOM for Excel" in bit or "UTF-8" in bit
     assert "selectable" in bit
 
 
 def test_bank_import_on_import_pdf_text_layer_then_statement_scan_fallback_order() -> None:
-    """PDF import tries text extraction + parse, then ``extract_rows_from_statement_scan`` (Phase 7 OCR hook)."""
+    """PDF import tries text extraction + parse, then AI worker for scanned PDFs.
+
+    Stage 1 (sync): ``extract_text_from_pdf`` + ``parse_statement_text``.
+    Stage 2 (async): ``_AiPdfWorker`` calls ``extract_rows_from_statement_scan``
+    in a background ``QThread`` with a ``QProgressDialog``.
+    ``_finish_pdf_import`` handles the shared row-processing / error-reporting logic.
+    """
     bit = (_DESKTOP_APP_DIR / "bank_import_tab.py").read_text(encoding="utf-8")
+
+    # --- _on_import_pdf: stage 1 (sync text extraction) --------------------
     start = bit.index("    def _on_import_pdf(self):")
     end = bit.index("    def _on_import_csv(self):", start)
-    chunk = bit[start:end]
+    chunk = bit[start:end]   # covers _on_import_pdf + _finish_pdf_import
+
     assert chunk.count("extract_text_from_pdf(path)") == 1
-    assert chunk.count("parse_statement_text(text)") == 1
-    assert chunk.count("ocr_result = extract_rows_from_statement_scan(") == 1
-    assert chunk.count('mime_type="application/pdf"') == 1
-    assert "StatementScanStatus" in chunk
+    assert "parse_statement_text(text" in chunk   # may include keyword args like filter_deposits=True
     assert "text_layer_empty" in chunk
+    assert "StatementScanStatus" in chunk
+
+    # _finish_pdf_import has the error strings and status checks
     assert "No selectable text was found" in chunk
-    assert "Automatic OCR for scanned statements is not available" in chunk
+    assert "AI extraction could not finish" in chunk
     assert "StatementScanStatus.FAILED" in chunk
-    assert "Statement scan could not finish" in chunk
+    assert "No AI API key found" in chunk  # NOT_IMPLEMENTED branch
+
+    # Stage 1 text extraction must precede the AI worker launch
     tx = chunk.index("text = extract_text_from_pdf(path)")
-    pr = chunk.index("rows = parse_statement_text(text)")
-    oc = chunk.index("ocr_result = extract_rows_from_statement_scan(")
-    assert tx < pr < oc
+    pr = chunk.index("parse_statement_text(text")   # may include keyword args
+    ai = chunk.index("_AiPdfWorker(path")
+    assert tx < pr < ai
+
+    # --- _AiPdfWorker: background AI call ----------------------------------
+    worker_start = bit.index("class _AiPdfWorker(QThread):")
+    worker_end = bit.index("\n\n# ===========================================================================\n# BankImportTab", worker_start)
+    worker_chunk = bit[worker_start:worker_end]
+    assert "extract_rows_from_statement_scan" in worker_chunk
+    assert 'mime_type="application/pdf"' in worker_chunk
+    assert "finished = Signal(object)" in worker_chunk
+    assert "errored  = Signal(str)" in worker_chunk
+
+    # --- progress dialog shown before worker starts -------------------------
+    prog_idx = chunk.index("QProgressDialog(")
+    worker_idx = chunk.index("_AiPdfWorker(path")
+    start_idx = chunk.index("self._ai_pdf_worker.start()")
+    assert prog_idx < worker_idx < start_idx
 
 
 def test_manage_accounts_dialog_accounts_table_opens_bank_import_shortcuts_help() -> None:

@@ -95,6 +95,7 @@ from desktop_app.audit_tab import AuditTab
 from desktop_app.asset_register_tab import AssetRegisterTab
 from desktop_app.dashboard_tab import DashboardTab
 from desktop_app.first_run_wizard import FirstRunWizard, apply_wizard_results
+from desktop_app.check_screen import CheckScreen
 from desktop_app.enter_bills_screen import EnterBillsScreen
 from desktop_app.invoice_screen import InvoiceScreen
 from desktop_app.pay_bills_screen import PayBillsScreen
@@ -119,6 +120,7 @@ from desktop_app.qt_mnemonic import (
     message_box_about_ok,
     message_box_critical_ok,
     message_box_information_ok,
+    message_box_question_yes_no,
     message_box_warning_ok,
     tip_message_box_buttons,
 )
@@ -233,6 +235,7 @@ class InboxWidget(QTableWidget):
     COLUMNS = ["#", "Filename", "Type", "Status", "Date"]
 
     filesDropped = Signal(list)
+    deleteRequested = Signal(int)   # emitted with doc_id when user confirms delete
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -278,13 +281,27 @@ class InboxWidget(QTableWidget):
             m.exec(self.viewport().mapToGlobal(pos))
             return
         row = idx.row()
+        it = self.item(row, 0)
+        doc_id = (
+            coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole)) if it is not None else None
+        )
         m.addSeparator()
         act_copy = m.addAction("Copy row", partial(copy_table_row_as_tsv, self, row))
         act_copy.setToolTip(
             "Copy this inbox row as tab-separated text for pasting into a spreadsheet or editor. "
             + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
-        m.exec(self.viewport().mapToGlobal(pos))
+        m.addSeparator()
+        act_delete = m.addAction("🗑  Delete document…")
+        act_delete.setToolTip(
+            "Permanently delete this document and its extraction data from the company file. "
+            "The original file on disk is NOT removed. Use File → Backup first if unsure."
+        )
+        if doc_id is None:
+            act_delete.setEnabled(False)
+        chosen = m.exec(self.viewport().mapToGlobal(pos))
+        if chosen == act_delete and doc_id is not None:
+            self.deleteRequested.emit(doc_id)
 
     # -- drag & drop ---------------------------------------------------------
 
@@ -914,9 +931,20 @@ def _menu_action_tip(act: QAction, tip: str) -> None:
 
 
 class MainWindow(QMainWindow):
+    _SETTINGS_ORG = "ProBooksAI"
+    _SETTINGS_APP = "ProBooksAI"
+    _GEOMETRY_KEY = "mainwindow/geometry"
+    _MAXIMIZED_KEY = "mainwindow/maximized"
+
     def __init__(self, db_path: str | None = None):
         super().__init__()
-        self.resize(1100, 700)
+        # Restore last window size/position; default to maximised on first run
+        _win_settings = QSettings(self._SETTINGS_ORG, self._SETTINGS_APP)
+        _saved_geom = _win_settings.value(self._GEOMETRY_KEY)
+        if _saved_geom:
+            self.restoreGeometry(_saved_geom)
+        else:
+            self.showMaximized()
 
         self._db_path = db_path
         self._db = DocumentDatabase(db_path)
@@ -927,8 +955,12 @@ class MainWindow(QMainWindow):
         self._coa_db.seed_from_workbook()
         self._coa = load_coa()
         self._worker: AIWorker | None = None
-        # Ensure COA asset accounts exist in bank_accounts before tabs are built
+        # Ensure COA asset accounts exist in bank_accounts before tabs are built.
+        # Heal duplicates first (e.g. phantom account from a COA rename), then sync.
         self._sync_coa_assets_to_bank_accounts()
+        self._heal_duplicate_bank_accounts()
+        self._deactivate_coa_noise_bank_accounts()
+        self._heal_duplicate_opening_balance_entries()
         # Seed bank_transactions for any existing GL opening-balance entries
         self._migrate_opening_balances_to_bank_register()
 
@@ -1000,6 +1032,7 @@ class MainWindow(QMainWindow):
         self._inbox = InboxWidget()
         self._inbox.filesDropped.connect(self._on_files_dropped)
         self._inbox.itemSelectionChanged.connect(self._on_selection_changed)
+        self._inbox.deleteRequested.connect(self._on_delete_document)
         left_layout.addWidget(self._inbox)
 
         splitter.addWidget(left)
@@ -1040,6 +1073,11 @@ class MainWindow(QMainWindow):
         self._receive_payments_screen = ReceiveChecksScreen(
             ap_conn=conn, bank_db=self._bank_db
         )
+        self._check_screen = CheckScreen(
+            bank_db=self._bank_db,
+            coa_list=[r["account_name"] for r in (self._coa_db.list_accounts() or [])],
+        )
+        self._check_screen.transactionSaved.connect(self._on_check_screen_saved)
 
         self._register_tab = RegisterTab(self._bank_db, self._coa_db, self._gl_db)
         self._bank_tab = BankImportTab(
@@ -1089,7 +1127,10 @@ class MainWindow(QMainWindow):
         self._dashboard_tab.navigateRequested.connect(self._on_dashboard_navigate)
 
         self._reports_tab = ReportsTab(conn)
-        self._journal_tab = JournalTab(conn)
+        self._journal_tab = JournalTab(
+            conn,
+            coa_list=self._coa_db.display_list() if hasattr(self, "_coa_db") else None,
+        )
         self._business_hub = BusinessHub(conn)
         self._audit_tab = AuditTab(conn)
         self._asset_register_tab = AssetRegisterTab(conn, coa_list=self._coa_db.display_list() if hasattr(self, "_coa_db") else None)
@@ -1107,6 +1148,7 @@ class MainWindow(QMainWindow):
 
         self._tabs.addTab(self._dashboard_tab, "Dashboard")
         self._tabs.addTab(self._invoice_screen, "Invoices")
+        self._tabs.addTab(self._check_screen, "Write Checks")
         self._tabs.addTab(self._enter_bills_screen, "Enter Bills")
         self._tabs.addTab(self._pay_bills_screen, "Pay Bills")
         self._tabs.addTab(self._receive_payments_screen, "Receive Payments")
@@ -1888,52 +1930,294 @@ class MainWindow(QMainWindow):
         self._inbox.populate(docs)
         self._on_selection_changed()
 
+    def _on_delete_document(self, doc_id: int) -> None:
+        """Confirm and permanently delete a document from the inbox."""
+        if not hasattr(self, "_db") or self._db is None:
+            return
+        row = self._db.get_document(doc_id)
+        if row is None:
+            return
+        filename = (dict(row).get("filename") or f"document #{doc_id}")
+        confirmed = message_box_question_yes_no(
+            self,
+            "Delete Document",
+            f"Permanently delete <b>{escape_ampersand_for_qt(filename)}</b> and all its "
+            f"extraction data from the company file?<br><br>"
+            "The original file on disk is <b>not</b> removed. "
+            "Use <b>File → Backup</b> first if unsure.",
+            yes_tip="Delete this document and its extraction data permanently.",
+            no_tip="Cancel — keep the document.",
+        )
+        if not confirmed:
+            return
+        try:
+            self._db.delete_document(doc_id)
+        except Exception as exc:
+            message_box_critical_ok(
+                self, "Delete failed",
+                f"Could not delete document: {exc}",
+                ok_tip="Close; try File → Backup then retry.",
+            )
+            return
+        self._detail.clear_view()
+        self._refresh_inbox()
+        self._status_bar.showMessage(f"Deleted document: {filename}")
+
     def _sync_coa_assets_to_bank_accounts(self) -> None:
         """
-        Ensure every active COA Asset account has a matching row in bank_accounts.
+        Keep existing bank_accounts rows in sync with the COA when accounts are renamed.
 
-        This lets users create accounts via Chart of Accounts (e.g. "Cash – Checking")
-        and immediately see them in the Bank Register account picker — without having to
-        go through a separate bank account creation flow.
+        Matching priority (prevents phantom duplicate accounts on rename):
+          1. gl_display_account exact match — already in sync, skip.
+          2. account_number match — COA was renamed; UPDATE the existing bank_account
+             name + gl_display_account in place so all transactions remain attached.
+          3. name match — manually-created bank account, skip.
+          4. No match — intentionally not auto-creating.  Bank accounts are created
+             explicitly by the user via Manage Accounts.  Auto-creating entries for
+             every COA asset (Equipment, Receivables, etc.) pollutes the dropdown.
 
-        Matching is done by gl_display_account (e.g. "1000 Cash – Checking").
-        Existing bank_accounts rows are never deleted or renamed here.
+        This means renaming "1000 Cash – Checking" to "CHASE BANK" updates the single
+        existing bank_accounts row rather than creating an empty duplicate.
         """
         try:
             coa_rows = self._coa_db.list_accounts(include_inactive=False)
-            # Build set of gl_display_account keys already in bank_accounts
-            existing_keys: set[str] = set()
+            conn = self._bank_db._conn
+
+            # Build lookup structures — all keyed to bank_account_id
+            by_gl_key: dict[str, int] = {}   # gl_display_account → bank_account_id
+            by_acct_num: dict[str, int] = {} # account_number     → bank_account_id
+            by_name: dict[str, int] = {}     # name               → bank_account_id
+
             for ba in self._bank_db.list_bank_accounts(include_inactive=True):
-                key = (ba["gl_display_account"] or "").strip()
-                if key:
-                    existing_keys.add(key)
-                else:
-                    # Fallback: match by name
-                    existing_keys.add((ba["name"] or "").strip())
+                ba_id = int(ba["id"])
+                gl = (ba["gl_display_account"] or "").strip()
+                if gl:
+                    by_gl_key[gl] = ba_id
+                num = (ba["account_number"] or "").strip()
+                if num:
+                    by_acct_num.setdefault(num, ba_id)  # first match wins
+                nm = (ba["name"] or "").strip()
+                if nm:
+                    by_name.setdefault(nm, ba_id)
 
             for row in coa_rows:
                 atype = (row["account_type"] or "").lower()
                 if atype != "asset":
-                    continue  # only Asset accounts become bank accounts
+                    continue
                 num  = str(row["account_number"] or "").strip()
                 name = str(row["account_name"] or "").strip()
                 if not name:
                     continue
                 display_key = f"{num} {name}".strip() if num else name
-                if display_key in existing_keys or name in existing_keys:
-                    continue  # already present
-                sub = str(row["sub_type"] or "").strip()
-                self._bank_db.add_bank_account(
-                    name=name,
-                    account_number=num,
-                    bank_name=sub or "",
-                    account_type="checking",  # sensible default; user can edit later
-                    gl_display_account=display_key,
-                )
-                existing_keys.add(display_key)
-        except Exception as _sync_err:
+                sub = str(row.get("sub_type") or "").strip()
+
+                # 1. Already perfectly in sync
+                if display_key in by_gl_key:
+                    continue
+
+                # 2. Same account number → COA was renamed; UPDATE the existing row
+                if num and num in by_acct_num:
+                    ba_id = by_acct_num[num]
+                    conn.execute(
+                        "UPDATE bank_accounts SET name = ?, gl_display_account = ?, "
+                        "updated_at = datetime('now') WHERE id = ?",
+                        (name, display_key, ba_id),
+                    )
+                    conn.commit()
+                    by_gl_key[display_key] = ba_id   # keep lookup fresh
+                    continue
+
+                # 3. Name match — manually-created bank account, leave it alone
+                if name in by_name or display_key in by_name:
+                    continue
+
+                # 4. No match — do NOT auto-create a bank_account row for every
+                #    COA asset.  Equipment, Receivables, Fixed Assets etc. are not
+                #    bank accounts.  The user creates bank accounts explicitly via
+                #    Manage Accounts.  (This case intentionally left empty.)
+
+        except Exception:
             import traceback
             traceback.print_exc()  # visible in console; never blocks a COA save
+
+    def _heal_duplicate_bank_accounts(self) -> None:
+        """
+        One-time (and idempotent) cleanup: when a COA rename previously created a
+        phantom empty bank_account alongside the original, consolidate them.
+
+        Heuristic: for each account_number that appears on multiple bank_accounts rows,
+        the row with the most transactions is the "canonical" one.  All transactions
+        on the others are re-pointed to the canonical row, the duplicates are then
+        deactivated (not deleted, to preserve audit trail), and the canonical row's
+        name/gl_display_account are updated to match the current COA account name.
+        """
+        try:
+            conn = self._bank_db._conn
+
+            # Find account_numbers that appear on more than one bank_accounts row
+            dupes = conn.execute("""
+                SELECT account_number, COUNT(*) AS cnt
+                FROM bank_accounts
+                WHERE account_number != '' AND account_number IS NOT NULL
+                GROUP BY account_number
+                HAVING cnt > 1
+            """).fetchall()
+
+            if not dupes:
+                return
+
+            # Build current COA display_key map: account_number → display_key, name
+            coa_map: dict[str, tuple[str, str]] = {}
+            for row in self._coa_db.list_accounts(include_inactive=False):
+                num = str(row["account_number"] or "").strip()
+                nm  = str(row["account_name"] or "").strip()
+                if num and nm:
+                    coa_map[num] = (f"{num} {nm}".strip(), nm)
+
+            for dupe_row in dupes:
+                acct_num = str(dupe_row["account_number"] or "").strip()
+                if not acct_num:
+                    continue
+
+                # All bank_accounts rows for this number, sorted: most transactions first
+                rows = conn.execute("""
+                    SELECT ba.id,
+                           ba.name,
+                           ba.gl_display_account,
+                           ba.is_active,
+                           COUNT(bt.id) AS txn_count
+                    FROM bank_accounts ba
+                    LEFT JOIN bank_transactions bt ON bt.bank_account_id = ba.id
+                    WHERE ba.account_number = ?
+                    GROUP BY ba.id
+                    ORDER BY txn_count DESC, ba.id ASC
+                """, (acct_num,)).fetchall()
+
+                if len(rows) < 2:
+                    continue
+
+                canonical_id = int(rows[0]["id"])
+
+                # Point every transaction from the duplicate rows to the canonical row
+                for dup in rows[1:]:
+                    dup_id = int(dup["id"])
+                    # Re-point transactions (fingerprint may clash — skip on conflict)
+                    conn.execute("""
+                        UPDATE OR IGNORE bank_transactions
+                        SET bank_account_id = ?
+                        WHERE bank_account_id = ?
+                    """, (canonical_id, dup_id))
+                    # Re-point import batches
+                    conn.execute("""
+                        UPDATE bank_import_batches
+                        SET bank_account_id = ?
+                        WHERE bank_account_id = ?
+                    """, (canonical_id, dup_id))
+                    # Deactivate (not delete) the empty duplicate
+                    conn.execute(
+                        "UPDATE bank_accounts SET is_active = 0, updated_at = datetime('now') "
+                        "WHERE id = ?",
+                        (dup_id,),
+                    )
+
+                # Update the canonical row to reflect the current COA name and
+                # always reactivate it — it is the surviving account and must be
+                # visible in dropdowns even if it was previously soft-deactivated.
+                if acct_num in coa_map:
+                    new_display, new_name = coa_map[acct_num]
+                    conn.execute(
+                        "UPDATE bank_accounts SET name = ?, gl_display_account = ?, "
+                        "is_active = 1, updated_at = datetime('now') WHERE id = ?",
+                        (new_name, new_display, canonical_id),
+                    )
+                else:
+                    # No COA entry — still reactivate so it isn't lost
+                    conn.execute(
+                        "UPDATE bank_accounts SET is_active = 1, "
+                        "updated_at = datetime('now') WHERE id = ?",
+                        (canonical_id,),
+                    )
+
+                conn.commit()
+
+        except Exception:
+            import traceback
+            traceback.print_exc()
+
+    def _deactivate_coa_noise_bank_accounts(self) -> None:
+        """
+        Deactivate bank_account rows that were created by a previous version of
+        ``_sync_coa_assets_to_bank_accounts`` for non-bank GL accounts (Equipment,
+        Accounts Receivable, Fixed Assets, etc.) that have zero transactions and
+        zero import batches.
+
+        Safe to call multiple times; idempotent.  Leaves any account with even one
+        transaction or batch intact regardless of type.
+        """
+        try:
+            conn = self._bank_db._conn
+            # Find accounts with no transactions and no batches whose account_number
+            # suggests a non-cash GL account (numbers >= 1100 are generally not banks)
+            noise = conn.execute("""
+                SELECT ba.id
+                FROM bank_accounts ba
+                WHERE ba.is_active = 1
+                  AND (ba.account_number IS NOT NULL AND ba.account_number != '')
+                  AND CAST(ba.account_number AS INTEGER) >= 1100
+                  AND NOT EXISTS (
+                      SELECT 1 FROM bank_transactions bt WHERE bt.bank_account_id = ba.id
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM bank_import_batches bib WHERE bib.bank_account_id = ba.id
+                  )
+            """).fetchall()
+            if not noise:
+                return
+            ids = [int(r["id"]) for r in noise]
+            conn.execute(
+                "UPDATE bank_accounts SET is_active = 0, updated_at = datetime('now') "
+                f"WHERE id IN ({','.join('?' * len(ids))})",
+                ids,
+            )
+            conn.commit()
+        except Exception:
+            import traceback
+            traceback.print_exc()
+
+    def _heal_duplicate_opening_balance_entries(self) -> None:
+        """
+        If the Opening Balance Wizard was run more than once before the dedup fix,
+        multiple journal_entries rows with source='opening_balance' may exist.
+        Keep only the most recent one (highest id) and delete the rest, including
+        any bank_transactions that were seeded for the discarded entries.
+        """
+        try:
+            conn = self._bank_db._conn
+            rows = conn.execute(
+                "SELECT id FROM journal_entries WHERE source = 'opening_balance' ORDER BY id DESC"
+            ).fetchall()
+            if len(rows) <= 1:
+                return  # nothing to heal
+            # Keep the latest; delete the rest
+            keep_id = int(rows[0]["id"])
+            stale_ids = [int(r["id"]) for r in rows[1:]]
+            # Wipe ALL opening-balance bank transactions — migrate re-seeds from the
+            # surviving entry, so no data is permanently lost.
+            conn.execute(
+                "DELETE FROM bank_transactions "
+                "WHERE description LIKE 'Opening balance as of %' "
+                "AND batch_id IN ("
+                "  SELECT id FROM bank_import_batches "
+                "  WHERE filename = '(Opening Balance)'"
+                ")"
+            )
+            # Delete stale journal entries (lines cascade-delete)
+            for stale_id in stale_ids:
+                conn.execute("DELETE FROM journal_entries WHERE id = ?", (stale_id,))
+            conn.commit()
+        except Exception:
+            import traceback
+            traceback.print_exc()
 
     def _migrate_opening_balances_to_bank_register(self) -> None:
         """
@@ -2030,8 +2314,9 @@ class MainWindow(QMainWindow):
 
     def _on_coa_changed(self):
         """Called when the COA editor modifies the chart of accounts."""
-        # Sync any new COA asset accounts into bank_accounts so the register sees them
+        # Sync COA asset accounts → bank_accounts; heal any duplicates from a rename
         self._sync_coa_assets_to_bank_accounts()
+        self._heal_duplicate_bank_accounts()
         # Refresh the dropdown list used in the document intake detail pane
         self._coa = load_coa()
         coa_display = self._coa_db.display_list()
@@ -2040,6 +2325,11 @@ class MainWindow(QMainWindow):
         self._register_tab.refresh_bank_accounts()
         if hasattr(self, "_asset_register_tab"):
             self._asset_register_tab.update_coa_list(coa_display)
+        if hasattr(self, "_check_screen"):
+            coa_names = [r["account_name"] for r in (self._coa_db.list_accounts() or [])]
+            self._check_screen.refresh_coa(coa_names)
+        if hasattr(self, "_journal_tab"):
+            self._journal_tab.refresh_coa(self._coa_db.display_list())
 
     def _on_dashboard_navigate(self, target: str) -> None:
         """Dashboard quick-action buttons → jump to the requested tab."""
@@ -2090,6 +2380,11 @@ class MainWindow(QMainWindow):
         if index < 0 or index >= self._tabs.count():
             return
         self._tabs.setCurrentIndex(index)
+
+    def _on_check_screen_saved(self) -> None:
+        """Called when CheckScreen saves or deletes a transaction; reload the Bank Register."""
+        if hasattr(self, "_register_tab"):
+            self._register_tab._reload_current()
 
     def _focus_bank_register_tab(self) -> None:
         """Focus **Bank register** after Bank Import syncs line-match results to the Match overlay.
@@ -2227,6 +2522,19 @@ class MainWindow(QMainWindow):
         self._register_tab.openBankMatchNavigationRequested.connect(
             self._navigate_register_bank_match_link
         )
+        if hasattr(self, "_check_screen"):
+            self._register_tab.openInCheckScreenRequested.connect(
+                self._open_txn_in_check_screen
+            )
+
+    def _open_txn_in_check_screen(self, txn_id: int) -> None:
+        """Switch to Write Checks tab and navigate to *txn_id*."""
+        if not hasattr(self, "_check_screen") or not hasattr(self, "_tabs"):
+            return
+        self._check_screen.navigate_to_transaction(txn_id)
+        idx = self._tabs.indexOf(self._check_screen)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
 
     def _sync_window_title(self) -> None:
         ver = application_version()
@@ -2274,6 +2582,9 @@ class MainWindow(QMainWindow):
         self._coa = load_coa()
         # Ensure any COA asset accounts are represented in bank_accounts before building tabs
         self._sync_coa_assets_to_bank_accounts()
+        self._heal_duplicate_bank_accounts()
+        self._deactivate_coa_noise_bank_accounts()
+        self._heal_duplicate_opening_balance_entries()
         # Seed bank_transactions for any existing GL opening-balance entries
         self._migrate_opening_balances_to_bank_register()
         self._rebuild_bank_related_tabs()
@@ -2525,6 +2836,10 @@ class MainWindow(QMainWindow):
             action.triggered.connect(lambda checked=False, p=db_path: self._switch_company_database(p, create_new=False))
 
     def closeEvent(self, event):
+        # Persist window geometry so next launch restores the same size/position
+        _win_settings = QSettings(self._SETTINGS_ORG, self._SETTINGS_APP)
+        _win_settings.setValue(self._GEOMETRY_KEY, self.saveGeometry())
+        _win_settings.setValue(self._MAXIMIZED_KEY, self.isMaximized())
         self._db.close()
         self._bank_db.close()
         super().closeEvent(event)

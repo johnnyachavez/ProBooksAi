@@ -130,7 +130,9 @@ from desktop_app.qt_mnemonic import (
     CSV_EXPORT_OK_TIP_SUFFIX,
     escape_ampersand_for_qt,
     message_box_information_ok,
+    message_box_question_yes_no,
     message_box_warning_ok,
+    qdialog_ok_button,
     tip_qdialog_button_box,
 )
 from desktop_app.table_clipboard import (
@@ -459,7 +461,7 @@ def _configure_interactive_register_coa_combo(
     comp = QCompleter(QStringListModel(strings), combo)
     comp.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
     comp.setFilterMode(Qt.MatchFlag.MatchContains)
-    comp.setCompletionMode(QCompleter.CompletionMode.InlineCompletion)
+    comp.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
     comp.activated[str].connect(
         lambda _t: QTimer.singleShot(
             0, partial(tab._finish_register_coa_line_edit, txn_id, combo)
@@ -735,12 +737,126 @@ def show_register_keyboard_shortcuts_dialog(parent: QWidget) -> None:
     )
 
 
+# Sentinel stored as QComboBox item data to trigger the Quick-Add COA dialog
+_NEW_COA_SENTINEL = "__new_coa__"
+
+
+# ---------------------------------------------------------------------------
+# Quick-add COA dialog (inline account creation from the register)
+# ---------------------------------------------------------------------------
+
+class QuickAddCoaDialog(QDialog):
+    """Minimal dialog to create a new COA account without leaving the register.
+
+    Parameters
+    ----------
+    coa_db:
+        :class:`~probooksai.coa_db.COADatabase` instance.
+    prefill_name:
+        Optional suggested account name (e.g. the payee from the transaction).
+    parent:
+        Parent widget.
+
+    After ``exec()`` returns ``Accepted``, read :attr:`created_display_key` for
+    the ``"NNNN Account Name"`` string that was inserted into the COA.
+    """
+
+    def __init__(
+        self,
+        coa_db: "COADatabase",
+        *,
+        prefill_name: str = "",
+        parent: "QWidget | None" = None,
+    ) -> None:
+        super().__init__(parent)
+        self._coa_db = coa_db
+        self.created_display_key: str = ""
+
+        self.setWindowTitle("New COA Account")
+        self.setMinimumWidth(380)
+        self.setToolTip(
+            "Create a new Chart of Accounts entry and immediately assign it "
+            "to this transaction. The account is saved permanently to the COA."
+        )
+
+        form = QFormLayout(self)
+        form.setSpacing(8)
+
+        self._num = QLineEdit()
+        self._num.setPlaceholderText("e.g. 6200")
+        self._num.setToolTip(
+            "Account number — must be unique in the chart of accounts. "
+            "Use your numbering convention (e.g. 6xxx for operating expenses)."
+        )
+        form.addRow("Account &Number:", self._num)
+
+        self._name = QLineEdit()
+        self._name.setPlaceholderText("e.g. Fuel &amp; Oil")
+        self._name.setText(prefill_name)
+        self._name.setToolTip("Short descriptive name shown throughout the app.")
+        form.addRow("Account &Name:", self._name)
+
+        self._type = QComboBox()
+        for t in ("expense", "asset", "liability", "equity", "income"):
+            self._type.addItem(t.capitalize(), t)
+        self._type.setToolTip(
+            "Account type: Expense for operating costs, Asset for cash/receivables, "
+            "Liability for payables/loans, Equity for owner accounts, Income for revenue."
+        )
+        form.addRow("Account &Type:", self._type)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        ok_btn = qdialog_ok_button(buttons)
+        if ok_btn is not None:
+            ok_btn.setText("Create && Assign")
+        tip_qdialog_button_box(
+            buttons,
+            ok="Create this COA account and assign it to the selected transaction.",
+            cancel="Cancel — leave the transaction uncategorized.",
+        )
+        buttons.accepted.connect(self._on_accept)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+
+        self._name.setFocus()
+
+    def _on_accept(self) -> None:
+        num  = self._num.text().strip()
+        name = self._name.text().strip()
+        if not name:
+            message_box_warning_ok(
+                self, "Validation",
+                "Account Name is required.",
+                ok_tip="Close; enter a name for the new account.",
+            )
+            return
+        account_type = self._type.currentData()
+        try:
+            self._coa_db.add_account(
+                account_number=num,
+                account_name=name,
+                account_type=account_type,
+            )
+        except Exception as exc:
+            message_box_warning_ok(
+                self, "Cannot create account",
+                escape_ampersand_for_qt(str(exc)),
+                ok_tip="Close; fix the error (duplicate number?) and try again.",
+            )
+            return
+        self.created_display_key = f"{num} {name}".strip() if num else name
+        self.accept()
+
+
 class RegisterTab(QWidget):
     """Check-register for one bank account; emits :attr:`reconciliationModeChanged` when reconciliation UI toggles."""
 
     reconciliationModeChanged = Signal(bool)
     openBankMatchNavigationRequested = Signal(str, int)
     openCoaEditorRequested = Signal(str)
+    openInCheckScreenRequested = Signal(int)  # txn_id
 
     def __init__(
         self,
@@ -1233,6 +1349,9 @@ class RegisterTab(QWidget):
                 if ix is not None:
                     self._acct_combo.setCurrentIndex(ix)
                     picked = True
+        if not picked and accounts:
+            # Always default to the first account when nothing is saved
+            self._acct_combo.setCurrentIndex(0)
         self._on_account_changed()
 
     def _on_account_changed(self):
@@ -1894,6 +2013,32 @@ class RegisterTab(QWidget):
         act_history.setToolTip(
             "Open field-level audit history for this bank transaction."
         )
+
+        act_open_checks = menu.addAction(
+            "Open in Write Checks…",
+            partial(self.openInCheckScreenRequested.emit, tid),
+        )
+        act_open_checks.setToolTip(
+            "Jump to the Write Checks tab and display this transaction in the check form."
+        )
+
+        # ── Destructive actions ────────────────────────────────────────────
+        menu.addSeparator()
+        # Label context-aware: deposit vs payment
+        it_date = self._table.item(row, _COL_DATE)
+        it_debit = self._table.item(row, _COL_DEBIT)
+        it_credit = self._table.item(row, _COL_CREDIT)
+        _debit_text = (it_debit.text().strip() if it_debit else "")
+        _credit_text = (it_credit.text().strip() if it_credit else "")
+        _is_credit = bool(_credit_text and _credit_text not in ("", "$0.00", "0.00"))
+        _txn_label = "payment" if _is_credit else "deposit"
+        act_delete = menu.addAction(f"🗑  Delete {_txn_label}…")
+        act_delete.setToolTip(
+            f"Permanently delete this {_txn_label} from the register. "
+            "Posted GL transactions cannot be deleted — void the GL entry first. "
+            "Back up with File → Backup before bulk deletions."
+        )
+
         chosen = menu.exec(self._table.viewport().mapToGlobal(pos))
         if chosen == act_history:
             show_entity_audit_history(
@@ -1904,6 +2049,43 @@ class RegisterTab(QWidget):
                 window_title=f"Change history — transaction #{tid}",
                 empty_message="No audit entries recorded for this transaction yet.",
             )
+        elif chosen == act_delete:
+            self._delete_register_transaction(tid)
+
+    def _delete_register_transaction(self, txn_id: int) -> None:
+        """Confirm and delete a bank transaction row; reload the register."""
+        txn = self._db.get_transaction(txn_id)
+        if txn is None:
+            return
+        d = dict(txn)
+        amt = float(d.get("amount") or 0)
+        label = "payment" if amt < 0 else "deposit"
+        desc = (d.get("description") or "").strip() or f"#{txn_id}"
+        date_s = (d.get("txn_date") or "").strip()
+        ans = message_box_question_yes_no(
+            self,
+            f"Delete {label}?",
+            f"Permanently delete this {label}?\n\n"
+            f"  Date: {date_s}\n"
+            f"  Payee: {desc}\n"
+            f"  Amount: ${abs(amt):,.2f}\n\n"
+            "This cannot be undone. Back up with File → Backup first.",
+            yes_tip=f"Delete this {label} permanently.",
+            no_tip="Cancel — keep the transaction.",
+        )
+        if not ans:
+            return
+        try:
+            self._db.delete_transaction(txn_id)
+        except ValueError as exc:
+            message_box_warning_ok(
+                self,
+                "Cannot delete",
+                escape_ampersand_for_qt(str(exc)),
+                ok_tip="Close; void the GL posting first if posted.",
+            )
+            return
+        self._reload_current()
 
     def _open_register_row_coa_in_chart_tab(self, row: int) -> None:
         coa = _register_row_coa_user_data(self._table, row).strip()
@@ -2035,7 +2217,10 @@ class RegisterTab(QWidget):
             d_item = _register_date_cell_item(txn.get("txn_date") or "")
             if tid is not None:
                 d_item.setData(Qt.ItemDataRole.UserRole, tid)
-            d_item.setFlags(d_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            if posted:
+                d_item.setFlags(d_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            else:
+                d_item.setFlags(d_item.flags() | Qt.ItemFlag.ItemIsEditable)
             d_item.setTextAlignment(
                 Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
             )
@@ -2060,7 +2245,10 @@ class RegisterTab(QWidget):
 
             payee_plain = _register_payee_two_line_plain(txn)
             payee_item = plain_display_table_item(payee_plain)
-            payee_item.setFlags(payee_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            if posted:
+                payee_item.setFlags(payee_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            else:
+                payee_item.setFlags(payee_item.flags() | Qt.ItemFlag.ItemIsEditable)
             payee_item.setTextAlignment(
                 Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
             )
@@ -2070,7 +2258,10 @@ class RegisterTab(QWidget):
 
             memo_raw = txn.get("memo") or ""
             memo_item = plain_display_table_item(memo_raw)
-            memo_item.setFlags(memo_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            if posted:
+                memo_item.setFlags(memo_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            else:
+                memo_item.setFlags(memo_item.flags() | Qt.ItemFlag.ItemIsEditable)
             memo_item.setTextAlignment(
                 Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
             )
@@ -2095,6 +2286,10 @@ class RegisterTab(QWidget):
                 credit_item = NumericAmountTableItem(abs(amt))
                 credit_item.setFlags(credit_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 credit_item.setForeground(neg_color)
+
+            if not posted:
+                debit_item.setFlags(debit_item.flags() | Qt.ItemFlag.ItemIsEditable)
+                credit_item.setFlags(credit_item.flags() | Qt.ItemFlag.ItemIsEditable)
 
             if running < 0:
                 bal_item.setForeground(neg_color)
@@ -2177,6 +2372,8 @@ class RegisterTab(QWidget):
                 pass
             for label in self._coa_choices:
                 combo.addItem(escape_ampersand_for_qt(label), label)
+            # Sentinel — opens QuickAddCoaDialog when selected
+            combo.addItem("➕  New account…", _NEW_COA_SENTINEL)
             current = (txn.get("coa_account") or "").strip()
             idx = combo.findData(current)
             if idx >= 0:
@@ -2289,15 +2486,20 @@ class RegisterTab(QWidget):
                 f"color: {color}; font-size: 17px; font-weight: 700;"
             )
 
-    def _on_item_changed(self, item: QTableWidgetItem):
+    def _on_item_changed(self, item: QTableWidgetItem):  # noqa: C901
         if self._populating:
             return
         col = item.column()
         row = item.row()
+
+        # ── Resolve txn_id from the date cell's UserRole ──────────────────────
+        id_item = self._table.item(row, _COL_DATE)
+        txn_id = coerce_combo_int_id(
+            id_item.data(Qt.ItemDataRole.UserRole) if id_item else None
+        )
+
+        # ── DATE column ────────────────────────────────────────────────────────
         if col == _COL_DATE:
-            txn_id = coerce_combo_int_id(item.data(Qt.ItemDataRole.UserRole))
-            if txn_id is not None:
-                return
             raw = item.text().strip()
             if not raw:
                 return
@@ -2311,37 +2513,132 @@ class RegisterTab(QWidget):
             item.setData(QTABLE_PLAIN_TEXT_ROLE, disp)
             self._populating = False
             self._resize_register_row(row)
+            if txn_id is not None:
+                # Save to DB and reload so running balances recalculate
+                try:
+                    self._db.update_transaction(
+                        txn_id, txn_date=f"{y:04d}-{m:02d}-{d:02d}"
+                    )
+                except ValueError as exc:
+                    message_box_warning_ok(
+                        self, "Cannot save date",
+                        escape_ampersand_for_qt(str(exc)),
+                        ok_tip="Close; fix the date and try again.",
+                    )
+                    return
+                QTimer.singleShot(0, self._reload_current)
             return
-        if col != _COL_REF:
+
+        # ── REF column ─────────────────────────────────────────────────────────
+        if col == _COL_REF:
+            if txn_id is None:
+                return
+            try:
+                ref_first = item.text().split("\n", 1)[0].strip()
+                self._db.update_transaction(txn_id, ref_number=ref_first)
+                self._populating = True
+                fresh = self._db.get_transaction(txn_id)
+                if fresh is not None:
+                    fd = dict(fresh)
+                    num_plain = _register_number_two_line_plain(fd)
+                    item.setText(escape_ampersand_for_qt(num_plain))
+                    item.setData(QTABLE_PLAIN_TEXT_ROLE, num_plain)
+                    item.setData(REGISTER_REF_UPPER_PLAIN, _register_num_upper_plain(fd))
+                    item.setData(REGISTER_REF_LOWER_PLAIN, _register_num_lower_plain(fd))
+                    item.setToolTip(escape_ampersand_for_qt(num_plain))
+                self._populating = False
+                self._resize_register_row(row)
+            except ValueError as exc:
+                message_box_warning_ok(
+                    self, "Cannot save",
+                    escape_ampersand_for_qt(str(exc)),
+                    ok_tip="Close; fix the value and try again.",
+                )
             return
-        id_item = self._table.item(row, _COL_DATE)
-        if id_item is None:
-            return
-        txn_id = coerce_combo_int_id(id_item.data(Qt.ItemDataRole.UserRole))
+
+        # ── Remaining columns only apply to existing (saved) rows ──────────────
         if txn_id is None:
             return
-        try:
-            ref_first = item.text().split("\n", 1)[0].strip()
-            self._db.update_transaction(txn_id, ref_number=ref_first)
-            self._populating = True
-            fresh = self._db.get_transaction(txn_id)
-            if fresh is not None:
-                fd = dict(fresh)
-                num_plain = _register_number_two_line_plain(fd)
-                item.setText(escape_ampersand_for_qt(num_plain))
-                item.setData(QTABLE_PLAIN_TEXT_ROLE, num_plain)
-                item.setData(REGISTER_REF_UPPER_PLAIN, _register_num_upper_plain(fd))
-                item.setData(REGISTER_REF_LOWER_PLAIN, _register_num_lower_plain(fd))
-                item.setToolTip(escape_ampersand_for_qt(num_plain))
-            self._populating = False
-            self._resize_register_row(row)
-        except ValueError as exc:
-            message_box_warning_ok(
-                self,
-                "Cannot save",
-                escape_ampersand_for_qt(str(exc)),
-                ok_tip="Close; fix the value and try again.",
-            )
+
+        # ── PAYEE column ───────────────────────────────────────────────────────
+        if col == _COL_PAYEE:
+            try:
+                payee_text = item.text().split("\n", 1)[0].strip()
+                self._db.update_transaction(txn_id, description=payee_text)
+                self._populating = True
+                item.setData(QTABLE_PLAIN_TEXT_ROLE, payee_text)
+                item.setData(REGISTER_PAYEE_UPPER_PLAIN, payee_text)
+                item.setToolTip(escape_ampersand_for_qt(payee_text))
+                self._populating = False
+                self._resize_register_row(row)
+            except ValueError as exc:
+                message_box_warning_ok(
+                    self, "Cannot save payee",
+                    escape_ampersand_for_qt(str(exc)),
+                    ok_tip="Close; fix the value and try again.",
+                )
+            return
+
+        # ── MEMO column ────────────────────────────────────────────────────────
+        if col == _COL_MEMO:
+            try:
+                memo_text = item.text().strip()
+                self._db.update_transaction(txn_id, memo=memo_text)
+                self._populating = True
+                item.setData(QTABLE_PLAIN_TEXT_ROLE, memo_text)
+                item.setToolTip(escape_ampersand_for_qt(memo_text))
+                self._populating = False
+                self._resize_register_row(row)
+            except ValueError as exc:
+                message_box_warning_ok(
+                    self, "Cannot save memo",
+                    escape_ampersand_for_qt(str(exc)),
+                    ok_tip="Close; fix the value and try again.",
+                )
+            return
+
+        # ── DEBIT column ───────────────────────────────────────────────────────
+        if col == _COL_DEBIT:
+            raw = item.text().strip().lstrip("$").replace(",", "")
+            if not raw:
+                raw = "0"
+            try:
+                val = float(raw)
+            except ValueError:
+                return
+            try:
+                # Debit = positive amount
+                self._db.update_transaction(txn_id, amount=val if val != 0 else 0.0)
+            except ValueError as exc:
+                message_box_warning_ok(
+                    self, "Cannot save debit",
+                    escape_ampersand_for_qt(str(exc)),
+                    ok_tip="Close; fix the value and try again.",
+                )
+                return
+            QTimer.singleShot(0, self._reload_current)
+            return
+
+        # ── CREDIT column ──────────────────────────────────────────────────────
+        if col == _COL_CREDIT:
+            raw = item.text().strip().lstrip("$").replace(",", "")
+            if not raw:
+                raw = "0"
+            try:
+                val = float(raw)
+            except ValueError:
+                return
+            try:
+                # Credit = negative amount (stored as negative in DB)
+                self._db.update_transaction(txn_id, amount=-val if val != 0 else 0.0)
+            except ValueError as exc:
+                message_box_warning_ok(
+                    self, "Cannot save credit",
+                    escape_ampersand_for_qt(str(exc)),
+                    ok_tip="Close; fix the value and try again.",
+                )
+                return
+            QTimer.singleShot(0, self._reload_current)
 
     def _post_selected(self):
         if self._gl is None or self._current_account_id is None:
@@ -2489,6 +2786,9 @@ class RegisterTab(QWidget):
         if self._populating or not combo.isEnabled():
             return
         resolved = register_coa_combo_resolve_user_data(combo)
+        # Never save the sentinel value from a line-edit finish
+        if resolved == _NEW_COA_SENTINEL:
+            return
         prev_idx = combo.currentIndex()
         if not (resolved or "").strip():
             target_idx = 0
@@ -2507,7 +2807,67 @@ class RegisterTab(QWidget):
     def _on_coa_changed(self, txn_id: int, combo: QComboBox, _index: int):
         if self._populating:
             return
-        val = register_coa_combo_resolve_user_data(combo)
+        # Use item data from the index directly — more reliable than reading the
+        # line edit text, which may not yet be updated when currentIndexChanged fires.
+        raw = combo.itemData(_index)
+        val = raw.strip() if isinstance(raw, str) else ""
+
+        # ── "➕ New account…" sentinel ──────────────────────────────────────
+        if val == _NEW_COA_SENTINEL:
+            # Revert combo back to the previous saved value while the dialog is open
+            saved_val = ""
+            try:
+                row_data = self._db._conn.execute(
+                    "SELECT coa_account FROM bank_transactions WHERE id = ?", (txn_id,)
+                ).fetchone()
+                if row_data:
+                    saved_val = (row_data[0] or "").strip()
+            except Exception:
+                pass
+            combo.blockSignals(True)
+            prev_idx = combo.findData(saved_val)
+            combo.setCurrentIndex(prev_idx if prev_idx >= 0 else 0)
+            combo.blockSignals(False)
+
+            # Look up payee description to pre-fill the account name
+            payee = ""
+            try:
+                row_data = self._db._conn.execute(
+                    "SELECT description FROM bank_transactions WHERE id = ?", (txn_id,)
+                ).fetchone()
+                if row_data:
+                    payee = (row_data[0] or "").strip()
+            except Exception:
+                pass
+
+            dlg = QuickAddCoaDialog(self._coa_db, prefill_name=payee, parent=self)
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                return
+            new_key = dlg.created_display_key
+            if not new_key:
+                return
+
+            # Refresh choices and add new entry to this combo
+            self._coa_choices = self._coa_db.display_list()
+            # Rebuild sentinel position: remove old sentinel, add new entry, re-add sentinel
+            sentinel_idx = combo.findData(_NEW_COA_SENTINEL)
+            if sentinel_idx >= 0:
+                combo.removeItem(sentinel_idx)
+            if combo.findData(new_key) < 0:
+                combo.addItem(escape_ampersand_for_qt(new_key), new_key)
+            combo.addItem("➕  New account…", _NEW_COA_SENTINEL)
+
+            # Select and save the new account
+            new_idx = combo.findData(new_key)
+            combo.blockSignals(True)
+            if new_idx >= 0:
+                combo.setCurrentIndex(new_idx)
+            combo.blockSignals(False)
+            val = new_key
+            # Emit coaChanged so main window can sync the COA tab
+            self.openCoaEditorRequested.emit(new_key)
+
+        # ── Normal save ──────────────────────────────────────────────────────
         try:
             self._db.update_transaction(txn_id, coa_account=val)
         except ValueError as exc:

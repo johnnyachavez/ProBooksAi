@@ -402,6 +402,26 @@ class OpeningBalanceWizard(QDialog):
                                "credit": 0.0, "description": "Balancing equity offset"})
 
         try:
+            # ── Void any existing opening-balance entries so there is always
+            #    exactly one.  journal_entry_lines cascade-deletes automatically.
+            conn = self._conn
+            old_rows = conn.execute(
+                "SELECT id FROM journal_entries WHERE source = 'opening_balance'"
+            ).fetchall()
+            for old_row in old_rows:
+                old_id = old_row[0]
+            # Remove ALL opening-balance bank_transactions (migrate will re-seed correctly)
+            conn.execute(
+                "DELETE FROM bank_transactions "
+                "WHERE description LIKE 'Opening balance as of %' "
+                "AND batch_id IN ("
+                "  SELECT id FROM bank_import_batches WHERE filename = '(Opening Balance)'"
+                ")"
+            )
+            # Delete all stale journal entries (lines cascade-delete)
+            conn.execute("DELETE FROM journal_entries WHERE source = 'opening_balance'")
+            conn.commit()
+
             entry_id = self._gl.create_journal_entry(
                 entry_date=cut_off,
                 lines=lines,

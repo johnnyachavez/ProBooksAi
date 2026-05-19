@@ -30,24 +30,25 @@ def test_main_window_tab_count_and_fixed_top_level_order(qapp: QApplication, tmp
     w = MainWindow(db_path=str(db_path))
     try:
         tabs = w._tabs
-        assert tabs.count() == 11
+        assert tabs.count() == 12
         order = (
             (0, "Dashboard"),
             (1, "Invoices"),
-            (2, "Enter Bills"),
-            (3, "Pay Bills"),
-            (4, "Receive Payments"),
-            (5, "Bank Register"),
-            (6, "Chart of Accounts"),
-            (7, "Customers"),
-            (8, "Vendors"),
-            (9, "Reconcile"),
-            (10, "More"),
+            (2, "Write Checks"),
+            (3, "Enter Bills"),
+            (4, "Pay Bills"),
+            (5, "Receive Payments"),
+            (6, "Bank Register"),
+            (7, "Chart of Accounts"),
+            (8, "Customers"),
+            (9, "Vendors"),
+            (10, "Reconcile"),
+            (11, "More"),
         )
         for idx, needle in order:
             assert needle in tabs.tabText(idx)
         tb = tabs.tabBar()
-        for i in range(11):
+        for i in range(12):
             assert tb.isTabVisible(i)
             tabs.setCurrentIndex(i)
             assert tabs.currentIndex() == i
@@ -71,9 +72,9 @@ def test_accounting_landing_tabs_show_page_titles(qapp: QApplication, tmp_path: 
         tabs = w._tabs
         expected = (
             (1, InvoiceScreen),
-            (2, EnterBillsScreen),
-            (3, PayBillsScreen),
-            (4, ReceiveChecksScreen),
+            (3, EnterBillsScreen),
+            (4, PayBillsScreen),
+            (5, ReceiveChecksScreen),
         )
         for idx, spec in expected:
             tabs.setCurrentIndex(idx)
@@ -133,10 +134,10 @@ def test_customers_and_vendors_tabs_use_live_ar_ap_workflows(
     w = MainWindow(db_path=str(db_path))
     try:
         tabs = w._tabs
-        assert isinstance(tabs.widget(7), ARTab)
-        assert isinstance(tabs.widget(8), APTab)
-        assert tabs.widget(7) is w._customers_tab
-        assert tabs.widget(8) is w._vendors_tab
+        assert isinstance(tabs.widget(8), ARTab)
+        assert isinstance(tabs.widget(9), APTab)
+        assert tabs.widget(8) is w._customers_tab
+        assert tabs.widget(9) is w._vendors_tab
         bh = w._business_hub._business_subtabs
         assert bh.count() == 4
         assert "Rules" in bh.tabText(0) and "Payroll" in bh.tabText(1) and "Tax" in bh.tabText(2) and "Company" in bh.tabText(3)

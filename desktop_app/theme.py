@@ -185,17 +185,25 @@ QMainWindow, QDialog {{
 }}
 
 /* ── Frames / GroupBoxes ─────────────────────────────────────────── */
-QFrame, QGroupBox {{
+QFrame {{
     background-color: {BG_SECONDARY};
     border: 1px solid {BORDER};
     border-radius: 4px;
+}}
+
+QGroupBox {{
+    background-color: {BG_SECONDARY};
+    border: 1px solid {BORDER};
+    border-radius: 4px;
+    margin-top: 20px;   /* reserve space above content for the title label */
+    padding-top: 4px;
 }}
 
 QGroupBox::title {{
     color: {FG_PRIMARY};
     subcontrol-origin: margin;
     subcontrol-position: top left;
-    padding: 2px 6px;
+    padding: 2px 8px;
     font-weight: bold;
 }}
 

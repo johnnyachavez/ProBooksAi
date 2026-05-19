@@ -230,17 +230,36 @@ def _line_total_spin() -> QDoubleSpinBox:
     return s
 
 
+def _find_or_create_customer(conn: sqlite3.Connection, name: str, address: str = "") -> int:
+    """Return existing customer id by name (case-insensitive) or create a new one."""
+    row = conn.execute(
+        "SELECT id FROM customers WHERE LOWER(name) = LOWER(?) LIMIT 1", (name,)
+    ).fetchone()
+    if row:
+        return int(row["id"])
+    # Parse address — store in the single 'address' column
+    lines = [ln.strip() for ln in (address or "").splitlines() if ln.strip()]
+    addr = "\n".join(lines)
+    cur = conn.execute(
+        """INSERT INTO customers (name, address, created_at)
+           VALUES (?, ?, datetime('now'))""",
+        (name, addr),
+    )
+    conn.commit()
+    return int(cur.lastrowid)
+
+
 class InvoiceScreen(QWidget):
     """Manual Invoice: header, line grid, totals; persists to ``invoices`` / ``invoice_lines`` when connected."""
 
     _LINE_COLS = (
-        "Date",
-        "Code",
+        "Serviced On",
+        "JL #",
         "Description",
         "BOL#",
         "Rate",
         "Qty",
-        "Total",
+        "Amount",
     )
     _N_LINE_ROWS = 15
 
@@ -531,11 +550,11 @@ class InvoiceScreen(QWidget):
             0,
         )
         fields_h.addWidget(
-            self._header_field_box("PO Number", self._po, **_top_three_kw),
+            self._header_field_box("PO/Contract #", self._po, **_top_three_kw),
             0,
         )
         fields_h.addWidget(
-            self._header_field_box("Job Number", self._job, **_top_three_kw),
+            self._header_field_box("Name/Job #", self._job, **_top_three_kw),
             0,
         )
         three_lay.addLayout(fields_h)
@@ -557,6 +576,11 @@ class InvoiceScreen(QWidget):
         self._btn_new_customer.setToolTip(
             "Add a customer to the company file when no match exists; Bill To fills automatically."
         )
+        self._btn_import_pdf = QPushButton("Import PDF…")
+        self._btn_import_pdf.setToolTip(
+            "Import one or more invoice PDFs created in another system. Claude AI reads each PDF "
+            "and creates matching invoice records (status: Sent). Customers are created automatically if not found."
+        )
         self._btn_save = QPushButton("Save")
         self._btn_save.setToolTip(
             "Save this invoice to the company file and write a PDF to the folder set under "
@@ -568,16 +592,19 @@ class InvoiceScreen(QWidget):
             "Save this invoice to the company file, then pick a PDF file path (one-time). "
             "Does not change the default folder used by Save. Then start a new blank invoice."
         )
-        self._btn_reverse = QPushButton("Reverse")
-        self._btn_forward = QPushButton("Forward")
-        self._btn_reverse.setToolTip("Open the previous saved invoice (by id).")
+        self._btn_reverse = QPushButton("◄  Prev")
+        self._btn_forward = QPushButton("Next  ►")
+        self._btn_reverse.setToolTip(
+            "Open the previous saved invoice. Keyboard: left-arrow when focus is in the header."
+        )
         self._btn_forward.setToolTip(
-            "Open the next saved invoice, or a new draft after the last one."
+            "Open the next saved invoice, or a new blank draft after the last one."
         )
         _strip_h = _top_strip_field_outer_height_px()
         _strip_btn_ss = _top_strip_action_button_qss()
         for b in (
             self._btn_clear_fields,
+            self._btn_import_pdf,
             self._btn_save,
             self._btn_export_pdf,
             self._btn_print,
@@ -598,6 +625,7 @@ class InvoiceScreen(QWidget):
             b.setDefault(False)
         for b in (
             self._btn_clear_fields,
+            self._btn_import_pdf,
             self._btn_save,
             self._btn_export_pdf,
             self._btn_print,
@@ -638,6 +666,7 @@ class InvoiceScreen(QWidget):
         self._btn_export_pdf.clicked.connect(self._on_export_pdf_as, _uc)
         self._btn_print.clicked.connect(self._on_print_invoice, _uc)
         self._btn_clear_fields.clicked.connect(self._on_clear_fields, _uc)
+        self._btn_import_pdf.clicked.connect(self._on_import_pdf_invoices, _uc)
         self._btn_new_customer.clicked.connect(
             self._bill_customer_panel.open_new_customer_dialog, _uc
         )
@@ -1044,8 +1073,28 @@ class InvoiceScreen(QWidget):
     def _update_browse_buttons(self) -> None:
         has_db = self._ap_conn is not None
         has_any = bool(self._browse_ids)
-        self._btn_reverse.setEnabled(has_db and has_any)
-        self._btn_forward.setEnabled(has_db and has_any)
+        idx = self._browse_index
+        n = len(self._browse_ids)
+        # Prev: disabled when no invoices or already at the first one
+        can_prev = has_db and has_any and (idx is None or idx > 0)
+        # Next: always enabled when there are invoices (wraps to new draft at end)
+        can_next = has_db and has_any
+        self._btn_reverse.setEnabled(can_prev)
+        self._btn_forward.setEnabled(can_next)
+        # Show position in tooltip when browsing a saved invoice
+        if has_any and idx is not None:
+            pos = f"{idx + 1} / {n}"
+            self._btn_reverse.setToolTip(f"← Previous invoice  ({pos})")
+            self._btn_forward.setToolTip(
+                f"Next invoice →  ({pos})"
+                if idx < n - 1
+                else f"New blank draft  ({pos} — at last)"
+            )
+        else:
+            self._btn_reverse.setToolTip("Open the previous saved invoice.")
+            self._btn_forward.setToolTip(
+                "Open the next saved invoice, or a new blank draft after the last one."
+            )
 
     def _clear_line_grid(self) -> None:
         self._suppress_invoice_line_recalc = True
@@ -1626,3 +1675,168 @@ class InvoiceScreen(QWidget):
         lay.addWidget(cap)
         lay.addWidget(te)
         return fr, te
+
+    # ── PDF import (AI-powered) ──────────────────────────────────────────────
+
+    def _extract_invoice_from_pdf(self, pdf_path: str) -> dict | None:
+        """Use Claude to extract invoice fields from a PDF. Returns dict or None on failure."""
+        import anthropic  # noqa: PLC0415
+        import base64  # noqa: PLC0415
+        import json  # noqa: PLC0415
+        import re  # noqa: PLC0415
+
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            return None
+        try:
+            with open(pdf_path, "rb") as f:
+                pdf_data = base64.standard_b64encode(f.read()).decode()
+            client = anthropic.Anthropic(api_key=api_key)
+            prompt = """Extract the invoice data (NOT the Bill of Lading or other attachments — invoice only).
+Return ONLY a valid JSON object with these exact keys:
+{
+  "invoice_number": "string",
+  "invoice_date": "YYYY-MM-DD",
+  "customer_name": "string (the BILL TO company name only, first line)",
+  "customer_address": "string (full address, newline separated)",
+  "po_contract": "string (PO/CONTRACT# value)",
+  "name_job": "string (NAME/JOB# value)",
+  "lines": [
+    {
+      "serviced_on": "MM/DD/YYYY",
+      "jl_num": "string",
+      "description": "string",
+      "bol": "string",
+      "qty": number,
+      "rate": number,
+      "amount": number
+    }
+  ],
+  "total": number
+}
+Rules: Use empty string for missing fields. qty defaults to 1 if not shown. Only include invoice lines, not BOL/delivery-ticket rows."""
+            response = client.beta.messages.create(
+                model=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
+                max_tokens=2048,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": pdf_data}},
+                        {"type": "text", "text": prompt},
+                    ],
+                }],
+                betas=["pdfs-2024-09-25"],
+            )
+            raw = response.content[0].text.strip()
+            # Strip markdown fences if present
+            raw = re.sub(r'^```[a-zA-Z]*\n?', '', raw)
+            raw = re.sub(r'\n?```$', '', raw)
+            return json.loads(raw.strip())
+        except Exception as exc:
+            print(f"Invoice AI extraction failed for {pdf_path}: {exc}")
+            return None
+
+    def _on_import_pdf_invoices(self) -> None:
+        if self._ap_conn is None:
+            message_box_information_ok(self, "Not connected", "Open a company file first.", ok_tip="Close.")
+            return
+        paths, _ = QFileDialog.getOpenFileNames(self, "Import Invoice PDFs", "", "PDF files (*.pdf);;All files (*.*)")
+        if not paths:
+            return
+
+        imported = 0
+        skipped = 0
+        errors = []
+
+        for pdf_path in paths:
+            fname = os.path.basename(pdf_path)
+            data = self._extract_invoice_from_pdf(pdf_path)
+            if not data:
+                errors.append(f"{fname}: Could not extract (no API key or AI error)")
+                continue
+
+            inv_num = (data.get("invoice_number") or "").strip()
+            inv_date = (data.get("invoice_date") or "").strip()
+            customer_name = (data.get("customer_name") or "").strip()
+            po = (data.get("po_contract") or "").strip()
+            name_job = (data.get("name_job") or "").strip()
+            total = float(data.get("total") or 0.0)
+
+            if not customer_name:
+                errors.append(f"{fname}: No customer name found")
+                continue
+
+            # Find or create customer
+            try:
+                customer_id = _find_or_create_customer(self._ap_conn, customer_name, data.get("customer_address", ""))
+            except Exception as exc:
+                errors.append(f"{fname}: Customer error — {exc}")
+                continue
+
+            # Build memo from PO/Job
+            memo_parts = []
+            if po:
+                memo_parts.append(f"PO: {po}")
+            if name_job:
+                memo_parts.append(f"Job: {name_job}")
+            memo = "\n".join(memo_parts)
+
+            # Build line dicts (description stored as "serviced_on — jl_num — description — bol")
+            inv_lines = []
+            for ln in (data.get("lines") or []):
+                so = (ln.get("serviced_on") or "").strip()
+                jl = (ln.get("jl_num") or "").strip()
+                desc = (ln.get("description") or "Service").strip()
+                bol = (ln.get("bol") or "").strip()
+                parts = [so, jl, desc, bol]
+                # Join with em-dash; strip trailing empty segments
+                while parts and not parts[-1]:
+                    parts.pop()
+                full_desc = " — ".join(parts)
+                inv_lines.append({
+                    "description": full_desc,
+                    "qty": float(ln.get("qty") or 1),
+                    "rate": float(ln.get("rate") or total),
+                })
+
+            if not inv_lines:
+                inv_lines = [{"description": "Trucking Service", "qty": 1.0, "rate": total}]
+
+            try:
+                # Check for duplicate invoice number
+                existing = self._ap_conn.execute(
+                    "SELECT id FROM invoices WHERE invoice_number = ?", (inv_num,)
+                ).fetchone()
+                if existing:
+                    skipped += 1
+                    continue
+
+                inv_id = business.create_invoice(
+                    self._ap_conn,
+                    customer_id=customer_id,
+                    invoice_number=inv_num,
+                    invoice_date=inv_date,
+                    memo=memo,
+                    lines=inv_lines,
+                )
+                # Set status to Sent
+                self._ap_conn.execute(
+                    "UPDATE invoices SET status = 'Sent' WHERE id = ?", (inv_id,)
+                )
+                self._ap_conn.commit()
+                imported += 1
+            except Exception as exc:
+                errors.append(f"{fname}: Save error — {exc}")
+
+        # Summary
+        lines_msg = [f"Imported: {imported}", f"Skipped (duplicates): {skipped}"]
+        if errors:
+            lines_msg.append(f"Errors: {len(errors)}")
+            lines_msg.extend(f"  {e}" for e in errors[:5])
+        message_box_information_ok(
+            self, "Import complete",
+            "\n".join(lines_msg),
+            ok_tip="Close; review the Invoices list.",
+        )
+        if imported > 0:
+            self._sync_invoice_number_suggestion()
