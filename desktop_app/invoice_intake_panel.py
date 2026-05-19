@@ -30,25 +30,118 @@ from PySide6.QtWidgets import (
 
 
 class _ExtractWorker(QThread):
-    """Background thread: calls invoice_screen.import_pdf_paths() without blocking the UI."""
+    """Background thread: AI extraction + DB writes using its own SQLite connection.
+
+    Never touches Qt widgets or the main thread's DB connection — safe to run in a
+    QThread.  Signals are queued across thread boundary automatically by Qt.
+    """
 
     row_done = Signal(str, str, str)   # path, outcome ("ok"|"skip"|"error"), message
     all_done = Signal(int, int, list)  # imported, skipped, errors[]
 
-    def __init__(self, invoice_screen, paths: list[str], parent=None):
+    def __init__(self, db_path: str, pdf_paths: list[str], parent=None):
         super().__init__(parent)
-        self._invoice_screen = invoice_screen
-        self._paths = paths
+        self._db_path = db_path
+        self._paths = pdf_paths
 
     def run(self) -> None:
-        results: list[tuple[str, str, str]] = []
+        import sqlite3 as _sql
+        from probooksai import business as _biz
+        from desktop_app.invoice_screen import _ai_extract_invoice, _find_or_create_customer
 
-        def _cb(path, outcome, msg):
-            results.append((path, outcome, msg))
-            self.row_done.emit(path, outcome, msg)
+        conn = _sql.connect(self._db_path)
+        conn.row_factory = _sql.Row
 
-        result = self._invoice_screen.import_pdf_paths(self._paths, on_row_done=_cb)
-        self.all_done.emit(result["imported"], result["skipped"], result["errors"])
+        imported = 0
+        skipped = 0
+        errors: list[str] = []
+
+        try:
+            for pdf_path in self._paths:
+                fname = os.path.basename(pdf_path)
+                data = _ai_extract_invoice(pdf_path)
+                if not data:
+                    msg = f"{fname}: Could not extract (check ANTHROPIC_API_KEY)"
+                    errors.append(msg)
+                    self.row_done.emit(pdf_path, "error", msg)
+                    continue
+
+                inv_num = (data.get("invoice_number") or "").strip()
+                inv_date = (data.get("invoice_date") or "").strip()
+                customer_name = (data.get("customer_name") or "").strip()
+                po = (data.get("po_contract") or "").strip()
+                name_job = (data.get("name_job") or "").strip()
+                total = float(data.get("total") or 0.0)
+
+                if not customer_name:
+                    msg = f"{fname}: No customer name found"
+                    errors.append(msg)
+                    self.row_done.emit(pdf_path, "error", msg)
+                    continue
+
+                try:
+                    customer_id = _find_or_create_customer(
+                        conn, customer_name, data.get("customer_address", "")
+                    )
+                except Exception as exc:
+                    msg = f"{fname}: Customer error — {exc}"
+                    errors.append(msg)
+                    self.row_done.emit(pdf_path, "error", msg)
+                    continue
+
+                memo_parts = []
+                if po:
+                    memo_parts.append(f"PO: {po}")
+                if name_job:
+                    memo_parts.append(f"Job: {name_job}")
+                memo = "\n".join(memo_parts)
+
+                inv_lines = []
+                for ln in (data.get("lines") or []):
+                    so = (ln.get("serviced_on") or "").strip()
+                    jl = (ln.get("jl_num") or "").strip()
+                    desc = (ln.get("description") or "Service").strip()
+                    bol = (ln.get("bol") or "").strip()
+                    parts = [so, jl, desc, bol]
+                    while parts and not parts[-1]:
+                        parts.pop()
+                    full_desc = " — ".join(parts)
+                    inv_lines.append({
+                        "description": full_desc,
+                        "qty": float(ln.get("qty") or 1),
+                        "rate": float(ln.get("rate") or total),
+                    })
+                if not inv_lines:
+                    inv_lines = [{"description": "Trucking Service", "qty": 1.0, "rate": total}]
+
+                try:
+                    existing = conn.execute(
+                        "SELECT id FROM invoices WHERE invoice_number = ?", (inv_num,)
+                    ).fetchone()
+                    if existing:
+                        skipped += 1
+                        self.row_done.emit(pdf_path, "skip", f"Duplicate #{inv_num}")
+                        continue
+
+                    _biz.create_invoice(
+                        conn,
+                        customer_id=customer_id,
+                        invoice_number=inv_num,
+                        invoice_date=inv_date,
+                        memo=memo,
+                        lines=inv_lines,
+                        status="Sent",
+                    )
+                    imported += 1
+                    self.row_done.emit(pdf_path, "ok", f"#{inv_num} — {customer_name}")
+                except Exception as exc:
+                    msg = f"{fname}: Save error — {exc}"
+                    errors.append(msg)
+                    self.row_done.emit(pdf_path, "error", msg)
+        finally:
+            conn.close()
+
+        self.all_done.emit(imported, skipped, errors)
 
 from desktop_app.qt_mnemonic import message_box_information_ok
 from desktop_app.theme import (
@@ -442,11 +535,32 @@ class InvoiceIntakePanel(QWidget):
     def _is_worker_busy(self) -> bool:
         return self._extract_worker is not None and self._extract_worker.isRunning()
 
+    def _get_db_path(self) -> str:
+        """Return the file path of the open company SQLite DB (empty string if unknown)."""
+        import sqlite3 as _sql
+        inv = self._invoice_screen
+        if inv is None:
+            return ""
+        conn = getattr(inv, "_ap_conn", None)
+        if conn is None:
+            return ""
+        try:
+            for _seq, _name, fname in conn.execute("PRAGMA database_list").fetchall():
+                if fname and str(fname) not in ("", ":memory:"):
+                    return os.path.abspath(str(fname))
+        except _sql.Error:
+            pass
+        return ""
+
     def _start_extraction(self, paths: list[str], row_map: dict[str, int]) -> None:
         """Kick off _ExtractWorker for *paths*; update table rows via signals (non-blocking)."""
-        inv_screen = self._invoice_screen
-        if inv_screen is None or not hasattr(inv_screen, "import_pdf_paths"):
+        if self._invoice_screen is None:
             message_box_information_ok(self, "Not available", "Invoice screen is not connected.", ok_tip="Close.")
+            return
+
+        db_path = self._get_db_path()
+        if not db_path:
+            message_box_information_ok(self, "No company file", "Open a company file first (File → Open company…).", ok_tip="Close.")
             return
 
         if self._is_worker_busy():
@@ -458,7 +572,7 @@ class InvoiceIntakePanel(QWidget):
         self._btn_extract_all.setEnabled(False)
         self._btn_extract_all.setText("Extracting…")
 
-        worker = _ExtractWorker(inv_screen, paths)
+        worker = _ExtractWorker(db_path, paths)
         self._extract_worker = worker
 
         def _on_row(pdf_path, outcome, msg):
@@ -477,6 +591,16 @@ class InvoiceIntakePanel(QWidget):
             self._btn_extract_all.setText("Extract All Staged")
             self._update_extract_button_state()
             self._btn_extract_all.setEnabled(True)
+            # Refresh the invoice browse queue and customer list on the main thread
+            inv = self._invoice_screen
+            if inv is not None and imported > 0:
+                if hasattr(inv, "_refresh_browse_state"):
+                    inv._refresh_browse_state()
+                if hasattr(inv, "_sync_invoice_number_suggestion"):
+                    inv._sync_invoice_number_suggestion()
+                bp = getattr(inv, "_bill_customer_panel", None)
+                if bp is not None and hasattr(bp, "reload_customers"):
+                    bp.reload_customers()
             parts = [f"Imported: {imported}", f"Skipped (duplicates): {skipped}"]
             if errors:
                 parts.append(f"Errors: {len(errors)}")

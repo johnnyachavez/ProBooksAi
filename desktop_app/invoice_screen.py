@@ -249,6 +249,67 @@ def _find_or_create_customer(conn: sqlite3.Connection, name: str, address: str =
     return int(cur.lastrowid)
 
 
+def _ai_extract_invoice(pdf_path: str) -> "dict | None":
+    """Call Claude PDF vision to extract invoice fields. Thread-safe (no Qt, no shared DB).
+
+    Returns a dict with invoice fields, or None on failure.
+    """
+    import anthropic  # noqa: PLC0415
+    import base64  # noqa: PLC0415
+    import json  # noqa: PLC0415
+    import re  # noqa: PLC0415
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return None
+    try:
+        with open(pdf_path, "rb") as f:
+            pdf_data = base64.standard_b64encode(f.read()).decode()
+        client = anthropic.Anthropic(api_key=api_key)
+        prompt = """Extract the invoice data (NOT the Bill of Lading or other attachments — invoice only).
+Return ONLY a valid JSON object with these exact keys:
+{
+  "invoice_number": "string",
+  "invoice_date": "YYYY-MM-DD",
+  "customer_name": "string (the BILL TO company name only, first line)",
+  "customer_address": "string (full address, newline separated)",
+  "po_contract": "string (PO/CONTRACT# value)",
+  "name_job": "string (NAME/JOB# value)",
+  "lines": [
+    {
+      "serviced_on": "MM/DD/YYYY",
+      "jl_num": "string",
+      "description": "string",
+      "bol": "string",
+      "qty": number,
+      "rate": number,
+      "amount": number
+    }
+  ],
+  "total": number
+}
+Rules: Use empty string for missing fields. qty defaults to 1 if not shown. Only include invoice lines, not BOL/delivery-ticket rows."""
+        response = client.beta.messages.create(
+            model=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
+            max_tokens=2048,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": pdf_data}},
+                    {"type": "text", "text": prompt},
+                ],
+            }],
+            betas=["pdfs-2024-09-25"],
+        )
+        raw = response.content[0].text.strip()
+        raw = re.sub(r'^```[a-zA-Z]*\n?', '', raw)
+        raw = re.sub(r'\n?```$', '', raw)
+        return json.loads(raw.strip())
+    except Exception as exc:
+        print(f"Invoice AI extraction failed for {pdf_path}: {exc}")
+        return None
+
+
 class InvoiceScreen(QWidget):
     """Manual Invoice: header, line grid, totals; persists to ``invoices`` / ``invoice_lines`` when connected."""
 
@@ -1707,62 +1768,8 @@ class InvoiceScreen(QWidget):
     # ── PDF import (AI-powered) ──────────────────────────────────────────────
 
     def _extract_invoice_from_pdf(self, pdf_path: str) -> dict | None:
-        """Use Claude to extract invoice fields from a PDF. Returns dict or None on failure."""
-        import anthropic  # noqa: PLC0415
-        import base64  # noqa: PLC0415
-        import json  # noqa: PLC0415
-        import re  # noqa: PLC0415
-
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        if not api_key:
-            return None
-        try:
-            with open(pdf_path, "rb") as f:
-                pdf_data = base64.standard_b64encode(f.read()).decode()
-            client = anthropic.Anthropic(api_key=api_key)
-            prompt = """Extract the invoice data (NOT the Bill of Lading or other attachments — invoice only).
-Return ONLY a valid JSON object with these exact keys:
-{
-  "invoice_number": "string",
-  "invoice_date": "YYYY-MM-DD",
-  "customer_name": "string (the BILL TO company name only, first line)",
-  "customer_address": "string (full address, newline separated)",
-  "po_contract": "string (PO/CONTRACT# value)",
-  "name_job": "string (NAME/JOB# value)",
-  "lines": [
-    {
-      "serviced_on": "MM/DD/YYYY",
-      "jl_num": "string",
-      "description": "string",
-      "bol": "string",
-      "qty": number,
-      "rate": number,
-      "amount": number
-    }
-  ],
-  "total": number
-}
-Rules: Use empty string for missing fields. qty defaults to 1 if not shown. Only include invoice lines, not BOL/delivery-ticket rows."""
-            response = client.beta.messages.create(
-                model=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
-                max_tokens=2048,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": pdf_data}},
-                        {"type": "text", "text": prompt},
-                    ],
-                }],
-                betas=["pdfs-2024-09-25"],
-            )
-            raw = response.content[0].text.strip()
-            # Strip markdown fences if present
-            raw = re.sub(r'^```[a-zA-Z]*\n?', '', raw)
-            raw = re.sub(r'\n?```$', '', raw)
-            return json.loads(raw.strip())
-        except Exception as exc:
-            print(f"Invoice AI extraction failed for {pdf_path}: {exc}")
-            return None
+        """Delegate to module-level helper (safe to call from main thread or worker)."""
+        return _ai_extract_invoice(pdf_path)
 
     def import_pdf_paths(
         self,
