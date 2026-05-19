@@ -10,7 +10,7 @@ import os
 from datetime import datetime
 from typing import Optional
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -27,6 +27,28 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+
+class _ExtractWorker(QThread):
+    """Background thread: calls invoice_screen.import_pdf_paths() without blocking the UI."""
+
+    row_done = Signal(str, str, str)   # path, outcome ("ok"|"skip"|"error"), message
+    all_done = Signal(int, int, list)  # imported, skipped, errors[]
+
+    def __init__(self, invoice_screen, paths: list[str], parent=None):
+        super().__init__(parent)
+        self._invoice_screen = invoice_screen
+        self._paths = paths
+
+    def run(self) -> None:
+        results: list[tuple[str, str, str]] = []
+
+        def _cb(path, outcome, msg):
+            results.append((path, outcome, msg))
+            self.row_done.emit(path, outcome, msg)
+
+        result = self._invoice_screen.import_pdf_paths(self._paths, on_row_done=_cb)
+        self.all_done.emit(result["imported"], result["skipped"], result["errors"])
 
 from desktop_app.qt_mnemonic import message_box_information_ok
 from desktop_app.theme import (
@@ -91,6 +113,7 @@ class InvoiceIntakePanel(QWidget):
     ) -> None:
         super().__init__(parent)
         self._invoice_screen = invoice_screen
+        self._extract_worker: Optional[_ExtractWorker] = None
         self.setObjectName("invoiceIntakePanel")
         self.setMinimumHeight(200)
         self.setToolTip(
@@ -416,8 +439,59 @@ class InvoiceIntakePanel(QWidget):
                 path=os.path.abspath(path),
             )
 
+    def _is_worker_busy(self) -> bool:
+        return self._extract_worker is not None and self._extract_worker.isRunning()
+
+    def _start_extraction(self, paths: list[str], row_map: dict[str, int]) -> None:
+        """Kick off _ExtractWorker for *paths*; update table rows via signals (non-blocking)."""
+        inv_screen = self._invoice_screen
+        if inv_screen is None or not hasattr(inv_screen, "import_pdf_paths"):
+            message_box_information_ok(self, "Not available", "Invoice screen is not connected.", ok_tip="Close.")
+            return
+
+        if self._is_worker_busy():
+            message_box_information_ok(self, "Busy", "Extraction already in progress — wait for it to finish.", ok_tip="Close.")
+            return
+
+        # Disable buttons while running
+        self._btn_extract_selected.setEnabled(False)
+        self._btn_extract_all.setEnabled(False)
+        self._btn_extract_all.setText("Extracting…")
+
+        worker = _ExtractWorker(inv_screen, paths)
+        self._extract_worker = worker
+
+        def _on_row(pdf_path, outcome, msg):
+            r = row_map.get(pdf_path)
+            if r is None:
+                return
+            status_it = self._table.item(r, 3)
+            notes_it = self._table.item(r, 4)
+            label = {"ok": "Imported", "skip": "Duplicate", "error": "Error"}.get(outcome, outcome)
+            if status_it:
+                status_it.setText(label)
+            if notes_it:
+                notes_it.setText(msg)
+
+        def _on_all_done(imported, skipped, errors):
+            self._btn_extract_all.setText("Extract All Staged")
+            self._update_extract_button_state()
+            self._btn_extract_all.setEnabled(True)
+            parts = [f"Imported: {imported}", f"Skipped (duplicates): {skipped}"]
+            if errors:
+                parts.append(f"Errors: {len(errors)}")
+                parts.extend(f"  {x}" for x in errors[:5])
+            message_box_information_ok(self, "Extraction complete", "\n".join(parts), ok_tip="Close.")
+
+        worker.row_done.connect(_on_row)
+        worker.all_done.connect(_on_all_done)
+        worker.start()
+
     def _on_extract_selected(self) -> None:
-        """Extract the currently selected staged PDF row via Claude AI and create an invoice."""
+        """Extract the currently selected staged PDF row via Claude AI (background thread)."""
+        if self._is_worker_busy():
+            message_box_information_ok(self, "Busy", "Extraction already in progress.", ok_tip="Close.")
+            return
         r = self._table.currentRow()
         if r < 0:
             message_box_information_ok(self, "No row selected", "Select a staged PDF row first.", ok_tip="Close.")
@@ -429,57 +503,20 @@ class InvoiceIntakePanel(QWidget):
         if not isinstance(path, str) or not path.strip():
             message_box_information_ok(self, "No file", "Selected row has no file path (text rows cannot be extracted).", ok_tip="Close.")
             return
-        inv_screen = self._invoice_screen
-        if inv_screen is None or not hasattr(inv_screen, "import_pdf_paths"):
-            message_box_information_ok(self, "Not available", "Invoice screen is not connected.", ok_tip="Close.")
-            return
 
         status_it = self._table.item(r, 3)
-        notes_it = self._table.item(r, 4)
         if status_it:
             status_it.setText("Extracting…")
 
-        def _done(pdf_path, outcome, msg):
-            if outcome == "ok":
-                if status_it:
-                    status_it.setText("Imported")
-                if notes_it:
-                    notes_it.setText(msg)
-            elif outcome == "skip":
-                if status_it:
-                    status_it.setText("Duplicate")
-                if notes_it:
-                    notes_it.setText(msg)
-            else:
-                if status_it:
-                    status_it.setText("Error")
-                if notes_it:
-                    notes_it.setText(msg)
-
-        result = inv_screen.import_pdf_paths([path], on_row_done=_done)
-        imported = result["imported"]
-        skipped = result["skipped"]
-        errors = result["errors"]
-
-        if errors:
-            message_box_information_ok(
-                self, "Extraction error",
-                errors[0],
-                ok_tip="Check that ANTHROPIC_API_KEY is set and the file is a readable invoice PDF.",
-            )
-        elif skipped:
-            message_box_information_ok(self, "Already imported", "This invoice number already exists in the company file.", ok_tip="Close.")
-        elif imported:
-            message_box_information_ok(self, "Done", f"Invoice created successfully.", ok_tip="Close.")
+        self._start_extraction([path], {path: r})
 
     def _on_extract_all(self) -> None:
-        """Extract and import every Staged PDF row in the queue."""
-        inv_screen = self._invoice_screen
-        if inv_screen is None or not hasattr(inv_screen, "import_pdf_paths"):
-            message_box_information_ok(self, "Not available", "Invoice screen is not connected.", ok_tip="Close.")
+        """Extract and import every Staged PDF row in the queue (background thread)."""
+        if self._is_worker_busy():
+            message_box_information_ok(self, "Busy", "Extraction already in progress.", ok_tip="Close.")
             return
 
-        staged_rows: list[tuple[int, str]] = []  # (row_index, path)
+        staged_rows: list[tuple[int, str]] = []
         for r in range(self._table.rowCount()):
             kind_it = self._table.item(r, 1)
             status_it = self._table.item(r, 3)
@@ -494,28 +531,14 @@ class InvoiceIntakePanel(QWidget):
             message_box_information_ok(self, "Nothing to extract", "No Staged PDF rows found in the queue.", ok_tip="Close.")
             return
 
-        row_map = {path: r for r, path in staged_rows}
-
-        def _done(pdf_path, outcome, msg):
-            r = row_map.get(pdf_path)
-            if r is None:
-                return
+        # Mark all as Extracting… immediately so the user sees progress
+        for r, _ in staged_rows:
             status_it = self._table.item(r, 3)
-            notes_it = self._table.item(r, 4)
-            label = {"ok": "Imported", "skip": "Duplicate", "error": "Error"}.get(outcome, outcome)
             if status_it:
-                status_it.setText(label)
-            if notes_it:
-                notes_it.setText(msg)
+                status_it.setText("Extracting…")
 
-        paths = [p for _, p in staged_rows]
-        result = inv_screen.import_pdf_paths(paths, on_row_done=_done)
-        i, s, e = result["imported"], result["skipped"], result["errors"]
-        parts = [f"Imported: {i}", f"Skipped (duplicates): {s}"]
-        if e:
-            parts.append(f"Errors: {len(e)}")
-            parts.extend(f"  {x}" for x in e[:5])
-        message_box_information_ok(self, "Extract All complete", "\n".join(parts), ok_tip="Close.")
+        row_map = {path: r for r, path in staged_rows}
+        self._start_extraction([p for _, p in staged_rows], row_map)
 
     def _on_import_image(self) -> None:
         path, _filt = QFileDialog.getOpenFileName(
