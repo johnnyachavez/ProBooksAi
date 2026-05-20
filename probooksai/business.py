@@ -204,6 +204,7 @@ def create_invoice(
             (inv_id, ln.get("description", ""), qty, rate, lt),
         )
     conn.commit()
+    _post_ar_invoice_journal(conn, inv_id)
     return inv_id
 
 
@@ -273,6 +274,219 @@ def update_invoice(
             (invoice_id, ln.get("description", ""), qty, rate, lt),
         )
     conn.commit()
+    _post_ar_invoice_journal(conn, invoice_id)
+
+
+# ---------------------------------------------------------------------------
+# COA / Journal-entry helpers (AR wiring)
+# ---------------------------------------------------------------------------
+
+def _get_coa_account_label(conn: sqlite3.Connection, account_number: str) -> str:
+    """Return 'NNNN Account Name' for the given account number string.
+
+    Falls back to the bare *account_number* if the account is not found.
+    """
+    row = conn.execute(
+        "SELECT account_number, account_name FROM coa_accounts WHERE account_number = ?",
+        (str(account_number),),
+    ).fetchone()
+    if row:
+        return f"{row['account_number']} {row['account_name']}"
+    return str(account_number)
+
+
+def _fix_revenue_account_types(conn: sqlite3.Connection) -> None:
+    """Correct ``account_type`` for revenue accounts (4000–4999) that were mis-typed as 'expense'.
+
+    Safe to call repeatedly — only updates rows that need it.
+    """
+    conn.execute(
+        """
+        UPDATE coa_accounts
+        SET account_type = 'revenue'
+        WHERE CAST(account_number AS INTEGER) >= 4000
+          AND CAST(account_number AS INTEGER) <= 4999
+          AND account_type = 'expense'
+        """
+    )
+    conn.commit()
+
+
+def _post_ar_invoice_journal(conn: sqlite3.Connection, invoice_id: int) -> None:
+    """Post (or re-post) the AR journal entry for one invoice.
+
+    Entry:
+        DR  1100 Accounts Receivable   total
+        CR  4100 Service Revenue       subtotal
+        CR  2110 Sales Tax Payable     tax_total  (only when tax_total > 0)
+
+    If an entry for this invoice already exists (``source = 'ar_invoice:<id>'``)
+    it is deleted and re-created so edits stay in sync.
+    """
+    inv = conn.execute(
+        "SELECT invoice_date, subtotal, tax_total, total, invoice_number FROM invoices WHERE id = ?",
+        (invoice_id,),
+    ).fetchone()
+    if inv is None:
+        return  # invoice doesn't exist — nothing to do
+
+    subtotal = round(float(inv["subtotal"] or 0), 2)
+    tax_total = round(float(inv["tax_total"] or 0), 2)
+    total = round(float(inv["total"] or 0), 2)
+    inv_date = (inv["invoice_date"] or "").strip() or _now()[:10]
+    inv_num = (inv["invoice_number"] or "").strip()
+    source_tag = f"ar_invoice:{invoice_id}"
+
+    # Remove any existing entry for this invoice
+    try:
+        old = conn.execute(
+            "SELECT id FROM journal_entries WHERE source = ?", (source_tag,)
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return  # journal_entries table not present in this DB yet
+    if old:
+        conn.execute("DELETE FROM journal_entry_lines WHERE entry_id = ?", (old["id"],))
+        conn.execute("DELETE FROM journal_entries WHERE id = ?", (old["id"],))
+
+    if total <= 0:
+        conn.commit()
+        return  # zero-value invoice — no entry needed
+
+    ar_label = _get_coa_account_label(conn, "1100")
+    rev_label = _get_coa_account_label(conn, "4100")
+    tax_label = _get_coa_account_label(conn, "2110") if tax_total > 0 else ""
+
+    cur = conn.execute(
+        """
+        INSERT INTO journal_entries (entry_date, memo, source, created_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        (inv_date, f"Invoice {inv_num}", source_tag, _now()),
+    )
+    eid = cur.lastrowid
+
+    # DR Accounts Receivable
+    conn.execute(
+        """
+        INSERT INTO journal_entry_lines (entry_id, account, debit, credit, description)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (eid, ar_label, total, 0.0, f"Invoice {inv_num}"),
+    )
+    # CR Service Revenue
+    conn.execute(
+        """
+        INSERT INTO journal_entry_lines (entry_id, account, debit, credit, description)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (eid, rev_label, 0.0, subtotal, f"Invoice {inv_num}"),
+    )
+    # CR Sales Tax Payable (only when tax > 0)
+    if tax_total > 0 and tax_label:
+        conn.execute(
+            """
+            INSERT INTO journal_entry_lines (entry_id, account, debit, credit, description)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (eid, tax_label, 0.0, tax_total, f"Invoice {inv_num} — sales tax"),
+        )
+    conn.commit()
+
+
+def _post_ar_payment_journal(
+    conn: sqlite3.Connection,
+    payment_id: int,
+    bank_account_id: Optional[int],
+    payment_date: str,
+    amount: float,
+    reference: str = "",
+) -> None:
+    """Post (or re-post) the cash receipt journal entry for one AR payment.
+
+    Entry:
+        DR  bank/cash account (from bank_accounts.gl_account or fallback '1000 Cash')
+        CR  1100 Accounts Receivable   amount
+
+    Keyed by ``source = 'ar_payment:<id>'`` so re-posting is idempotent.
+    """
+    source_tag = f"ar_payment:{payment_id}"
+    try:
+        old = conn.execute(
+            "SELECT id FROM journal_entries WHERE source = ?", (source_tag,)
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return  # journal_entries table not present in this DB yet
+    if old:
+        conn.execute("DELETE FROM journal_entry_lines WHERE entry_id = ?", (old["id"],))
+        conn.execute("DELETE FROM journal_entries WHERE id = ?", (old["id"],))
+
+    if round(float(amount), 2) <= 0:
+        conn.commit()
+        return
+
+    # Determine cash/bank GL label
+    cash_label = "1000 Cash"
+    if bank_account_id is not None:
+        ba = conn.execute(
+            "SELECT gl_account, name FROM bank_accounts WHERE id = ?",
+            (bank_account_id,),
+        ).fetchone()
+        if ba:
+            gl = (ba["gl_account"] or "").strip()
+            if gl:
+                cash_label = gl
+            else:
+                cash_label = f"1000 {ba['name']}"
+
+    ar_label = _get_coa_account_label(conn, "1100")
+    memo = f"AR payment {reference}" if reference else f"AR payment #{payment_id}"
+    cur = conn.execute(
+        """
+        INSERT INTO journal_entries (entry_date, memo, source, created_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        (payment_date, memo, source_tag, _now()),
+    )
+    eid = cur.lastrowid
+
+    conn.execute(
+        """
+        INSERT INTO journal_entry_lines (entry_id, account, debit, credit, description)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (eid, cash_label, round(float(amount), 2), 0.0, memo),
+    )
+    conn.execute(
+        """
+        INSERT INTO journal_entry_lines (entry_id, account, debit, credit, description)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (eid, ar_label, 0.0, round(float(amount), 2), memo),
+    )
+    conn.commit()
+
+
+def backfill_ar_invoice_journals(conn: sqlite3.Connection) -> int:
+    """Post AR journal entries for every invoice that does not yet have one.
+
+    Returns the count of entries created. Safe to call at startup — already-posted
+    invoices (``source = 'ar_invoice:<id>'``) are skipped.
+    """
+    # Ensure revenue account types are correct first
+    _fix_revenue_account_types(conn)
+
+    rows = conn.execute("SELECT id FROM invoices ORDER BY id").fetchall()
+    created = 0
+    for r in rows:
+        inv_id = int(r["id"])
+        exists = conn.execute(
+            "SELECT id FROM journal_entries WHERE source = ?",
+            (f"ar_invoice:{inv_id}",),
+        ).fetchone()
+        if exists is None:
+            _post_ar_invoice_journal(conn, inv_id)
+            created += 1
+    return created
 
 
 def list_invoices(conn: sqlite3.Connection) -> list:
@@ -746,6 +960,7 @@ def record_ar_payment(
             (max(0.0, new_bal), st, inv_id),
         )
     conn.commit()
+    _post_ar_payment_journal(conn, pid, bank_account_id, payment_date, amount, reference)
     return pid
 
 

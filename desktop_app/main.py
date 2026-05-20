@@ -77,6 +77,7 @@ from probooksai.bank_import import BankDatabase
 from probooksai.coa_db import COADatabase
 from probooksai.extensions_schema import apply_extensions
 from probooksai.gl import GLDatabase
+from probooksai.business import backfill_ar_invoice_journals
 from desktop_app.bank_import_tab import (
     BankImportTab,
     show_bank_import_keyboard_shortcuts_dialog,
@@ -963,6 +964,11 @@ class MainWindow(QMainWindow):
         self._heal_duplicate_opening_balance_entries()
         # Seed bank_transactions for any existing GL opening-balance entries
         self._migrate_opening_balances_to_bank_register()
+        # Back-fill AR journal entries for any invoices that don't have one yet
+        try:
+            backfill_ar_invoice_journals(self._bank_db._conn)
+        except Exception:
+            pass  # non-fatal — journal entries will be created on next save
 
         self._build_ui()
         self._refresh_inbox()
