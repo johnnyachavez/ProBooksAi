@@ -418,7 +418,7 @@ class InvoiceScreen(QWidget):
 
     def _update_new_customer_button_state(self) -> None:
         on = self._ap_conn is not None
-        self._btn_new_customer.setEnabled(on)
+        self._btn_new_invoice.setEnabled(on)
         self._btn_save.setEnabled(on)
         if getattr(self, "_btn_ar_new_inv", None) is not None:
             self._sync_ar_toolbar_enabled()
@@ -672,24 +672,13 @@ class InvoiceScreen(QWidget):
         btns_h = QHBoxLayout()
         btns_h.setContentsMargins(0, 0, 0, 0)
         btns_h.setSpacing(8)
+        self._btn_new_invoice = QPushButton("New Invoice")
+        self._btn_new_invoice.setToolTip(
+            "Start a new blank invoice with the next invoice number and today's date pre-filled."
+        )
         self._btn_clear_fields = QPushButton("Clear Fields")
         self._btn_clear_fields.setToolTip(
             "Clear lines and header fields except Invoice #; set Invoice Date to today."
-        )
-        self._btn_print = QPushButton("Print…")
-        self._btn_print.setToolTip(
-            "Save this invoice to the company file, then print using the default printer from "
-            "Edit → Preferences → Invoice Options (or pick a printer once if unset). "
-            "After a successful print, the form resets for the next invoice."
-        )
-        self._btn_new_customer = QPushButton("New Customer")
-        self._btn_new_customer.setToolTip(
-            "Add a customer to the company file when no match exists; Bill To fills automatically."
-        )
-        self._btn_import_pdf = QPushButton("Import PDF…")
-        self._btn_import_pdf.setToolTip(
-            "Import one or more invoice PDFs created in another system. Claude AI reads each PDF "
-            "and creates matching invoice records (status: Sent). Customers are created automatically if not found."
         )
         self._btn_save = QPushButton("Save")
         self._btn_save.setToolTip(
@@ -702,6 +691,12 @@ class InvoiceScreen(QWidget):
             "Save this invoice to the company file, then pick a PDF file path (one-time). "
             "Does not change the default folder used by Save. Then start a new blank invoice."
         )
+        self._btn_print = QPushButton("Print…")
+        self._btn_print.setToolTip(
+            "Save this invoice to the company file, then print using the default printer from "
+            "Edit → Preferences → Invoice Options (or pick a printer once if unset). "
+            "After a successful print, the form resets for the next invoice."
+        )
         self._btn_reverse = QPushButton("◄  Prev")
         self._btn_forward = QPushButton("Next  ►")
         self._btn_reverse.setToolTip(
@@ -712,17 +707,30 @@ class InvoiceScreen(QWidget):
         )
         _strip_h = _top_strip_field_outer_height_px()
         _strip_btn_ss = _top_strip_action_button_qss()
+        _new_inv_ss = (
+            _strip_btn_ss
+            + " QPushButton { color: #00e676; font-weight: 700; } "
+            "QPushButton:disabled { color: #555; }"
+        )
+        self._btn_new_invoice.setStyleSheet(_new_inv_ss)
         for b in (
             self._btn_clear_fields,
-            self._btn_import_pdf,
             self._btn_save,
             self._btn_export_pdf,
             self._btn_print,
-            self._btn_new_customer,
             self._btn_reverse,
             self._btn_forward,
         ):
             b.setStyleSheet(_strip_btn_ss)
+        for b in (
+            self._btn_new_invoice,
+            self._btn_clear_fields,
+            self._btn_save,
+            self._btn_export_pdf,
+            self._btn_print,
+            self._btn_reverse,
+            self._btn_forward,
+        ):
             b.setFixedHeight(_strip_h)
             # MinimumExpanding + equal stretch shares width evenly under the three field boxes.
             b.setSizePolicy(
@@ -735,12 +743,11 @@ class InvoiceScreen(QWidget):
             b.setDefault(False)
         btns_h.insertWidget(0, self._status_badge)
         for b in (
+            self._btn_new_invoice,
             self._btn_clear_fields,
-            self._btn_import_pdf,
             self._btn_save,
             self._btn_export_pdf,
             self._btn_print,
-            self._btn_new_customer,
             self._btn_reverse,
             self._btn_forward,
         ):
@@ -773,14 +780,11 @@ class InvoiceScreen(QWidget):
 
         # Save/Print: only clicked → persistence; UniqueConnection prevents duplicate slots.
         _uc = Qt.ConnectionType.UniqueConnection
+        self._btn_new_invoice.clicked.connect(self._go_to_new_invoice_draft, _uc)
         self._btn_save.clicked.connect(self._on_save_invoice, _uc)
         self._btn_export_pdf.clicked.connect(self._on_export_pdf_as, _uc)
         self._btn_print.clicked.connect(self._on_print_invoice, _uc)
         self._btn_clear_fields.clicked.connect(self._on_clear_fields, _uc)
-        self._btn_import_pdf.clicked.connect(self._on_import_pdf_invoices, _uc)
-        self._btn_new_customer.clicked.connect(
-            self._bill_customer_panel.open_new_customer_dialog, _uc
-        )
         self._btn_reverse.clicked.connect(self._on_reverse_invoice, _uc)
         self._btn_forward.clicked.connect(self._on_forward_invoice, _uc)
 

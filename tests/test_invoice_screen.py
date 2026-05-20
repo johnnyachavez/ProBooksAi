@@ -145,13 +145,16 @@ def test_invoice_screen_address_boxes_exist(qapp: QApplication) -> None:
 
 def test_invoice_screen_print_and_nav_buttons_exist(qapp: QApplication) -> None:
     w = InvoiceScreen()
+    assert w._btn_new_invoice.text() == "New Invoice"
     assert w._btn_clear_fields.text() == "Clear Fields"
     assert w._btn_save.text() == "Save"
     assert w._btn_export_pdf.text() == "Export PDF…"
     assert w._btn_print.text() == "Print…"
-    assert w._btn_new_customer.text() == "New Customer"
     assert "Prev" in w._btn_reverse.text()
     assert "Next" in w._btn_forward.text()
+    # Removed buttons
+    assert not hasattr(w, "_btn_import_pdf")
+    assert not hasattr(w, "_btn_new_customer")
 
 
 def test_invoice_screen_export_pdf_saves_to_chosen_path(
