@@ -32,7 +32,7 @@ from typing import Optional
 
 from PySide6.QtCore import QDate, QEvent, QObject, QSettings, Qt, QTimer
 from PySide6.QtGui import QFont, QFontMetrics, QHideEvent, QShowEvent, QTextDocument
-from PySide6.QtPrintSupport import QPrinter
+from PySide6.QtPrintSupport import QPrintDialog, QPrinter, QPrinterInfo
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDoubleSpinBox,
@@ -66,11 +66,11 @@ from desktop_app.flexible_date import (
     parse_flexible_date_to_ymd,
 )
 from desktop_app.invoice_preferences import (
-    configure_printer_for_invoice_print,
-    ensure_invoice_output_folder,
+    get_invoice_printer_name,
+    set_invoice_printer_name,
 )
 from desktop_app.invoice_intake_panel import InvoiceIntakePanel
-from desktop_app.invoice_pdf import invoice_html_string, save_invoice_pdf
+from desktop_app.invoice_pdf import invoice_html_string
 from desktop_app.qt_mnemonic import message_box_information_ok, message_box_question_yes_no
 from probooksai import business
 from desktop_app.ar_customer_actions import (
@@ -381,8 +381,6 @@ class InvoiceScreen(QWidget):
         self._suppress_invoice_line_recalc: bool = False
         # Memo text from DB when loading (no longer a visible header box after removing blank field).
         self._invoice_memo_notes: str = ""
-        # Set True only inside Print click handler while QPrintDialog may run (blocks stray callers).
-        self._invoice_print_dialog_armed: bool = False
         self.setToolTip(
             "Manual Invoice: enter lines and totals; Save writes to your company file. "
             "Invoice # suggests the next number from your company file (editable). "
@@ -420,8 +418,6 @@ class InvoiceScreen(QWidget):
         on = self._ap_conn is not None
         self._btn_new_invoice.setEnabled(on)
         self._btn_save.setEnabled(on)
-        if getattr(self, "_btn_ar_new_inv", None) is not None:
-            self._sync_ar_toolbar_enabled()
 
     def _sync_invoice_number_suggestion(self) -> None:
         """Set invoice # to the next system suggestion unless the user overrode it (new drafts only)."""
@@ -543,34 +539,11 @@ class InvoiceScreen(QWidget):
             "Manual Invoice: full entry workflow. Invoice Intake: stage documents for future drafting."
         )
 
-        self._btn_ar_new_inv = QPushButton("New invoice (AR)…")
-        self._btn_ar_new_inv.setToolTip(
-            "Create an invoice using the AR dialog (moved from the Customers tab)."
-        )
-        self._btn_ar_new_inv.clicked.connect(self._on_ar_new_invoice_dialog)
-        self._btn_ar_export_inv = QPushButton("Export invoices CSV…")
-        self._btn_ar_export_inv.setToolTip(
-            "Export invoice headers to CSV (UTF-8 BOM for Excel)."
-        )
-        self._btn_ar_export_inv.clicked.connect(self._on_ar_export_invoices_csv)
-        for b in (self._btn_ar_new_inv, self._btn_ar_export_inv):
-            b.setAutoDefault(False)
-            b.setDefault(False)
-
-        _ar_corner = QWidget(self._invoice_tabs)
-        _ar_corner_lay = QHBoxLayout(_ar_corner)
-        _ar_corner_lay.setContentsMargins(0, 0, 6, 0)
-        _ar_corner_lay.setSpacing(6)
-        _ar_corner_lay.addWidget(self._btn_ar_new_inv)
-        _ar_corner_lay.addWidget(self._btn_ar_export_inv)
-        self._invoice_tabs.setCornerWidget(_ar_corner, Qt.Corner.TopRightCorner)
         self._invoice_tabs.tabBar().setExpanding(False)
         self._invoice_tabs.setStyleSheet(
             f"QTabWidget#invoiceModuleTabs::pane {{ border: none; margin: 0; padding: 0; }}"
             f"QTabWidget#invoiceModuleTabs QTabBar::tab {{ padding: 3px 10px; min-height: 20px; }}"
         )
-
-        self._sync_ar_toolbar_enabled()
 
         page = QFrame()
         page.setObjectName("invoiceLightPanel")
@@ -661,14 +634,6 @@ class InvoiceScreen(QWidget):
         )
         three_lay.addLayout(fields_h)
 
-        self._status_badge = QLabel("Open")
-        self._status_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._status_badge.setFixedHeight(24)
-        self._status_badge.setMinimumWidth(80)
-        self._status_badge.setStyleSheet(
-            "background:#1a6b1a; color:#fff; border-radius:4px; font-weight:700; font-size:9pt; padding:2px 10px;"
-        )
-
         btns_h = QHBoxLayout()
         btns_h.setContentsMargins(0, 0, 0, 0)
         btns_h.setSpacing(8)
@@ -678,24 +643,15 @@ class InvoiceScreen(QWidget):
         )
         self._btn_clear_fields = QPushButton("Clear Fields")
         self._btn_clear_fields.setToolTip(
-            "Clear lines and header fields except Invoice #; set Invoice Date to today."
+            "Clear all fields except Invoice #; set Invoice Date to today."
         )
         self._btn_save = QPushButton("Save")
         self._btn_save.setToolTip(
-            "Save this invoice to the company file and write a PDF to the folder set under "
-            "Edit → Preferences → Invoice Options (you can choose the folder once if unset). "
-            "Then start a new blank invoice with the next number."
-        )
-        self._btn_export_pdf = QPushButton("Export PDF…")
-        self._btn_export_pdf.setToolTip(
-            "Save this invoice to the company file, then pick a PDF file path (one-time). "
-            "Does not change the default folder used by Save. Then start a new blank invoice."
+            "Save this invoice to the company file."
         )
         self._btn_print = QPushButton("Print…")
         self._btn_print.setToolTip(
-            "Save this invoice to the company file, then print using the default printer from "
-            "Edit → Preferences → Invoice Options (or pick a printer once if unset). "
-            "After a successful print, the form resets for the next invoice."
+            "Save this invoice then open the print dialog."
         )
         self._btn_reverse = QPushButton("◄  Prev")
         self._btn_forward = QPushButton("Next  ►")
@@ -716,7 +672,6 @@ class InvoiceScreen(QWidget):
         for b in (
             self._btn_clear_fields,
             self._btn_save,
-            self._btn_export_pdf,
             self._btn_print,
             self._btn_reverse,
             self._btn_forward,
@@ -726,27 +681,21 @@ class InvoiceScreen(QWidget):
             self._btn_new_invoice,
             self._btn_clear_fields,
             self._btn_save,
-            self._btn_export_pdf,
             self._btn_print,
             self._btn_reverse,
             self._btn_forward,
         ):
             b.setFixedHeight(_strip_h)
-            # MinimumExpanding + equal stretch shares width evenly under the three field boxes.
             b.setSizePolicy(
                 QSizePolicy.Policy.MinimumExpanding,
                 QSizePolicy.Policy.Fixed,
             )
-            # Fix stray Save/Print validation popups: never treat these as dialog default
-            # buttons (Return/Enter from table/header editors must not fire clicked).
             b.setAutoDefault(False)
             b.setDefault(False)
-        btns_h.insertWidget(0, self._status_badge)
         for b in (
             self._btn_new_invoice,
             self._btn_clear_fields,
             self._btn_save,
-            self._btn_export_pdf,
             self._btn_print,
             self._btn_reverse,
             self._btn_forward,
@@ -782,7 +731,6 @@ class InvoiceScreen(QWidget):
         _uc = Qt.ConnectionType.UniqueConnection
         self._btn_new_invoice.clicked.connect(self._go_to_new_invoice_draft, _uc)
         self._btn_save.clicked.connect(self._on_save_invoice, _uc)
-        self._btn_export_pdf.clicked.connect(self._on_export_pdf_as, _uc)
         self._btn_print.clicked.connect(self._on_print_invoice, _uc)
         self._btn_clear_fields.clicked.connect(self._on_clear_fields, _uc)
         self._btn_reverse.clicked.connect(self._on_reverse_invoice, _uc)
@@ -989,25 +937,6 @@ class InvoiceScreen(QWidget):
         self._update_browse_buttons()
         return True
 
-    def _sync_ar_toolbar_enabled(self) -> None:
-        on = self._ap_conn is not None
-        self._btn_ar_new_inv.setEnabled(on)
-        self._btn_ar_export_inv.setEnabled(on)
-
-    def _on_ar_new_invoice_dialog(self) -> None:
-        if self._ap_conn is None:
-            return
-
-        def _after() -> None:
-            self._bill_customer_panel.reload_customers()
-            self._sync_invoice_number_suggestion()
-
-        open_new_ar_invoice_dialog(self, self._ap_conn, after_save=_after)
-
-    def _on_ar_export_invoices_csv(self) -> None:
-        if self._ap_conn is None:
-            return
-        export_invoices_csv(self, self._ap_conn)
 
     def _invoice_col_minimum_width(self, col: int) -> int:
         """Minimum width from header label metrics (+ section padding)."""
@@ -1312,19 +1241,8 @@ class InvoiceScreen(QWidget):
         self._set_totals_labels(sub, tax, total)
 
     def _update_status_badge(self, status: str) -> None:
+        """Track the current invoice status (badge widget removed — status stored internally)."""
         self._current_status = status
-        self._status_badge.setText(status or "Open")
-        colors = {
-            "Open":   "#1a6b1a",
-            "Sent":   "#1a4b8b",
-            "Paid":   "#555",
-            "Unpaid": "#8b1a1a",
-        }
-        bg = colors.get(status, "#555")
-        self._status_badge.setStyleSheet(
-            f"background:{bg}; color:#fff; border-radius:4px; "
-            "font-weight:700; font-size:9pt; padding:2px 10px;"
-        )
 
     def _confirm_leave_loaded_invoice(self, action: str = "leave this invoice") -> bool:
         """Return True if it is safe to navigate away or clear the current form.
@@ -1717,46 +1635,8 @@ class InvoiceScreen(QWidget):
         return self._try_persist_invoice()
 
     def _on_save_invoice(self) -> None:
-        # Phantom dialog fix: only a real Save button click may persist from this slot
-        # (sender None is rejected — avoids queued/spurious clicked without a mouse/keyboard source).
+        # Phantom dialog fix: only a real Save button click may persist from this slot.
         if self.sender() is not self._btn_save:
-            return
-        folder = ensure_invoice_output_folder(self)
-        if folder is None:
-            return
-        was_new = self._current_invoice_id is None
-        ok, msg, inv_id = self._save_invoice_data_only()
-        if not ok:
-            self._invoice_feedback_message(msg)
-            return
-        assert inv_id is not None and self._ap_conn is not None
-        num = self._inv_number.text().strip()
-        pdf_name = f"Invoice-{_safe_invoice_pdf_stem(num)}.pdf"
-        pdf_path = os.path.join(folder, pdf_name)
-        try:
-            save_invoice_pdf(self._ap_conn, inv_id, pdf_path)
-        except OSError as exc:
-            self._invoice_feedback_message(
-                f"Invoice was saved, but the PDF could not be written ({exc}). "
-                "Check folder permissions and disk space."
-            )
-        except Exception as exc:  # noqa: BLE001
-            self._invoice_feedback_message(
-                f"Invoice was saved, but building the PDF failed: {exc}"
-            )
-        self._refresh_browse_state()
-        if was_new:
-            self._go_to_new_invoice_draft()
-        else:
-            self._load_invoice_into_form(inv_id)
-
-    def _on_export_pdf_as(self) -> None:
-        if self.sender() is not self._btn_export_pdf:
-            return
-        if self._ap_conn is None:
-            self._invoice_feedback_message(
-                "Open a company file before exporting PDF (File → Open company…)."
-            )
             return
         was_new = self._current_invoice_id is None
         ok, msg, inv_id = self._save_invoice_data_only()
@@ -1764,63 +1644,17 @@ class InvoiceScreen(QWidget):
             self._invoice_feedback_message(msg)
             return
         assert inv_id is not None
-        num = self._inv_number.text().strip()
-        default_name = f"Invoice-{_safe_invoice_pdf_stem(num)}.pdf"
-        path, _filt = QFileDialog.getSaveFileName(
-            self,
-            "Export invoice as PDF",
-            default_name,
-            "PDF files (*.pdf);;All files (*.*)",
-        )
-        if not path:
-            return
-        if not path.lower().endswith(".pdf"):
-            path = f"{path}.pdf"
-        try:
-            save_invoice_pdf(self._ap_conn, inv_id, path)
-        except OSError as exc:
-            self._invoice_feedback_message(
-                f"Invoice was saved, but the PDF could not be written ({exc}). "
-                "Check folder permissions and disk space."
-            )
-            return
-        except Exception as exc:  # noqa: BLE001
-            self._invoice_feedback_message(
-                f"Invoice was saved, but building the PDF failed: {exc}"
-            )
-            return
         self._refresh_browse_state()
         if was_new:
+            # New invoice saved — advance to next blank draft
             self._go_to_new_invoice_draft()
         else:
-            self._load_invoice_into_form(inv_id)
-
-    def _run_invoice_print_dialog(self, inv_id: int, *, advance_after: bool = True) -> None:
-        """Print saved invoice HTML when ``_invoice_print_dialog_armed``; same template as PDF."""
-        if not self._invoice_print_dialog_armed:
-            return
-        if self._ap_conn is None:
-            return
-        doc = QTextDocument()
-        try:
-            doc.setHtml(invoice_html_string(self._ap_conn, inv_id))
-        except Exception as exc:  # noqa: BLE001 — show any render issue
-            self._invoice_feedback_message(
-                f"Could not prepare the invoice for printing. Save succeeded; fix data or try again. ({exc})"
-            )
-            return
-        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
-        if not configure_printer_for_invoice_print(self, printer):
-            return
-        doc.print_(printer)
-        self._refresh_browse_state()
-        if advance_after:
-            self._go_to_new_invoice_draft()
-        else:
+            # Reload so status / totals stay in sync
             self._load_invoice_into_form(inv_id)
 
     def _on_print_invoice(self) -> None:
-        # Phantom dialog fix: require explicit Print button as sender, then arm gate for dialog code only.
+        """Save invoice then open the system print dialog (always shows printer chooser)."""
+        # Phantom dialog fix: only a real Print button click may reach here.
         if self.sender() is not self._btn_print:
             return
         if self._ap_conn is None:
@@ -1829,16 +1663,40 @@ class InvoiceScreen(QWidget):
             )
             return
         was_new = self._current_invoice_id is None
-        self._invoice_print_dialog_armed = True
+        ok, msg, inv_id = self._save_invoice_data_only()
+        if not ok:
+            self._invoice_feedback_message(msg)
+            return
+        assert inv_id is not None
+        # Build print document from saved invoice HTML
+        doc = QTextDocument()
         try:
-            ok, msg, inv_id = self._save_invoice_data_only()
-            if not ok:
-                self._invoice_feedback_message(msg)
-                return
-            assert inv_id is not None
-            self._run_invoice_print_dialog(inv_id, advance_after=was_new)
-        finally:
-            self._invoice_print_dialog_armed = False
+            doc.setHtml(invoice_html_string(self._ap_conn, inv_id))
+        except Exception as exc:  # noqa: BLE001
+            self._invoice_feedback_message(
+                f"Invoice saved but print preview failed: {exc}"
+            )
+            self._refresh_browse_state()
+            self._load_invoice_into_form(inv_id)
+            return
+        # Always open QPrintDialog so user can choose / confirm printer
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        # Pre-select saved printer if available
+        saved = get_invoice_printer_name()
+        if saved and saved in list(QPrinterInfo.availablePrinterNames()):
+            printer.setPrinterName(saved)
+        dlg = QPrintDialog(printer, self)
+        if dlg.exec():
+            # Save chosen printer for next time
+            chosen = (printer.printerName() or "").strip()
+            if chosen:
+                set_invoice_printer_name(chosen)
+            doc.print_(printer)
+        self._refresh_browse_state()
+        if was_new:
+            self._go_to_new_invoice_draft()
+        else:
+            self._load_invoice_into_form(inv_id)
 
     def _address_box(self, caption: str) -> tuple[QFrame, QPlainTextEdit]:
         fr = QFrame()

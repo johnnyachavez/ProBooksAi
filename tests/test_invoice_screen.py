@@ -148,43 +148,40 @@ def test_invoice_screen_print_and_nav_buttons_exist(qapp: QApplication) -> None:
     assert w._btn_new_invoice.text() == "New Invoice"
     assert w._btn_clear_fields.text() == "Clear Fields"
     assert w._btn_save.text() == "Save"
-    assert w._btn_export_pdf.text() == "Export PDF…"
     assert w._btn_print.text() == "Print…"
     assert "Prev" in w._btn_reverse.text()
     assert "Next" in w._btn_forward.text()
     # Removed buttons
     assert not hasattr(w, "_btn_import_pdf")
     assert not hasattr(w, "_btn_new_customer")
+    assert not hasattr(w, "_btn_export_pdf")
+    assert not hasattr(w, "_btn_ar_new_inv")
+    assert not hasattr(w, "_btn_ar_export_inv")
+    assert not hasattr(w, "_status_badge")
 
 
-def test_invoice_screen_export_pdf_saves_to_chosen_path(
+def test_invoice_screen_save_creates_invoice_and_advances(
     qapp: QApplication, tmp_path
 ) -> None:
-    """Export PDF… persists, then writes to the path from Save file (mocked)."""
-    db_path = tmp_path / "invoice_export.db"
+    """Save persists to DB and advances to next invoice number."""
+    db_path = tmp_path / "invoice_save_adv.db"
     db = BankDatabase(str(db_path))
     apply_extensions(db._conn)
-    cid = business.add_customer(db._conn, "ExportCo")
+    cid = business.add_customer(db._conn, "SaveAdvCo")
     w = InvoiceScreen(ap_conn=db._conn)
     w._bill_customer_panel.select_customer_by_id(cid)
     w._inv_number.setText("93001")
     desc = w._table.cellWidget(0, 2)
     assert isinstance(desc, QLineEdit)
-    desc.setText("Export line")
+    desc.setText("Save line")
     rate = w._table.cellWidget(0, 4)
     assert isinstance(rate, QDoubleSpinBox)
     rate.setValue(50.0)
     qty = w._table.cellWidget(0, 5)
     assert isinstance(qty, QDoubleSpinBox)
     qty.setValue(1.0)
-    out = tmp_path / "MyInvoice.pdf"
-    with patch(
-        "desktop_app.invoice_screen.QFileDialog.getSaveFileName",
-        return_value=(str(out), "PDF files (*.pdf)"),
-    ):
-        QTest.mouseClick(w._btn_export_pdf, Qt.MouseButton.LeftButton)
-        qapp.processEvents()
-    assert out.is_file()
+    QTest.mouseClick(w._btn_save, Qt.MouseButton.LeftButton)
+    qapp.processEvents()
     invs = business.list_invoices(db._conn)
     assert any((r["invoice_number"] or "").strip() == "93001" for r in invs)
     assert w._inv_number.text() == "93002"
@@ -218,7 +215,6 @@ def test_invoice_screen_save_persists_and_advances_form(qapp: QApplication, tmp_
     assert any((r["invoice_number"] or "").strip() == "91001" for r in invs)
     assert w._inv_number.text() == "91002"
     assert not w._bill_to[1].toPlainText().strip()
-    assert (pdf_dir / "Invoice-91001.pdf").is_file()
     db.close()
 
 
@@ -245,10 +241,8 @@ def test_invoice_screen_print_after_accept_resets_when_connected(
     pdf_dir.mkdir()
     _INV_PREFS_QS.setValue("invoice_prefs/output_folder", str(pdf_dir))
     _INV_PREFS_QS.sync()
-    with patch(
-        "desktop_app.invoice_screen.configure_printer_for_invoice_print",
-        return_value=True,
-    ):
+    with patch("desktop_app.invoice_screen.QPrintDialog") as mock_dlg:
+        mock_dlg.return_value.exec.return_value = True
         with patch.object(QTextDocument, "print_", lambda self, p: None):
             QTest.mouseClick(w._btn_print, Qt.MouseButton.LeftButton)
             qapp.processEvents()
@@ -377,10 +371,6 @@ def test_invoice_screen_update_existing_does_not_duplicate_row(
         "2024-09-01",
         lines=[{"description": "A", "qty": 1.0, "rate": 10.0}],
     )
-    pdf_dir = tmp_path / "invoice_upd_pdf"
-    pdf_dir.mkdir()
-    _INV_PREFS_QS.setValue("invoice_prefs/output_folder", str(pdf_dir))
-    _INV_PREFS_QS.sync()
     w = InvoiceScreen(ap_conn=db._conn)
     w._load_invoice_into_form(inv_id)
     assert w._current_invoice_id == inv_id
@@ -394,7 +384,6 @@ def test_invoice_screen_update_existing_does_not_duplicate_row(
     assert len(rows) == 1
     assert int(rows[0]["id"]) == inv_id
     assert w._inv_number.text() == "UP-001"
-    assert (pdf_dir / "Invoice-UP-001.pdf").is_file()
     db.close()
 
 
@@ -516,21 +505,11 @@ def test_invoice_pilot_smoke_save_reload_nav_open_by_id(
         w._go_to_new_invoice_draft()
     assert w.open_invoice_by_id(inv_id) is True
     assert w._current_invoice_id == inv_id
-    with patch(
-        "desktop_app.invoice_screen.configure_printer_for_invoice_print",
-        return_value=True,
-    ):
+    with patch("desktop_app.invoice_screen.QPrintDialog") as mock_dlg:
+        mock_dlg.return_value.exec.return_value = True
         with patch.object(QTextDocument, "print_", lambda self, p: None):
             QTest.mouseClick(w._btn_print, Qt.MouseButton.LeftButton)
             qapp.processEvents()
-    out = tmp_path / "pilot_exp.pdf"
-    with patch(
-        "desktop_app.invoice_screen.QFileDialog.getSaveFileName",
-        return_value=(str(out), "PDF files (*.pdf)"),
-    ):
-        QTest.mouseClick(w._btn_export_pdf, Qt.MouseButton.LeftButton)
-        qapp.processEvents()
-    assert out.is_file()
     db.close()
 
 
@@ -557,13 +536,8 @@ def test_invoice_save_and_print_handlers_require_real_button_sender(
     with patch.object(w, "_try_persist_invoice") as m_persist:
         w._on_save_invoice()
         m_persist.assert_not_called()
-    with patch.object(w, "_try_persist_invoice") as m_persist:
-        w._on_export_pdf_as()
-        m_persist.assert_not_called()
-    with patch(
-        "desktop_app.invoice_screen.configure_printer_for_invoice_print"
-    ) as m_cp:
+    with patch("desktop_app.invoice_screen.QPrintDialog") as m_dlg:
         w._on_print_invoice()
-        m_cp.assert_not_called()
+        m_dlg.assert_not_called()
     assert business.list_invoices(db._conn) == []
     db.close()
