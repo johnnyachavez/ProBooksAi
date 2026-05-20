@@ -75,7 +75,11 @@ from probooksai.bank_import import BankDatabase
 from probooksai.coa_db import COADatabase
 from probooksai.extensions_schema import apply_extensions
 from probooksai.gl import GLDatabase
-from probooksai.company_identity import is_company_setup_complete, save_company_identity
+from probooksai.company_identity import (
+    get_company_identity,
+    is_company_setup_complete,
+    save_company_identity,
+)
 from desktop_app.bank_import_tab import (
     BankImportTab,
     show_bank_import_keyboard_shortcuts_dialog,
@@ -1259,6 +1263,40 @@ class MainWindow(QMainWindow):
         # File menu
         file_menu = mb.addMenu("&File")
 
+        act_create_company_file = QAction("&New Company\u2026", self)
+        _menu_action_tip(
+            act_create_company_file,
+            "New Company: guided setup wizard. Captures company name, address, phone, email, "
+            "business type, tax structure, and tax ID; then creates the working .db plus a "
+            "backup folder next to it. Each company is fully isolated in its own SQLite file. "
+            "Use File → Backup before replacing data you care about.",
+        )
+        act_create_company_file.triggered.connect(self._on_create_company_file)
+        file_menu.addAction(act_create_company_file)
+
+        act_open_company = QAction("&Switch company\u2026", self)
+        act_open_company.setShortcut("Ctrl+Shift+O")
+        _menu_action_tip(
+            act_open_company,
+            "Switch to a different company file (Ctrl+Shift+O). "
+            "Each company is its own SQLite database; data does not cross between companies. "
+            "File → Backup copies the active .db first (same engine as probooks backup).",
+        )
+        act_open_company.triggered.connect(self._on_open_company_database)
+        file_menu.addAction(act_open_company)
+
+        act_company_info = QAction("Compan&y info\u2026", self)
+        _menu_action_tip(
+            act_company_info,
+            "Edit identity for the open company: name, address, phone, email, business type, "
+            "tax structure, and tax ID. Saves into the same fields the New Company wizard captures; "
+            "values feed invoices and reports. Use File → Backup first if you want a snapshot.",
+        )
+        act_company_info.triggered.connect(self._on_company_info)
+        file_menu.addAction(act_company_info)
+
+        file_menu.addSeparator()
+
         act_import_docs = QAction("&Import documents\u2026", self)
         act_import_docs.setShortcut("Ctrl+O")
         _menu_action_tip(
@@ -1270,35 +1308,7 @@ class MainWindow(QMainWindow):
         act_import_docs.triggered.connect(self._on_import)
         file_menu.addAction(act_import_docs)
 
-        act_open_company = QAction("Open &company database\u2026", self)
-        act_open_company.setShortcut("Ctrl+Shift+O")
-        _menu_action_tip(
-            act_open_company,
-            "Open a different company SQLite database (Ctrl+Shift+O). "
-            "File → Backup copies the active .db first (same engine as probooks backup).",
-        )
-        act_open_company.triggered.connect(self._on_open_company_database)
-        file_menu.addAction(act_open_company)
-
-        act_create_company_file = QAction("&New Company…", self)
-        _menu_action_tip(
-            act_create_company_file,
-            "New Company: guided setup wizard. Captures company name, address, phone, email, "
-            "business type, tax structure, and tax ID; then creates the working .db plus a "
-            "backup folder next to it. Identity is stored in the file for invoices and reports. "
-            "Use File → Backup before replacing data you care about.",
-        )
-        act_create_company_file.triggered.connect(self._on_create_company_file)
-        file_menu.addAction(act_create_company_file)
-
-        act_new_company = QAction("&New company database\u2026", self)
-        _menu_action_tip(
-            act_new_company,
-            "Create a new empty company SQLite database at a path you choose. "
-            "Use File → Backup / probooks backup on any file you rely on before switching.",
-        )
-        act_new_company.triggered.connect(self._on_new_company_database)
-        file_menu.addAction(act_new_company)
+        file_menu.addSeparator()
 
         act_backup = QAction("&Backup company file\u2026", self)
         _menu_action_tip(
@@ -1317,33 +1327,6 @@ class MainWindow(QMainWindow):
         )
         act_restore.triggered.connect(self._on_restore_company)
         file_menu.addAction(act_restore)
-
-        act_copy_db_path = QAction("Copy company database &path", self)
-        act_copy_db_path.setShortcut("Ctrl+Alt+P")
-        act_copy_db_path.setShortcutContext(Qt.ApplicationShortcut)
-        _menu_action_tip(
-            act_copy_db_path,
-            "Copy the resolved company .db path to the clipboard (Ctrl+Alt+P); "
-            "matches the file File → Backup and probooks backup read from. "
-            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
-        )
-        act_copy_db_path.triggered.connect(self._on_copy_company_database_path)
-        file_menu.addAction(act_copy_db_path)
-
-        act_save = QAction("&Save", self)
-        act_save.setShortcut("Ctrl+S")
-        _menu_action_tip(
-            act_save, "Save is not used in this desktop shell yet (Ctrl+S)."
-        )
-        act_save.setEnabled(False)
-        file_menu.addAction(act_save)
-
-        act_save_as = QAction("Save &As \u2026", self)
-        _menu_action_tip(
-            act_save_as, "Save As is not used in this desktop shell yet."
-        )
-        act_save_as.setEnabled(False)
-        file_menu.addAction(act_save_as)
 
         file_menu.addSeparator()
 
@@ -1699,22 +1682,6 @@ class MainWindow(QMainWindow):
             self._import_files(paths)
 
     # -- slots ---------------------------------------------------------------
-
-    def _on_copy_company_database_path(self) -> None:
-        raw = getattr(self._bank_db, "_db_path", None) or self._db_path or ""
-        if not raw:
-            message_box_information_ok(
-                self,
-                "Copy path",
-                "No company database path is available.",
-                ok_tip="Open or create a company first (File menu); then File → Backup / probooks backup (probooks.backup) applies.",
-            )
-            return
-        resolved = str(Path(raw).resolve())
-        QApplication.clipboard().setText(resolved)
-        self._status_bar.showMessage(
-            f"Copied path: {escape_ampersand_for_qt(resolved)}", 6000
-        )
 
     def _on_help_roadmap(self):
         path = resolve_local_roadmap_path()
@@ -2547,19 +2514,68 @@ class MainWindow(QMainWindow):
                 ok_tip="Close; use File → Backup to write a backup manually.",
             )
 
-    def _on_new_company_database(self):
-        prev = QSettings().value("company_database_path", "", type=str) or ""
-        start_dir = str(Path(prev).parent) if prev else ""
-        path, _ = QFileDialog.getSaveFileName(
-            self,
-            "New company database (back up any existing .db from File → Backup first)",
-            start_dir,
-            "SQLite Database (*.db);;All Files (*.*)",
+    def _on_company_info(self) -> None:
+        """Edit identity for the open company file (no .db creation/switching)."""
+        if self._worker and self._worker.isRunning():
+            message_box_warning_ok(
+                self,
+                "Busy",
+                "Wait for AI extraction to finish before editing company info.",
+                ok_tip="Close; wait for AI, then try again.",
+            )
+            return
+        conn = getattr(self._bank_db, "_conn", None)
+        if conn is None:
+            message_box_information_ok(
+                self,
+                "Company info",
+                "No company file is open.",
+                ok_tip="Open or create a company first (File → New company / Switch company).",
+            )
+            return
+        try:
+            current = get_company_identity(conn)
+        except sqlite3.Error as exc:
+            message_box_critical_ok(
+                self,
+                "Company info",
+                f"Could not read company identity:\n{escape_ampersand_for_qt(str(exc))}",
+                ok_tip="Close; verify the company .db is healthy (File → Backup before retrying).",
+            )
+            return
+        dlg = CreateCompanyFileDialog(self)
+        dlg.set_initial_values(current)
+        dlg.set_edit_mode(
+            title="Company info",
+            intro=(
+                "Edit your company details. These values are saved inside this company "
+                "database and become the source of truth for printed invoices, PDFs, and "
+                "reports. Each company file is fully isolated."
+            ),
         )
-        if path:
-            if not path.lower().endswith(".db"):
-                path += ".db"
-            self._switch_company_database(path, create_new=True)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        v = dlg.identity_values()
+        try:
+            save_company_identity(
+                conn,
+                name=v["name"],
+                address=v["address"],
+                phone=v["phone"],
+                email=v["email"],
+                tax_id=v["tax_id"],
+                business_type=v.get("business_type", ""),
+                tax_structure=v.get("tax_structure", ""),
+            )
+        except sqlite3.Error as exc:
+            message_box_critical_ok(
+                self,
+                "Company info",
+                f"Could not save company identity:\n{escape_ampersand_for_qt(str(exc))}",
+                ok_tip="Close; verify the company .db is writable (File → Backup before retrying).",
+            )
+            return
+        self._update_company_status()
 
     def closeEvent(self, event):
         QSettings().setValue("main_window/geometry", self.saveGeometry())

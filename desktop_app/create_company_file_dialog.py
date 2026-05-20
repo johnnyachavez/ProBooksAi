@@ -61,12 +61,13 @@ class CreateCompanyFileDialog(QDialog):
         self.setWindowTitle("New company")
         self.setMinimumWidth(460)
 
-        intro = QLabel(
+        self._intro = QLabel(
             "Enter your company details to set up this ProBooks+ai company file. "
             "These values are saved inside the new company database (not in the app code) "
             "and become the source of truth for printed invoices, PDFs, and reports."
         )
-        intro.setWordWrap(True)
+        self._intro.setWordWrap(True)
+        intro = self._intro
 
         self._name = QLineEdit()
         self._name.setPlaceholderText("Legal or trade name")
@@ -137,3 +138,33 @@ class CreateCompanyFileDialog(QDialog):
             "business_type": (self._business_type.currentText() or "").strip(),
             "tax_structure": (self._tax_structure.currentText() or "").strip(),
         }
+
+    def set_initial_values(self, values: dict[str, str]) -> None:
+        """Prefill fields from a saved identity dict (keys match :meth:`identity_values`)."""
+        self._name.setText(values.get("name", "") or "")
+        self._address.setPlainText(values.get("address", "") or "")
+        self._phone.setText(values.get("phone", "") or "")
+        self._email.setText(values.get("email", "") or "")
+        self._tax_id.setText(values.get("tax_id", "") or "")
+
+        bt = (values.get("business_type", "") or "").strip()
+        if bt:
+            idx = self._business_type.findText(bt)
+            if idx == -1:
+                self._business_type.addItem(bt)
+                idx = self._business_type.findText(bt)
+            self._business_type.setCurrentIndex(idx)
+
+        ts = (values.get("tax_structure", "") or "").strip()
+        if ts:
+            idx = self._tax_structure.findText(ts)
+            if idx == -1:
+                self._tax_structure.addItem(ts)
+                idx = self._tax_structure.findText(ts)
+            self._tax_structure.setCurrentIndex(idx)
+
+    def set_edit_mode(self, *, title: str = "Company info", intro: str | None = None) -> None:
+        """Re-skin the dialog for editing existing company identity (no .db creation)."""
+        self.setWindowTitle(title)
+        if intro is not None:
+            self._intro.setText(intro)
