@@ -719,6 +719,10 @@ class InvoiceIntakePanel(QWidget):
                 bp = getattr(inv, "_bill_customer_panel", None)
                 if bp is not None and hasattr(bp, "reload_customers"):
                     bp.reload_customers()
+                # Navigate to the most recent invoice so the user can see the results
+                ids = getattr(inv, "_browse_ids", [])
+                if ids and hasattr(inv, "_load_invoice_by_list_index"):
+                    inv._load_invoice_by_list_index(len(ids) - 1)
             parts = [f"Imported: {imported}", f"Skipped (duplicates): {skipped}"]
             if errors:
                 parts.append(f"Errors: {len(errors)}")

@@ -1186,9 +1186,9 @@ class InvoiceScreen(QWidget):
         has_any = bool(self._browse_ids)
         idx = self._browse_index
         n = len(self._browse_ids)
-        # Prev: disabled at first invoice (idx == 0) and on blank new draft (idx is None)
-        # — cannot go further back than the oldest invoice.
-        can_prev = has_db and has_any and idx is not None and idx > 0
+        # Prev: enabled on blank new draft (idx is None) → loads most recent invoice.
+        # Disabled only at first/oldest invoice (idx == 0) — can't go further back.
+        can_prev = has_db and has_any and (idx is None or idx > 0)
         # Next: disabled on blank new draft (idx is None) — already at the end.
         # Enabled on any saved invoice including the last (last → blank draft).
         can_next = has_db and has_any and idx is not None
@@ -1208,7 +1208,10 @@ class InvoiceScreen(QWidget):
                 else f"New blank draft  ({pos} — at last)"
             )
         else:
-            self._btn_reverse.setToolTip("Open the previous saved invoice.")
+            self._btn_reverse.setToolTip(
+                "← Go to most recent saved invoice."
+                if has_any else "No saved invoices yet."
+            )
             self._btn_forward.setToolTip(
                 "New blank invoice draft (at end of queue)."
                 if has_any
