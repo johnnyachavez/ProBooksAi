@@ -71,7 +71,7 @@ from desktop_app.invoice_preferences import (
 )
 from desktop_app.invoice_intake_panel import InvoiceIntakePanel
 from desktop_app.invoice_pdf import invoice_html_string, save_invoice_pdf
-from desktop_app.qt_mnemonic import message_box_information_ok
+from desktop_app.qt_mnemonic import message_box_information_ok, message_box_question_yes_no
 from probooksai import business
 from desktop_app.ar_customer_actions import (
     export_invoices_csv,
@@ -1326,7 +1326,27 @@ class InvoiceScreen(QWidget):
             "font-weight:700; font-size:9pt; padding:2px 10px;"
         )
 
+    def _confirm_leave_loaded_invoice(self, action: str = "leave this invoice") -> bool:
+        """Return True if it is safe to navigate away or clear the current form.
+
+        When a saved invoice is loaded (``_current_invoice_id`` is set) this shows
+        a Yes / No confirmation so the user cannot accidentally discard the view.
+        Returns ``True`` immediately for a blank new draft (nothing to protect).
+        """
+        if self._current_invoice_id is None:
+            return True  # blank draft — no confirmation needed
+        inv_num = self._inv_number.text().strip() or str(self._current_invoice_id)
+        return message_box_question_yes_no(
+            self,
+            "Confirm",
+            f"You are viewing Invoice #{inv_num}.\n\nAre you sure you want to {action}?",
+            yes_tip="Leave this invoice and continue.",
+            no_tip="Stay on the current invoice.",
+        )
+
     def _on_clear_fields(self) -> None:
+        if not self._confirm_leave_loaded_invoice("clear all fields"):
+            return
         self._current_invoice_id = None
         self._browse_index = None
         self._update_status_badge("Open")
@@ -1340,6 +1360,8 @@ class InvoiceScreen(QWidget):
         self._update_browse_buttons()
 
     def _go_to_new_invoice_draft(self) -> None:
+        if not self._confirm_leave_loaded_invoice("open a new blank invoice"):
+            return
         self._current_invoice_id = None
         self._browse_index = None
         self._update_status_badge("Open")
@@ -1462,6 +1484,8 @@ class InvoiceScreen(QWidget):
         return po, job, "\n".join(extra).strip()
 
     def _on_reverse_invoice(self) -> None:
+        if not self._confirm_leave_loaded_invoice("go to the previous invoice"):
+            return
         self._refresh_browse_state()
         if not self._browse_ids:
             return
@@ -1473,6 +1497,8 @@ class InvoiceScreen(QWidget):
         self._load_invoice_by_list_index(self._browse_index - 1)
 
     def _on_forward_invoice(self) -> None:
+        if not self._confirm_leave_loaded_invoice("go to the next invoice"):
+            return
         self._refresh_browse_state()
         if not self._browse_ids:
             return
@@ -1481,7 +1507,22 @@ class InvoiceScreen(QWidget):
             return
         if self._browse_index >= len(self._browse_ids) - 1:
             # At the last saved invoice → open blank new draft (end of queue).
-            self._go_to_new_invoice_draft()
+            # _go_to_new_invoice_draft has its own guard; bypass it here since
+            # we already confirmed above.
+            self._current_invoice_id = None
+            self._browse_index = None
+            self._update_status_badge("Open")
+            self._po.clear()
+            self._job.clear()
+            self._invoice_memo_notes = ""
+            self._bill_customer_panel.clear_bill_to()
+            self._clear_line_grid()
+            self._inv_number.clear()
+            self._invoice_number_autofill_value = ""
+            qd = QDate.currentDate()
+            self._date.setText(format_ymd_as_us(qd.month(), qd.day(), qd.year()))
+            self._sync_invoice_number_suggestion()
+            self._update_browse_buttons()
             return
         self._load_invoice_by_list_index(self._browse_index + 1)
 

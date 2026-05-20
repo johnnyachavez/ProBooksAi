@@ -299,9 +299,47 @@ def test_invoice_screen_clear_fields_keeps_invoice_number(qapp: QApplication, tm
     # Start is blank draft (idx=None); Prev navigates to last (only) saved invoice.
     w._on_reverse_invoice()
     assert w._inv_number.text() == "15001"
-    w._on_clear_fields()
+    # Auto-confirm the "leave loaded invoice" dialog in tests.
+    with patch.object(w, "_confirm_leave_loaded_invoice", return_value=True):
+        w._on_clear_fields()
     assert w._inv_number.text() == "15001"
     assert not (w._table.cellWidget(0, 2).text() or "").strip()
+    db.close()
+
+
+def test_invoice_screen_leave_confirmation_blocks_nav(qapp: QApplication, tmp_path) -> None:
+    """When a saved invoice is loaded, navigation/clear is blocked when user says No."""
+    db_path = tmp_path / "invoice_confirm.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "ConfirmCo")
+    business.create_invoice(
+        db._conn, cid, "C001", "2025-06-01",
+        lines=[{"description": "Svc", "qty": 1.0, "rate": 100.0}],
+    )
+    w = InvoiceScreen(ap_conn=db._conn)
+    # Navigate to the loaded invoice
+    w._on_reverse_invoice()
+    assert w._current_invoice_id is not None
+    loaded_id = w._current_invoice_id
+
+    # User clicks No → navigation is blocked
+    with patch.object(w, "_confirm_leave_loaded_invoice", return_value=False):
+        w._on_clear_fields()
+    assert w._current_invoice_id == loaded_id, "Clear Fields must be blocked when user says No"
+
+    with patch.object(w, "_confirm_leave_loaded_invoice", return_value=False):
+        w._go_to_new_invoice_draft()
+    assert w._current_invoice_id == loaded_id, "New Invoice must be blocked when user says No"
+
+    with patch.object(w, "_confirm_leave_loaded_invoice", return_value=False):
+        w._on_reverse_invoice()
+    assert w._current_invoice_id == loaded_id, "Prev must be blocked when user says No"
+
+    with patch.object(w, "_confirm_leave_loaded_invoice", return_value=False):
+        w._on_forward_invoice()
+    assert w._current_invoice_id == loaded_id, "Next must be blocked when user says No"
+
     db.close()
 
 
@@ -466,14 +504,16 @@ def test_invoice_pilot_smoke_save_reload_nav_open_by_id(
     invs = business.list_invoices(db._conn)
     assert len(invs) == 1
     inv_id = int(invs[0]["id"])
-    w._go_to_new_invoice_draft()
-    # Next on blank draft now does nothing (end of queue); use Prev to go back.
-    w._on_forward_invoice()
-    assert w._current_invoice_id is None  # still on blank draft
-    w._on_reverse_invoice()
-    assert w._current_invoice_id == inv_id
-    assert w._inv_number.text() == "91050"
-    w._go_to_new_invoice_draft()
+    # Auto-confirm "leave loaded invoice" dialogs throughout this navigation test.
+    with patch.object(w, "_confirm_leave_loaded_invoice", return_value=True):
+        w._go_to_new_invoice_draft()
+        # Next on blank draft now does nothing (end of queue); use Prev to go back.
+        w._on_forward_invoice()
+        assert w._current_invoice_id is None  # still on blank draft
+        w._on_reverse_invoice()
+        assert w._current_invoice_id == inv_id
+        assert w._inv_number.text() == "91050"
+        w._go_to_new_invoice_draft()
     assert w.open_invoice_by_id(inv_id) is True
     assert w._current_invoice_id == inv_id
     with patch(
