@@ -256,6 +256,7 @@ def test_invoice_screen_print_after_accept_resets_when_connected(
 
 
 def test_invoice_screen_forward_loads_first_invoice(qapp: QApplication, tmp_path) -> None:
+    """Prev from blank draft loads the last (only) saved invoice; Next on blank draft is a no-op."""
     db_path = tmp_path / "invoice_nav.db"
     db = BankDatabase(str(db_path))
     apply_extensions(db._conn)
@@ -269,7 +270,11 @@ def test_invoice_screen_forward_loads_first_invoice(qapp: QApplication, tmp_path
     )
     w = InvoiceScreen(ap_conn=db._conn)
     assert w._browse_ids
+    # Next on blank draft (end of queue) is a no-op — stays on blank draft.
     w._on_forward_invoice()
+    assert w._current_invoice_id is None
+    # Prev from blank draft navigates back to the last saved invoice.
+    w._on_reverse_invoice()
     assert w._inv_number.text() == "14001"
     assert "Line A" in (w._table.cellWidget(0, 2).text() or "")
     db.close()
@@ -288,7 +293,8 @@ def test_invoice_screen_clear_fields_keeps_invoice_number(qapp: QApplication, tm
         lines=[{"description": "X", "qty": 1.0, "rate": 1.0}],
     )
     w = InvoiceScreen(ap_conn=db._conn)
-    w._on_forward_invoice()
+    # Start is blank draft (idx=None); Prev navigates to last (only) saved invoice.
+    w._on_reverse_invoice()
     assert w._inv_number.text() == "15001"
     w._on_clear_fields()
     assert w._inv_number.text() == "15001"
@@ -458,7 +464,10 @@ def test_invoice_pilot_smoke_save_reload_nav_open_by_id(
     assert len(invs) == 1
     inv_id = int(invs[0]["id"])
     w._go_to_new_invoice_draft()
+    # Next on blank draft now does nothing (end of queue); use Prev to go back.
     w._on_forward_invoice()
+    assert w._current_invoice_id is None  # still on blank draft
+    w._on_reverse_invoice()
     assert w._current_invoice_id == inv_id
     assert w._inv_number.text() == "91050"
     w._go_to_new_invoice_draft()

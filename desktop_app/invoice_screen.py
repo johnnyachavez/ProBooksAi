@@ -1186,16 +1186,22 @@ class InvoiceScreen(QWidget):
         has_any = bool(self._browse_ids)
         idx = self._browse_index
         n = len(self._browse_ids)
-        # Prev: disabled when no invoices or already at the first one
-        can_prev = has_db and has_any and (idx is None or idx > 0)
-        # Next: always enabled when there are invoices (wraps to new draft at end)
-        can_next = has_db and has_any
+        # Prev: disabled at first invoice (idx == 0) and on blank new draft (idx is None)
+        # — cannot go further back than the oldest invoice.
+        can_prev = has_db and has_any and idx is not None and idx > 0
+        # Next: disabled on blank new draft (idx is None) — already at the end.
+        # Enabled on any saved invoice including the last (last → blank draft).
+        can_next = has_db and has_any and idx is not None
         self._btn_reverse.setEnabled(can_prev)
         self._btn_forward.setEnabled(can_next)
         # Show position in tooltip when browsing a saved invoice
         if has_any and idx is not None:
             pos = f"{idx + 1} / {n}"
-            self._btn_reverse.setToolTip(f"← Previous invoice  ({pos})")
+            self._btn_reverse.setToolTip(
+                f"← Previous invoice  ({pos})"
+                if idx > 0
+                else f"◄ At first invoice  ({pos})"
+            )
             self._btn_forward.setToolTip(
                 f"Next invoice →  ({pos})"
                 if idx < n - 1
@@ -1204,7 +1210,9 @@ class InvoiceScreen(QWidget):
         else:
             self._btn_reverse.setToolTip("Open the previous saved invoice.")
             self._btn_forward.setToolTip(
-                "Open the next saved invoice, or a new blank draft after the last one."
+                "New blank invoice draft (at end of queue)."
+                if has_any
+                else "Open the next saved invoice."
             )
 
     def _clear_line_grid(self) -> None:
@@ -1461,10 +1469,11 @@ class InvoiceScreen(QWidget):
         self._refresh_browse_state()
         if not self._browse_ids:
             return
+        # Already on blank new draft — Next is disabled; do nothing.
         if self._browse_index is None:
-            self._load_invoice_by_list_index(0)
             return
         if self._browse_index >= len(self._browse_ids) - 1:
+            # At the last saved invoice → open blank new draft (end of queue).
             self._go_to_new_invoice_draft()
             return
         self._load_invoice_by_list_index(self._browse_index + 1)
