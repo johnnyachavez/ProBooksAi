@@ -513,14 +513,14 @@ def test_invoice_pilot_smoke_save_reload_nav_open_by_id(
     db.close()
 
 
-def test_invoice_save_and_print_handlers_require_real_button_sender(
+def test_invoice_save_handler_persists_and_print_blocks_without_conn(
     qapp: QApplication, tmp_path
 ) -> None:
-    """Direct slot calls without a QPushButton sender must not persist or open print (phantom dialog guard)."""
-    db_path = tmp_path / "invoice_phantom.db"
+    """_on_save_invoice() saves the invoice; _on_print_invoice() blocks when no conn is open."""
+    db_path = tmp_path / "invoice_save_handler.db"
     db = BankDatabase(str(db_path))
     apply_extensions(db._conn)
-    cid = business.add_customer(db._conn, "PhantomCo")
+    cid = business.add_customer(db._conn, "HandlerCo")
     w = InvoiceScreen(ap_conn=db._conn)
     w._bill_customer_panel.select_customer_by_id(cid)
     w._inv_number.setText("77701")
@@ -533,13 +533,16 @@ def test_invoice_save_and_print_handlers_require_real_button_sender(
     qty = w._table.cellWidget(0, 5)
     assert isinstance(qty, QDoubleSpinBox)
     qty.setValue(1.0)
-    with patch.object(w, "_try_persist_invoice") as m_persist:
-        w._on_save_invoice()
-        m_persist.assert_not_called()
+    # Calling the slot directly must save the invoice
+    w._on_save_invoice()
+    saved = business.list_invoices(db._conn)
+    assert len(saved) == 1
+    assert dict(saved[0])["invoice_number"] == "77701"
+    # Print handler without a connection should show an error, not open QPrintDialog
+    w2 = InvoiceScreen(ap_conn=None)
     with patch("desktop_app.invoice_screen.QPrintDialog") as m_dlg:
-        w._on_print_invoice()
+        w2._on_print_invoice()
         m_dlg.assert_not_called()
-    assert business.list_invoices(db._conn) == []
     db.close()
 
 

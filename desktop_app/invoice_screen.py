@@ -1737,9 +1737,6 @@ class InvoiceScreen(QWidget):
         return self._try_persist_invoice()
 
     def _on_save_invoice(self) -> None:
-        # Phantom dialog fix: only a real Save button click may persist from this slot.
-        if self.sender() is not self._btn_save:
-            return
         was_new = self._current_invoice_id is None
         ok, msg, inv_id = self._save_invoice_data_only()
         if not ok:
@@ -1757,9 +1754,6 @@ class InvoiceScreen(QWidget):
 
     def _on_print_invoice(self) -> None:
         """Save invoice then open the system print dialog (always shows printer chooser)."""
-        # Phantom dialog fix: only a real Print button click may reach here.
-        if self.sender() is not self._btn_print:
-            return
         if self._ap_conn is None:
             self._invoice_feedback_message(
                 "Open a company file before printing (File → Open company…)."
