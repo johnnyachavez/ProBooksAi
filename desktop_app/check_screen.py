@@ -12,27 +12,26 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import date
-from functools import partial
 from typing import Optional
 
 from PySide6.QtCore import QDate, Qt, Signal
-from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QComboBox,
     QDateEdit,
     QDoubleSpinBox,
     QFrame,
-    QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QLineEdit,
     QPushButton,
-    QSizePolicy,
     QSplitter,
+    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -46,16 +45,6 @@ from desktop_app.qt_mnemonic import (
     message_box_warning_ok,
 )
 from desktop_app.table_clipboard import plain_display_table_item
-from desktop_app.theme import (
-    WORKFLOW_ALT_ROW,
-    WORKFLOW_CAPTION,
-    WORKFLOW_GRID,
-    WORKFLOW_HEADER_BG,
-    WORKFLOW_INPUT_BG,
-    WORKFLOW_PAGE_BG,
-    WORKFLOW_PANEL_BG,
-    WORKFLOW_TEXT,
-)
 
 # ── Amount → words ────────────────────────────────────────────────────────────
 _ONES = [
@@ -100,13 +89,30 @@ def _amount_to_words(amount: float) -> str:
     return f"{words} and {cents:02d}/100"
 
 
-# ── Check paper widget ────────────────────────────────────────────────────────
-
-_CHECK_BG = "#1B3A2A"        # dark green tint — evokes paper checks
-_CHECK_BORDER = "#2E6B45"
-_CHECK_LINE = "#3A7A52"
-_CHECK_LABEL = "#8FC9A5"
-_CHECK_INPUT_BG = "#0F2018"
+# ── QB-inspired light palette ─────────────────────────────────────────────────
+_PAGE_BG       = "#F2F2F2"
+_TOOLBAR_BG    = "#DEDEDE"
+_ACCT_BAR_BG   = "#EEEEEE"
+_PAPER_BG      = "#E3F2E9"   # light mint green
+_PAPER_BORDER  = "#80AF90"
+_PAPER_LBL     = "#3D5C45"   # dark muted green labels
+_FIELD_BG      = "#FFFFFF"
+_FIELD_BORDER  = "#A8C4A8"
+_GRID_BG       = "#FFFFFF"
+_GRID_ALT      = "#D0E6F4"   # QB-style light blue alternating
+_GRID_HDR_BG   = "#DBDBDB"
+_GRID_HDR_TEXT = "#333333"
+_GRID_LINES    = "#C8C8C8"
+_GRID_TEXT     = "#111111"
+_BTN_QSS = (
+    "QPushButton {"
+    " background:#F5F5F5; border:1px solid #BCBCBC; border-radius:3px;"
+    " padding:4px 10px; font-size:11px; color:#222222; min-height:22px;"
+    "}"
+    "QPushButton:hover { background:#E0EAF4; border-color:#7A9AC8; }"
+    "QPushButton:pressed { background:#C8D8EC; }"
+    "QPushButton:disabled { color:#AAAAAA; background:#EEEEEE; border-color:#DDDDDD; }"
+)
 
 
 class CheckScreen(QWidget):
@@ -132,219 +138,306 @@ class CheckScreen(QWidget):
     # ── UI construction ───────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
-        self.setStyleSheet(
-            f"CheckScreen {{ background-color: {WORKFLOW_PAGE_BG}; }}"
-        )
+        self.setStyleSheet(f"CheckScreen {{ background:{_PAGE_BG}; }}")
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # ── Top toolbar ───────────────────────────────────────────────────────
+        # ── Toolbar ───────────────────────────────────────────────────────────
         toolbar = QWidget()
-        toolbar.setStyleSheet(f"background-color: {WORKFLOW_HEADER_BG};")
+        toolbar.setStyleSheet(f"background:{_TOOLBAR_BG};")
         tb_lay = QHBoxLayout(toolbar)
-        tb_lay.setContentsMargins(8, 6, 8, 6)
-        tb_lay.setSpacing(6)
+        tb_lay.setContentsMargins(8, 5, 8, 5)
+        tb_lay.setSpacing(4)
 
-        self._btn_prev = QPushButton("◄  Prev")
+        def _sep():
+            sep = QFrame()
+            sep.setFrameShape(QFrame.Shape.VLine)
+            sep.setStyleSheet("color:#BBBBBB;")
+            return sep
+
+        # Left group
+        self._btn_find = QPushButton("Find")
+        self._btn_find.setStyleSheet(_BTN_QSS)
+        self._btn_find.setToolTip("Find a transaction.")
+        self._btn_find.clicked.connect(self._on_prev)   # placeholder
+        tb_lay.addWidget(self._btn_find)
+
+        self._btn_prev = QPushButton("◄ Prev")
+        self._btn_prev.setStyleSheet(_BTN_QSS)
         self._btn_prev.setToolTip("Go to the previous transaction for this bank account.")
         self._btn_prev.clicked.connect(self._on_prev)
         tb_lay.addWidget(self._btn_prev)
 
-        self._btn_next = QPushButton("Next  ►")
+        self._btn_next = QPushButton("Next ►")
+        self._btn_next.setStyleSheet(_BTN_QSS)
         self._btn_next.setToolTip("Go to the next transaction, or start a new blank check.")
         self._btn_next.clicked.connect(self._on_next)
         tb_lay.addWidget(self._btn_next)
 
-        tb_lay.addSpacing(12)
-
-        self._btn_new = QPushButton("✚  New")
+        self._btn_new = QPushButton("New")
+        self._btn_new.setStyleSheet(_BTN_QSS)
         self._btn_new.setToolTip("Start a new blank check / payment entry.")
         self._btn_new.clicked.connect(self._on_new)
         tb_lay.addWidget(self._btn_new)
 
-        self._btn_save = QPushButton("💾  Save")
+        self._btn_save = QPushButton("Save")
+        self._btn_save.setStyleSheet(_BTN_QSS)
         self._btn_save.setToolTip("Save this check / transaction to the Bank Register.")
         self._btn_save.clicked.connect(self._on_save)
         tb_lay.addWidget(self._btn_save)
 
-        self._btn_delete = QPushButton("🗑  Delete")
+        self._btn_delete = QPushButton("Delete")
+        self._btn_delete.setStyleSheet(_BTN_QSS)
         self._btn_delete.setToolTip("Delete this transaction from the register.")
         self._btn_delete.clicked.connect(self._on_delete)
         tb_lay.addWidget(self._btn_delete)
 
-        tb_lay.addSpacing(20)
+        tb_lay.addWidget(_sep())
 
-        lbl_acct = QLabel("Bank Account:")
-        lbl_acct.setStyleSheet(f"color: {WORKFLOW_CAPTION};")
-        tb_lay.addWidget(lbl_acct)
+        # Middle group
+        btn_copy = QPushButton("Create a Copy")
+        btn_copy.setStyleSheet(_BTN_QSS)
+        tb_lay.addWidget(btn_copy)
 
-        self._acct_combo = QComboBox()
-        self._acct_combo.setMinimumWidth(220)
-        self._acct_combo.setToolTip("Bank account to write checks against.")
-        self._acct_combo.currentIndexChanged.connect(self._on_account_changed)
-        tb_lay.addWidget(self._acct_combo)
+        btn_mem = QPushButton("Memorize")
+        btn_mem.setStyleSheet(_BTN_QSS)
+        tb_lay.addWidget(btn_mem)
 
-        tb_lay.addSpacing(16)
-        lbl_bal = QLabel("Ending Balance:")
-        lbl_bal.setStyleSheet(f"color: {WORKFLOW_CAPTION};")
-        tb_lay.addWidget(lbl_bal)
-        self._lbl_balance = QLabel("—")
-        self._lbl_balance.setStyleSheet(f"color: {WORKFLOW_TEXT}; font-weight: bold;")
-        tb_lay.addWidget(self._lbl_balance)
+        btn_print = QPushButton("Print ▼")
+        btn_print.setStyleSheet(_BTN_QSS)
+        tb_lay.addWidget(btn_print)
+
+        chk_later = QCheckBox("Print Later")
+        chk_later.setStyleSheet(f"color:#333; background:transparent;")
+        tb_lay.addWidget(chk_later)
+
+        chk_online = QCheckBox("Pay Online")
+        chk_online.setStyleSheet(f"color:#333; background:transparent;")
+        tb_lay.addWidget(chk_online)
+
+        tb_lay.addWidget(_sep())
+
+        # Right group
+        btn_attach = QPushButton("Attach File")
+        btn_attach.setStyleSheet(_BTN_QSS)
+        tb_lay.addWidget(btn_attach)
+
+        btn_clear = QPushButton("Clear Splits")
+        btn_clear.setStyleSheet(_BTN_QSS)
+        btn_clear.clicked.connect(self._clear_expense_rows)
+        tb_lay.addWidget(btn_clear)
+
+        btn_recalc = QPushButton("Recalculate")
+        btn_recalc.setStyleSheet(_BTN_QSS)
+        tb_lay.addWidget(btn_recalc)
 
         tb_lay.addStretch()
 
         self._lbl_position = QLabel("")
-        self._lbl_position.setStyleSheet(f"color: {WORKFLOW_CAPTION};")
+        self._lbl_position.setStyleSheet("color:#555; font-size:11px; background:transparent;")
         tb_lay.addWidget(self._lbl_position)
 
         root.addWidget(toolbar)
 
-        # ── Main content (splitter: check paper + expense list) ───────────────
-        splitter = QSplitter(Qt.Orientation.Vertical)
-        splitter.setStyleSheet(f"background-color: {WORKFLOW_PAGE_BG};")
+        # ── Account bar ───────────────────────────────────────────────────────
+        acct_bar = QWidget()
+        acct_bar.setStyleSheet(f"background:{_ACCT_BAR_BG}; border-bottom:1px solid #CCCCCC;")
+        ab_lay = QHBoxLayout(acct_bar)
+        ab_lay.setContentsMargins(10, 4, 10, 4)
+        ab_lay.setSpacing(6)
 
-        # Check paper area
+        lbl_ba = QLabel("BANK ACCOUNT")
+        lbl_ba.setStyleSheet("font-size:10px; font-weight:bold; color:#444; background:transparent; border:none;")
+        ab_lay.addWidget(lbl_ba)
+
+        self._acct_combo = QComboBox()
+        self._acct_combo.setMinimumWidth(220)
+        self._acct_combo.setToolTip("Bank account to write checks against.")
+        self._acct_combo.setStyleSheet(
+            f"QComboBox {{ background:{_FIELD_BG}; border:1px solid {_FIELD_BORDER}; "
+            f"border-radius:2px; padding:2px 6px; color:#111; }}"
+        )
+        self._acct_combo.currentIndexChanged.connect(self._on_account_changed)
+        ab_lay.addWidget(self._acct_combo)
+
+        ab_lay.addStretch()
+
+        lbl_eb = QLabel("ENDING BALANCE")
+        lbl_eb.setStyleSheet("font-size:10px; font-weight:bold; color:#444; background:transparent; border:none;")
+        ab_lay.addWidget(lbl_eb)
+
+        self._lbl_balance = QLabel("—")
+        self._lbl_balance.setStyleSheet(
+            "font-size:14px; font-weight:bold; color:#222; background:transparent; border:none;"
+        )
+        ab_lay.addWidget(self._lbl_balance)
+
+        root.addWidget(acct_bar)
+
+        # ── Splitter: check paper (top) + expense area (bottom) ───────────────
+        splitter = QSplitter(Qt.Orientation.Vertical)
+        splitter.setStyleSheet(f"background:{_PAGE_BG};")
+
         check_frame = self._build_check_paper()
         splitter.addWidget(check_frame)
 
-        # Expense / splits table
         expense_area = self._build_expense_area()
         splitter.addWidget(expense_area)
 
-        splitter.setSizes([320, 220])
+        splitter.setSizes([320, 240])
         root.addWidget(splitter, 1)
 
         self._refresh_accounts()
 
     def _build_check_paper(self) -> QFrame:
-        """Build the green check-paper UI."""
+        """Build the mint-green check-paper UI."""
         frame = QFrame()
         frame.setStyleSheet(
-            f"QFrame {{ background-color: {_CHECK_BG}; border: 2px solid {_CHECK_BORDER}; "
-            f"border-radius: 6px; margin: 8px; }}"
+            f"QFrame {{ background:{_PAPER_BG}; border:2px solid {_PAPER_BORDER}; "
+            f"border-radius:6px; margin:8px; }}"
         )
         frame.setMinimumHeight(240)
 
-        g = QGridLayout(frame)
-        g.setContentsMargins(16, 12, 16, 12)
-        g.setHorizontalSpacing(10)
-        g.setVerticalSpacing(8)
+        vbox = QVBoxLayout(frame)
+        vbox.setContentsMargins(16, 12, 16, 12)
+        vbox.setSpacing(6)
 
         def _lbl(text: str) -> QLabel:
             w = QLabel(text)
             w.setStyleSheet(
-                f"color: {_CHECK_LABEL}; font-size: 10px; font-weight: bold; "
-                f"background: transparent; border: none;"
+                f"color:{_PAPER_LBL}; font-size:10px; font-weight:bold; "
+                f"background:transparent; border:none;"
             )
             return w
 
-        def _field(min_width: int = 120, read_only: bool = False) -> QLineEdit:
+        def _inp(min_w: int = 120) -> QLineEdit:
             w = QLineEdit()
-            w.setMinimumWidth(min_width)
+            w.setMinimumWidth(min_w)
             w.setStyleSheet(
-                f"QLineEdit {{ background-color: {_CHECK_INPUT_BG}; color: {WORKFLOW_TEXT}; "
-                f"border: 1px solid {_CHECK_LINE}; border-radius: 3px; padding: 2px 5px; }}"
+                f"QLineEdit {{ background:{_FIELD_BG}; color:#111; "
+                f"border:1px solid {_FIELD_BORDER}; border-radius:2px; padding:2px 4px; }}"
             )
-            if read_only:
-                w.setReadOnly(True)
-                w.setStyleSheet(
-                    f"QLineEdit {{ background-color: transparent; color: {_CHECK_LABEL}; "
-                    f"border: none; border-bottom: 1px solid {_CHECK_LINE}; padding: 2px 0; }}"
-                )
             return w
 
-        # Row 0: PAY TO THE ORDER OF + $ amount + NO. + DATE
-        g.addWidget(_lbl("PAY TO THE ORDER OF"), 0, 0)
-        self._fld_payee = _field(300)
-        self._fld_payee.setToolTip("Payee / vendor name stored as the transaction description.")
-        g.addWidget(self._fld_payee, 0, 1, 1, 3)
+        # Row 0 — NO + DATE (right-aligned)
+        row0 = QHBoxLayout()
+        row0.addStretch()
+        row0.addWidget(_lbl("NO."))
+        self._fld_number = _inp(80)
+        self._fld_number.setToolTip("Check number / reference (stored as ref_number).")
+        row0.addWidget(self._fld_number)
+        row0.addSpacing(12)
+        row0.addWidget(_lbl("DATE"))
+        self._date_edit = QDateEdit()
+        configure_qdate_edit_us(self._date_edit)
+        self._date_edit.setToolTip("Transaction date.")
+        self._date_edit.setMinimumWidth(130)
+        self._date_edit.setStyleSheet(
+            f"QDateEdit {{ background:{_FIELD_BG}; color:#111; "
+            f"border:1px solid {_FIELD_BORDER}; border-radius:2px; padding:2px 4px; }}"
+        )
+        row0.addWidget(self._date_edit)
+        vbox.addLayout(row0)
 
-        g.addWidget(_lbl("$"), 0, 4, Qt.AlignmentFlag.AlignRight)
+        # Row 1 — PAY TO THE ORDER OF + $ + amount
+        row1 = QHBoxLayout()
+        row1.addWidget(_lbl("PAY TO THE ORDER OF"))
+        self._fld_payee = _inp(300)
+        self._fld_payee.setToolTip("Payee / vendor name stored as the transaction description.")
+        row1.addWidget(self._fld_payee, 1)
+        row1.addSpacing(6)
+        row1.addWidget(_lbl("$"))
         self._spin_amount = QDoubleSpinBox()
         self._spin_amount.setRange(0, 99_999_999.99)
         self._spin_amount.setDecimals(2)
-        self._spin_amount.setMinimumWidth(110)
-        self._spin_amount.setPrefix("$ ")
+        self._spin_amount.setMinimumWidth(130)
         self._spin_amount.setToolTip(
             "Check amount. Stored as negative (payment) in the register; "
             "deposits are created as positive via the New Deposit button."
         )
         self._spin_amount.setStyleSheet(
-            f"QDoubleSpinBox {{ background-color: {_CHECK_INPUT_BG}; color: {WORKFLOW_TEXT}; "
-            f"border: 1px solid {_CHECK_LINE}; border-radius: 3px; padding: 2px 5px; }}"
+            f"QDoubleSpinBox {{ background:{_FIELD_BG}; color:#111; "
+            f"border:1px solid {_FIELD_BORDER}; border-radius:2px; padding:2px 4px; }}"
         )
         self._spin_amount.valueChanged.connect(self._on_amount_changed)
-        g.addWidget(self._spin_amount, 0, 5)
+        row1.addWidget(self._spin_amount)
+        vbox.addLayout(row1)
 
-        g.addWidget(_lbl("NO."), 0, 6, Qt.AlignmentFlag.AlignRight)
-        self._fld_number = _field(80)
-        self._fld_number.setToolTip("Check number / reference (stored as ref_number).")
-        g.addWidget(self._fld_number, 0, 7)
-
-        g.addWidget(_lbl("DATE"), 0, 8, Qt.AlignmentFlag.AlignRight)
-        self._date_edit = QDateEdit()
-        configure_qdate_edit_us(self._date_edit)
-        self._date_edit.setToolTip("Transaction date.")
-        self._date_edit.setStyleSheet(
-            f"QDateEdit {{ background-color: {_CHECK_INPUT_BG}; color: {WORKFLOW_TEXT}; "
-            f"border: 1px solid {_CHECK_LINE}; border-radius: 3px; padding: 2px 5px; }}"
-        )
-        g.addWidget(self._date_edit, 0, 9)
-
-        # Row 1: DOLLARS (written amount)
-        g.addWidget(_lbl("DOLLARS"), 1, 0)
-        self._fld_dollars = _field(500, read_only=True)
+        # Row 2 — written-out dollars line
+        row2 = QHBoxLayout()
+        self._fld_dollars = QLineEdit()
+        self._fld_dollars.setReadOnly(True)
         self._fld_dollars.setToolTip("Amount in words — updates automatically.")
-        g.addWidget(self._fld_dollars, 1, 1, 1, 9)
+        self._fld_dollars.setStyleSheet(
+            f"QLineEdit {{ border:none; border-bottom:1px solid {_PAPER_BORDER}; "
+            f"background:transparent; color:#333; padding:2px 0; }}"
+        )
+        row2.addWidget(self._fld_dollars, 1)
+        row2.addWidget(_lbl("DOLLARS"))
+        vbox.addLayout(row2)
 
-        # Row 2: TYPE selector + MEMO
-        g.addWidget(_lbl("TYPE"), 2, 0)
+        # Row 3 — ADDRESS label
+        row3 = QHBoxLayout()
+        row3.addWidget(_lbl("ADDRESS"))
+        row3.addStretch()
+        vbox.addLayout(row3)
+
+        # Row 4 — address text box
+        row4 = QHBoxLayout()
+        self._address_edit = QTextEdit()
+        self._address_edit.setFixedSize(200, 70)
+        self._address_edit.setStyleSheet(
+            f"QTextEdit {{ background:{_FIELD_BG}; color:#111; "
+            f"border:1px solid {_FIELD_BORDER}; border-radius:2px; padding:2px 4px; }}"
+        )
+        row4.addWidget(self._address_edit)
+        row4.addStretch()
+        vbox.addLayout(row4)
+
+        # Row 5 — MEMO + TYPE
+        row5 = QHBoxLayout()
+        row5.addWidget(_lbl("MEMO"))
+        self._fld_memo = _inp(300)
+        self._fld_memo.setToolTip("Internal memo for this transaction.")
+        row5.addWidget(self._fld_memo, 1)
+        row5.addSpacing(16)
+        row5.addWidget(_lbl("TYPE"))
         self._type_combo = QComboBox()
-        self._type_combo.addItem("💳  Payment / Check", "payment")
-        self._type_combo.addItem("⬆  Deposit / Credit", "deposit")
+        self._type_combo.addItem("Payment / Check", "payment")
+        self._type_combo.addItem("Deposit / Credit", "deposit")
         self._type_combo.setToolTip(
             "Payment = money leaving (stored negative). "
             "Deposit = money arriving (stored positive)."
         )
         self._type_combo.setStyleSheet(
-            f"QComboBox {{ background-color: {_CHECK_INPUT_BG}; color: {WORKFLOW_TEXT}; "
-            f"border: 1px solid {_CHECK_LINE}; border-radius: 3px; padding: 2px 5px; }}"
+            f"QComboBox {{ background:{_FIELD_BG}; color:#111; "
+            f"border:1px solid {_FIELD_BORDER}; border-radius:2px; padding:2px 4px; }}"
         )
-        g.addWidget(self._type_combo, 2, 1)
+        row5.addWidget(self._type_combo)
+        vbox.addLayout(row5)
 
-        g.addWidget(_lbl("MEMO"), 2, 2)
-        self._fld_memo = _field(400)
-        self._fld_memo.setToolTip("Internal memo for this transaction.")
-        g.addWidget(self._fld_memo, 2, 3, 1, 7)
-
-        g.setColumnStretch(3, 1)
         return frame
 
     def _build_expense_area(self) -> QWidget:
-        """Build the Expenses / account-coding table below the check."""
-        w = QWidget()
-        w.setStyleSheet(f"background-color: {WORKFLOW_PANEL_BG};")
-        lay = QVBoxLayout(w)
-        lay.setContentsMargins(10, 6, 10, 6)
-        lay.setSpacing(4)
-
-        hdr_lay = QHBoxLayout()
-        lbl_exp = QLabel("Expense Account Coding")
-        lbl_exp.setStyleSheet(
-            f"color: {WORKFLOW_CAPTION}; font-weight: bold; font-size: 11px;"
+        """Build the Expenses / account-coding tab area below the check."""
+        self._expense_tab = QTabWidget()
+        self._expense_tab.setStyleSheet(
+            "QTabWidget::pane { border:1px solid #C8C8C8; background:#FFFFFF; }"
+            "QTabBar::tab { background:#DEDEDE; color:#333; padding:5px 14px; "
+            "               border:1px solid #C8C8C8; border-bottom:none; margin-right:2px; }"
+            "QTabBar::tab:selected { background:#FFFFFF; font-weight:bold; "
+            "                        border-bottom:2px solid #4A90D9; color:#1A5276; }"
+            "QTabBar::tab:hover { background:#EAF3FB; }"
         )
-        hdr_lay.addWidget(lbl_exp)
-        hdr_lay.addStretch()
-        lay.addLayout(hdr_lay)
 
-        self._exp_table = QTableWidget(8, 3)
-        self._exp_table.setHorizontalHeaderLabels(["Account (COA)", "Amount", "Memo"])
+        # Tab 0 — Expenses
+        self._exp_table = QTableWidget(10, 3)
+        self._exp_table.setHorizontalHeaderLabels(["ACCOUNT", "AMOUNT", "MEMO"])
         self._exp_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self._exp_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
         self._exp_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self._exp_table.setColumnWidth(1, 110)
+        self._exp_table.setColumnWidth(1, 120)
         self._exp_table.verticalHeader().setVisible(False)
         self._exp_table.setAlternatingRowColors(True)
         self._exp_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -354,11 +447,12 @@ class CheckScreen(QWidget):
             | QAbstractItemView.EditTrigger.EditKeyPressed
         )
         self._exp_table.setStyleSheet(
-            f"QTableWidget {{ background-color: {WORKFLOW_PAGE_BG}; "
-            f"color: {WORKFLOW_TEXT}; gridline-color: {WORKFLOW_GRID}; "
-            f"alternate-background-color: {WORKFLOW_ALT_ROW}; }}"
-            f"QHeaderView::section {{ background-color: {WORKFLOW_HEADER_BG}; "
-            f"color: {WORKFLOW_CAPTION}; border: 1px solid {WORKFLOW_GRID}; padding: 3px; }}"
+            f"QTableWidget {{ background:{_GRID_BG}; color:{_GRID_TEXT}; "
+            f"gridline-color:{_GRID_LINES}; "
+            f"alternate-background-color:{_GRID_ALT}; }}"
+            f"QHeaderView::section {{ background:{_GRID_HDR_BG}; "
+            f"color:{_GRID_HDR_TEXT}; border:1px solid {_GRID_LINES}; padding:3px; "
+            f"font-weight:bold; }}"
         )
         self._exp_table.setToolTip(
             "Account coding: enter one or more COA accounts with amounts. "
@@ -366,8 +460,16 @@ class CheckScreen(QWidget):
         )
         self._populate_expense_rows()
         self._exp_table.cellChanged.connect(self._on_exp_cell_changed)
-        lay.addWidget(self._exp_table)
-        return w
+
+        self._expense_tab.addTab(self._exp_table, "Expenses  $0.00")
+
+        # Tab 1 — Items (placeholder)
+        items_placeholder = QLabel("Items not yet implemented")
+        items_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        items_placeholder.setStyleSheet("color:#888; font-size:12px;")
+        self._expense_tab.addTab(items_placeholder, "Items  $0.00")
+
+        return self._expense_tab
 
     def _populate_expense_rows(self) -> None:
         """Fill expense table with COA combo boxes in the Account column."""
@@ -380,6 +482,10 @@ class CheckScreen(QWidget):
                 coa_combo.addItem(escape_ampersand_for_qt(c), c)
             coa_combo.setEditable(True)
             coa_combo.setToolTip("Chart-of-accounts category for this expense line.")
+            coa_combo.setStyleSheet(
+                f"QComboBox {{ background:{_FIELD_BG}; color:#111; "
+                f"border:1px solid {_FIELD_BORDER}; }}"
+            )
             self._exp_table.setCellWidget(r, 0, coa_combo)
 
             # Amount column
@@ -575,8 +681,19 @@ class CheckScreen(QWidget):
         if not self._loading:
             self._fld_dollars.setText(_amount_to_words(val) if val else "")
 
+    def _update_expense_total(self) -> None:
+        total = 0.0
+        for r in range(self._exp_table.rowCount()):
+            item = self._exp_table.item(r, 1)
+            if item:
+                try:
+                    total += float(item.text().replace(",", "").strip())
+                except ValueError:
+                    pass
+        self._expense_tab.setTabText(0, f"Expenses  ${total:,.2f}")
+
     def _on_exp_cell_changed(self, row: int, col: int) -> None:
-        pass  # future: auto-fill amount from check total for split lines
+        self._update_expense_total()
 
     def _collect_form(self) -> dict:
         """Return form values as a dict ready for insert/update."""
@@ -714,7 +831,7 @@ class CheckScreen(QWidget):
             bal = sum(float(t["amount"] or 0) for t in txns)
             self._lbl_balance.setText(f"${bal:,.2f}")
             self._lbl_balance.setStyleSheet(
-                f"color: {'#E06C75' if bal < 0 else '#98C379'}; font-weight: bold;"
+                f"color: {'#C0392B' if bal < 0 else '#1A6B2A'}; font-size:14px; font-weight:bold;"
             )
         except Exception:
             self._lbl_balance.setText("—")
