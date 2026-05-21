@@ -98,13 +98,24 @@ def _footer_html(plain: str) -> str:
     return _he(t).replace("\n", "<br/>")
 
 
-def _logo_block_html(logo_data_uri: str, company_block_plain: str) -> str:
-    """Return the top-left cell content: logo image (no border) or fallback company text."""
+def _logo_block_html(
+    logo_data_uri: str,
+    company_block_plain: str,
+    logo_display_w: int = 220,
+    logo_display_h: int = 80,
+) -> str:
+    """Return the top-left cell content: logo image (no border) or fallback company text.
+
+    ``logo_display_w`` / ``logo_display_h`` must be explicit pixel integers because
+    Qt's QTextDocument HTML renderer does not honour CSS ``max-width`` / ``max-height``
+    on ``<img>`` tags — only literal ``width``/``height`` attributes work.
+    """
     if logo_data_uri:
-        # Logo: no border, no box — just the image, max 90px tall, full width up to container
+        # Explicit width/height so Qt renders at the correct scaled size, not full resolution.
         logo_img = (
             f'<img src="{logo_data_uri}" '
-            'style="max-height:90px; max-width:100%; border:none; display:block;" />'
+            f'width="{logo_display_w}" height="{logo_display_h}" '
+            'style="border:none; display:block;" />'
         )
         # If there is also a company address block, show it in smaller text below the logo
         contact = ""
@@ -140,6 +151,8 @@ def build_invoice_print_html(
     balance_due_plain: str = "",
     min_body_rows: int = DEFAULT_MIN_LINE_ROWS,
     logo_data_uri: str = "",
+    logo_display_w: int = 220,
+    logo_display_h: int = 80,
 ) -> str:
     """
     Trucking-style invoice layout for QTextDocument print/PDF.
@@ -190,7 +203,7 @@ def build_invoice_print_html(
     nj = _he((name_job or "").strip()) or "&#160;"
     bal = _he((balance_due_plain or "").strip()) or "&#160;"
 
-    top_left = _logo_block_html(logo_data_uri, company_block_plain)
+    top_left = _logo_block_html(logo_data_uri, company_block_plain, logo_display_w, logo_display_h)
 
     parts = [
         "<html><head><meta charset=\"utf-8\"/></head><body "
