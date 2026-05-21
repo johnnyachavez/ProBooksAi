@@ -1248,6 +1248,28 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(self._vendors_tab, "Vendors")
         self._tabs.addTab(self._reconcile_root, "Reconcile")
         self._tabs.addTab(self._more_hub, "More")
+        self._tabs.currentChanged.connect(self._on_main_tab_changing)
+        self._prev_main_tab_index: int = 0
+
+    def _on_main_tab_changing(self, new_index: int) -> None:
+        """Guard switching away from a screen that has unsaved invoice changes."""
+        old_index = self._prev_main_tab_index
+        if old_index == new_index:
+            return
+        old_widget = self._tabs.widget(old_index)
+        if isinstance(old_widget, InvoiceScreen) and old_widget._is_form_dirty():
+            # Switch back before showing the dialog so the form is visible
+            self._tabs.blockSignals(True)
+            self._tabs.setCurrentIndex(old_index)
+            self._tabs.blockSignals(False)
+            if not old_widget._confirm_leave_loaded_invoice():
+                # User chose Stay — stay on the invoice screen
+                return
+            # User saved or discarded — proceed to the requested tab
+            self._tabs.blockSignals(True)
+            self._tabs.setCurrentIndex(new_index)
+            self._tabs.blockSignals(False)
+        self._prev_main_tab_index = new_index
 
     def _apply_main_tab_bar_tooltips(self) -> None:
         main_tab_bar = self._tabs.tabBar()

@@ -541,3 +541,58 @@ def test_invoice_save_and_print_handlers_require_real_button_sender(
         m_dlg.assert_not_called()
     assert business.list_invoices(db._conn) == []
     db.close()
+
+
+def test_invoice_dirty_tracking_no_dialog_when_unchanged(
+    qapp: QApplication, tmp_path
+) -> None:
+    """No confirmation dialog fires when navigating away from an unmodified loaded invoice."""
+    db_path = tmp_path / "invoice_dirty_clean.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "CleanCo")
+    business.create_invoice(
+        db._conn, cid, "D001", "2025-01-01",
+        lines=[{"description": "Svc", "qty": 1.0, "rate": 50.0}],
+    )
+    w = InvoiceScreen(ap_conn=db._conn)
+    # Load the invoice
+    w._on_reverse_invoice()
+    assert w._current_invoice_id is not None
+    # Form is clean (just loaded, nothing changed) — dirty check should be False
+    assert not w._is_form_dirty(), "Form should be clean right after load"
+    # Navigation should proceed without any dialog (no patching needed)
+    w._on_forward_invoice()
+    assert w._current_invoice_id is None, "Should have navigated to blank draft"
+    db.close()
+
+
+def test_invoice_dirty_tracking_dialog_fires_after_edit(
+    qapp: QApplication, tmp_path
+) -> None:
+    """Confirmation dialog fires when the form has been edited since last load."""
+    db_path = tmp_path / "invoice_dirty_edit.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "DirtyCo")
+    business.create_invoice(
+        db._conn, cid, "D002", "2025-02-01",
+        lines=[{"description": "Original", "qty": 1.0, "rate": 100.0}],
+    )
+    w = InvoiceScreen(ap_conn=db._conn)
+    # Load the invoice
+    w._on_reverse_invoice()
+    assert w._current_invoice_id is not None
+    assert not w._is_form_dirty(), "Should be clean after load"
+    # Make a change
+    desc = w._table.cellWidget(0, 2)
+    assert isinstance(desc, QLineEdit)
+    original_text = desc.text()
+    desc.setText(original_text + " EDITED")
+    assert w._is_form_dirty(), "Should be dirty after editing description"
+    # Navigation must call the dialog; patch it to return False (Stay)
+    with patch.object(w, "_confirm_leave_loaded_invoice", return_value=False) as mock_confirm:
+        w._on_forward_invoice()
+        mock_confirm.assert_called_once()
+    assert w._current_invoice_id is not None, "Should stay on invoice after user chose Stay"
+    db.close()

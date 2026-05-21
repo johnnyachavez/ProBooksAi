@@ -71,7 +71,11 @@ from desktop_app.invoice_preferences import (
 )
 from desktop_app.invoice_intake_panel import InvoiceIntakePanel
 from desktop_app.invoice_pdf import invoice_html_string
-from desktop_app.qt_mnemonic import message_box_information_ok, message_box_question_yes_no
+from desktop_app.qt_mnemonic import (
+    message_box_information_ok,
+    message_box_question_yes_no,
+    message_box_save_discard_cancel,
+)
 from probooksai import business
 from desktop_app.ar_customer_actions import (
     export_invoices_csv,
@@ -381,6 +385,9 @@ class InvoiceScreen(QWidget):
         self._suppress_invoice_line_recalc: bool = False
         # Memo text from DB when loading (no longer a visible header box after removing blank field).
         self._invoice_memo_notes: str = ""
+        # Snapshot of field values taken after each load/save/clear; used for dirty detection.
+        # ``None`` = blank new draft (dirty only if user has typed something).
+        self._form_snapshot: dict | None = None
         self.setToolTip(
             "Manual Invoice: enter lines and totals; Save writes to your company file. "
             "Invoice # suggests the next number from your company file (editable). "
@@ -901,6 +908,7 @@ class InvoiceScreen(QWidget):
         self._invoice_tabs.addTab(page, "Manual Invoice")
         self._invoice_tabs.addTab(self._invoice_intake, "Invoice Intake")
         self._invoice_tabs.setCurrentIndex(0)
+        self._invoice_tabs.currentChanged.connect(self._on_invoice_subtab_changed)
         outer.addWidget(self._invoice_tabs, 1)
 
         self._refresh_browse_state()
@@ -1244,29 +1252,120 @@ class InvoiceScreen(QWidget):
         """Track the current invoice status (badge widget removed — status stored internally)."""
         self._current_status = status
 
-    def _confirm_leave_loaded_invoice(self, action: str = "leave this invoice") -> bool:
+    # ── Dirty-state tracking ─────────────────────────────────────────────────
+
+    def _capture_form_snapshot(self) -> dict:
+        """Return a dict representing the current form state (for dirty comparison)."""
+        lines: list[dict] = []
+        for r in range(self._N_LINE_ROWS):
+            row: dict = {}
+            for c in range(len(self._LINE_COLS)):
+                w = self._table.cellWidget(r, c)
+                if isinstance(w, QLineEdit):
+                    row[c] = w.text()
+                elif isinstance(w, QDoubleSpinBox):
+                    row[c] = round(w.value(), 6)
+            lines.append(row)
+        return {
+            "inv_number": self._inv_number.text(),
+            "date": self._date.text(),
+            "po": self._po.text(),
+            "job": self._job.text(),
+            "memo": self._invoice_memo_notes,
+            "customer_id": self._bill_customer_panel.selected_customer_id(),
+            "lines": lines,
+        }
+
+    def _is_form_dirty(self) -> bool:
+        """Return True if the form has unsaved changes relative to the last load/save/clear.
+
+        For a blank new draft (``_form_snapshot is None``) the invoice number and date are
+        auto-populated by the system; only user-entered fields (PO, job, memo, customer,
+        line items) and a manually-changed invoice number count as dirty.
+        """
+        if self._form_snapshot is None:
+            snap = self._capture_form_snapshot()
+            # Invoice number is auto-suggested; only dirty when user changed it from the suggestion
+            autofill = self._invoice_number_autofill_value.strip()
+            inv_num_dirty = snap["inv_number"].strip() not in ("", autofill)
+            return bool(
+                inv_num_dirty
+                or snap["po"].strip()
+                or snap["job"].strip()
+                or snap["memo"].strip()
+                or snap["customer_id"] is not None
+                or any(
+                    any(
+                        (v.strip() if isinstance(v, str) else v != 0.0)
+                        for v in row.values()
+                    )
+                    for row in snap["lines"]
+                )
+            )
+        return self._capture_form_snapshot() != self._form_snapshot
+
+    def _confirm_leave_loaded_invoice(self, action: str = "leave this invoice") -> bool:  # noqa: ARG002
         """Return True if it is safe to navigate away or clear the current form.
 
-        When a saved invoice is loaded (``_current_invoice_id`` is set) this shows
-        a Yes / No confirmation so the user cannot accidentally discard the view.
-        Returns ``True`` immediately for a blank new draft (nothing to protect).
+        * If the form is **unchanged** (clean) → returns True immediately, no dialog.
+        * If the form has **unsaved changes** → shows a Save / Discard Changes / Stay dialog:
+          - **Save**: persists the invoice, then returns True.
+          - **Discard Changes**: abandons edits, returns True.
+          - **Stay** (or close): returns False so the caller stays put.
         """
-        if self._current_invoice_id is None:
-            return True  # blank draft — no confirmation needed
-        inv_num = self._inv_number.text().strip() or str(self._current_invoice_id)
-        return message_box_question_yes_no(
+        if not self._is_form_dirty():
+            return True  # Nothing changed — navigate freely
+
+        inv_num = self._inv_number.text().strip()
+        if self._current_invoice_id is not None:
+            label = f"Invoice #{inv_num}" if inv_num else f"Invoice ID {self._current_invoice_id}"
+        else:
+            label = f"Invoice #{inv_num}" if inv_num else "this new invoice"
+
+        result = message_box_save_discard_cancel(
             self,
-            "Confirm",
-            f"You are viewing Invoice #{inv_num}.\n\nAre you sure you want to {action}?",
-            yes_tip="Leave this invoice and continue.",
-            no_tip="Stay on the current invoice.",
+            "Unsaved Changes",
+            f"You have unsaved changes on {label}.\n\nDo you want to save or discard your changes?",
+            save_tip="Save changes and continue.",
+            discard_tip="Discard changes and continue without saving.",
+            cancel_tip="Stay on this invoice and keep editing.",
         )
+
+        if result == "save":
+            ok, msg, inv_id = self._save_invoice_data_only()
+            if not ok:
+                self._invoice_feedback_message(msg)
+                return False  # Save failed — keep user on the form
+            if inv_id is not None:
+                self._load_invoice_into_form(inv_id)
+                self._refresh_browse_state()
+            return True
+        if result == "discard":
+            return True
+        return False  # "cancel" / Stay
+
+    def _on_invoice_subtab_changed(self, new_index: int) -> None:
+        """Guard switching away from the Manual Invoice sub-tab while the form is dirty."""
+        if new_index == 0:
+            return  # Arriving on Manual Invoice — always allowed
+        if not self._is_form_dirty():
+            return  # Clean — switch freely
+        # Switch back first so the form remains visible while the dialog runs
+        self._invoice_tabs.blockSignals(True)
+        self._invoice_tabs.setCurrentIndex(0)
+        self._invoice_tabs.blockSignals(False)
+        if self._confirm_leave_loaded_invoice():
+            # User saved or discarded — proceed to the requested tab
+            self._invoice_tabs.blockSignals(True)
+            self._invoice_tabs.setCurrentIndex(new_index)
+            self._invoice_tabs.blockSignals(False)
 
     def _on_clear_fields(self) -> None:
         if not self._confirm_leave_loaded_invoice("clear all fields"):
             return
         self._current_invoice_id = None
         self._browse_index = None
+        self._form_snapshot = None  # blank draft — reset dirty baseline
         self._update_status_badge("Open")
         qd = QDate.currentDate()
         self._date.setText(format_ymd_as_us(qd.month(), qd.day(), qd.year()))
@@ -1282,6 +1381,7 @@ class InvoiceScreen(QWidget):
             return
         self._current_invoice_id = None
         self._browse_index = None
+        self._form_snapshot = None  # blank draft — reset dirty baseline
         self._update_status_badge("Open")
         self._po.clear()
         self._job.clear()
@@ -1383,6 +1483,8 @@ class InvoiceScreen(QWidget):
         self._recalc_invoice_footer_from_grid()
         self._current_invoice_id = invoice_id
         self._update_status_badge(d.get("status") or "Open")
+        # Capture a clean baseline so we can detect future edits
+        self._form_snapshot = self._capture_form_snapshot()
 
     def _split_memo_po_job(self, memo: str) -> tuple[str, str, str]:
         """Split stored memo into PO, Job, and remaining free text (matches :meth:`_build_invoice_memo`)."""
@@ -1646,10 +1748,11 @@ class InvoiceScreen(QWidget):
         assert inv_id is not None
         self._refresh_browse_state()
         if was_new:
-            # New invoice saved — advance to next blank draft
+            # Mark form clean before advancing to blank draft so no dirty dialog fires
+            self._form_snapshot = self._capture_form_snapshot()
             self._go_to_new_invoice_draft()
         else:
-            # Reload so status / totals stay in sync
+            # Reload so status / totals stay in sync; _load_invoice_into_form resets snapshot
             self._load_invoice_into_form(inv_id)
 
     def _on_print_invoice(self) -> None:
@@ -1694,6 +1797,8 @@ class InvoiceScreen(QWidget):
             doc.print_(printer)
         self._refresh_browse_state()
         if was_new:
+            # Mark form clean before advancing so no dirty dialog fires on new-draft navigation
+            self._form_snapshot = self._capture_form_snapshot()
             self._go_to_new_invoice_draft()
         else:
             self._load_invoice_into_form(inv_id)

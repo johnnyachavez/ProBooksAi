@@ -192,3 +192,37 @@ def message_box_question_yes_no(
     box.setDefaultButton(QMessageBox.StandardButton.No)
     tip_message_box_buttons(box, yes=yes_tip, no=no_tip)
     return box.exec() == QMessageBox.StandardButton.Yes
+
+
+def message_box_save_discard_cancel(
+    parent: "QWidget | None",
+    title: str,
+    text: str,
+    *,
+    save_tip: str = "Save changes and continue.",
+    discard_tip: str = "Discard changes and continue without saving.",
+    cancel_tip: str = "Stay and keep editing.",
+) -> str:
+    """Show a Save / Discard Changes / Stay dialog for unsaved-changes warnings.
+
+    Returns ``'save'``, ``'discard'``, or ``'cancel'`` (Stay / close-button).
+    The **Stay** button is the default so pressing Enter keeps the user on the page.
+    """
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Warning)
+    box.setWindowTitle(title)
+    box.setText(text)
+    btn_save = box.addButton("Save", QMessageBox.ButtonRole.AcceptRole)
+    btn_discard = box.addButton("Discard Changes", QMessageBox.ButtonRole.DestructiveRole)
+    btn_stay = box.addButton("Stay", QMessageBox.ButtonRole.RejectRole)
+    btn_save.setToolTip(save_tip)
+    btn_discard.setToolTip(discard_tip)
+    btn_stay.setToolTip(cancel_tip)
+    box.setDefaultButton(btn_stay)
+    box.exec()
+    clicked = box.clickedButton()
+    if clicked is btn_save:
+        return "save"
+    if clicked is btn_discard:
+        return "discard"
+    return "cancel"
