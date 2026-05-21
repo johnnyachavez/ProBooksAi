@@ -79,7 +79,7 @@ def _letterhead_plain_from_company_settings(conn: sqlite3.Connection) -> str:
     return "\n".join(legacy)
 
 
-def _logo_display_dimensions(logo_path: str, max_w: int = 220, max_h: int = 80) -> tuple[int, int]:
+def _logo_display_dimensions(logo_path: str, max_w: int = 400, max_h: int = 180) -> tuple[int, int]:
     """Return (display_w, display_h) scaled to fit within max_w×max_h, preserving aspect ratio.
 
     Reads only the image header — no PIL/Qt dependency.  Falls back to (max_w, max_h) on
@@ -153,7 +153,7 @@ def _logo_dimensions_from_settings(conn: sqlite3.Connection) -> tuple[int, int]:
 
     logo_path = (business.get_setting(conn, "company_logo_path", "") or "").strip()
     if not logo_path or not os.path.isfile(logo_path):
-        return 220, 80
+        return 400, 180
     return _logo_display_dimensions(logo_path)
 
 

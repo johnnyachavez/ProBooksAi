@@ -101,8 +101,8 @@ def _footer_html(plain: str) -> str:
 def _logo_block_html(
     logo_data_uri: str,
     company_block_plain: str,
-    logo_display_w: int = 220,
-    logo_display_h: int = 80,
+    logo_display_w: int = 400,
+    logo_display_h: int = 180,
 ) -> str:
     """Return the top-left cell content: logo image (no border) or fallback company text.
 
@@ -151,8 +151,8 @@ def build_invoice_print_html(
     balance_due_plain: str = "",
     min_body_rows: int = DEFAULT_MIN_LINE_ROWS,
     logo_data_uri: str = "",
-    logo_display_w: int = 220,
-    logo_display_h: int = 80,
+    logo_display_w: int = 400,
+    logo_display_h: int = 180,
 ) -> str:
     """
     Trucking-style invoice layout for QTextDocument print/PDF.
@@ -230,14 +230,16 @@ def build_invoice_print_html(
         'style="border:none; margin-top:12px;">',
         "<tr>",
 
-        # Left: BILL TO
+        # Left: BILL TO — height="216" matches the 4×(th+td) stack on the right;
+        # Qt's QTextDocument ignores height:100% on nested tables so we use the
+        # HTML height attribute instead.
         '<td width="50%" valign="top" style="border:none; padding:0;">',
-        '<table width="100%" cellspacing="0" cellpadding="0" '
-        'style="border:1px solid #000; border-collapse:collapse; height:100%;">',
+        '<table width="100%" cellspacing="0" cellpadding="0" height="216" '
+        'style="border:1px solid #000; border-collapse:collapse;">',
         '<tr><th style="text-align:left; padding:5px 8px; font-weight:bold; '
         'border-bottom:1px solid #000; background:#f0f0f0; font-size:8pt; '
         'text-transform:uppercase;">BILL TO</th></tr>',
-        '<tr><td valign="top" style="padding:8px; min-height:88px; line-height:1.35;">'
+        '<tr><td valign="top" style="padding:8px; height:190px; line-height:1.35;">'
         f"{_bill_to_html(bill_to_plain)}</td></tr>",
         "</table>",
         "</td>",
