@@ -160,23 +160,25 @@ def build_invoice_print_html(
         if i < len(rows):
             so, jl, desc, bol, rate, qty, amt = rows[i]
             cells = [
-                _he(so.strip()),
-                _he(jl.strip()),
-                _he(desc.strip()),
-                _he(bol.strip()),
-                _he(rate.strip()),
-                _he(qty.strip()),
-                _he(amt.strip()),
+                _he(so.strip()).replace("\n", "<br/>"),
+                _he(jl.strip()).replace("\n", "<br/>"),
+                _he(desc.strip()).replace("\n", "<br/>"),
+                _he(bol.strip()).replace("\n", "<br/>"),
+                _he(rate.strip()).replace("\n", "<br/>"),
+                _he(qty.strip()).replace("\n", "<br/>"),
+                _he(amt.strip()).replace("\n", "<br/>"),
             ]
         else:
             cells = ["&#160;"] * 7
         body_html.append(
             "<tr>"
             + "".join(
-                f'<td style="text-align:left;vertical-align:top;padding:3px 4px;">{c}</td>'
+                f'<td style="text-align:left;vertical-align:top;padding:3px 4px;'
+                f'border-left:1px solid #000;border-right:1px solid #000;">{c}</td>'
                 if j < 4
                 else f'<td style="text-align:right;vertical-align:top;padding:3px 4px;'
-                f'font-variant-numeric:tabular-nums;">{c}</td>'
+                f'font-variant-numeric:tabular-nums;'
+                f'border-left:1px solid #000;border-right:1px solid #000;">{c}</td>'
                 for j, c in enumerate(cells)
             )
             + "</tr>"
