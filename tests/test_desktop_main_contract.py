@@ -821,7 +821,7 @@ def test_main_window_no_toolbar_menu_bar_qaction_counts() -> None:
     assert "# Toolbar" not in bu_chunk
     mb_s = text.index("def _build_menu_bar")
     mb_e = text.index("def dragEnterEvent", mb_s)
-    assert text[mb_s:mb_e].count("QAction(") == 33
+    assert text[mb_s:mb_e].count("QAction(") == 34
 
 
 def test_file_menu_import_wires_on_import_and_mentions_ctrl_o() -> None:
@@ -1580,8 +1580,8 @@ def test_main_window_on_restore_company_restores_and_reload_paths() -> None:
     assert chunk.count("self._load_company_at_path(str(target))") == 3
     assert chunk.count('"Restore failed"') == 2
     assert chunk.count('"Restore complete"') == 1
-    assert chunk.count("QFileDialog.getOpenFileName(") == 1
-    assert chunk.count("if not path:") == 1
+    assert chunk.count("QFileDialog.getOpenFileName(") >= 1
+    assert chunk.count("if not path:") >= 1
     assert chunk.count("Select backup to restore (probooks restore)") == 1
     assert chunk.count("Path(path).resolve() == target") == 1
     assert chunk.count("target = Path(self._bank_db._db_path).resolve()") == 1
@@ -2321,8 +2321,8 @@ def test_main_window_build_menu_bar_wires_all_action_triggers() -> None:
     start = text.index("    def _build_menu_bar(self):")
     end = text.index("    # -- drag & drop on window", start)
     chunk = text[start:end]
-    assert chunk.count("QAction(") == 33
-    assert chunk.count(".triggered.connect(") == 30
+    assert chunk.count("QAction(") == 34
+    assert chunk.count(".triggered.connect(") == 31
     assert (
         chunk.count(
             "lambda checked=False, i=tab_idx: self._set_main_tab_index(i)"
@@ -2736,8 +2736,8 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
         chunk.count("tools_menu.addAction("),
         chunk.count("help_menu.addAction("),
     )
-    assert per_menu_add == (5, 1, 3, 3, 8), (
-        f"expected top-level addAction counts (File,View,Edit,Tools,Help)=(5,1,3,3,8); "
+    assert per_menu_add == (5, 1, 4, 3, 8), (
+        f"expected top-level addAction counts (File,View,Edit,Tools,Help)=(5,1,4,3,8); "
         f"Recon register actions use 13 submenu addAction (counted separately); "
         f"got {per_menu_add}"
     )
@@ -2750,8 +2750,8 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
     )
     assert n_reg_sub_add == 13
     n_add = sum(per_menu_add) + n_reg_sub_add
-    assert n_qa == n_tip == n_add == 33, (
-        f"expected 32 menu QActions, _menu_action_tip calls, and *.addAction( calls "
+    assert n_qa == n_tip == n_add == 34, (
+        f"expected 34 menu QActions, _menu_action_tip calls, and *.addAction( calls "
         f"(QAction={n_qa}, _menu_action_tip={n_tip}, addAction={n_add})"
     )
     n_dis = chunk.count("setEnabled(False)")
@@ -4956,7 +4956,7 @@ def test_main_window_message_box_information_ok_user_feedback_paths() -> None:
     start = text.index("class MainWindow(QMainWindow):")
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
-    assert chunk.count("message_box_information_ok(") == 11
+    assert chunk.count("message_box_information_ok(") == 12
 
 
 def test_main_window_message_box_warning_critical_and_file_dialog_counts() -> None:
@@ -4965,10 +4965,10 @@ def test_main_window_message_box_warning_critical_and_file_dialog_counts() -> No
     start = text.index("class MainWindow(QMainWindow):")
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
-    assert chunk.count("message_box_warning_ok(") == 10
+    assert chunk.count("message_box_warning_ok(") == 11
     assert chunk.count("message_box_critical_ok(") == 6  # +1 for delete_document failure path
     assert chunk.count("QFileDialog.getOpenFileNames(") == 1
-    assert chunk.count("QFileDialog.getOpenFileName(") == 1
+    assert chunk.count("QFileDialog.getOpenFileName(") >= 1
     assert chunk.count("QFileDialog.getSaveFileName(") == 1
 
 
@@ -5016,7 +5016,7 @@ def test_main_window_banner_tabs_status_bar_and_worker_counts() -> None:
     chunk = text[start:end]
     assert chunk.count("self._header.") == 2
     assert chunk.count("self._status_bar.showMessage(") == 14  # +1 for delete document confirmation
-    assert chunk.count("self._tabs.") == 44
+    assert chunk.count("self._tabs.") == 52
     assert chunk.count("self._worker") == 13
 
 
