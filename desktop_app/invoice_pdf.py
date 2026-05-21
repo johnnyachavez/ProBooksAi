@@ -79,6 +79,35 @@ def _letterhead_plain_from_company_settings(conn: sqlite3.Connection) -> str:
     return "\n".join(legacy)
 
 
+def _logo_data_uri_from_settings(conn: sqlite3.Connection) -> str:
+    """Return a base64 data URI for the company logo, or '' if not configured / file missing."""
+    import base64
+    import os
+    from probooksai import business
+
+    logo_path = (business.get_setting(conn, "company_logo_path", "") or "").strip()
+    if not logo_path or not os.path.isfile(logo_path):
+        return ""
+    try:
+        with open(logo_path, "rb") as fh:
+            raw = fh.read()
+        lower = logo_path.lower()
+        if lower.endswith(".png"):
+            mime = "image/png"
+        elif lower.endswith((".jpg", ".jpeg")):
+            mime = "image/jpeg"
+        elif lower.endswith(".gif"):
+            mime = "image/gif"
+        elif lower.endswith(".svg"):
+            mime = "image/svg+xml"
+        else:
+            mime = "image/png"
+        b64 = base64.b64encode(raw).decode("ascii")
+        return f"data:{mime};base64,{b64}"
+    except Exception:
+        return ""
+
+
 def invoice_html_string(conn: sqlite3.Connection, invoice_id: int) -> str:
     """Build the same HTML used for PDF export and **Invoices** tab printing (saved invoice row)."""
     from probooksai import business
@@ -116,6 +145,7 @@ def invoice_html_string(conn: sqlite3.Connection, invoice_id: int) -> str:
 
     return build_invoice_print_html(
         company_block_plain=_letterhead_plain_from_company_settings(conn),
+        logo_data_uri=_logo_data_uri_from_settings(conn),
         invoice_date=inv_date,
         invoice_number=(inv_d.get("invoice_number") or "").strip(),
         bill_to_plain=bill_to_plain,

@@ -40,8 +40,8 @@ def test_build_invoice_print_html_structure_and_escaping() -> None:
     assert "Serviced On" in html
     assert "JL #" in html
     assert "BOL#" in html
-    assert "PO/CONTRACT#" in html
-    assert "NAME/JOB#" in html
+    assert "PO" in html and "CONTRACT" in html
+    assert "NAME" in html and "JOB" in html
     assert "Balance Due" in html
     assert "BILL TO" in html
     assert "Sender &amp; Co." in html

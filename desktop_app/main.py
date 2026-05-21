@@ -1536,6 +1536,15 @@ class MainWindow(QMainWindow):
         act_prefs.setEnabled(False)
         edit_menu.addAction(act_prefs)
 
+        act_set_logo = QAction("Set Company &Logo\u2026", self)
+        _menu_action_tip(
+            act_set_logo,
+            "Choose a PNG or JPEG logo image to display on printed and saved invoices. "
+            "The path is stored in the open company file.",
+        )
+        act_set_logo.triggered.connect(self._on_set_company_logo)
+        edit_menu.addAction(act_set_logo)
+
         # Tools menu — general utilities (invoice entry on top-level Invoices tab)
         tools_menu = mb.addMenu("&Tools")
         act_tools_invoice = QAction("&Invoice\u2026", self)
@@ -2900,6 +2909,33 @@ class MainWindow(QMainWindow):
             "Company data was reloaded from the backup.\n\n"
             "Same engine as probooks restore (probooks.backup).",
             ok_tip="Close; you are now on the restored company database.",
+        )
+
+    def _on_set_company_logo(self) -> None:
+        """Edit → Set Company Logo: browse for a PNG/JPEG and save its path in company settings."""
+        from PySide6.QtWidgets import QFileDialog
+        from probooksai import business
+        from desktop_app.qt_mnemonic import message_box_information_ok, message_box_warning_ok
+
+        if not hasattr(self, "_bank_db") or self._bank_db is None:
+            message_box_warning_ok(self, "No Company Open",
+                "Open a company file first (File → Switch company) before setting a logo.")
+            return
+        conn = self._bank_db._conn
+        current = (business.get_setting(conn, "company_logo_path", "") or "").strip()
+        start_dir = str(Path(current).parent) if current else ""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select Company Logo Image", start_dir,
+            "Image files (*.png *.jpg *.jpeg *.gif *.svg);;All files (*.*)"
+        )
+        if not path:
+            return
+        business.set_setting(conn, "company_logo_path", path)
+        conn.commit()
+        message_box_information_ok(
+            self, "Logo Saved",
+            f"Company logo set to:\n{path}\n\nIt will appear on the next printed or saved invoice.",
+            ok_tip="Close — the logo is now saved in this company file.",
         )
 
     def _on_create_new_company(self) -> None:
