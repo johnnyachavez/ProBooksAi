@@ -7,8 +7,8 @@ This module does not open dialogs.
 Layout (top → bottom)
 ----------------------
 1. Header row: logo (top-left, no border) | "Invoice" title (right)
-2. Body row:   BILL TO + SHIP TO (left) | four stacked label+value cells (right 48%):
-               DATE / INVOICE # / PO-CONTRACT# / NAME-JOB#
+2. Body row:   BILL TO + SHIP TO (left) | 2x2 equal meta grid (right 48%):
+               DATE | INVOICE # / PO-CONTRACT# | NAME-JOB#
 3. Line-items grid (7 columns)
 4. Balance Due footer row
 5. Notes footer
@@ -22,14 +22,14 @@ from probooksai.html_escape import escape_html_text as _he
 DEFAULT_MIN_LINE_ROWS = 18
 
 # Shared inline styles (kept as constants to reduce repetition)
-_HDR_TH = (
-    "text-align:left; font-weight:bold; padding:3px 8px; "
-    "border:1px solid #000; background:#f0f0f0; font-size:8pt; "
+_META_TH = (
+    "text-align:center; font-weight:bold; padding:4px 6px; "
+    "border:1px solid #000; width:50%; background:#f0f0f0; font-size:8pt; "
     "text-transform:uppercase;"
 )
-_HDR_TD = (
-    "text-align:left; border:1px solid #000; "
-    "padding:5px 8px; min-height:22px; vertical-align:top;"
+_META_TD = (
+    "text-align:center; border:1px solid #000; padding:6px 8px; "
+    "height:70px; vertical-align:middle;"
 )
 
 
@@ -226,12 +226,12 @@ def build_invoice_print_html(
         "</tr>",
         "</table>",
 
-        # ── Row 2: BILL TO + SHIP TO (left) + 4 stacked meta-fields (right) ──
+        # ── Row 2: BILL TO + SHIP TO (left) + 2x2 meta grid (right) ──
         '<table width="100%" cellspacing="0" cellpadding="0" '
         'style="border:none; margin-top:12px;">',
         "<tr>",
 
-        # Left: BILL TO — height="216" matches the 4×(th+td) stack on the right;
+        # Left: BILL TO — height="216" matches the 2x2 grid on the right;
         # Qt's QTextDocument ignores height:100% on nested tables so we use the
         # HTML height attribute instead.
         '<td width="24%" valign="top" style="border:none; padding:0;">',
@@ -263,27 +263,26 @@ def build_invoice_print_html(
         # Gap
         '<td width="2%" style="border:none;">&#160;</td>',
 
-        # Right: 4 stacked cells — DATE, INVOICE #, PO/CONTRACT#, NAME/JOB#
+        # Right: 2x2 equal cells — DATE | INVOICE # / PO-CONTRACT# | NAME-JOB#
         '<td width="48%" valign="top" style="border:none; padding:0;">',
-        '<table width="100%" cellspacing="0" cellpadding="0" '
+        '<table width="100%" cellspacing="0" cellpadding="0" height="216" '
         'style="border:1px solid #000; border-collapse:collapse;">',
-
-        # DATE
-        f'<tr><th style="{_HDR_TH}">DATE</th></tr>',
-        f'<tr><td style="{_HDR_TD}">{inv_d}</td></tr>',
-
-        # INVOICE #
-        f'<tr><th style="{_HDR_TH}">INVOICE #</th></tr>',
-        f'<tr><td style="{_HDR_TD}">{inv_n}</td></tr>',
-
-        # PO/CONTRACT#
-        f'<tr><th style="{_HDR_TH}">PO / CONTRACT #</th></tr>',
-        f'<tr><td style="{_HDR_TD}">{po}</td></tr>',
-
-        # NAME/JOB#
-        f'<tr><th style="{_HDR_TH}">NAME / JOB #</th></tr>',
-        f'<tr><td style="{_HDR_TD}">{nj}</td></tr>',
-
+        "<tr>",
+        f'<th style="{_META_TH}">DATE</th>',
+        f'<th style="{_META_TH}">INVOICE #</th>',
+        "</tr>",
+        "<tr>",
+        f'<td style="{_META_TD}">{inv_d}</td>',
+        f'<td style="{_META_TD}">{inv_n}</td>',
+        "</tr>",
+        "<tr>",
+        f'<th style="{_META_TH}">PO / CONTRACT #</th>',
+        f'<th style="{_META_TH}">NAME / JOB #</th>',
+        "</tr>",
+        "<tr>",
+        f'<td style="{_META_TD}">{po}</td>',
+        f'<td style="{_META_TD}">{nj}</td>',
+        "</tr>",
         "</table>",
         "</td>",
         "</tr>",
