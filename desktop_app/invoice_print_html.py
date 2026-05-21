@@ -187,11 +187,11 @@ def build_invoice_print_html(
             "<tr>"
             + "".join(
                 f'<td style="text-align:left;vertical-align:top;padding:3px 4px;'
-                f'border-left:1px solid #000;border-right:1px solid #000;">{c}</td>'
+                f'border:0;border-left:1px solid #000;border-right:1px solid #000;">{c}</td>'
                 if j < 4
                 else f'<td style="text-align:right;vertical-align:top;padding:3px 4px;'
                 f'font-variant-numeric:tabular-nums;'
-                f'border-left:1px solid #000;border-right:1px solid #000;">{c}</td>'
+                f'border:0;border-left:1px solid #000;border-right:1px solid #000;">{c}</td>'
                 for j, c in enumerate(cells)
             )
             + "</tr>"
