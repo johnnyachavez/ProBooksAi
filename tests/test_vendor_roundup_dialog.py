@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 
 import pytest
@@ -33,6 +34,12 @@ def test_vendor_roundup_dialog_fields_and_buttons(qapp: QApplication) -> None:
     d.close()
 
 
+@pytest.mark.skipif(
+    os.environ.get("QT_QPA_PLATFORM") == "offscreen",
+    reason="QDialog.exec() enters a modal event loop that segfaults under the headless "
+    "offscreen Qt platform (used by CI); construction and the reject/clear paths are "
+    "covered by test_vendor_roundup_dialog_fields_and_buttons.",
+)
 def test_vendor_roundup_dialog_exec_closes(qapp: QApplication) -> None:
     d = VendorRoundupDialog()
     QTimer.singleShot(0, d.reject)
