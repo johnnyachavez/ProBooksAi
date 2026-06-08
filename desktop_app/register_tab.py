@@ -105,8 +105,9 @@ from probooksai.coa_ai_suggest import coa_hints
 from probooksai.bank_import import BankDatabase, parse_amount
 from probooksai.statement_line_match import (
     STATUS_EXTRA,
+    STATUS_LIKELY_MATCH,
     STATUS_MATCHED,
-    STATUS_MISSING,
+    STATUS_NEEDS_REVIEW,
     compare_statement_to_register,
     mock_statement_lines_for_comparison,
 )
@@ -522,6 +523,10 @@ class ManualTransactionDialog(QDialog):
         conn: sqlite3.Connection,
         initial_coa: str = "",
         initial_txn_date: Optional[str] = None,
+        initial_amount: Optional[float] = None,
+        initial_description: str = "",
+        initial_ref_number: str = "",
+        initial_memo: str = "",
     ):
         super().__init__(parent)
         self.setWindowTitle("Add bank transaction")
@@ -552,9 +557,14 @@ class ManualTransactionDialog(QDialog):
             "(same convention as CSV import). "
             "Keyboard focus starts here when the dialog opens."
         )
+        if initial_amount is not None:
+            self._amount.setText(f"{float(initial_amount):.2f}")
         form.addRow("Amount", self._amount)
         self._desc = QLineEdit()
         self._desc.setToolTip("Payee or description (first line of the Payee column).")
+        idesc = (initial_description or "").strip()
+        if idesc:
+            self._desc.setText(idesc)
         form.addRow("Payee / description", self._desc)
         self._coa = QComboBox()
         self._rebuild_coa_combo()
@@ -568,9 +578,15 @@ class ManualTransactionDialog(QDialog):
         form.addRow("Category (COA)", self._coa)
         self._ref = QLineEdit()
         self._ref.setToolTip("Optional check number or bank reference.")
+        ir = (initial_ref_number or "").strip()
+        if ir:
+            self._ref.setText(ir)
         form.addRow("Number / ref", self._ref)
         self._memo = QLineEdit()
         self._memo.setToolTip("Optional memo (editable later in the register grid).")
+        im = (initial_memo or "").strip()
+        if im:
+            self._memo.setText(im)
         form.addRow("Memo", self._memo)
         bb = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -681,9 +697,9 @@ def _register_keyboard_shortcuts_help_text() -> str:
         "Bank Import **Run extract & compare** can populate that overlay for the same account "
         "and switch the main window here; the main **status bar** may show a short confirmation, "
         "then restore the usual company line.\n\n"
-        "View menu tab focus: Ctrl+1 Invoices, Ctrl+2 Enter Bills, Ctrl+3 Pay Bills, Ctrl+4 Receive Payments, "
-        "Ctrl+5 Bank Register, Ctrl+6 Chart of Accounts, Ctrl+7 Customers, Ctrl+8 Vendors, Ctrl+9 Reconcile, "
-        "Ctrl+0 More (Reports, Journal, Business, Audit log).\n\n"
+        "View menu tab focus: Ctrl+1 Invoices, Ctrl+2 Codes, Ctrl+3 Write Checks, Ctrl+4 Enter Bills, Ctrl+5 Pay Bills, Ctrl+6 Receive Payments, "
+        "Ctrl+7 Bank Register, Ctrl+8 Chart of Accounts, Ctrl+9 Customers, Ctrl+0 Vendors, Ctrl+Shift+R Reconcile, "
+        "Ctrl+Shift+M More (Reports, Journal, Business, Audit log).\n\n"
         "Tools menu: Ctrl+Shift+I — Invoice… (top-level Invoices tab); full AR list and payments: **Customers** tab.\n\n"
         "Practice rows — blank rows pad the grid to ~20 lines; editable for layout only (not saved).\n\n"
         "Register grid — checkbook-style two-band rows; arrow keys move the cell focus. "
@@ -732,7 +748,7 @@ def show_register_keyboard_shortcuts_dialog(parent: QWidget) -> None:
         ok_tip="Close; shortcuts apply when Bank register has focus. "
         "Recon menu — Register Actions and related groups for add/post/export, attachments, splits, transfer, link, open linked Business, and receipt flags. "
         "**Link payment…** also shows **Open linked Business record…** when the stored link is complete (can open in Business). "
-        "View → Reconcile (Ctrl+9) → Bank statements for AI line reconciliation / Match-column overlay sync. "
+        "View → Reconcile (Ctrl+Shift+R) → Bank statements for AI line reconciliation / Match-column overlay sync. "
         "Company .db: File → Backup / Restore (probooks.backup).",
     )
 
@@ -887,7 +903,7 @@ class RegisterTab(QWidget):
             "Bulk row actions (add transaction, post to GL, and export CSV (UTF-8 BOM for Excel), cleared, attachments, splits, transfer, link payment, open linked Business, receipt flags): Recon menu. "
             "Reconciliation mode (toggle on the main tab bar when this tab is active) adds the Match overlay; "
             "Bank Import AI line reconciliation can populate it (Help → Bank import shortcuts…). "
-            "View → Reconcile (Ctrl+9) → Bank statements; Bank Register (Ctrl+5). "
+            "View → Reconcile (Ctrl+Shift+R) → Bank statements; Bank Register (Ctrl+7). "
             "Same company SQLite database as other main tabs; File → Backup / Restore (probooks.backup)."
         )
         layout = QVBoxLayout(self)
@@ -987,7 +1003,7 @@ class RegisterTab(QWidget):
             "Statement line-match overlay is on: second line of **Match** shows Matched / Missing / Extra (demo). "
             "Use **Bank Import** (View menu) for compare / line reconciliation; **Document Intake** and **Bank Import** tabs appear while this mode is on. "
             "Turn recon mode off with the **Reconciliation mode** checkbox on the main tab bar (when Bank register is active). "
-            "View → Bank Register (Ctrl+5); run/compare from Reconcile → Bank import (Ctrl+9)."
+            "View → Bank Register (Ctrl+7); run/compare from Reconcile → Bank import (Ctrl+Shift+R)."
         )
         layout.addWidget(self._recon_banner)
 
@@ -1137,9 +1153,35 @@ class RegisterTab(QWidget):
         self._apply_register_column_layout()
         self._sync_register_info_footer_visibility()
 
+    def _is_db_alive(self) -> bool:
+        """``True`` when ``self._db`` still has a usable SQLite connection.
+
+        Returns ``False`` if the bank database is missing or has been closed
+        (e.g. while the parent ``MainWindow`` is mid-``_switch_company_database``
+        and the old ``RegisterTab`` is still receiving Qt show events as the
+        tab strip rebuilds). This lets ``showEvent`` and ``_refresh_account_combo``
+        no-op instead of raising ``sqlite3.ProgrammingError`` against the closed
+        connection — the new ``RegisterTab`` built by ``_assemble_main_tabs``
+        owns the next refresh against the freshly opened DB.
+        """
+        db = getattr(self, "_db", None)
+        if db is None:
+            return False
+        if getattr(db, "is_closed", False):
+            return False
+        return getattr(db, "_conn", None) is not None
+
     def showEvent(self, event):
         super().showEvent(event)
-        self._refresh_account_combo()
+        if not self._is_db_alive():
+            # Old register tab being torn down by ``MainWindow._teardown_main_tabs_for_rebuild``
+            # while a sibling tab becomes current; ``self._db`` already points at a closed
+            # ``BankDatabase``. The new tab built by ``_assemble_main_tabs`` will refresh.
+            return
+        try:
+            self._refresh_account_combo()
+        except sqlite3.ProgrammingError:
+            return
         raw = QSettings().value(self._register_table_header_state_key())
         if raw:
             self._table.horizontalHeader().restoreState(raw)
@@ -1319,6 +1361,8 @@ class RegisterTab(QWidget):
         self._reload_current()
 
     def _refresh_account_combo(self):
+        if not self._is_db_alive():
+            return
         self._acct_combo.blockSignals(True)
         prev = self._current_account_id
         self._acct_combo.clear()
@@ -1377,6 +1421,8 @@ class RegisterTab(QWidget):
         self._load_transactions(aid)
 
     def _reload_current(self):
+        if not self._is_db_alive():
+            return
         if self._current_account_id is not None:
             self._load_transactions(self._current_account_id)
         else:
@@ -1595,6 +1641,191 @@ class RegisterTab(QWidget):
         self._load_transactions(want)
         return True
 
+    def handoff_line_reconciliation_row(
+        self,
+        *,
+        bank_account_id: int,
+        row: dict,
+        focus_bank_register_tab: Optional[Callable[[], None]] = None,
+    ) -> bool:
+        """Switch to Bank Register for this account, then select a register line or open **Add transaction** with drafts.
+
+        Does not post except when the user accepts **Add transaction** (same as Recon → Add transaction…).
+        """
+        want = coerce_combo_int_id(bank_account_id)
+        if want is None or not self._select_bank_account_for_overlay(want):
+            return False
+        if focus_bank_register_tab is not None:
+            focus_bank_register_tab()
+        status = str(row.get("status") or "")
+        rid = coerce_combo_int_id(row.get("register_id"))
+        if status == STATUS_NEEDS_REVIEW:
+            self._open_add_transaction_prefilled_from_reconcile(row)
+            return True
+        if rid is not None:
+            if not self._focus_transaction_by_id(rid):
+                message_box_warning_ok(
+                    self,
+                    "Open in Bank Register",
+                    "That register transaction is not on the grid in the current view. "
+                    "The filter was set to **All transactions** once; if it still does not appear, "
+                    "refresh (F5) or check that the line exists for this account.",
+                    ok_tip="Close; set Filter to All transactions and try again.",
+                )
+            return True
+        return False
+
+    def send_line_reconciliation_to_register_draft(
+        self,
+        *,
+        bank_account_id: int,
+        row: dict,
+        focus_bank_register_tab: Optional[Callable[[], None]] = None,
+    ) -> str:
+        """Open an **Add transaction** draft prefilled from Reconcile, or focus a register line for review.
+
+        Does not post except when the user saves **Add transaction**. Returns a short result code for UI state.
+
+        Returns:
+            ``"posted"`` — New manual transaction was saved from **Add transaction**.
+            ``"cancelled"`` — **Add transaction** was dismissed without saving.
+            ``"focused"`` — An existing register line was selected (e.g. **Extra**).
+            ``"failed"`` — Account selection failed, or no register line to focus.
+        """
+        want = coerce_combo_int_id(bank_account_id)
+        if want is None or not self._select_bank_account_for_overlay(want):
+            return "failed"
+        if focus_bank_register_tab is not None:
+            focus_bank_register_tab()
+        status = str(row.get("status") or "")
+        rid = coerce_combo_int_id(row.get("register_id"))
+
+        if status in (STATUS_NEEDS_REVIEW, STATUS_LIKELY_MATCH):
+            if self._open_add_transaction_prefilled_from_reconcile(row):
+                return "posted"
+            return "cancelled"
+
+        if status == STATUS_EXTRA:
+            if rid is None:
+                return "failed"
+            if self._focus_transaction_by_id(rid):
+                return "focused"
+            message_box_warning_ok(
+                self,
+                "Send to Register Draft",
+                "That register transaction is not on the grid in the current view. "
+                "The filter was set to **All transactions** once; if it still does not appear, "
+                "refresh (F5) or check that the line exists for this account.",
+                ok_tip="Close; set Filter to All transactions and try again.",
+            )
+            return "failed"
+
+        return "failed"
+
+    def _focus_transaction_by_id(self, txn_id: int) -> bool:
+        tid = coerce_combo_int_id(txn_id)
+        if tid is None:
+            return False
+
+        def scan() -> int:
+            for r in range(self._table.rowCount()):
+                id_it = self._table.item(r, _COL_DATE)
+                if id_it is None:
+                    continue
+                row_tid = coerce_combo_int_id(id_it.data(Qt.ItemDataRole.UserRole))
+                if row_tid == tid:
+                    return r
+            return -1
+
+        row = scan()
+        if row < 0 and self._filter_combo.currentIndex() != 0:
+            self._filter_combo.blockSignals(True)
+            self._filter_combo.setCurrentIndex(0)
+            self._filter_combo.blockSignals(False)
+            self._reload_current()
+            row = scan()
+        if row < 0:
+            return False
+        id_it = self._table.item(row, _COL_DATE)
+        if id_it is None:
+            return False
+        self._table.setCurrentCell(row, _COL_DATE)
+        self._table.scrollToItem(id_it, QAbstractItemView.ScrollHint.PositionAtCenter)
+        return True
+
+    def _open_add_transaction_prefilled_from_reconcile(self, row: dict) -> bool:
+        """**Add transaction** with Reconcile drafts (date, amount, payee, COA, notes, hint). Returns True if saved."""
+        if self._current_account_id is None:
+            return False
+        aid = self._current_account_id
+        coa_key = self._register_manual_entry_last_coa_key(aid)
+        raw_saved = QSettings().value(coa_key, "")
+        saved_coa = str(raw_saved or "").strip()
+        draft_coa = str(row.get("draft_coa_account") or "").strip()
+        suggested_coa = str(row.get("suggested_coa") or "").strip()
+        initial_coa = draft_coa or suggested_coa or saved_coa
+        stmt_date = str(row.get("stmt_date") or "").strip()[:10]
+        latest_date = self._db.latest_txn_date_for_account(aid)
+        initial_txn_date = stmt_date if stmt_date else latest_date
+        sa = row.get("stmt_amount")
+        try:
+            initial_amt = float(sa) if sa is not None else None
+        except (TypeError, ValueError):
+            initial_amt = None
+        desc = str(row.get("stmt_description") or "").strip()
+        suggested_payee = str(row.get("suggested_payee") or "").strip()
+        if not desc and suggested_payee:
+            desc = suggested_payee
+        notes = str(row.get("review_notes") or "").strip()
+        memo_parts: list[str] = []
+        if notes:
+            memo_parts.append(notes)
+        hint = str(row.get("suggestion_source") or "").strip()
+        if hint:
+            memo_parts.append(f"Reconcile hint: {hint}")
+        if suggested_payee and suggested_payee.casefold() != desc.casefold():
+            memo_parts.append(f"Suggested payee (reconcile): {suggested_payee}")
+        initial_memo = "\n".join(memo_parts)
+        dlg = ManualTransactionDialog(
+            self,
+            coa_choices=self._coa_choices,
+            conn=self._db._conn,
+            initial_coa=initial_coa,
+            initial_txn_date=initial_txn_date or None,
+            initial_amount=initial_amt,
+            initial_description=desc,
+            initial_memo=initial_memo,
+        )
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return False
+        v = dlg.values()
+        try:
+            self._db.insert_manual_transaction(
+                aid,
+                v["txn_date"],
+                float(v["amount"]),
+                description=v["description"],
+                ref_number=v["ref_number"],
+                memo=v["memo"],
+                coa_account=v.get("coa_account") or "",
+            )
+        except sqlite3.IntegrityError as exc:
+            message_box_warning_ok(
+                self,
+                "Cannot save",
+                escape_ampersand_for_qt(str(exc)),
+                ok_tip="Close; this row collided with an existing fingerprint (rare). Try again.",
+            )
+            return False
+        picked = (v.get("coa_account") or "").strip()
+        s = QSettings()
+        if picked:
+            s.setValue(coa_key, picked)
+        else:
+            s.remove(coa_key)
+        self._reload_current()
+        return True
+
     def _maybe_fill_demo_reconciliation_overlay(self, register_dicts: list[dict]) -> None:
         """Demo Matched / Missing / Extra from mock statement extract (no separate view)."""
         if not self._reconciliation_mode:
@@ -1661,8 +1892,12 @@ class RegisterTab(QWidget):
                 st = (self._recon_txn_status.get(tid, "") or "").strip()
                 if st == STATUS_MATCHED:
                     stmt_tip = f"{src}: matched this register transaction."
-                elif st == STATUS_MISSING:
-                    stmt_tip = f"{src}: no register match (demo)."
+                elif st == STATUS_LIKELY_MATCH:
+                    stmt_tip = (
+                        f"{src}: likely match — review the pair in Reconcile → Bank statements."
+                    )
+                elif st == STATUS_NEEDS_REVIEW:
+                    stmt_tip = f"{src}: needs review — no confident register match."
                 elif st == STATUS_EXTRA:
                     stmt_tip = (
                         f"{src}: register line with no statement counterpart (demo)."

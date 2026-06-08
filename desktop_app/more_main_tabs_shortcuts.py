@@ -27,7 +27,7 @@ def more_main_tabs_keyboard_shortcuts_help_text() -> str:
         "(same as Recon → Transaction Tools → Open linked Business record when the link is complete). "
         "The **Bank Import** line-reconciliation grid (**Matched / Missing / Extra**) adds **Copy row** plus **Copy statement** / **register** date, amount, and description, "
         "**Copy register transaction id**, and **Open linked Business record…** when **Reg #** has a **complete bank link**; see **Help → Bank import shortcuts….**\n\n"
-        "View menu: Ctrl+1 Invoices … Ctrl+9 Reconcile, Ctrl+0 More (Reports, Journal, Business, Audit log).\n"
+        "View menu: Ctrl+1 Invoices, Ctrl+2 Codes, … Ctrl+0 Reconcile, Ctrl+Shift+M More (Reports, Journal, Business, Audit log).\n"
         "Tools menu: Go to … main tabs; Ctrl+Shift+I — Invoice… (top-level Invoices tab); AR lists: **Customers**.\n"
         "Help → Document intake shortcuts… lists the same chords plus Intake-specific notes "
         "(including File → Backup company file… / Restore from backup… via probooks.backup).\n"

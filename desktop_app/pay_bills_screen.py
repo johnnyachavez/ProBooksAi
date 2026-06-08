@@ -11,13 +11,15 @@ from datetime import date
 from typing import TYPE_CHECKING, Optional
 
 from PySide6.QtCore import QDate, Qt
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QTextDocument
+from PySide6.QtPrintSupport import QPrinter
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,
     QDateEdit,
     QDoubleSpinBox,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -32,6 +34,8 @@ from PySide6.QtWidgets import (
 )
 
 from desktop_app.flexible_date import configure_qdate_edit_us, format_iso_to_us_display
+from desktop_app.invoice_preferences import configure_printer_for_payment_print
+from desktop_app.payment_receipt_pdf import ap_payment_html_string, save_ap_payment_pdf
 from desktop_app.qt_combo_ids import coerce_combo_int_id
 from desktop_app.qt_mnemonic import (
     message_box_critical_ok,
@@ -110,6 +114,7 @@ class PayBillsScreen(QWidget):
         self._cached_bills: list = []
         self._row_checks: list[QCheckBox] = []
         self._payment_edits: list[QDoubleSpinBox] = []
+        self._last_ap_payment_ids: list[int] = []
         self.setToolTip(
             "Pay Bills: open vendor bills from your company file; enter amounts to pay and post. "
             "Same company .db (File → Backup / Restore, probooks.backup)."
@@ -122,6 +127,25 @@ class PayBillsScreen(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(10)
+
+        doc_row = QHBoxLayout()
+        doc_row.setSpacing(8)
+        self._btn_export_ap_pdf = QPushButton("Export last AP payment PDF…")
+        self._btn_export_ap_pdf.setToolTip(
+            "Save the most recently posted AP payment from this session as a PDF (pick path)."
+        )
+        self._btn_export_ap_pdf.clicked.connect(self._on_export_last_ap_payment_pdf)
+        self._btn_print_ap = QPushButton("Print last AP payment…")
+        self._btn_print_ap.setToolTip("Print the most recently posted AP payment (same layout as PDF).")
+        self._btn_print_ap.clicked.connect(self._on_print_last_ap_payment)
+        for b in (self._btn_export_ap_pdf, self._btn_print_ap):
+            b.setAutoDefault(False)
+            b.setDefault(False)
+            b.setEnabled(False)
+        doc_row.addWidget(self._btn_export_ap_pdf)
+        doc_row.addWidget(self._btn_print_ap)
+        doc_row.addStretch(1)
+        outer.addLayout(doc_row)
 
         page = QFrame()
         page.setObjectName("payBillsLightPanel")
@@ -504,6 +528,7 @@ class PayBillsScreen(QWidget):
         bank_db = self._bank_db
         posted = 0
         bank_errors: list[str] = []
+        self._last_ap_payment_ids.clear()
 
         for vid, allocs in sorted(by_vendor.items()):
             total = round(sum(a for _, a in allocs), 2)
@@ -534,6 +559,7 @@ class PayBillsScreen(QWidget):
                 )
                 return
             posted += 1
+            self._last_ap_payment_ids.append(int(pid))
 
             if bank_account_id is not None and bank_db is not None:
                 try:
@@ -552,6 +578,10 @@ class PayBillsScreen(QWidget):
         self._cached_bills = list(business.list_open_bills_for_pay_bills(conn))
         self._rebuild_table()
 
+        on = bool(self._last_ap_payment_ids)
+        self._btn_export_ap_pdf.setEnabled(on)
+        self._btn_print_ap.setEnabled(on)
+
         if bank_errors:
             message_box_warning_ok(
                 self,
@@ -567,3 +597,55 @@ class PayBillsScreen(QWidget):
                 f"Posted {posted} payment(s). Open balances were updated.",
                 ok_tip="Close; use Refresh or reopen the tab to reload bills.",
             )
+
+    def _on_export_last_ap_payment_pdf(self) -> None:
+        if self._ap_conn is None or not self._last_ap_payment_ids:
+            return
+        pid = self._last_ap_payment_ids[-1]
+        default_name = f"AP-Payment-{pid}.pdf"
+        path, _filt = QFileDialog.getSaveFileName(
+            self,
+            "Export AP payment as PDF",
+            default_name,
+            "PDF files (*.pdf);;All files (*.*)",
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".pdf"):
+            path = f"{path}.pdf"
+        try:
+            save_ap_payment_pdf(self._ap_conn, pid, path)
+        except OSError as exc:
+            message_box_warning_ok(
+                self,
+                "Pay Bills",
+                f"Could not write PDF: {exc}",
+                ok_tip="Choose a writable folder and try again.",
+            )
+        except Exception as exc:  # noqa: BLE001
+            message_box_warning_ok(
+                self,
+                "Pay Bills",
+                f"PDF export failed: {exc}",
+                ok_tip="Close and try again.",
+            )
+
+    def _on_print_last_ap_payment(self) -> None:
+        if self._ap_conn is None or not self._last_ap_payment_ids:
+            return
+        pid = self._last_ap_payment_ids[-1]
+        doc = QTextDocument()
+        try:
+            doc.setHtml(ap_payment_html_string(self._ap_conn, pid))
+        except Exception as exc:  # noqa: BLE001
+            message_box_warning_ok(
+                self,
+                "Pay Bills",
+                f"Could not prepare payment for printing: {exc}",
+                ok_tip="Close and try again.",
+            )
+            return
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        if not configure_printer_for_payment_print(self, printer):
+            return
+        doc.print_(printer)

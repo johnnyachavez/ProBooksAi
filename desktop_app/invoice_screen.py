@@ -1,6 +1,6 @@
 """Invoice entry workflow screen — intake queue and Manual Invoice with live SQLite persistence; Bill To uses Customer Center data.
 
-**Invoice Intake** (sub-tab): stage PDFs, images, and pasted text for future draft creation; **Manual Invoice** sub-tab saves to ``invoices`` / ``invoice_lines``.
+**Invoice Intake** (sub-tab): stage PDFs, images, and pasted text; **Send to Manual Invoice** opens a new draft with source in memo + banner. **Manual Invoice** sub-tab saves to ``invoices`` / ``invoice_lines``.
 
 Dark navy panel styling matches Customers / Vendors AR/AP master tabs. Line grid uses in-cell widgets
 so editors stay inline (no multiline popup editors). Bill To is wired to
@@ -10,8 +10,9 @@ so editors stay inline (no multiline popup editors). Bill To is wired to
 
 Modal UI for *this* workflow tab is allowed only from explicit header buttons:
 
-- **Save** (``_btn_save``): persists to SQLite, then writes **PDF** to the folder from
-  **Edit → Preferences → Invoice Options** (or a one-time folder prompt). No print dialog.
+- **Save** (``_btn_save``): persists to SQLite first, then writes **PDF** to the folder from
+  **Edit → Preferences → Invoice Options** when that folder is set (or after a one-time pick).
+  If no PDF folder is chosen, the invoice is still saved to the company database. No print dialog.
 - **Export PDF…** (``_btn_export_pdf``): persists, then **Save file** dialog for a single ``.pdf`` path
   (does not change the preferences folder).
 - **Print…** (``_btn_print``): ``sender()`` must be that button; ``_invoice_print_dialog_armed``
@@ -20,6 +21,7 @@ Modal UI for *this* workflow tab is allowed only from explicit header buttons:
 
 No other signal may trigger Save / Export / Print invoice output paths.
 ``desktop_app.invoice_pdf.invoice_html_string`` / ``save_invoice_pdf`` also serve tests and CLI.
+Company identity from ``company_settings`` appears above the Manual Invoice title and in PDF/print HTML.
 """
 
 from __future__ import annotations
@@ -28,13 +30,15 @@ import hashlib
 import logging
 import os
 import sqlite3
+from functools import partial
 from typing import Optional
 
-from PySide6.QtCore import QDate, QEvent, QObject, QSettings, Qt, QTimer
+from PySide6.QtCore import QDate, QEvent, QObject, QStringListModel, QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QFontMetrics, QHideEvent, QShowEvent, QTextDocument
-from PySide6.QtPrintSupport import QPrintDialog, QPrinter, QPrinterInfo
+from PySide6.QtPrintSupport import QPrinter
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCompleter,
     QDoubleSpinBox,
     QFrame,
     QHBoxLayout,
@@ -66,17 +70,15 @@ from desktop_app.flexible_date import (
     parse_flexible_date_to_ymd,
 )
 from desktop_app.invoice_preferences import (
-    get_invoice_printer_name,
-    set_invoice_printer_name,
+    configure_printer_for_invoice_print,
+    ensure_invoice_output_folder,
 )
 from desktop_app.invoice_intake_panel import InvoiceIntakePanel
-from desktop_app.invoice_pdf import invoice_html_string
-from desktop_app.qt_mnemonic import (
-    message_box_information_ok,
-    message_box_question_yes_no,
-    message_box_save_discard_cancel,
-)
+from desktop_app.invoice_intake_text_extract import TextIntakeExtraction
+from desktop_app.invoice_pdf import invoice_html_string, save_invoice_pdf
+from desktop_app.qt_mnemonic import message_box_information_ok, message_box_warning_ok
 from probooksai import business
+from probooksai.company_identity import company_identity_plain_block
 from desktop_app.ar_customer_actions import (
     export_invoices_csv,
     open_new_ar_invoice_dialog,
@@ -167,15 +169,10 @@ _INVOICE_SHOW_SHIP_TO_UI = False
 _INVOICE_LINE_ROW_MIN_HEIGHT_PX = 22
 _INVOICE_LINE_ROW_DEFAULT_EXTRA_PX = 10
 # Non-Total columns: minimum width while clamping (matches header minimumSectionSize).
-_INVOICE_LINE_COL_MIN_OTHER_PX = 40
-
-# Default pixel widths for each column (cols 0–5; col 6 Total fills remaining viewport).
-# Order: Date, Code, Description, BOL#, Rate, Qty
-_LINE_COL_DEFAULT_WIDTHS: tuple[int, ...] = (72, 72, 520, 100, 110, 100)
+_INVOICE_LINE_COL_MIN_OTHER_PX = 24
 
 # QSettings value: comma-separated column widths (scoped by company file path).
-# Bump suffix version to clear any previously saved widths and apply the new defaults.
-_INVOICE_LINE_TABLE_WIDTHS_KEY_PREFIX = "invoice_workflow/line_table_column_widths_v2"
+_INVOICE_LINE_TABLE_WIDTHS_KEY_PREFIX = "invoice_workflow/line_table_column_widths_v1"
 
 
 def _invoice_line_table_qsettings() -> QSettings:
@@ -198,6 +195,50 @@ def _cell_line() -> QLineEdit:
         f"QLineEdit {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_INV_GRID}; "
         f"padding: 2px 6px; color: {_INV_TEXT}; }}"
     )
+    return le
+
+
+class _InvoiceCodeLineEdit(QLineEdit):
+    """Manual Invoice line **Code** field: ``QLineEdit`` that opens its completer popup on focus/click.
+
+    Behaves as a dropdown + type-ahead picker backed by the saved **Codes** table:
+
+    * Clicking or focusing the cell shows the full saved-Codes list (when a completer is attached).
+    * Typing narrows the popup live (case-insensitive prefix match via the attached
+      :class:`PySide6.QtWidgets.QCompleter`).
+    * ``isinstance(widget, QLineEdit)`` stays true so existing save/load paths keep using ``.text()``.
+    """
+
+    def _show_invoice_code_completer_popup(self) -> None:
+        comp = self.completer()
+        if comp is None:
+            return
+        comp.setCompletionPrefix(self.text())
+        comp.complete()
+
+    def focusInEvent(self, event) -> None:  # noqa: D401 - Qt signature
+        super().focusInEvent(event)
+        QTimer.singleShot(0, self._show_invoice_code_completer_popup)
+
+    def mousePressEvent(self, event) -> None:  # noqa: D401 - Qt signature
+        super().mousePressEvent(event)
+        self._show_invoice_code_completer_popup()
+
+
+def _cell_line_invoice_code() -> _InvoiceCodeLineEdit:
+    """Manual Invoice line **Code** column widget (dropdown + type-ahead, same styling as ``_cell_line``)."""
+    le = _InvoiceCodeLineEdit()
+    le.setStyleSheet(
+        f"QLineEdit {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_INV_GRID}; "
+        f"padding: 2px 6px; color: {_INV_TEXT}; }}"
+    )
+    return le
+
+
+def _cell_line_date() -> QLineEdit:
+    """Line **Date** column: same US-date normalization as the invoice header date field."""
+    le = _cell_line()
+    attach_line_edit_us_date_normalization(le)
     return le
 
 
@@ -234,137 +275,20 @@ def _line_total_spin() -> QDoubleSpinBox:
     return s
 
 
-def _find_or_create_customer(conn: sqlite3.Connection, name: str, address: str = "") -> int:
-    """Return existing customer id by name (case-insensitive) or create a new one."""
-    row = conn.execute(
-        "SELECT id FROM customers WHERE LOWER(name) = LOWER(?) LIMIT 1", (name,)
-    ).fetchone()
-    if row:
-        return int(row["id"])
-    # Parse address — store in the single 'address' column
-    lines = [ln.strip() for ln in (address or "").splitlines() if ln.strip()]
-    addr = "\n".join(lines)
-    cur = conn.execute(
-        """INSERT INTO customers (name, address, created_at)
-           VALUES (?, ?, datetime('now'))""",
-        (name, addr),
-    )
-    conn.commit()
-    return int(cur.lastrowid)
-
-
-def _ai_extract_invoice(pdf_path: str) -> "dict | None":
-    """Call Claude PDF vision to extract invoice fields. Thread-safe (no Qt, no shared DB).
-
-    Returns a dict with invoice fields, or None on failure.
-    Uses the standard messages API (no beta required for Claude 3.7+ / Claude 4).
-    Falls back to the PDF beta for older Claude 3.5 models.
-    Piggybacks on the ``intake_extract`` logger (already set up by the worker).
-    """
-    # stdlib imports — these always succeed
-    import base64  # noqa: PLC0415
-    import json  # noqa: PLC0415
-    import logging as _logging  # noqa: PLC0415
-    import re  # noqa: PLC0415
-    import traceback  # noqa: PLC0415
-
-    # Logger FIRST — before anything that might fail, so all errors are captured.
-    _ai_log = _logging.getLogger("intake_extract")
-
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        _ai_log.error("_ai_extract_invoice: ANTHROPIC_API_KEY is empty — aborting")
-        return None
-
-    model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5")
-    fname = os.path.basename(pdf_path)
-    _ai_log.info(f"_ai_extract_invoice START: {fname}  model={model}")
-
-    try:
-        # anthropic import is inside try so ImportError is caught and logged
-        import anthropic  # noqa: PLC0415
-
-        with open(pdf_path, "rb") as f:
-            raw_bytes = f.read()
-        pdf_data = base64.standard_b64encode(raw_bytes).decode()
-        _ai_log.info(f"PDF read OK: {len(raw_bytes):,} bytes → {len(pdf_data):,} base64 chars")
-
-        # 120-second hard timeout — prevents the worker from hanging indefinitely
-        # if the API server accepts the TCP connection but never sends a response.
-        client = anthropic.Anthropic(api_key=api_key, timeout=120.0)
-
-        prompt = """Extract the invoice data (NOT the Bill of Lading or other attachments — invoice only).
-Return ONLY a valid JSON object with these exact keys:
-{
-  "invoice_number": "string",
-  "invoice_date": "YYYY-MM-DD",
-  "customer_name": "string (the BILL TO company name only, first line)",
-  "customer_address": "string (full address, newline separated)",
-  "po_contract": "string (PO/CONTRACT# value)",
-  "name_job": "string (NAME/JOB# value)",
-  "lines": [
-    {
-      "serviced_on": "MM/DD/YYYY",
-      "jl_num": "string",
-      "description": "string",
-      "bol": "string",
-      "qty": number,
-      "rate": number,
-      "amount": number
-    }
-  ],
-  "total": number
-}
-Rules: Use empty string for missing fields. qty defaults to 1 if not shown. Only include invoice lines, not BOL/delivery-ticket rows."""
-
-        content = [
-            {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": pdf_data}},
-            {"type": "text", "text": prompt},
-        ]
-
-        # Try the standard API first (Claude 3.7+ and Claude 4 support PDFs natively).
-        try:
-            _ai_log.info("Calling messages.create (standard, no beta)…")
-            response = client.messages.create(
-                model=model,
-                max_tokens=2048,
-                messages=[{"role": "user", "content": content}],
-            )
-            _ai_log.info("Standard API call returned OK")
-        except Exception as std_exc:
-            _ai_log.warning(f"Standard API failed ({type(std_exc).__name__}: {std_exc}) — retrying with PDF beta…")
-            # Fall back to the Claude 3.5 PDF beta for older installs.
-            response = client.beta.messages.create(
-                model=model,
-                max_tokens=2048,
-                messages=[{"role": "user", "content": content}],
-                betas=["pdfs-2024-09-25"],
-            )
-            _ai_log.info("Beta API call returned OK")
-
-        raw = response.content[0].text.strip()
-        _ai_log.info(f"Raw AI response (first 300 chars): {raw[:300]}")
-        raw = re.sub(r'^```[a-zA-Z]*\n?', '', raw)
-        raw = re.sub(r'\n?```$', '', raw)
-        result = json.loads(raw.strip())
-        _ai_log.info(f"JSON parsed OK — inv={result.get('invoice_number')!r}  customer={result.get('customer_name')!r}")
-        return result
-    except Exception as exc:
-        _ai_log.error(f"_ai_extract_invoice FAILED for {fname}: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
-        return None
-
-
 class InvoiceScreen(QWidget):
     """Manual Invoice: header, line grid, totals; persists to ``invoices`` / ``invoice_lines`` when connected."""
 
+    customerRecordsChanged = Signal()
+    openInvoicesChanged = Signal()
+
     _LINE_COLS = (
-        "Serviced On",
-        "JL #",
+        "Date",
+        "Code",
         "Description",
         "BOL#",
         "Rate",
         "Qty",
-        "Amount",
+        "Total",
     )
     _N_LINE_ROWS = 15
 
@@ -377,17 +301,18 @@ class InvoiceScreen(QWidget):
         self._ap_conn = ap_conn
         self._invoice_number_autofill_value = ""
         self._browse_ids: list[int] = []
-        self._browse_index: int | None = None
+        # Browse position among saved invoices (0..n-1), trailing blank draft (n), or None = unpositioned draft.
+        self._browse_slot: int | None = None
         # ``None`` = new draft; when set, Save/Export/Print updates this invoice via ``business.update_invoice``.
         self._current_invoice_id: int | None = None
-        self._current_status: str = "Open"
         # Block line grid valueChanged/textChanged while loading or clearing (avoids footer flicker).
         self._suppress_invoice_line_recalc: bool = False
         # Memo text from DB when loading (no longer a visible header box after removing blank field).
         self._invoice_memo_notes: str = ""
-        # Snapshot of field values taken after each load/save/clear; used for dirty detection.
-        # ``None`` = blank new draft (dirty only if user has typed something).
-        self._form_snapshot: dict | None = None
+        # Set True only inside Print click handler while QPrintDialog may run (blocks stray callers).
+        self._invoice_print_dialog_armed: bool = False
+        # Last committed Code column text per line (strip); avoids re-applying saved Code rate when only Rate changed.
+        self._invoice_line_code_committed: list[str] = [""] * self._N_LINE_ROWS
         self.setToolTip(
             "Manual Invoice: enter lines and totals; Save writes to your company file. "
             "Invoice # suggests the next number from your company file (editable). "
@@ -407,6 +332,7 @@ class InvoiceScreen(QWidget):
         super().showEvent(event)
         if self._ap_conn is not None:
             self._bill_customer_panel.reload_customers()
+        self._refresh_company_identity_header()
         self._sync_invoice_number_suggestion()
         self._refresh_browse_state()
         self._update_new_customer_button_state()
@@ -414,6 +340,8 @@ class InvoiceScreen(QWidget):
         QTimer.singleShot(0, self._sync_invoice_line_total_column_width_safe)
 
     def hideEvent(self, event: QHideEvent) -> None:
+        # Avoid focus landing on Save/Print when switching main tabs (stray Return/Space).
+        self._defocus_invoice_action_buttons()
         tmr = getattr(self, "_line_widths_persist_timer", None)
         if tmr is not None and tmr.isActive():
             tmr.stop()
@@ -421,10 +349,37 @@ class InvoiceScreen(QWidget):
         self._persist_invoice_line_column_widths()
         super().hideEvent(event)
 
+    def _defocus_invoice_action_buttons(self) -> None:
+        """Move keyboard focus off Save / Export / Print / nav so tab changes cannot activate them."""
+        fw = self.focusWidget()
+        if fw is None:
+            return
+        for b in (
+            getattr(self, "_btn_save", None),
+            getattr(self, "_btn_export_pdf", None),
+            getattr(self, "_btn_print", None),
+            getattr(self, "_btn_clear_fields", None),
+            getattr(self, "_btn_reverse", None),
+            getattr(self, "_btn_forward", None),
+        ):
+            if b is not None and fw is b:
+                t = getattr(self, "_table", None)
+                if t is not None:
+                    t.setFocus(Qt.FocusReason.OtherFocusReason)
+                else:
+                    self.setFocus(Qt.FocusReason.OtherFocusReason)
+                return
+
+    def _on_invoice_module_subtab_changed(self, _index: int) -> None:
+        """Manual Invoice ↔ Invoice Intake: keep draft in memory; never prompt save here."""
+        self._defocus_invoice_action_buttons()
+
     def _update_new_customer_button_state(self) -> None:
         on = self._ap_conn is not None
-        self._btn_new_invoice.setEnabled(on)
+        self._btn_new_customer.setEnabled(on)
         self._btn_save.setEnabled(on)
+        if getattr(self, "_btn_ar_new_inv", None) is not None:
+            self._sync_ar_toolbar_enabled()
 
     def _sync_invoice_number_suggestion(self) -> None:
         """Set invoice # to the next system suggestion unless the user overrode it (new drafts only)."""
@@ -441,21 +396,6 @@ class InvoiceScreen(QWidget):
 
     def selected_bill_to_customer_id(self) -> Optional[int]:
         return self._bill_customer_panel.selected_customer_id()
-
-    def prefill_from_document(self, data: dict) -> None:
-        """Pre-fill header fields from AI-extracted document data (skips blank values)."""
-        from desktop_app.flexible_date import format_ymd_as_us
-        inv_num = (data.get("invoice_number") or "").strip()
-        if inv_num:
-            self._inv_number.setText(inv_num)
-            self._invoice_number_autofill_value = inv_num
-        iso_date = (data.get("doc_date") or "").strip()
-        if iso_date:
-            try:
-                y, m, d = (int(p) for p in iso_date.split("-"))
-                self._date.setText(format_ymd_as_us(m, d, y))
-            except (ValueError, AttributeError):
-                pass
 
     def _line_edit_header_style(self) -> str:
         return (
@@ -543,14 +483,37 @@ class InvoiceScreen(QWidget):
         self._invoice_tabs = QTabWidget(self)
         self._invoice_tabs.setObjectName("invoiceModuleTabs")
         self._invoice_tabs.setToolTip(
-            "Manual Invoice: full entry workflow. Invoice Intake: stage documents for future drafting."
+            "Manual Invoice: full entry workflow. Invoice Intake: stage sources and send to a draft invoice."
         )
 
+        self._btn_ar_new_inv = QPushButton("New invoice (AR)…")
+        self._btn_ar_new_inv.setToolTip(
+            "Create an invoice using the AR dialog (moved from the Customers tab)."
+        )
+        self._btn_ar_new_inv.clicked.connect(self._on_ar_new_invoice_dialog)
+        self._btn_ar_export_inv = QPushButton("Export invoices CSV…")
+        self._btn_ar_export_inv.setToolTip(
+            "Export invoice headers to CSV (UTF-8 BOM for Excel)."
+        )
+        self._btn_ar_export_inv.clicked.connect(self._on_ar_export_invoices_csv)
+        for b in (self._btn_ar_new_inv, self._btn_ar_export_inv):
+            b.setAutoDefault(False)
+            b.setDefault(False)
+
+        _ar_corner = QWidget(self._invoice_tabs)
+        _ar_corner_lay = QHBoxLayout(_ar_corner)
+        _ar_corner_lay.setContentsMargins(0, 0, 6, 0)
+        _ar_corner_lay.setSpacing(6)
+        _ar_corner_lay.addWidget(self._btn_ar_new_inv)
+        _ar_corner_lay.addWidget(self._btn_ar_export_inv)
+        self._invoice_tabs.setCornerWidget(_ar_corner, Qt.Corner.TopRightCorner)
         self._invoice_tabs.tabBar().setExpanding(False)
         self._invoice_tabs.setStyleSheet(
             f"QTabWidget#invoiceModuleTabs::pane {{ border: none; margin: 0; padding: 0; }}"
             f"QTabWidget#invoiceModuleTabs QTabBar::tab {{ padding: 3px 10px; min-height: 20px; }}"
         )
+
+        self._sync_ar_toolbar_enabled()
 
         page = QFrame()
         page.setObjectName("invoiceLightPanel")
@@ -562,6 +525,22 @@ class InvoiceScreen(QWidget):
         play.setContentsMargins(12, 10, 12, 12)
         play.setSpacing(8)
 
+        # Company letterhead (same ``company_settings`` text as PDF/print via ``company_identity_plain_block``).
+        self._company_identity_label = QLabel("")
+        self._company_identity_label.setWordWrap(True)
+        self._company_identity_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self._company_identity_label.setStyleSheet(
+            f"color: {_INV_TEXT}; font-size: 11px; background: transparent; padding: 0 0 6px 0;"
+        )
+        self._company_identity_label.setVisible(False)
+        self._company_identity_label.setToolTip(
+            "Company identity from your company file (File → New Company). "
+            "Matches the top-left block on printed and PDF invoices."
+        )
+        play.addWidget(self._company_identity_label)
+
         # ── Title row (Pay Bills / Receive Payments style: title left, key field right) ──
         title_row = QHBoxLayout()
         title_row.setSpacing(12)
@@ -570,6 +549,14 @@ class InvoiceScreen(QWidget):
             f"font-size: {_INVOICE_TITLE_FONT_PX}px; font-weight: 600; color: {_INV_TEXT}; background: transparent;"
         )
         title_row.addWidget(title)
+        self._invoice_status_badge = QLabel("")
+        self._invoice_status_badge.setObjectName("invoiceStatusBadge")
+        self._invoice_status_badge.setVisible(False)
+        self._invoice_status_badge.setStyleSheet(
+            "QLabel#invoiceStatusBadge { color: #16a34a; font-size: 13px; font-weight: 700; "
+            "letter-spacing: 0.06em; background: transparent; padding: 0 8px 0 0; }"
+        )
+        title_row.addWidget(self._invoice_status_badge, 0, Qt.AlignmentFlag.AlignVCenter)
         title_row.addStretch(1)
         self._inv_number = QLineEdit()
         self._inv_number.setPlaceholderText("INVOICE #")
@@ -632,11 +619,11 @@ class InvoiceScreen(QWidget):
             0,
         )
         fields_h.addWidget(
-            self._header_field_box("PO/Contract #", self._po, **_top_three_kw),
+            self._header_field_box("PO Number", self._po, **_top_three_kw),
             0,
         )
         fields_h.addWidget(
-            self._header_field_box("Name/Job #", self._job, **_top_three_kw),
+            self._header_field_box("Job Number", self._job, **_top_three_kw),
             0,
         )
         three_lay.addLayout(fields_h)
@@ -644,66 +631,70 @@ class InvoiceScreen(QWidget):
         btns_h = QHBoxLayout()
         btns_h.setContentsMargins(0, 0, 0, 0)
         btns_h.setSpacing(8)
-        self._btn_new_invoice = QPushButton("New Invoice")
-        self._btn_new_invoice.setToolTip(
-            "Start a new blank invoice with the next invoice number and today's date pre-filled."
-        )
         self._btn_clear_fields = QPushButton("Clear Fields")
         self._btn_clear_fields.setToolTip(
-            "Clear all fields except Invoice #; set Invoice Date to today."
-        )
-        self._btn_save = QPushButton("Save")
-        self._btn_save.setToolTip(
-            "Save this invoice to the company file."
+            "Clear lines and header fields except Invoice #; set Invoice Date to today."
         )
         self._btn_print = QPushButton("Print…")
         self._btn_print.setToolTip(
-            "Save this invoice then open the print dialog."
+            "Save this invoice to the company file, then print using the default printer from "
+            "Edit → Preferences → Invoice Options (or pick a printer once if unset). "
+            "After a successful print, the form resets for the next invoice."
         )
-        self._btn_reverse = QPushButton("◄  Prev")
-        self._btn_forward = QPushButton("Next  ►")
+        self._btn_new_customer = QPushButton("New Customer")
+        self._btn_new_customer.setToolTip(
+            "Same **New customer** dialog as the Customers tab (type, parent for jobs, contact fields); "
+            "Bill To fills when you save."
+        )
+        self._btn_save = QPushButton("Save")
+        self._btn_save.setToolTip(
+            "Save this invoice to the company file and write a PDF to the folder set under "
+            "Edit → Preferences → Invoice Options (you can choose the folder once if unset). "
+            "Then start a new blank invoice with the next number."
+        )
+        self._btn_export_pdf = QPushButton("Export PDF…")
+        self._btn_export_pdf.setToolTip(
+            "Save this invoice to the company file, then pick a PDF file path (one-time). "
+            "Does not change the default folder used by Save. Then start a new blank invoice."
+        )
+        self._btn_reverse = QPushButton("Reverse")
+        self._btn_forward = QPushButton("Forward")
         self._btn_reverse.setToolTip(
-            "Open the previous saved invoice. Keyboard: left-arrow when focus is in the header."
+            "Previous invoice by invoice number (stops at the lowest #). "
+            "From an unsaved draft, opens the last saved invoice."
         )
         self._btn_forward.setToolTip(
-            "Open the next saved invoice, or a new blank draft after the last one."
+            "Next invoice by invoice number. After the highest saved invoice, opens one blank draft "
+            "(stops there — Forward does not cycle to the first invoice)."
         )
         _strip_h = _top_strip_field_outer_height_px()
         _strip_btn_ss = _top_strip_action_button_qss()
-        _new_inv_ss = (
-            _strip_btn_ss
-            + " QPushButton { color: #00e676; font-weight: 700; } "
-            "QPushButton:disabled { color: #555; }"
-        )
-        self._btn_new_invoice.setStyleSheet(_new_inv_ss)
         for b in (
             self._btn_clear_fields,
             self._btn_save,
+            self._btn_export_pdf,
             self._btn_print,
+            self._btn_new_customer,
             self._btn_reverse,
             self._btn_forward,
         ):
             b.setStyleSheet(_strip_btn_ss)
-        for b in (
-            self._btn_new_invoice,
-            self._btn_clear_fields,
-            self._btn_save,
-            self._btn_print,
-            self._btn_reverse,
-            self._btn_forward,
-        ):
             b.setFixedHeight(_strip_h)
+            # MinimumExpanding + equal stretch shares width evenly under the three field boxes.
             b.setSizePolicy(
                 QSizePolicy.Policy.MinimumExpanding,
                 QSizePolicy.Policy.Fixed,
             )
+            # Fix stray Save/Print validation popups: never treat these as dialog default
+            # buttons (Return/Enter from table/header editors must not fire clicked).
             b.setAutoDefault(False)
             b.setDefault(False)
         for b in (
-            self._btn_new_invoice,
             self._btn_clear_fields,
             self._btn_save,
+            self._btn_export_pdf,
             self._btn_print,
+            self._btn_new_customer,
             self._btn_reverse,
             self._btn_forward,
         ):
@@ -736,16 +727,33 @@ class InvoiceScreen(QWidget):
 
         # Save/Print: only clicked → persistence; UniqueConnection prevents duplicate slots.
         _uc = Qt.ConnectionType.UniqueConnection
-        self._btn_new_invoice.clicked.connect(self._go_to_new_invoice_draft, _uc)
         self._btn_save.clicked.connect(self._on_save_invoice, _uc)
+        self._btn_export_pdf.clicked.connect(self._on_export_pdf_as, _uc)
         self._btn_print.clicked.connect(self._on_print_invoice, _uc)
         self._btn_clear_fields.clicked.connect(self._on_clear_fields, _uc)
+        self._btn_new_customer.clicked.connect(
+            self._bill_customer_panel.open_new_customer_dialog, _uc
+        )
+        self._bill_customer_panel.customerCreated.connect(
+            lambda _nid: self.customerRecordsChanged.emit()
+        )
         self._btn_reverse.clicked.connect(self._on_reverse_invoice, _uc)
         self._btn_forward.clicked.connect(self._on_forward_invoice, _uc)
 
         self._update_new_customer_button_state()
 
         self._sync_invoice_number_suggestion()
+
+        self._invoice_intake_handoff_banner = QLabel("")
+        self._invoice_intake_handoff_banner.setObjectName("invoiceIntakeHandoffBanner")
+        self._invoice_intake_handoff_banner.setWordWrap(True)
+        self._invoice_intake_handoff_banner.setVisible(False)
+        self._invoice_intake_handoff_banner.setStyleSheet(
+            f"QLabel#invoiceIntakeHandoffBanner {{ color: {_INV_TEXT}; font-size: 12px; "
+            f"background-color: {_INV_PANEL}; border: 1px solid {_INV_GRID}; border-radius: 6px; "
+            f"padding: 8px 10px; }}"
+        )
+        play.addWidget(self._invoice_intake_handoff_banner)
 
         line_sec = QLabel("Line items")
         line_sec.setStyleSheet(
@@ -805,12 +813,18 @@ class InvoiceScreen(QWidget):
         )
 
         for row in range(self._N_LINE_ROWS):
-            dt = _cell_line()
+            dt = _cell_line_date()
             dt.setPlaceholderText("Date")
             self._table.setCellWidget(row, 0, dt)
 
-            code = _cell_line()
-            code.setPlaceholderText("Code")
+            code = _cell_line_invoice_code()
+            code.setPlaceholderText("Code (click for list)")
+            code.setToolTip(
+                "Pick an invoice code from the saved Codes list, or type to filter. "
+                "Click or focus to open the dropdown; typing narrows choices live. "
+                "Selecting a saved Code auto-fills Description and Rate on this line "
+                "(your manual Rate edits are kept until you change the Code again)."
+            )
             self._table.setCellWidget(row, 1, code)
 
             desc = _cell_line()
@@ -834,15 +848,10 @@ class InvoiceScreen(QWidget):
             self._table.setCellWidget(row, 6, total)
 
         self._wire_invoice_line_recalc()
+        self._setup_invoice_code_helpers()
 
-        # Column widths: apply fixed defaults (Date/Code narrow, Description wide, BOL#/Rate/Qty fixed).
-        # QSettings saved widths (from a previous session) override these on _restore_invoice_line_column_widths().
-        _hh.blockSignals(True)
-        try:
-            for _ci, _w in enumerate(_LINE_COL_DEFAULT_WIDTHS):
-                self._table.setColumnWidth(_ci, _w)
-        finally:
-            _hh.blockSignals(False)
+        # Column widths: content-based default unless QSettings has saved widths for this company file.
+        self._table.resizeColumnsToContents()
         self._invoice_table_resizing = False
         self._line_widths_persist_timer: QTimer | None = None
         self._invoice_lines_viewport = self._table.viewport()
@@ -908,10 +917,181 @@ class InvoiceScreen(QWidget):
         self._invoice_tabs.addTab(page, "Manual Invoice")
         self._invoice_tabs.addTab(self._invoice_intake, "Invoice Intake")
         self._invoice_tabs.setCurrentIndex(0)
-        self._invoice_tabs.currentChanged.connect(self._on_invoice_subtab_changed)
+        self._invoice_tabs.currentChanged.connect(self._on_invoice_module_subtab_changed)
         outer.addWidget(self._invoice_tabs, 1)
 
+        self._refresh_company_identity_header()
         self._refresh_browse_state()
+
+    def _refresh_company_identity_header(self) -> None:
+        """Show company name / address / contact from ``company_settings`` when any field is set."""
+        lbl = getattr(self, "_company_identity_label", None)
+        if lbl is None:
+            return
+        if self._ap_conn is None:
+            lbl.clear()
+            lbl.setVisible(False)
+            return
+        try:
+            block = company_identity_plain_block(self._ap_conn).strip()
+        except (sqlite3.Error, OSError, TypeError, ValueError):
+            block = ""
+        if not block:
+            lbl.clear()
+            lbl.setVisible(False)
+            return
+        lbl.setText(block)
+        lbl.setVisible(True)
+
+    def apply_intake_item_to_draft(
+        self,
+        *,
+        source_display: str,
+        kind: str,
+        path: str | None = None,
+        text_payload: str | None = None,
+        queue_notes: str = "",
+        text_extraction: TextIntakeExtraction | None = None,
+        extracted_file_text: str | None = None,
+        file_extract_note: str | None = None,
+    ) -> bool:
+        """Switch to Manual Invoice with a new draft; carry intake source into memo (saved on Save).
+
+        Uses staged data only. *text_extraction* (from pasted text or PDF/image text layer / OCR) may
+        set invoice date / BOL# when confidence is high — no invented line totals.
+        """
+        if self._ap_conn is None:
+            message_box_information_ok(
+                self,
+                "Invoice",
+                "Open a company file to create an invoice draft.",
+                ok_tip="Close; use File → Open company… then try again.",
+            )
+            return False
+        self._invoice_tabs.setCurrentIndex(0)
+        self._go_to_new_invoice_draft()
+
+        src = (source_display or "").strip() or "(unnamed)"
+        k = (kind or "").strip() or "?"
+        qn = (queue_notes or "").strip()
+        memo_lines: list[str] = [
+            "[Invoice intake] Draft from staged item — review and edit before Save.",
+            f"Source label: {src}",
+            f"Type: {k}",
+        ]
+        p = (path or "").strip()
+        if p:
+            memo_lines.append(f"Attachment path: {os.path.normpath(p)}")
+        if qn:
+            memo_lines.append(f"Queue notes: {qn}")
+        ex = text_extraction
+        if ex is not None:
+            applied: list[str] = []
+            if ex.date_confidence == "high" and ex.date_display:
+                applied.append(f"Invoice date (form): {ex.date_display}")
+            if ex.ticket_confidence == "high" and ex.ticket_ref:
+                applied.append(f"Line 1 BOL# (form): {ex.ticket_ref}")
+            extra_memo = ex.memo_lines_for_handoff()
+            if applied or extra_memo:
+                memo_lines.append("")
+                memo_lines.append("--- Intake extraction (high confidence) ---")
+                memo_lines.extend(applied)
+                memo_lines.extend(extra_memo)
+        if k == "Text" and (text_payload or "").strip():
+            body = text_payload.strip()
+            if len(body) > 8000:
+                body = body[:8000] + "\n… (truncated for memo; paste more in the line grid if needed)"
+            memo_lines.append("")
+            memo_lines.append("--- Staged text (from clipboard / intake) ---")
+            memo_lines.append(body)
+        elif k in ("PDF", "Image") and (extracted_file_text or "").strip():
+            body = (extracted_file_text or "").strip()
+            if len(body) > 8000:
+                body = body[:8000] + "\n… (truncated for memo; paste more in the line grid if needed)"
+            memo_lines.append("")
+            memo_lines.append(
+                f"--- Extracted text ({k} file; same source as intake review panel) ---"
+            )
+            memo_lines.append(body)
+        if k in ("PDF", "Image") and (file_extract_note or "").strip():
+            memo_lines.append("")
+            memo_lines.append("--- Extraction note ---")
+            memo_lines.append((file_extract_note or "").strip())
+
+        self._invoice_memo_notes = "\n".join(memo_lines).strip()
+
+        if ex is not None:
+            if ex.date_confidence == "high" and ex.date_display:
+                self._date.setText(ex.date_display)
+            if ex.ticket_confidence == "high" and ex.ticket_ref:
+                bol_w = self._table.cellWidget(0, 3)
+                if isinstance(bol_w, QLineEdit):
+                    bol_w.setText(ex.ticket_ref)
+
+        num = (self._inv_number.text() or "").strip()
+        if k == "Text" and (text_payload or "").strip():
+            raw = text_payload.strip()
+            preview = raw if len(raw) <= 500 else raw[:500] + "…"
+            ext_note = ""
+            if ex is not None:
+                bits: list[str] = []
+                if ex.date_confidence == "high":
+                    bits.append("invoice date")
+                if ex.ticket_confidence == "high":
+                    bits.append("BOL#")
+                if ex.memo_lines_for_handoff():
+                    bits.append("memo lines")
+                if bits:
+                    ext_note = f"\n\nApplied from text extraction: {', '.join(bits)}."
+            banner = (
+                f"From Invoice Intake — pasted text ({len(raw)} chars). "
+                f"Suggested invoice # {num or '—'}.\n\n"
+                f"Preview (full text is saved on the invoice memo):\n{preview}{ext_note}"
+            )
+        elif k in ("PDF", "Image") and p:
+            raw_file = (extracted_file_text or "").strip()
+            if raw_file:
+                preview = raw_file if len(raw_file) <= 500 else raw_file[:500] + "…"
+                ext_note = ""
+                if ex is not None:
+                    bits: list[str] = []
+                    if ex.date_confidence == "high":
+                        bits.append("invoice date")
+                    if ex.ticket_confidence == "high":
+                        bits.append("BOL#")
+                    if ex.memo_lines_for_handoff():
+                        bits.append("memo lines")
+                    if bits:
+                        ext_note = f"\n\nApplied from extraction: {', '.join(bits)}."
+                banner = (
+                    f"From Invoice Intake — {k}: {src} ({len(raw_file)} chars extracted). "
+                    f"Suggested invoice # {num or '—'}.\n\n"
+                    f"Preview (extracted text is on the invoice memo):\n{preview}{ext_note}"
+                )
+            else:
+                note = (file_extract_note or "").strip() or (
+                    "No text extracted from this file; path and any note are in the memo."
+                )
+                banner = (
+                    f"From Invoice Intake — {k}: {src}. Suggested invoice # {num or '—'}.\n\n"
+                    f"{note}"
+                )
+        elif p:
+            banner = (
+                f"From Invoice Intake — {k}: {src}. Path is in the invoice memo (Save). "
+                f"Suggested invoice # {num or '—'}."
+            )
+        else:
+            banner = (
+                f"From Invoice Intake — {k}: {src}. Details are in the invoice memo (Save). "
+                f"Suggested invoice # {num or '—'}."
+            )
+        self._invoice_intake_handoff_banner.setText(banner)
+        self._invoice_intake_handoff_banner.setVisible(True)
+
+        self._refresh_browse_state()
+        self._update_browse_buttons()
+        return True
 
     def open_invoice_by_id(self, invoice_id: int) -> bool:
         """Load an invoice into the Manual Invoice sub-tab (register / in-app navigation)."""
@@ -939,12 +1119,53 @@ class InvoiceScreen(QWidget):
         self._sync_invoice_number_suggestion()
         self._refresh_browse_state()
         try:
-            self._browse_index = self._browse_ids.index(iid)
+            self._browse_slot = self._browse_ids.index(iid)
         except ValueError:
-            self._browse_index = None
+            self._browse_slot = None
         self._update_browse_buttons()
         return True
 
+    def open_invoice_by_number(self, invoice_number: str) -> bool:
+        """Load an invoice into Manual Invoice by ``invoices.invoice_number`` (register / navigation)."""
+        if self._ap_conn is None:
+            message_box_information_ok(
+                self,
+                "Invoice",
+                "Open a company file to edit invoices.",
+                ok_tip="Close; use File → Open company… then try again.",
+            )
+            return False
+        iid = business.get_invoice_id_by_number(self._ap_conn, invoice_number)
+        if iid is None:
+            num = (invoice_number or "").strip()
+            message_box_information_ok(
+                self,
+                "Invoice",
+                f"No invoice with number {num!r} was found.",
+                ok_tip="Close; check the number or pick the invoice from Customers / Reports.",
+            )
+            return False
+        return self.open_invoice_by_id(iid)
+
+    def _sync_ar_toolbar_enabled(self) -> None:
+        on = self._ap_conn is not None
+        self._btn_ar_new_inv.setEnabled(on)
+        self._btn_ar_export_inv.setEnabled(on)
+
+    def _on_ar_new_invoice_dialog(self) -> None:
+        if self._ap_conn is None:
+            return
+
+        def _after() -> None:
+            self._bill_customer_panel.reload_customers()
+            self._sync_invoice_number_suggestion()
+
+        open_new_ar_invoice_dialog(self, self._ap_conn, after_save=_after)
+
+    def _on_ar_export_invoices_csv(self) -> None:
+        if self._ap_conn is None:
+            return
+        export_invoices_csv(self, self._ap_conn)
 
     def _invoice_col_minimum_width(self, col: int) -> int:
         """Minimum width from header label metrics (+ section padding)."""
@@ -1112,54 +1333,38 @@ class InvoiceScreen(QWidget):
         self._schedule_persist_invoice_line_column_widths()
 
     def _refresh_browse_state(self) -> None:
+        prev_slot = self._browse_slot
         if self._ap_conn is None:
             self._browse_ids = []
         else:
-            self._browse_ids = business.list_invoice_ids_chronological(self._ap_conn)
-        if self._browse_index is not None and (
-            self._browse_index < 0 or self._browse_index >= len(self._browse_ids)
-        ):
-            self._browse_index = None
+            self._browse_ids = business.list_invoice_ids_by_invoice_number(self._ap_conn)
+        n = len(self._browse_ids)
+        cid = self._current_invoice_id
+        if cid is not None:
+            try:
+                self._browse_slot = self._browse_ids.index(cid)
+            except ValueError:
+                self._browse_slot = None
+        else:
+            if n == 0:
+                self._browse_slot = None
+            elif prev_slot is not None and prev_slot > n:
+                self._browse_slot = n
         self._update_browse_buttons()
 
     def _update_browse_buttons(self) -> None:
         has_db = self._ap_conn is not None
-        has_any = bool(self._browse_ids)
-        idx = self._browse_index
         n = len(self._browse_ids)
-        # Prev: enabled on blank new draft (idx is None) → loads most recent invoice.
-        # Disabled only at first/oldest invoice (idx == 0) — can't go further back.
-        can_prev = has_db and has_any and (idx is None or idx > 0)
-        # Next: disabled on blank new draft (idx is None) — already at the end.
-        # Enabled on any saved invoice including the last (last → blank draft).
-        can_next = has_db and has_any and idx is not None
-        self._btn_reverse.setEnabled(can_prev)
-        self._btn_forward.setEnabled(can_next)
-        # Show position in tooltip when browsing a saved invoice
-        if has_any and idx is not None:
-            pos = f"{idx + 1} / {n}"
-            self._btn_reverse.setToolTip(
-                f"← Previous invoice  ({pos})"
-                if idx > 0
-                else f"◄ At first invoice  ({pos})"
-            )
-            self._btn_forward.setToolTip(
-                f"Next invoice →  ({pos})"
-                if idx < n - 1
-                else f"New blank draft  ({pos} — at last)"
-            )
-        else:
-            self._btn_reverse.setToolTip(
-                "← Go to most recent saved invoice."
-                if has_any else "No saved invoices yet."
-            )
-            self._btn_forward.setToolTip(
-                "New blank invoice draft (at end of queue)."
-                if has_any
-                else "Open the next saved invoice."
-            )
+        has_any = n > 0
+        slot = self._browse_slot
+        rev = has_db and has_any and (slot is None or slot > 0)
+        fwd = has_db and has_any and slot is not None and slot < n
+        self._btn_reverse.setEnabled(rev)
+        self._btn_forward.setEnabled(fwd)
 
     def _clear_line_grid(self) -> None:
+        for r in range(self._N_LINE_ROWS):
+            self._invoice_line_code_committed[r] = ""
         self._suppress_invoice_line_recalc = True
         try:
             for r in range(self._N_LINE_ROWS):
@@ -1209,6 +1414,112 @@ class InvoiceScreen(QWidget):
                         lambda _t, r=row: self._on_invoice_line_text_changed(r)
                     )
 
+    def _setup_invoice_code_helpers(self) -> None:
+        """QCompleter from ``invoice_item_codes``; apply default rate/description when Code text changes.
+
+        Each Code cell is an :class:`_InvoiceCodeLineEdit`, so clicking or focusing
+        opens the completer popup as a real dropdown list of saved codes; typing
+        narrows the popup live (case-insensitive prefix filter).
+        """
+        self._invoice_code_completers: list[QCompleter] = []
+        for row in range(self._N_LINE_ROWS):
+            code_w = self._table.cellWidget(row, 1)
+            if not isinstance(code_w, QLineEdit):
+                continue
+            comp = QCompleter(self)
+            comp.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+            comp.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+            comp.setFilterMode(Qt.MatchFlag.MatchContains)
+            code_w.setCompleter(comp)
+            self._invoice_code_completers.append(comp)
+            code_w.editingFinished.connect(
+                partial(self._on_invoice_line_code_committed, row)
+            )
+            comp.activated.connect(
+                partial(self._on_invoice_line_code_completer_activated, row)
+            )
+        self.refresh_invoice_item_codes()
+
+    def refresh_invoice_item_codes(self) -> None:
+        """Reload code list from DB (after **Codes** tab Save or company file open)."""
+        codes: list[str] = []
+        if self._ap_conn is not None:
+            try:
+                codes = business.list_invoice_item_code_strings(self._ap_conn)
+            except sqlite3.Error:
+                codes = []
+        model = QStringListModel(codes)
+        for comp in getattr(self, "_invoice_code_completers", []):
+            comp.setModel(model)
+
+    def _line_subtotal_excluding_row(self, row_idx: int) -> float:
+        """Sum of Rate×Qty for all lines except *row_idx* (for percent codes)."""
+        total = 0.0
+        for r in range(self._N_LINE_ROWS):
+            if r == row_idx:
+                continue
+            rate_w = self._table.cellWidget(r, 4)
+            qty_w = self._table.cellWidget(r, 5)
+            if isinstance(rate_w, QDoubleSpinBox) and isinstance(qty_w, QDoubleSpinBox):
+                total += round(float(rate_w.value()) * float(qty_w.value()), 2)
+        return total
+
+    def _on_invoice_line_code_completer_activated(self, row: int, _choice: str) -> None:
+        """Popup pick updates the line edit; apply saved Code row when it differs from last commit."""
+        self._on_invoice_line_code_committed(row)
+
+    def _on_invoice_line_code_committed(self, row: int) -> None:
+        """Tab/Enter or completer pick: if Code text changed, fill Rate/Description from **Codes** (or record free text)."""
+        if self._suppress_invoice_line_recalc:
+            return
+        code_w = self._table.cellWidget(row, 1)
+        if not isinstance(code_w, QLineEdit):
+            return
+        raw = code_w.text().strip()
+        if raw == self._invoice_line_code_committed[row]:
+            return
+        if self._ap_conn is None:
+            self._invoice_line_code_committed[row] = raw
+            return
+        if not raw:
+            self._invoice_line_code_committed[row] = ""
+            return
+        item = business.get_invoice_item_code_by_code(self._ap_conn, raw)
+        if item is None:
+            self._invoice_line_code_committed[row] = raw
+            return
+        d = dict(item)
+        self._apply_invoice_item_code_row(row, d)
+        self._invoice_line_code_committed[row] = (d.get("code") or "").strip()
+
+    def _apply_invoice_item_code_row(self, row: int, d: dict) -> None:
+        """Fill Code/Description/Rate/Qty from a **Codes** row."""
+        self._suppress_invoice_line_recalc = True
+        try:
+            code_w = self._table.cellWidget(row, 1)
+            desc_w = self._table.cellWidget(row, 2)
+            rate_w = self._table.cellWidget(row, 4)
+            qty_w = self._table.cellWidget(row, 5)
+            if isinstance(code_w, QLineEdit):
+                code_w.setText((d.get("code") or "").strip())
+            if isinstance(desc_w, QLineEdit):
+                desc_w.setText((d.get("description") or "").strip())
+            rv = float(d.get("rate_value") or 0.0)
+            rk = (d.get("rate_kind") or "amount").strip().lower()
+            if rk == "percent":
+                sub_excl = self._line_subtotal_excluding_row(row)
+                rate_amt = round(sub_excl * (rv / 100.0), 2)
+            else:
+                rate_amt = rv
+            if isinstance(rate_w, QDoubleSpinBox):
+                rate_w.setValue(rate_amt)
+            if isinstance(qty_w, QDoubleSpinBox):
+                qty_w.setValue(1.0)
+        finally:
+            self._suppress_invoice_line_recalc = False
+        self._sync_invoice_line_row_total(row)
+        self._recalc_invoice_footer_from_grid()
+
     def _on_invoice_line_rate_qty_changed(self, row: int) -> None:
         if self._suppress_invoice_line_recalc:
             return
@@ -1248,144 +1559,97 @@ class InvoiceScreen(QWidget):
         total = round(sub + tax, 2)
         self._set_totals_labels(sub, tax, total)
 
-    def _update_status_badge(self, status: str) -> None:
-        """Track the current invoice status (badge widget removed — status stored internally)."""
-        self._current_status = status
-
-    # ── Dirty-state tracking ─────────────────────────────────────────────────
-
-    def _capture_form_snapshot(self) -> dict:
-        """Return a dict representing the current form state (for dirty comparison)."""
-        lines: list[dict] = []
-        for r in range(self._N_LINE_ROWS):
-            row: dict = {}
-            for c in range(len(self._LINE_COLS)):
-                w = self._table.cellWidget(r, c)
-                if isinstance(w, QLineEdit):
-                    row[c] = w.text()
-                elif isinstance(w, QDoubleSpinBox):
-                    row[c] = round(w.value(), 6)
-            lines.append(row)
-        return {
-            "inv_number": self._inv_number.text(),
-            "date": self._date.text(),
-            "po": self._po.text(),
-            "job": self._job.text(),
-            "memo": self._invoice_memo_notes,
-            "customer_id": self._bill_customer_panel.selected_customer_id(),
-            "lines": lines,
-        }
-
-    def _is_form_dirty(self) -> bool:
-        """Return True if the form has unsaved changes relative to the last load/save/clear.
-
-        For a blank new draft (``_form_snapshot is None``) the invoice number and date are
-        auto-populated by the system; only user-entered fields (PO, job, memo, customer,
-        line items) and a manually-changed invoice number count as dirty.
-        """
-        if self._form_snapshot is None:
-            snap = self._capture_form_snapshot()
-            # Invoice number is auto-suggested; only dirty when user changed it from the suggestion
-            autofill = self._invoice_number_autofill_value.strip()
-            inv_num_dirty = snap["inv_number"].strip() not in ("", autofill)
-            return bool(
-                inv_num_dirty
-                or snap["po"].strip()
-                or snap["job"].strip()
-                or snap["memo"].strip()
-                or snap["customer_id"] is not None
-                or any(
-                    any(
-                        (v.strip() if isinstance(v, str) else v != 0.0)
-                        for v in row.values()
-                    )
-                    for row in snap["lines"]
-                )
-            )
-        return self._capture_form_snapshot() != self._form_snapshot
-
-    def _confirm_leave_loaded_invoice(self, action: str = "leave this invoice") -> bool:  # noqa: ARG002
-        """Return True if it is safe to navigate away or clear the current form.
-
-        * If the form is **unchanged** (clean) → returns True immediately, no dialog.
-        * If the form has **unsaved changes** → shows a Save / Discard Changes / Stay dialog:
-          - **Save**: persists the invoice, then returns True.
-          - **Discard Changes**: abandons edits, returns True.
-          - **Stay** (or close): returns False so the caller stays put.
-        """
-        if not self._is_form_dirty():
-            return True  # Nothing changed — navigate freely
-
-        inv_num = self._inv_number.text().strip()
-        if self._current_invoice_id is not None:
-            label = f"Invoice #{inv_num}" if inv_num else f"Invoice ID {self._current_invoice_id}"
-        else:
-            label = f"Invoice #{inv_num}" if inv_num else "this new invoice"
-
-        result = message_box_save_discard_cancel(
-            self,
-            "Unsaved Changes",
-            f"You have unsaved changes on {label}.\n\nDo you want to save or discard your changes?",
-            save_tip="Save changes and continue.",
-            discard_tip="Discard changes and continue without saving.",
-            cancel_tip="Stay on this invoice and keep editing.",
-        )
-
-        if result == "save":
-            ok, msg, inv_id = self._save_invoice_data_only()
-            if not ok:
-                self._invoice_feedback_message(msg)
-                return False  # Save failed — keep user on the form
-            if inv_id is not None:
-                self._load_invoice_into_form(inv_id)
-                self._refresh_browse_state()
-            return True
-        if result == "discard":
-            return True
-        return False  # "cancel" / Stay
-
-    def _on_invoice_subtab_changed(self, new_index: int) -> None:
-        """Guard switching away from the Manual Invoice sub-tab while the form is dirty."""
-        if new_index == 0:
-            return  # Arriving on Manual Invoice — always allowed
-        if not self._is_form_dirty():
-            return  # Clean — switch freely
-        # Switch back first so the form remains visible while the dialog runs
-        self._invoice_tabs.blockSignals(True)
-        self._invoice_tabs.setCurrentIndex(0)
-        self._invoice_tabs.blockSignals(False)
-        if self._confirm_leave_loaded_invoice():
-            # User saved or discarded — proceed to the requested tab
-            self._invoice_tabs.blockSignals(True)
-            self._invoice_tabs.setCurrentIndex(new_index)
-            self._invoice_tabs.blockSignals(False)
+    def _hide_invoice_intake_handoff_banner(self) -> None:
+        b = getattr(self, "_invoice_intake_handoff_banner", None)
+        if b is None:
+            return
+        b.setVisible(False)
+        b.setText("")
 
     def _on_clear_fields(self) -> None:
-        if not self._confirm_leave_loaded_invoice("clear all fields"):
-            return
         self._current_invoice_id = None
-        self._browse_index = None
-        self._form_snapshot = None  # blank draft — reset dirty baseline
-        self._update_status_badge("Open")
+        self._browse_slot = None
         qd = QDate.currentDate()
         self._date.setText(format_ymd_as_us(qd.month(), qd.day(), qd.year()))
         self._po.clear()
         self._job.clear()
         self._invoice_memo_notes = ""
+        self._hide_invoice_intake_handoff_banner()
         self._bill_customer_panel.clear_bill_to()
         self._clear_line_grid()
+        self._inv_number.clear()
+        self._invoice_number_autofill_value = ""
+        self._sync_invoice_number_suggestion()
         self._update_browse_buttons()
+        self._sync_invoice_status_badge(status=None, balance_due=None)
+
+    def _sync_invoice_status_badge(
+        self, *, status: str | None, balance_due: float | None
+    ) -> None:
+        """Show green PAID when the invoice row is fully paid (Receive Payments excludes these)."""
+        b = getattr(self, "_invoice_status_badge", None)
+        if b is None:
+            return
+        bal = float(balance_due) if balance_due is not None else None
+        st = (status or "").strip().lower()
+        paid = st == "paid" or (bal is not None and bal <= 0.005)
+        if paid:
+            b.setText("PAID")
+            b.setVisible(True)
+        else:
+            b.clear()
+            b.setVisible(False)
+
+    def refresh_loaded_invoice_payment_status(
+        self, invoice_ids: Optional[list[int]] = None
+    ) -> bool:
+        """Re-sync PAID badge / balance for the currently loaded invoice from the live DB.
+
+        Slot for :data:`ReceiveChecksScreen.arPaymentPosted`. Reads the invoice header
+        only (no edit-field reload, so unsaved manual edits are preserved) and updates:
+
+        * the PAID badge via :meth:`_sync_invoice_status_badge` (status + balance_due), and
+        * browse state (``_browse_ids`` / nav buttons), so paid invoices that drop off
+          the open list are reflected in Reverse / Forward.
+
+        Returns ``True`` when the loaded invoice was refreshed; ``False`` otherwise
+        (no DB connection, no invoice loaded, or *invoice_ids* did not include the
+        currently loaded invoice id).
+        """
+        cid = self._current_invoice_id
+        if cid is None or self._ap_conn is None:
+            return False
+        if invoice_ids is not None:
+            try:
+                wanted = {int(x) for x in invoice_ids}
+            except (TypeError, ValueError):
+                wanted = set()
+            if cid not in wanted:
+                return False
+        try:
+            inv, _lines = business.get_invoice_detail(self._ap_conn, cid)
+        except sqlite3.Error:
+            return False
+        if inv is None:
+            return False
+        d = dict(inv)
+        try:
+            bd = float(d.get("balance_due") or 0.0)
+        except (TypeError, ValueError):
+            bd = None
+        raw_st = d.get("status")
+        st_str = str(raw_st).strip() if raw_st is not None else ""
+        self._sync_invoice_status_badge(status=st_str or None, balance_due=bd)
+        self._refresh_browse_state()
+        return True
 
     def _go_to_new_invoice_draft(self) -> None:
-        if not self._confirm_leave_loaded_invoice("open a new blank invoice"):
-            return
         self._current_invoice_id = None
-        self._browse_index = None
-        self._form_snapshot = None  # blank draft — reset dirty baseline
-        self._update_status_badge("Open")
+        self._browse_slot = None
         self._po.clear()
         self._job.clear()
         self._invoice_memo_notes = ""
+        self._hide_invoice_intake_handoff_banner()
         self._bill_customer_panel.clear_bill_to()
         self._clear_line_grid()
         self._inv_number.clear()
@@ -1393,13 +1657,24 @@ class InvoiceScreen(QWidget):
         qd = QDate.currentDate()
         self._date.setText(format_ymd_as_us(qd.month(), qd.day(), qd.year()))
         self._sync_invoice_number_suggestion()
+        self._refresh_browse_state()
+        self._browse_slot = len(self._browse_ids)
         self._update_browse_buttons()
+        self._sync_invoice_status_badge(status=None, balance_due=None)
 
     def _load_invoice_by_list_index(self, list_index: int) -> None:
-        if not self._browse_ids or list_index < 0 or list_index >= len(self._browse_ids):
+        n = len(self._browse_ids)
+        if list_index < 0:
+            return
+        if n == 0:
+            return
+        if list_index == n:
+            self._go_to_new_invoice_draft()
+            return
+        if list_index > n:
             return
         self._load_invoice_into_form(self._browse_ids[list_index])
-        self._browse_index = list_index
+        self._browse_slot = list_index
         self._update_browse_buttons()
 
     def _load_invoice_into_form(self, invoice_id: int) -> None:
@@ -1408,6 +1683,7 @@ class InvoiceScreen(QWidget):
         inv, lines = business.get_invoice_detail(self._ap_conn, invoice_id)
         if inv is None:
             return
+        self._hide_invoice_intake_handoff_banner()
         d = dict(inv)
         num = (d.get("invoice_number") or "").strip()
         self._inv_number.setText(num)
@@ -1481,10 +1757,19 @@ class InvoiceScreen(QWidget):
         for r in range(self._N_LINE_ROWS):
             self._sync_invoice_line_row_total(r)
         self._recalc_invoice_footer_from_grid()
+        for i in range(self._N_LINE_ROWS):
+            cw = self._table.cellWidget(i, 1)
+            self._invoice_line_code_committed[i] = (
+                cw.text().strip() if isinstance(cw, QLineEdit) else ""
+            )
         self._current_invoice_id = invoice_id
-        self._update_status_badge(d.get("status") or "Open")
-        # Capture a clean baseline so we can detect future edits
-        self._form_snapshot = self._capture_form_snapshot()
+        try:
+            bd = float(d.get("balance_due") or 0.0)
+        except (TypeError, ValueError):
+            bd = None
+        raw_st = d.get("status")
+        st_str = str(raw_st).strip() if raw_st is not None else ""
+        self._sync_invoice_status_badge(status=st_str or None, balance_due=bd)
 
     def _split_memo_po_job(self, memo: str) -> tuple[str, str, str]:
         """Split stored memo into PO, Job, and remaining free text (matches :meth:`_build_invoice_memo`)."""
@@ -1504,47 +1789,32 @@ class InvoiceScreen(QWidget):
         return po, job, "\n".join(extra).strip()
 
     def _on_reverse_invoice(self) -> None:
-        if not self._confirm_leave_loaded_invoice("go to the previous invoice"):
-            return
         self._refresh_browse_state()
-        if not self._browse_ids:
+        n = len(self._browse_ids)
+        if n == 0:
             return
-        if self._browse_index is None:
-            self._load_invoice_by_list_index(len(self._browse_ids) - 1)
+        slot = self._browse_slot
+        if slot is None:
+            self._load_invoice_by_list_index(n - 1)
             return
-        if self._browse_index <= 0:
+        if slot == 0:
             return
-        self._load_invoice_by_list_index(self._browse_index - 1)
+        if slot == n:
+            self._load_invoice_by_list_index(n - 1)
+            return
+        self._load_invoice_by_list_index(slot - 1)
 
     def _on_forward_invoice(self) -> None:
-        if not self._confirm_leave_loaded_invoice("go to the next invoice"):
-            return
         self._refresh_browse_state()
-        if not self._browse_ids:
+        n = len(self._browse_ids)
+        if n == 0:
             return
-        # Already on blank new draft — Next is disabled; do nothing.
-        if self._browse_index is None:
+        slot = self._browse_slot
+        if slot is None:
             return
-        if self._browse_index >= len(self._browse_ids) - 1:
-            # At the last saved invoice → open blank new draft (end of queue).
-            # _go_to_new_invoice_draft has its own guard; bypass it here since
-            # we already confirmed above.
-            self._current_invoice_id = None
-            self._browse_index = None
-            self._update_status_badge("Open")
-            self._po.clear()
-            self._job.clear()
-            self._invoice_memo_notes = ""
-            self._bill_customer_panel.clear_bill_to()
-            self._clear_line_grid()
-            self._inv_number.clear()
-            self._invoice_number_autofill_value = ""
-            qd = QDate.currentDate()
-            self._date.setText(format_ymd_as_us(qd.month(), qd.day(), qd.year()))
-            self._sync_invoice_number_suggestion()
-            self._update_browse_buttons()
+        if slot >= n:
             return
-        self._load_invoice_by_list_index(self._browse_index + 1)
+        self._load_invoice_by_list_index(slot + 1)
 
     def _build_invoice_memo(self) -> str:
         parts: list[str] = []
@@ -1600,7 +1870,7 @@ class InvoiceScreen(QWidget):
                     "rate": rate,
                 }
             )
-        return rows
+        return rows or [{"description": "Service", "qty": 1.0, "rate": 0.0}]
 
     def _invoice_feedback_message(self, msg: str) -> None:
         """Non-modal save/print validation feedback (replaces QMessageBox — avoids interrupting typing).
@@ -1621,59 +1891,26 @@ class InvoiceScreen(QWidget):
                     return
             w = w.parentWidget()
 
-    @staticmethod
-    def _line_extended_amount(ln: dict) -> float:
-        return round(float(ln.get("qty", 0.0)) * float(ln.get("rate", 0.0)), 2)
-
-    def _invoice_line_validation_error(self, lines: list[dict]) -> str | None:
-        """Return a user-facing message if lines are not pilot-ready, else ``None``."""
-        if not lines:
-            return (
-                "Add at least one invoice line with a non-zero dollar amount before saving, printing, "
-                "or exporting PDF. Set Rate and Quantity on a line so the line total is not $0.00."
-            )
-        if not any(abs(self._line_extended_amount(ln)) >= 0.01 for ln in lines):
-            return (
-                "At least one invoice line must have a non-zero amount. Enter Rate and Quantity "
-                "(or adjust lines that show $0.00) before saving, printing, or exporting PDF."
-            )
-        return None
-
     def _try_persist_invoice(self) -> tuple[bool, str, int | None]:
         """Create or update the current invoice row. Returns ``(ok, message, invoice_id)``.
 
         Silent DB only — no PDF or print UI here. Call only from Save/Print click paths.
         """
         if self._ap_conn is None:
-            return (
-                False,
-                "Open a company file (File → Open company…) before saving, printing, or exporting PDF.",
-                None,
-            )
+            return False, "Connect a company file to save invoices.", None
         cid = self.selected_bill_to_customer_id()
         if cid is None:
-            return (
-                False,
-                "Select a customer in Bill To before saving, printing, or exporting PDF.",
-                None,
-            )
+            return False, "Select a customer in Bill To before saving or printing.", None
         num = self._inv_number.text().strip()
         if not num:
-            return False, "Enter an invoice number before saving, printing, or exporting PDF.", None
+            return False, "Enter an invoice number.", None
         ymd = parse_flexible_date_to_ymd(self._date.text().strip())
         if ymd is None:
-            return (
-                False,
-                "Enter a valid invoice date (for example MM/DD/YYYY) before saving, printing, or exporting PDF.",
-                None,
-            )
+            return False, "Enter a valid invoice date.", None
         y, m, d = ymd
         iso_date = f"{y:04d}-{m:02d}-{d:02d}"
         memo = self._build_invoice_memo()
         lines = self._collect_invoice_lines()
-        line_err = self._invoice_line_validation_error(lines)
-        if line_err is not None:
-            return False, line_err, None
         conn = self._ap_conn
         edit_id = self._current_invoice_id
         tax_pct = self._invoice_tax_rate_pct()
@@ -1696,6 +1933,7 @@ class InvoiceScreen(QWidget):
                     lines=lines,
                     tax_rate_pct=tax_pct,
                 )
+                self.openInvoicesChanged.emit()
                 return True, "", edit_id
             inv_id = business.create_invoice(
                 conn,
@@ -1712,24 +1950,18 @@ class InvoiceScreen(QWidget):
         except sqlite3.IntegrityError as exc:
             err = str(exc).upper()
             if "UNIQUE" in err:
-                return (
-                    False,
-                    "That invoice number is already in use. Enter a different invoice number.",
-                    None,
+                message_box_warning_ok(
+                    self,
+                    "Duplicate invoice number",
+                    "That invoice number is already used in this company file. "
+                    "Enter a different invoice number before saving.",
+                    ok_tip="Close; change the Invoice # field to a value that is not already saved.",
                 )
-            _LOG.warning("Invoice save integrity error: %s", exc)
-            return (
-                False,
-                "Could not save the invoice (data conflict). Check the invoice number and try again.",
-                None,
-            )
+                return False, "", None
+            return False, str(exc), None
         except sqlite3.Error as exc:
-            _LOG.warning("Invoice save database error: %s", exc)
-            return (
-                False,
-                "Could not save the invoice to the company file. Check that the file is writable and not locked.",
-                None,
-            )
+            return False, str(exc), None
+        self.openInvoicesChanged.emit()
         return True, "", inv_id
 
     def _save_invoice_data_only(self) -> tuple[bool, str, int | None]:
@@ -1737,27 +1969,48 @@ class InvoiceScreen(QWidget):
         return self._try_persist_invoice()
 
     def _on_save_invoice(self) -> None:
+        # Phantom dialog fix: only a real Save button click may persist from this slot
+        # (sender None is rejected — avoids queued/spurious clicked without a mouse/keyboard source).
+        if self.sender() is not self._btn_save:
+            return
         was_new = self._current_invoice_id is None
         ok, msg, inv_id = self._save_invoice_data_only()
         if not ok:
             self._invoice_feedback_message(msg)
             return
-        assert inv_id is not None
+        assert inv_id is not None and self._ap_conn is not None
+        # Persist to SQLite first; PDF folder is optional (Export PDF always available after save).
+        folder = ensure_invoice_output_folder(self)
+        if folder:
+            num = self._inv_number.text().strip()
+            pdf_name = f"Invoice-{_safe_invoice_pdf_stem(num)}.pdf"
+            pdf_path = os.path.join(folder, pdf_name)
+            try:
+                save_invoice_pdf(self._ap_conn, inv_id, pdf_path)
+            except OSError as exc:
+                self._invoice_feedback_message(
+                    f"Invoice saved, but the PDF could not be written: {exc}"
+                )
+            except Exception as exc:  # noqa: BLE001
+                self._invoice_feedback_message(
+                    f"Invoice saved, but PDF export failed: {exc}"
+                )
+        else:
+            self._invoice_feedback_message(
+                "Invoice saved to the company file. "
+                "Edit → Preferences → Invoice Options: set a PDF folder to auto-save on Save."
+            )
         self._refresh_browse_state()
         if was_new:
-            # Mark form clean before advancing to blank draft so no dirty dialog fires
-            self._form_snapshot = self._capture_form_snapshot()
             self._go_to_new_invoice_draft()
         else:
-            # Reload so status / totals stay in sync; _load_invoice_into_form resets snapshot
             self._load_invoice_into_form(inv_id)
 
-    def _on_print_invoice(self) -> None:
-        """Save invoice then open the system print dialog (always shows printer chooser)."""
+    def _on_export_pdf_as(self) -> None:
+        if self.sender() is not self._btn_export_pdf:
+            return
         if self._ap_conn is None:
-            self._invoice_feedback_message(
-                "Open a company file before printing (File → Open company…)."
-            )
+            self._invoice_feedback_message("Connect a company file to export a PDF.")
             return
         was_new = self._current_invoice_id is None
         ok, msg, inv_id = self._save_invoice_data_only()
@@ -1765,37 +2018,78 @@ class InvoiceScreen(QWidget):
             self._invoice_feedback_message(msg)
             return
         assert inv_id is not None
-        # Build print document from saved invoice HTML
+        num = self._inv_number.text().strip()
+        default_name = f"Invoice-{_safe_invoice_pdf_stem(num)}.pdf"
+        path, _filt = QFileDialog.getSaveFileName(
+            self,
+            "Export invoice as PDF",
+            default_name,
+            "PDF files (*.pdf);;All files (*.*)",
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".pdf"):
+            path = f"{path}.pdf"
+        try:
+            save_invoice_pdf(self._ap_conn, inv_id, path)
+        except OSError as exc:
+            self._invoice_feedback_message(
+                f"Invoice saved, but the PDF could not be written: {exc}"
+            )
+            return
+        except Exception as exc:  # noqa: BLE001
+            self._invoice_feedback_message(
+                f"Invoice saved, but PDF export failed: {exc}"
+            )
+            return
+        self._refresh_browse_state()
+        if was_new:
+            self._go_to_new_invoice_draft()
+        else:
+            self._load_invoice_into_form(inv_id)
+
+    def _run_invoice_print_dialog(self, inv_id: int, *, advance_after: bool = True) -> None:
+        """Print saved invoice HTML when ``_invoice_print_dialog_armed``; same template as PDF."""
+        if not self._invoice_print_dialog_armed:
+            return
+        if self._ap_conn is None:
+            return
         doc = QTextDocument()
         try:
             doc.setHtml(invoice_html_string(self._ap_conn, inv_id))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 — show any render issue
             self._invoice_feedback_message(
-                f"Invoice saved but print preview failed: {exc}"
+                f"Could not prepare the invoice for printing: {exc}"
             )
-            self._refresh_browse_state()
-            self._load_invoice_into_form(inv_id)
             return
-        # Always open QPrintDialog so user can choose / confirm printer
         printer = QPrinter(QPrinter.PrinterMode.HighResolution)
-        # Pre-select saved printer if available
-        saved = get_invoice_printer_name()
-        if saved and saved in list(QPrinterInfo.availablePrinterNames()):
-            printer.setPrinterName(saved)
-        dlg = QPrintDialog(printer, self)
-        if dlg.exec():
-            # Save chosen printer for next time
-            chosen = (printer.printerName() or "").strip()
-            if chosen:
-                set_invoice_printer_name(chosen)
-            doc.print_(printer)
+        if not configure_printer_for_invoice_print(self, printer):
+            return
+        doc.print_(printer)
         self._refresh_browse_state()
-        if was_new:
-            # Mark form clean before advancing so no dirty dialog fires on new-draft navigation
-            self._form_snapshot = self._capture_form_snapshot()
+        if advance_after:
             self._go_to_new_invoice_draft()
         else:
             self._load_invoice_into_form(inv_id)
+
+    def _on_print_invoice(self) -> None:
+        # Phantom dialog fix: require explicit Print button as sender, then arm gate for dialog code only.
+        if self.sender() is not self._btn_print:
+            return
+        if self._ap_conn is None:
+            self._invoice_feedback_message("Connect a company file to print invoices.")
+            return
+        was_new = self._current_invoice_id is None
+        self._invoice_print_dialog_armed = True
+        try:
+            ok, msg, inv_id = self._save_invoice_data_only()
+            if not ok:
+                self._invoice_feedback_message(msg)
+                return
+            assert inv_id is not None
+            self._run_invoice_print_dialog(inv_id, advance_after=was_new)
+        finally:
+            self._invoice_print_dialog_armed = False
 
     def _address_box(self, caption: str) -> tuple[QFrame, QPlainTextEdit]:
         fr = QFrame()
@@ -1818,154 +2112,3 @@ class InvoiceScreen(QWidget):
         lay.addWidget(cap)
         lay.addWidget(te)
         return fr, te
-
-    # ── PDF import (AI-powered) ──────────────────────────────────────────────
-
-    def _extract_invoice_from_pdf(self, pdf_path: str) -> dict | None:
-        """Delegate to module-level helper (safe to call from main thread or worker)."""
-        return _ai_extract_invoice(pdf_path)
-
-    def import_pdf_paths(
-        self,
-        paths: list[str],
-        *,
-        on_row_done: "Optional[callable]" = None,
-    ) -> dict:
-        """Extract and import a list of invoice PDF paths via Claude AI.
-
-        Parameters
-        ----------
-        paths:
-            Absolute paths to PDF files.
-        on_row_done:
-            Optional callback called after each file with
-            ``(path, "ok"|"skip"|"error", message)``.
-
-        Returns
-        -------
-        dict with keys ``imported``, ``skipped``, ``errors`` (list of str).
-        """
-        if self._ap_conn is None:
-            return {"imported": 0, "skipped": 0, "errors": ["Not connected — open a company file first."]}
-
-        imported = 0
-        skipped = 0
-        errors: list[str] = []
-
-        for pdf_path in paths:
-            fname = os.path.basename(pdf_path)
-            data = self._extract_invoice_from_pdf(pdf_path)
-            if not data:
-                msg = f"{fname}: Could not extract (check ANTHROPIC_API_KEY)"
-                errors.append(msg)
-                if on_row_done:
-                    on_row_done(pdf_path, "error", msg)
-                continue
-
-            inv_num = (data.get("invoice_number") or "").strip()
-            inv_date = (data.get("invoice_date") or "").strip()
-            customer_name = (data.get("customer_name") or "").strip()
-            po = (data.get("po_contract") or "").strip()
-            name_job = (data.get("name_job") or "").strip()
-            total = float(data.get("total") or 0.0)
-
-            if not customer_name:
-                msg = f"{fname}: No customer name found"
-                errors.append(msg)
-                if on_row_done:
-                    on_row_done(pdf_path, "error", msg)
-                continue
-
-            try:
-                customer_id = _find_or_create_customer(
-                    self._ap_conn, customer_name, data.get("customer_address", "")
-                )
-            except Exception as exc:
-                msg = f"{fname}: Customer error — {exc}"
-                errors.append(msg)
-                if on_row_done:
-                    on_row_done(pdf_path, "error", msg)
-                continue
-
-            memo_parts = []
-            if po:
-                memo_parts.append(f"PO: {po}")
-            if name_job:
-                memo_parts.append(f"Job: {name_job}")
-            memo = "\n".join(memo_parts)
-
-            inv_lines = []
-            for ln in (data.get("lines") or []):
-                so = (ln.get("serviced_on") or "").strip()
-                jl = (ln.get("jl_num") or "").strip()
-                desc = (ln.get("description") or "Service").strip()
-                bol = (ln.get("bol") or "").strip()
-                parts = [so, jl, desc, bol]
-                while parts and not parts[-1]:
-                    parts.pop()
-                full_desc = " — ".join(parts)
-                inv_lines.append({
-                    "description": full_desc,
-                    "qty": float(ln.get("qty") or 1),
-                    "rate": float(ln.get("rate") or total),
-                })
-            if not inv_lines:
-                inv_lines = [{"description": "Trucking Service", "qty": 1.0, "rate": total}]
-
-            try:
-                existing = self._ap_conn.execute(
-                    "SELECT id FROM invoices WHERE invoice_number = ?", (inv_num,)
-                ).fetchone()
-                if existing:
-                    skipped += 1
-                    if on_row_done:
-                        on_row_done(pdf_path, "skip", f"{fname}: duplicate #{inv_num}")
-                    continue
-
-                business.create_invoice(
-                    self._ap_conn,
-                    customer_id=customer_id,
-                    invoice_number=inv_num,
-                    invoice_date=inv_date,
-                    memo=memo,
-                    lines=inv_lines,
-                    status="Sent",
-                )
-                imported += 1
-                if on_row_done:
-                    on_row_done(pdf_path, "ok", f"#{inv_num} — {customer_name}")
-            except Exception as exc:
-                msg = f"{fname}: Save error — {exc}"
-                errors.append(msg)
-                if on_row_done:
-                    on_row_done(pdf_path, "error", msg)
-
-        if imported > 0:
-            self._sync_invoice_number_suggestion()
-            self._refresh_browse_state()
-            self._bill_customer_panel.reload_customers()
-
-        return {"imported": imported, "skipped": skipped, "errors": errors}
-
-    def _on_import_pdf_invoices(self) -> None:
-        if self._ap_conn is None:
-            message_box_information_ok(self, "Not connected", "Open a company file first.", ok_tip="Close.")
-            return
-        paths, _ = QFileDialog.getOpenFileNames(self, "Import Invoice PDFs", "", "PDF files (*.pdf);;All files (*.*)")
-        if not paths:
-            return
-
-        result = self.import_pdf_paths(paths)
-        imported = result["imported"]
-        skipped = result["skipped"]
-        errors = result["errors"]
-
-        lines_msg = [f"Imported: {imported}", f"Skipped (duplicates): {skipped}"]
-        if errors:
-            lines_msg.append(f"Errors: {len(errors)}")
-            lines_msg.extend(f"  {e}" for e in errors[:5])
-        message_box_information_ok(
-            self, "Import complete",
-            "\n".join(lines_msg),
-            ok_tip="Close; review the Invoices list.",
-        )

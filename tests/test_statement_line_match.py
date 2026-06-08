@@ -9,18 +9,147 @@ from unittest.mock import patch
 
 import pytest
 
+_STATEMENT_LINE_MATCH_PANEL = (
+    Path(__file__).resolve().parents[1] / "desktop_app" / "statement_line_match_panel.py"
+)
+
+
+def test_needs_review_stmt_date_uses_invoice_style_flexible_typed_input() -> None:
+    """Needs Review *Stmt date* cell editor follows the same flexible-typed/MM-DD-YYYY convention."""
+    text = _STATEMENT_LINE_MATCH_PANEL.read_text(encoding="utf-8")
+    assert "from desktop_app.flexible_date import (" in text
+    assert "attach_line_edit_us_date_normalization," in text
+    assert "format_iso_to_us_display," in text
+    assert "line_edit_to_iso_or_raw," in text
+    assert (
+        'de = QLineEdit(format_iso_to_us_display(str(row.get("stmt_date") or "")))'
+        in text
+    )
+    assert 'de.setPlaceholderText("MM/DD/YYYY")' in text
+    assert "attach_line_edit_us_date_normalization(de)" in text
+    assert "iso_or_raw = (line_edit_to_iso_or_raw(w) or \"\").strip()" in text
+    assert 'self._rows[master_idx]["stmt_date"] = iso_or_raw' in text
+
+
 from probooksai.statement_line_match import (
     STATUS_EXTRA,
+    STATUS_LIKELY_MATCH,
     STATUS_MATCHED,
     STATUS_MISSING,
+    STATUS_NEEDS_REVIEW,
     amounts_equal,
     compare_statement_to_register,
     dates_within_days,
     descriptions_match,
+    enrich_line_match_rows_with_suggestions,
+    line_reconcile_review_key,
+    merge_persisted_line_reconcile_review,
     mock_statement_lines_for_comparison,
+    statement_rows_for_line_compare,
     transaction_pair_matches,
+    transaction_pair_likely,
     write_line_match_comparison_csv,
 )
+
+
+def test_enrich_line_match_rows_with_suggestions_none_conn() -> None:
+    rows = [{"status": STATUS_NEEDS_REVIEW, "stmt_description": "Coffee Shop"}]
+    enrich_line_match_rows_with_suggestions(None, 1, rows, [])
+    assert rows[0].get("suggested_payee") == ""
+    assert rows[0].get("suggested_coa") == ""
+    assert rows[0].get("suggestion_source") == ""
+
+
+def test_enrich_line_match_rows_with_suggestions_from_bank_history(tmp_path) -> None:
+    from probooksai.bank_import import BankDatabase, parse_csv
+
+    db = BankDatabase(str(tmp_path / "enrich_hist.db"))
+    try:
+        aid = db.add_bank_account("Checking")
+        bid = db.create_batch(aid, statement_start="2024-01-01", statement_end="2024-01-31")
+        csv_txt = "Date,Description,Amount\n2024-01-05,Coffee Shop,-4.50\n"
+        imported = parse_csv(csv_txt, "Date", "Amount", "Description")
+        db.import_transactions(bid, aid, imported)
+        txns = db.list_transactions(aid)
+        assert len(txns) == 1
+        db.update_transaction(txns[0]["id"], coa_account="Office Supplies")
+
+        match_row = {
+            "status": STATUS_NEEDS_REVIEW,
+            "stmt_date": "2024-01-05",
+            "stmt_amount": -4.5,
+            "stmt_description": "Coffee Shop",
+            "draft_coa_account": "",
+            "review_notes": "",
+        }
+        enrich_line_match_rows_with_suggestions(db._conn, aid, [match_row], ["Office Supplies"])
+        assert match_row["suggested_coa"] == "Office Supplies"
+        assert "Past similar" in match_row["suggestion_source"]
+        assert match_row.get("draft_coa_account") == "Office Supplies"
+    finally:
+        db.close()
+
+
+def test_enrich_line_match_rows_with_suggestions_does_not_overwrite_draft_coa(tmp_path) -> None:
+    from probooksai.bank_import import BankDatabase, parse_csv
+
+    db = BankDatabase(str(tmp_path / "enrich_draft.db"))
+    try:
+        aid = db.add_bank_account("Checking")
+        bid = db.create_batch(aid, statement_start="2024-01-01", statement_end="2024-01-31")
+        csv_txt = "Date,Description,Amount\n2024-01-05,Coffee Shop,-4.50\n"
+        imported = parse_csv(csv_txt, "Date", "Amount", "Description")
+        db.import_transactions(bid, aid, imported)
+        txns = db.list_transactions(aid)
+        db.update_transaction(txns[0]["id"], coa_account="Office Supplies")
+
+        match_row = {
+            "status": STATUS_NEEDS_REVIEW,
+            "stmt_date": "2024-01-05",
+            "stmt_amount": -4.5,
+            "stmt_description": "Coffee Shop",
+            "draft_coa_account": "Rent",
+            "review_notes": "",
+        }
+        enrich_line_match_rows_with_suggestions(db._conn, aid, [match_row], ["Office Supplies"])
+        assert match_row["draft_coa_account"] == "Rent"
+        assert match_row["suggested_coa"] == "Office Supplies"
+    finally:
+        db.close()
+
+
+def test_enrich_line_match_rows_with_suggestions_likely_match_register_coa(tmp_path) -> None:
+    from probooksai.bank_import import BankDatabase, parse_csv
+
+    db = BankDatabase(str(tmp_path / "enrich_likely.db"))
+    try:
+        aid = db.add_bank_account("Checking")
+        bid = db.create_batch(aid, statement_start="2024-01-01", statement_end="2024-01-31")
+        csv_txt = "Date,Description,Amount\n2024-01-05,ACME SUPPLY,-50.00\n"
+        imported = parse_csv(csv_txt, "Date", "Amount", "Description")
+        db.import_transactions(bid, aid, imported)
+        txns = db.list_transactions(aid)
+        tid = txns[0]["id"]
+        db.update_transaction(tid, coa_account="Supplies")
+
+        likely_row = {
+            "status": STATUS_LIKELY_MATCH,
+            "stmt_date": "2024-01-05",
+            "stmt_amount": -50.0,
+            "stmt_description": "ACME SUPPLY CO",
+            "register_id": tid,
+            "reg_date": "2024-01-05",
+            "reg_amount": -50.0,
+            "reg_description": "ACME SUPPLY",
+            "draft_coa_account": "",
+            "review_notes": "",
+        }
+        enrich_line_match_rows_with_suggestions(db._conn, aid, [likely_row], [])
+        assert likely_row["suggested_coa"] == "Supplies"
+        assert "Register line" in likely_row["suggestion_source"]
+        assert "COA on matched register row" in likely_row["suggestion_source"]
+    finally:
+        db.close()
 
 
 def test_strip_pasted_breaks_removes_cr_lf_tab() -> None:
@@ -29,6 +158,128 @@ def test_strip_pasted_breaks_removes_cr_lf_tab() -> None:
     assert _strip_pasted_breaks("a\rb\nc\t") == "abc"
     assert _strip_pasted_breaks("1\u200b234") == "1234"
     assert _strip_pasted_breaks("x") == "x"
+
+
+def test_statement_rows_for_line_compare_maps_bank_transactions() -> None:
+    stmt = statement_rows_for_line_compare(
+        [
+            {
+                "txn_date": "2024-01-05",
+                "amount": -4.5,
+                "description": "Coffee",
+                "ref_number": "R1",
+                "memo": "M1",
+            }
+        ]
+    )
+    assert len(stmt) == 1
+    assert stmt[0]["txn_date"] == "2024-01-05"
+    assert stmt[0]["amount"] == -4.5
+    assert stmt[0]["description"] == "Coffee"
+    assert stmt[0]["ref_number"] == "R1"
+    assert stmt[0]["memo"] == "M1"
+
+
+def test_statement_rows_for_line_compare_passes_through_transaction_id() -> None:
+    stmt = statement_rows_for_line_compare(
+        [
+            {
+                "id": 42,
+                "txn_date": "2024-01-05",
+                "amount": -4.5,
+                "description": "Coffee",
+            }
+        ]
+    )
+    assert stmt[0].get("id") == 42
+
+
+def test_compare_statement_includes_stmt_transaction_id_when_present() -> None:
+    stmt = [
+        {
+            "id": 99,
+            "txn_date": "2024-01-10",
+            "amount": -10.0,
+            "description": "Gas",
+        }
+    ]
+    reg = [{"id": 1, "txn_date": "2024-01-10", "amount": -10.0, "description": "Gas"}]
+    out = compare_statement_to_register(stmt, reg)
+    assert len(out) == 1
+    assert out[0]["stmt_transaction_id"] == 99
+
+
+def test_line_reconcile_review_key_imported_and_extra() -> None:
+    assert line_reconcile_review_key({"status": STATUS_MATCHED, "stmt_transaction_id": 5}) == "t:5"
+    assert line_reconcile_review_key({"status": STATUS_EXTRA, "register_id": 12}) == "e:12"
+    assert line_reconcile_review_key({"status": STATUS_NEEDS_REVIEW}) is None
+
+
+def test_merge_persisted_line_reconcile_review_restores_fields() -> None:
+    rows = [
+        {
+            "status": STATUS_NEEDS_REVIEW,
+            "stmt_transaction_id": 7,
+            "stmt_date": "2024-01-01",
+            "stmt_amount": -1.0,
+            "stmt_description": "OLD",
+            "review_notes": "",
+            "draft_coa_account": "",
+            "register_draft_handoff": False,
+        }
+    ]
+    merge_persisted_line_reconcile_review(
+        rows,
+        {
+            "t:7": {
+                "stmt_date": "2024-02-02",
+                "stmt_amount": -2.5,
+                "stmt_description": "NEW PAYEE",
+                "review_notes": "n",
+                "draft_coa_account": "Office",
+                "register_draft_handoff": 1,
+                "panel_reconciled": 1,
+            }
+        },
+    )
+    assert rows[0]["stmt_date"] == "2024-02-02"
+    assert rows[0]["stmt_amount"] == -2.5
+    assert rows[0]["stmt_description"] == "NEW PAYEE"
+    assert rows[0]["review_notes"] == "n"
+    assert rows[0]["draft_coa_account"] == "Office"
+    assert rows[0]["register_draft_handoff"] is True
+    assert rows[0]["panel_reconciled"] is True
+
+
+def test_bank_database_line_reconcile_review_roundtrip(tmp_path) -> None:
+    from probooksai.bank_import import BankDatabase
+
+    path = str(tmp_path / "lr.db")
+    db = BankDatabase(db_path=path)
+    try:
+        aid = db.add_bank_account("Chk")
+        bid = db.create_batch(aid)
+        db.upsert_line_reconcile_review(
+            bid,
+            "t:3",
+            stmt_description="Payee",
+            review_notes="x",
+            draft_coa_account="Rent",
+            register_draft_handoff=True,
+            panel_reconciled=True,
+            stmt_amount=-10.0,
+            stmt_date="2024-01-15",
+        )
+        got = db.fetch_line_reconcile_review(bid)
+        assert "t:3" in got
+        row = got["t:3"]
+        assert row["stmt_description"] == "Payee"
+        assert row["review_notes"] == "x"
+        assert row["draft_coa_account"] == "Rent"
+        assert row["register_draft_handoff"] in (1, True)
+        assert row["panel_reconciled"] in (1, True)
+    finally:
+        db.close()
 
 
 def test_dates_within_days() -> None:
@@ -208,7 +459,24 @@ def test_compare_missing_statement_only() -> None:
     reg: list = []
     out = compare_statement_to_register(stmt, reg)
     assert len(out) == 1
-    assert out[0]["status"] == STATUS_MISSING
+    assert out[0]["status"] == STATUS_NEEDS_REVIEW
+    assert out[0]["status"] == STATUS_MISSING  # alias
+
+
+def test_compare_likely_match_date_slip_beyond_two_days() -> None:
+    stmt = [{"txn_date": "2024-01-13", "amount": 100.0, "description": "Deposit"}]
+    reg = [{"id": 1, "txn_date": "2024-01-10", "amount": 100.0, "description": "Deposit"}]
+    out = compare_statement_to_register(stmt, reg)
+    assert len(out) == 1
+    assert out[0]["status"] == STATUS_LIKELY_MATCH
+    assert out[0]["register_id"] == 1
+
+
+def test_transaction_pair_likely_weak_fuzzy_same_date() -> None:
+    """Weak fuzzy ratio (0.22–0.35) with ±2d date — see ``transaction_pair_likely``."""
+    stmt = {"txn_date": "2024-01-10", "amount": -10.0, "description": "AAA0"}
+    reg = {"txn_date": "2024-01-10", "amount": -10.0, "description": "BBB0"}
+    assert transaction_pair_likely(stmt, reg)
 
 
 def test_compare_missing_includes_combined_stmt_description() -> None:
@@ -1059,6 +1327,125 @@ def test_statement_line_match_panel_run_coerces_string_bank_account_id_in_batch(
         panel.set_context(aid, batch)
         panel._on_run_clicked()
         assert emitted == [aid]
+    finally:
+        db.close()
+        if db_path.exists():
+            db_path.unlink()
+
+
+def test_statement_line_match_panel_open_in_bank_register_delegates_to_register_tab() -> None:
+    """**Open in Bank Register** calls ``RegisterTab.handoff_line_reconciliation_row`` for the selected row."""
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from probooksai.bank_import import BankDatabase
+    from desktop_app.statement_line_match_panel import StatementLineMatchPanel
+
+    db_path = Path(__file__).resolve().parent / "_stmt_line_match_handoff_test.db"
+    if db_path.exists():
+        db_path.unlink()
+    db = BankDatabase(str(db_path))
+    try:
+
+        class MockReg:
+            def __init__(self) -> None:
+                self.kwargs: dict | None = None
+
+            def handoff_line_reconciliation_row(self, **kwargs):
+                self.kwargs = kwargs
+                return True
+
+        reg = MockReg()
+        panel = StatementLineMatchPanel(
+            db, register_tab=reg, focus_bank_register_tab=lambda: None
+        )
+        panel._account_id = 42
+        panel.populate(
+            [
+                {
+                    "status": STATUS_NEEDS_REVIEW,
+                    "stmt_date": "2024-01-01",
+                    "stmt_amount": -10.0,
+                    "stmt_description": "Coffee",
+                    "register_id": None,
+                    "reg_date": "",
+                    "reg_amount": 0.0,
+                    "reg_description": "",
+                    "review_notes": "note",
+                    "draft_coa_account": "",
+                }
+            ]
+        )
+        panel._table.selectRow(0)
+        panel._refresh_reconciled_action_states()
+        assert panel._btn_open_register.isEnabled()
+        panel._on_open_in_bank_register_clicked()
+        assert reg.kwargs is not None
+        assert reg.kwargs["bank_account_id"] == 42
+        assert reg.kwargs["row"]["status"] == STATUS_NEEDS_REVIEW
+        assert callable(reg.kwargs["focus_bank_register_tab"])
+    finally:
+        db.close()
+        if db_path.exists():
+            db_path.unlink()
+
+
+def test_statement_line_match_panel_send_to_register_draft_delegates_to_register_tab() -> None:
+    """**Send to Register Draft** calls ``RegisterTab.send_line_reconciliation_to_register_draft``."""
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    from probooksai.bank_import import BankDatabase
+    from desktop_app.statement_line_match_panel import StatementLineMatchPanel
+
+    db_path = Path(__file__).resolve().parent / "_stmt_line_match_send_draft_test.db"
+    if db_path.exists():
+        db_path.unlink()
+    db = BankDatabase(str(db_path))
+    try:
+
+        class MockReg:
+            def __init__(self) -> None:
+                self.kwargs: dict | None = None
+                self.result = "posted"
+
+            def send_line_reconciliation_to_register_draft(self, **kwargs):
+                self.kwargs = kwargs
+                return self.result
+
+        reg = MockReg()
+        panel = StatementLineMatchPanel(
+            db, register_tab=reg, focus_bank_register_tab=lambda: None
+        )
+        panel._account_id = 42
+        panel.populate(
+            [
+                {
+                    "status": STATUS_LIKELY_MATCH,
+                    "stmt_date": "2024-01-01",
+                    "stmt_amount": -10.0,
+                    "stmt_description": "Coffee",
+                    "register_id": 99,
+                    "reg_date": "2024-01-01",
+                    "reg_amount": -10.0,
+                    "reg_description": "Coffee",
+                    "review_notes": "",
+                    "draft_coa_account": "",
+                }
+            ]
+        )
+        panel._table.selectRow(0)
+        panel._refresh_reconciled_action_states()
+        assert panel._btn_send_register_draft.isEnabled()
+        panel._on_send_to_register_draft_clicked()
+        assert reg.kwargs is not None
+        assert reg.kwargs["bank_account_id"] == 42
+        assert reg.kwargs["row"]["status"] == STATUS_LIKELY_MATCH
+        assert panel._rows[0].get("register_draft_handoff") is True
     finally:
         db.close()
         if db_path.exists():

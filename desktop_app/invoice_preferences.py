@@ -1,7 +1,10 @@
-"""Persistent invoice output settings (folder for Save, default printer for Print).
+"""Persistent invoice and related workflow output settings (folders, printers).
 
 Stored in the same ``QSettings`` scope as other ProBooks+ai desktop prefs
 (``ProBooks+ai`` / ``ProBooks+ai``).
+
+Includes **Enter Bills** PDF folder, **AR/AP payment receipt** PDF folder, and printers for
+bill / payment print dialogs (separate from invoice printer name).
 """
 
 from __future__ import annotations
@@ -68,6 +71,143 @@ def ensure_invoice_output_folder(parent: QWidget | None) -> str | None:
     norm = os.path.normpath(chosen)
     set_invoice_output_folder(norm)
     return norm
+
+
+_BILL_OUTPUT_FOLDER_KEY = "bill_prefs/output_folder"
+_BILL_PRINTER_NAME_KEY = "bill_prefs/printer_name"
+
+_PAYMENT_OUTPUT_FOLDER_KEY = "payment_prefs/output_folder"
+_PAYMENT_PRINTER_NAME_KEY = "payment_prefs/printer_name"
+
+
+def get_bill_output_folder() -> str:
+    raw = invoice_preferences_qsettings().value(_BILL_OUTPUT_FOLDER_KEY, "", type=str) or ""
+    p = os.path.normpath(raw.strip()) if raw.strip() else ""
+    if p and os.path.isdir(p):
+        return p
+    return ""
+
+
+def set_bill_output_folder(path: str) -> None:
+    qs = invoice_preferences_qsettings()
+    st = path.strip()
+    if st:
+        qs.setValue(_BILL_OUTPUT_FOLDER_KEY, os.path.normpath(st))
+    else:
+        qs.remove(_BILL_OUTPUT_FOLDER_KEY)
+
+
+def get_bill_printer_name() -> str:
+    return (invoice_preferences_qsettings().value(_BILL_PRINTER_NAME_KEY, "", type=str) or "").strip()
+
+
+def set_bill_printer_name(name: str) -> None:
+    qs = invoice_preferences_qsettings()
+    st = (name or "").strip()
+    if st:
+        qs.setValue(_BILL_PRINTER_NAME_KEY, st)
+    else:
+        qs.remove(_BILL_PRINTER_NAME_KEY)
+
+
+def ensure_bill_output_folder(parent: QWidget | None) -> str | None:
+    """Writable folder for Enter Bills **Save** PDF copies; prompts once if unset."""
+    cur = get_bill_output_folder()
+    if cur and os.path.isdir(cur):
+        return cur
+    start = cur if cur else str(Path.home())
+    chosen = QFileDialog.getExistingDirectory(
+        parent,
+        "Choose folder for bill PDF files",
+        start,
+    )
+    if not chosen:
+        return None
+    norm = os.path.normpath(chosen)
+    set_bill_output_folder(norm)
+    return norm
+
+
+def configure_printer_for_bill_print(parent: QWidget | None, printer: QPrinter) -> bool:
+    names = list(QPrinterInfo.availablePrinterNames())
+    saved = get_bill_printer_name()
+    if saved and saved in names:
+        printer.setPrinterName(saved)
+        return True
+    from PySide6.QtPrintSupport import QPrintDialog
+
+    dlg = QPrintDialog(printer, parent)
+    if dlg.exec() != QDialog.DialogCode.Accepted:
+        return False
+    chosen = (printer.printerName() or "").strip()
+    if chosen:
+        set_bill_printer_name(chosen)
+    return True
+
+
+def get_payment_output_folder() -> str:
+    raw = invoice_preferences_qsettings().value(_PAYMENT_OUTPUT_FOLDER_KEY, "", type=str) or ""
+    p = os.path.normpath(raw.strip()) if raw.strip() else ""
+    if p and os.path.isdir(p):
+        return p
+    return ""
+
+
+def set_payment_output_folder(path: str) -> None:
+    qs = invoice_preferences_qsettings()
+    st = path.strip()
+    if st:
+        qs.setValue(_PAYMENT_OUTPUT_FOLDER_KEY, os.path.normpath(st))
+    else:
+        qs.remove(_PAYMENT_OUTPUT_FOLDER_KEY)
+
+
+def get_payment_printer_name() -> str:
+    return (invoice_preferences_qsettings().value(_PAYMENT_PRINTER_NAME_KEY, "", type=str) or "").strip()
+
+
+def set_payment_printer_name(name: str) -> None:
+    qs = invoice_preferences_qsettings()
+    st = (name or "").strip()
+    if st:
+        qs.setValue(_PAYMENT_PRINTER_NAME_KEY, st)
+    else:
+        qs.remove(_PAYMENT_PRINTER_NAME_KEY)
+
+
+def ensure_payment_output_folder(parent: QWidget | None) -> str | None:
+    """Folder for AR/AP payment receipt PDFs from **Save** / batch export paths."""
+    cur = get_payment_output_folder()
+    if cur and os.path.isdir(cur):
+        return cur
+    start = cur if cur else str(Path.home())
+    chosen = QFileDialog.getExistingDirectory(
+        parent,
+        "Choose folder for payment receipt PDF files",
+        start,
+    )
+    if not chosen:
+        return None
+    norm = os.path.normpath(chosen)
+    set_payment_output_folder(norm)
+    return norm
+
+
+def configure_printer_for_payment_print(parent: QWidget | None, printer: QPrinter) -> bool:
+    names = list(QPrinterInfo.availablePrinterNames())
+    saved = get_payment_printer_name()
+    if saved and saved in names:
+        printer.setPrinterName(saved)
+        return True
+    from PySide6.QtPrintSupport import QPrintDialog
+
+    dlg = QPrintDialog(printer, parent)
+    if dlg.exec() != QDialog.DialogCode.Accepted:
+        return False
+    chosen = (printer.printerName() or "").strip()
+    if chosen:
+        set_payment_printer_name(chosen)
+    return True
 
 
 def configure_printer_for_invoice_print(parent: QWidget | None, printer: QPrinter) -> bool:

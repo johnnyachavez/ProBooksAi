@@ -60,7 +60,7 @@ MANUAL_ENTRY_BATCH_FILENAME = "(Manual entry)"
 # ---------------------------------------------------------------------------
 
 # Bump this number whenever you add a migration below.
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 _DDL_SCHEMA_VERSION = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -141,6 +141,24 @@ ALTER TABLE bank_transactions ADD COLUMN transfer_to_bank_account_id INTEGER REF
     # v6 – register “cleared” tick (per transaction; independent of batch reconciliation)
     (6, """
 ALTER TABLE bank_transactions ADD COLUMN cleared INTEGER NOT NULL DEFAULT 0;
+"""),
+    (7, """
+CREATE TABLE IF NOT EXISTS bank_import_line_reconcile_review (
+    import_batch_id INTEGER NOT NULL
+        REFERENCES bank_import_batches(id) ON DELETE CASCADE,
+    line_key TEXT NOT NULL,
+    stmt_date TEXT NOT NULL DEFAULT '',
+    stmt_amount REAL,
+    stmt_description TEXT NOT NULL DEFAULT '',
+    review_notes TEXT NOT NULL DEFAULT '',
+    draft_coa_account TEXT NOT NULL DEFAULT '',
+    register_draft_handoff INTEGER NOT NULL DEFAULT 0,
+    panel_reconciled INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (import_batch_id, line_key)
+);
+CREATE INDEX IF NOT EXISTS idx_line_reconcile_review_batch
+    ON bank_import_line_reconcile_review(import_batch_id);
 """),
 ]
 
@@ -402,11 +420,26 @@ class BankDatabase:
             db_path = str(default_intake_sqlite_path())
         self._db_path = db_path
         self._conn = _connect(db_path)
+        self._closed = False
 
     # -- context manager -----------------------------------------------------
 
     def close(self):
+        if self._closed:
+            return
         self._conn.close()
+        self._closed = True
+
+    @property
+    def is_closed(self) -> bool:
+        """``True`` after :meth:`close` has been called.
+
+        Lets long-lived widgets that hold a reference to a *previous* ``BankDatabase``
+        (e.g. a ``RegisterTab`` whose tab is being torn down during a
+        ``_switch_company_database`` rebuild) probe the handle without raising
+        ``sqlite3.ProgrammingError`` on the next query attempt.
+        """
+        return self._closed
 
     def __enter__(self):
         return self
@@ -712,6 +745,72 @@ class BankDatabase:
         )
         self._conn.commit()
 
+    def fetch_line_reconcile_review(self, batch_id: int) -> dict[str, dict]:
+        """Load persisted line-reconciliation UI state for an import batch (keyed by ``line_key``)."""
+        rows = self._conn.execute(
+            """
+            SELECT line_key, stmt_date, stmt_amount, stmt_description, review_notes,
+                   draft_coa_account, register_draft_handoff, panel_reconciled
+            FROM bank_import_line_reconcile_review
+            WHERE import_batch_id = ?
+            """,
+            (int(batch_id),),
+        ).fetchall()
+        out: dict[str, dict] = {}
+        for r in rows:
+            d = dict(r)
+            key = str(d.pop("line_key") or "")
+            if not key:
+                continue
+            out[key] = d
+        return out
+
+    def upsert_line_reconcile_review(
+        self,
+        batch_id: int,
+        line_key: str,
+        *,
+        stmt_date: str = "",
+        stmt_amount: Optional[float] = None,
+        stmt_description: str = "",
+        review_notes: str = "",
+        draft_coa_account: str = "",
+        register_draft_handoff: bool = False,
+        panel_reconciled: bool = False,
+    ) -> None:
+        """Persist review edits for one reconciliation row (imported statement line or Extra register line)."""
+        now = _now()
+        self._conn.execute(
+            """
+            INSERT INTO bank_import_line_reconcile_review (
+                import_batch_id, line_key, stmt_date, stmt_amount, stmt_description,
+                review_notes, draft_coa_account, register_draft_handoff, panel_reconciled, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(import_batch_id, line_key) DO UPDATE SET
+                stmt_date = excluded.stmt_date,
+                stmt_amount = excluded.stmt_amount,
+                stmt_description = excluded.stmt_description,
+                review_notes = excluded.review_notes,
+                draft_coa_account = excluded.draft_coa_account,
+                register_draft_handoff = excluded.register_draft_handoff,
+                panel_reconciled = excluded.panel_reconciled,
+                updated_at = excluded.updated_at
+            """,
+            (
+                int(batch_id),
+                line_key,
+                stmt_date or "",
+                stmt_amount,
+                stmt_description or "",
+                review_notes or "",
+                draft_coa_account or "",
+                1 if register_draft_handoff else 0,
+                1 if panel_reconciled else 0,
+                now,
+            ),
+        )
+        self._conn.commit()
+
     def export_batch_reconciliation_csv(
         self,
         batch_id: int,
@@ -871,11 +970,17 @@ class BankDatabase:
         statement_start: Optional[str] = None,
         statement_end: Optional[str] = None,
         register_filter: Optional[str] = None,
+        *,
+        import_batch_id: Optional[int] = None,
     ) -> list:
         """
         Return transactions for *bank_account_id*, optionally filtered by date.
 
         Dates are ISO-8601 strings (YYYY-MM-DD), inclusive on both ends.
+
+        *import_batch_id* — when set, only rows whose ``bank_transactions.batch_id`` equals
+        this id (used for Reconcile line compare: statement side = this import batch;
+        register side = all rows in the date range).
 
         *register_filter* (register UI): ``needs_receipt``, ``has_attachment``,
         ``missing_attachment`` (needs_receipt and empty path),
@@ -945,6 +1050,9 @@ class BankDatabase:
                 "WHERE b.id = bank_transactions.batch_id "
                 "AND COALESCE(b.is_reconciled, 0) = 0)"
             )
+        if import_batch_id is not None:
+            where += " AND bank_transactions.batch_id = ?"
+            params.append(int(import_batch_id))
         return self._conn.execute(
             f"SELECT * FROM bank_transactions WHERE {where} ORDER BY txn_date, id",
             params,

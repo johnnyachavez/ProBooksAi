@@ -57,4 +57,29 @@ def test_reports_tab_ar_ap_buttons_fill_tables(qapp: QApplication, tmp_path) -> 
     tab._show_recent_ap_payments()
     assert tab._table.rowCount() == 0
     assert tab._last_export is not None
+    tab.activate_report("open_inv")
+    assert tab._table.columnCount() == 8
+    assert "Invoice id" in [
+        tab._table.horizontalHeaderItem(c).text() for c in range(tab._table.columnCount())
+    ]
+    db.close()
+
+
+def test_reports_tab_activate_report(qapp: QApplication, tmp_path) -> None:
+    db_path = tmp_path / "reports_activate.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "ActCo")
+    business.create_invoice(
+        db._conn,
+        cid,
+        "A-1",
+        "2025-03-01",
+        lines=[{"description": "x", "qty": 1.0, "rate": 10.0}],
+    )
+    tab = ReportsTab(db._conn)
+    tab.activate_report("ar_aging")
+    assert tab._last_report_kind == "ar_aging"
+    tab.activate_report("open_invoices")
+    assert tab._last_report_kind == "open_inv"
     db.close()

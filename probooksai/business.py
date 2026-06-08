@@ -79,6 +79,86 @@ def sales_tax_collected_sum(
 # Customers & invoices (Phase 8)
 # ---------------------------------------------------------------------------
 
+def _count_customer_children(conn: sqlite3.Connection, customer_id: int) -> int:
+    row = conn.execute(
+        "SELECT COUNT(*) AS n FROM customers WHERE parent_customer_id = ?",
+        (customer_id,),
+    ).fetchone()
+    return int(row["n"] or 0) if row else 0
+
+
+def _validate_customer_parent(
+    conn: sqlite3.Connection,
+    *,
+    customer_id: int | None,
+    parent_customer_id: int | None,
+) -> None:
+    if parent_customer_id is None:
+        return
+    if customer_id is not None and int(parent_customer_id) == int(customer_id):
+        raise ValueError("A customer cannot be its own parent.")
+    parent = get_customer(conn, int(parent_customer_id))
+    if parent is None:
+        raise ValueError("Parent customer not found.")
+    pd = dict(parent).get("parent_customer_id")
+    if pd is not None:
+        raise ValueError("Parent must be a top-level customer (not a job).")
+    if customer_id is not None and _count_customer_children(conn, int(customer_id)) > 0:
+        raise ValueError(
+            "This customer has job accounts; reassign or remove those jobs before assigning a parent."
+        )
+
+
+def list_parent_customer_choices(conn: sqlite3.Connection) -> list:
+    """Customers that may be selected as a job parent (standalone / mother-ship rows only)."""
+    return conn.execute(
+        """
+        SELECT * FROM customers
+        WHERE parent_customer_id IS NULL
+        ORDER BY name
+        """
+    ).fetchall()
+
+
+def customer_relationship_label(conn: sqlite3.Connection, customer_id: int) -> str:
+    """Short label for grids: Parent, Standalone, or Job: <parent name>."""
+    row = get_customer(conn, customer_id)
+    if row is None:
+        return ""
+    d = dict(row)
+    pid = d.get("parent_customer_id")
+    if pid is not None:
+        prow = get_customer(conn, int(pid))
+        pname = (prow["name"] or "").strip() if prow else ""
+        return f"Job: {pname}" if pname else "Job"
+    if _count_customer_children(conn, customer_id) > 0:
+        return "Parent"
+    return "Standalone"
+
+
+def customer_ids_for_receive_payments_filter(
+    conn: sqlite3.Connection, customer_id: int
+) -> list[int]:
+    """Invoice filter: one job’s invoices only; for a parent / mother ship, include all child jobs."""
+    row = get_customer(conn, customer_id)
+    if row is None:
+        return [customer_id]
+    d = dict(row)
+    if d.get("parent_customer_id") is not None:
+        return [customer_id]
+    out = [customer_id]
+    for r in conn.execute(
+        """
+        SELECT id FROM customers
+        WHERE parent_customer_id = ?
+        ORDER BY name
+        """,
+        (customer_id,),
+    ).fetchall():
+        out.append(int(r["id"]))
+    return out
+
+
 def add_customer(
     conn: sqlite3.Connection,
     name: str,
@@ -86,13 +166,15 @@ def add_customer(
     phone: str = "",
     address: str = "",
     notes: str = "",
+    parent_customer_id: int | None = None,
 ) -> int:
+    _validate_customer_parent(conn, customer_id=None, parent_customer_id=parent_customer_id)
     cur = conn.execute(
         """
-        INSERT INTO customers (name, email, phone, address, notes, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO customers (name, email, phone, address, notes, parent_customer_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (name, email, phone, address, notes, _now()),
+        (name, email, phone, address, notes, parent_customer_id, _now()),
     )
     conn.commit()
     return cur.lastrowid
@@ -102,6 +184,38 @@ def list_customers(conn: sqlite3.Connection) -> list:
     return conn.execute(
         "SELECT * FROM customers ORDER BY name"
     ).fetchall()
+
+
+def list_bill_to_customer_choices(conn: sqlite3.Connection) -> list[tuple[int, str]]:
+    """Return ``(customer_id, combo_label)`` for invoice Bill To.
+
+    Root customers use their display name. Jobs use ``Parent Name > Job Name`` so the hierarchy
+    is visible while each tuple still refers to a single ``customers.id`` for ``invoice.customer_id``.
+    """
+    rows = list_customers(conn)
+    id_to_row: dict[int, dict] = {}
+    for r in rows:
+        d = dict(r)
+        id_to_row[int(d["id"])] = d
+    out: list[tuple[int, str]] = []
+    for r in rows:
+        d = dict(r)
+        cid = int(d["id"])
+        name = (d.get("name") or "").strip() or f"Customer #{cid}"
+        pid = d.get("parent_customer_id")
+        if pid is None:
+            label = name
+        else:
+            parent = id_to_row.get(int(pid))
+            pname = (
+                (parent.get("name") or "").strip()
+                if parent
+                else f"Customer #{int(pid)}"
+            )
+            label = f"{pname} > {name}"
+        out.append((cid, label))
+    out.sort(key=lambda t: (t[1].lower(), t[0]))
+    return out
 
 
 def get_customer(conn: sqlite3.Connection, customer_id: int) -> Optional[sqlite3.Row]:
@@ -116,15 +230,19 @@ def update_customer(
     phone: str = "",
     address: str = "",
     notes: str = "",
+    parent_customer_id: int | None = None,
 ) -> None:
     if get_customer(conn, customer_id) is None:
         raise ValueError("Customer not found.")
+    _validate_customer_parent(
+        conn, customer_id=customer_id, parent_customer_id=parent_customer_id
+    )
     conn.execute(
         """
-        UPDATE customers SET name = ?, email = ?, phone = ?, address = ?, notes = ?
+        UPDATE customers SET name = ?, email = ?, phone = ?, address = ?, notes = ?, parent_customer_id = ?
         WHERE id = ?
         """,
-        (name, email, phone, address, notes, customer_id),
+        (name, email, phone, address, notes, parent_customer_id, customer_id),
     )
     conn.commit()
 
@@ -134,7 +252,9 @@ def write_customers_csv(conn: sqlite3.Connection, path: str) -> int:
     rows = list_customers(conn)
     with open(path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
-        w.writerow(["id", "name", "email", "phone", "address", "notes"])
+        w.writerow(
+            ["id", "name", "email", "phone", "address", "notes", "parent_customer_id"]
+        )
         n = 0
         for r in rows:
             d = dict(r)
@@ -146,10 +266,90 @@ def write_customers_csv(conn: sqlite3.Connection, path: str) -> int:
                     d.get("phone") or "",
                     d.get("address") or "",
                     d.get("notes") or "",
+                    d.get("parent_customer_id"),
                 ]
             )
             n += 1
     return n
+
+
+# ---------------------------------------------------------------------------
+# Invoice item / service codes (Manual Invoice → Code column)
+# ---------------------------------------------------------------------------
+
+_INVOICE_ITEM_TYPES = ("Service", "Discount", "Other Charge")
+
+
+def list_invoice_item_codes(conn: sqlite3.Connection) -> list:
+    """All rows for the **Codes** tab and invoice line lookups; ordered by sort_order, code."""
+    return conn.execute(
+        """
+        SELECT id, code, description, item_type, coa_account, rate_value, rate_kind, sort_order
+        FROM invoice_item_codes
+        ORDER BY sort_order, code COLLATE NOCASE
+        """
+    ).fetchall()
+
+
+def list_invoice_item_code_strings(conn: sqlite3.Connection) -> list[str]:
+    """Distinct code strings for invoice line QCompleter."""
+    rows = conn.execute(
+        "SELECT code FROM invoice_item_codes ORDER BY sort_order, code COLLATE NOCASE"
+    ).fetchall()
+    return [str(r["code"]).strip() for r in rows if (r["code"] or "").strip()]
+
+
+def get_invoice_item_code_by_code(conn: sqlite3.Connection, code: str) -> Optional[sqlite3.Row]:
+    """Case-insensitive match on ``code``."""
+    raw = (code or "").strip()
+    if not raw:
+        return None
+    return conn.execute(
+        "SELECT * FROM invoice_item_codes WHERE lower(code) = lower(?) LIMIT 1",
+        (raw,),
+    ).fetchone()
+
+
+def replace_invoice_item_codes(
+    conn: sqlite3.Connection,
+    rows: list[dict],
+) -> None:
+    """Replace the entire code list (desktop **Codes** tab Save). *rows* omit ``id``."""
+    conn.execute("DELETE FROM invoice_item_codes")
+    now = _now()
+    for i, r in enumerate(rows):
+        code = (r.get("code") or "").strip()
+        if not code:
+            continue
+        it = (r.get("item_type") or "Service").strip()
+        if it not in _INVOICE_ITEM_TYPES:
+            it = "Service"
+        rk = (r.get("rate_kind") or "amount").strip().lower()
+        if rk not in ("amount", "percent"):
+            rk = "amount"
+        try:
+            rv = float(r.get("rate_value", 0.0))
+        except (TypeError, ValueError):
+            rv = 0.0
+        conn.execute(
+            """
+            INSERT INTO invoice_item_codes (
+                code, description, item_type, coa_account,
+                rate_value, rate_kind, sort_order, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                code,
+                (r.get("description") or "").strip(),
+                it,
+                (r.get("coa_account") or "").strip(),
+                rv,
+                rk,
+                int(r.get("sort_order", i)),
+                now,
+            ),
+        )
+    conn.commit()
 
 
 def create_invoice(
@@ -500,15 +700,16 @@ def list_invoices(conn: sqlite3.Connection) -> list:
     ).fetchall()
 
 
-_DEFAULT_FIRST_INVOICE_NUMBER = "13001"
+_DEFAULT_FIRST_INVOICE_NUMBER = "1"
 
 
 def next_default_invoice_number(conn: sqlite3.Connection | None) -> str:
-    """Suggested next *invoice_number* for a new invoice (desktop default).
+    """Suggested next *invoice_number* for a new invoice (desktop Manual Invoice).
 
     Uses the maximum existing *invoice_number* whose trimmed value is all digits,
-    plus one. Non-numeric values are ignored for sequencing. If none qualify,
-    returns ``13001``. With *conn* ``None`` (no company file), returns ``13001``.
+    plus one. Non-digit strings are ignored for sequencing (user may use ``INV-1``,
+    etc.). If no all-digit numbers exist yet, returns ``1``. With *conn* ``None``
+    (no company file), returns ``1`` so the empty UI matches a fresh company.
     """
     if conn is None:
         return _DEFAULT_FIRST_INVOICE_NUMBER
@@ -598,6 +799,56 @@ def list_invoice_ids_chronological(conn: sqlite3.Connection) -> list[int]:
         except (KeyError, TypeError, ValueError):
             continue
     return out
+
+
+def list_invoice_ids_by_invoice_number(conn: sqlite3.Connection) -> list[int]:
+    """Invoice primary keys ordered by *invoice_number* for Manual Invoice navigation.
+
+    All-digit numbers sort numerically ascending (matches :func:`next_default_invoice_number`).
+    Other values sort after digits, case-insensitive by string, then by ``id`` for stability.
+    """
+    try:
+        rows = conn.execute("SELECT id, invoice_number FROM invoices").fetchall()
+    except sqlite3.Error:
+        return []
+
+    def sort_key(r: sqlite3.Row) -> tuple:
+        try:
+            sid = int(r["id"])
+        except (KeyError, TypeError, ValueError):
+            sid = 0
+        s = (r["invoice_number"] or "").strip()
+        if s.isdigit():
+            return (0, int(s), sid)
+        return (1, s.lower(), sid)
+
+    rows = sorted(rows, key=sort_key)
+    out: list[int] = []
+    for r in rows:
+        try:
+            out.append(int(r["id"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
+
+
+def get_invoice_id_by_number(
+    conn: sqlite3.Connection, invoice_number: str
+) -> int | None:
+    """Return the invoice primary key for *invoice_number* (exact match after strip), or ``None``."""
+    s = (invoice_number or "").strip()
+    if not s:
+        return None
+    row = conn.execute(
+        "SELECT id FROM invoices WHERE invoice_number = ? LIMIT 1",
+        (s,),
+    ).fetchone()
+    if row is None:
+        return None
+    try:
+        return int(row["id"])
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def get_invoice_detail(
@@ -752,6 +1003,68 @@ def write_ap_payments_csv(conn: sqlite3.Connection, path: str) -> int:
             )
             n += 1
     return n
+
+
+def get_ar_payment_detail(
+    conn: sqlite3.Connection, payment_id: int
+) -> tuple[Optional[sqlite3.Row], list]:
+    """Header row for one AR payment plus allocation lines (invoice apply lines)."""
+    row = conn.execute(
+        """
+        SELECT p.*, c.name AS customer_name,
+               b.name AS bank_account_name
+        FROM ar_payments p
+        JOIN customers c ON c.id = p.customer_id
+        LEFT JOIN bank_accounts b ON b.id = p.bank_account_id
+        WHERE p.id = ?
+        """,
+        (payment_id,),
+    ).fetchone()
+    if row is None:
+        return None, []
+    allocs = conn.execute(
+        """
+        SELECT a.id AS allocation_id, a.invoice_id, a.amount AS apply_amount,
+               i.invoice_number, i.invoice_date
+        FROM ar_payment_allocations a
+        JOIN invoices i ON i.id = a.invoice_id
+        WHERE a.payment_id = ?
+        ORDER BY a.id
+        """,
+        (payment_id,),
+    ).fetchall()
+    return row, list(allocs)
+
+
+def get_ap_payment_detail(
+    conn: sqlite3.Connection, payment_id: int
+) -> tuple[Optional[sqlite3.Row], list]:
+    """Header row for one AP payment plus allocation lines (bill apply lines)."""
+    row = conn.execute(
+        """
+        SELECT p.*, v.name AS vendor_name,
+               b.name AS bank_account_name
+        FROM ap_payments p
+        JOIN vendors v ON v.id = p.vendor_id
+        LEFT JOIN bank_accounts b ON b.id = p.bank_account_id
+        WHERE p.id = ?
+        """,
+        (payment_id,),
+    ).fetchone()
+    if row is None:
+        return None, []
+    allocs = conn.execute(
+        """
+        SELECT a.id AS allocation_id, a.bill_id, a.amount AS apply_amount,
+               bl.vendor_invoice_number, bl.bill_date
+        FROM ap_payment_allocations a
+        JOIN bills bl ON bl.id = a.bill_id
+        WHERE a.payment_id = ?
+        ORDER BY a.id
+        """,
+        (payment_id,),
+    ).fetchall()
+    return row, list(allocs)
 
 
 def list_ar_payment_allocations(conn: sqlite3.Connection) -> list:
@@ -979,6 +1292,25 @@ def list_open_invoices_for_customer(
     ).fetchall()
 
 
+def list_open_invoices_for_ar_payment_customer(
+    conn: sqlite3.Connection, customer_id: int
+) -> list:
+    """Like :func:`list_open_invoices_for_customer`, but for a parent (mother ship) includes all job invoices."""
+    ids = customer_ids_for_receive_payments_filter(conn, customer_id)
+    if not ids:
+        return []
+    ph = ",".join("?" * len(ids))
+    return conn.execute(
+        f"""
+        SELECT id, invoice_number, invoice_date, balance_due, total
+        FROM invoices
+        WHERE customer_id IN ({ph}) AND balance_due > 0.005
+        ORDER BY invoice_date, id
+        """,
+        tuple(ids),
+    ).fetchall()
+
+
 def list_open_invoices_for_receive_payments(conn: sqlite3.Connection) -> list:
     """Open AR invoices with customer columns for the Receive Payments tab (``balance_due`` > 0)."""
     return conn.execute(
@@ -1112,6 +1444,48 @@ def list_bill_expense_lines(conn: sqlite3.Connection, bill_id: int) -> list:
         """,
         (bill_id,),
     ).fetchall()
+
+
+def get_bill_id_by_vendor_invoice_number(
+    conn: sqlite3.Connection,
+    vendor_invoice_number: str,
+    *,
+    vendor_id: Optional[int] = None,
+) -> Optional[int]:
+    """Return bill id for *vendor_invoice_number* (trimmed).
+
+    With *vendor_id*, matches that vendor only. Without *vendor_id*, returns an id only when
+    exactly one bill in the file has that reference (otherwise ``None`` — ambiguous).
+    """
+    s = (vendor_invoice_number or "").strip()
+    if not s:
+        return None
+    if vendor_id is not None:
+        row = conn.execute(
+            """
+            SELECT id FROM bills
+            WHERE vendor_id = ? AND TRIM(COALESCE(vendor_invoice_number, '')) = ?
+            LIMIT 1
+            """,
+            (int(vendor_id), s),
+        ).fetchone()
+    else:
+        rows = conn.execute(
+            """
+            SELECT id FROM bills
+            WHERE TRIM(COALESCE(vendor_invoice_number, '')) = ?
+            """,
+            (s,),
+        ).fetchall()
+        if len(rows) != 1:
+            return None
+        row = rows[0]
+    if row is None:
+        return None
+    try:
+        return int(row["id"])
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def get_bill_detail(
@@ -1485,6 +1859,7 @@ def list_customer_ar_summaries(conn: sqlite3.Connection) -> list[dict]:
             {
                 "customer_id": cid,
                 "customer_name": name,
+                "relationship": customer_relationship_label(conn, cid),
                 "open_balance": round(open_bal, 2),
                 "current_due": round(current_due, 2),
                 "overdue": round(overdue, 2),

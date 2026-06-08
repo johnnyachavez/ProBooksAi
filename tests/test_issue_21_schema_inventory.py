@@ -56,6 +56,7 @@ _DESKTOP_BANK_CORE_TABLES = frozenset(
     {
         "bank_accounts",
         "bank_import_batches",
+        "bank_import_line_reconcile_review",
         "bank_transactions",
         "schema_version",
     }

@@ -30,25 +30,26 @@ def test_main_window_tab_count_and_fixed_top_level_order(qapp: QApplication, tmp
     w = MainWindow(db_path=str(db_path))
     try:
         tabs = w._tabs
-        assert tabs.count() == 12
+        assert tabs.count() == 13
         order = (
             (0, "Dashboard"),
             (1, "Invoices"),
-            (2, "Write Checks"),
-            (3, "Enter Bills"),
-            (4, "Pay Bills"),
-            (5, "Receive Payments"),
-            (6, "Bank Register"),
-            (7, "Chart of Accounts"),
-            (8, "Customers"),
-            (9, "Vendors"),
-            (10, "Reconcile"),
-            (11, "More"),
+            (2, "Codes"),
+            (3, "Write Checks"),
+            (4, "Enter Bills"),
+            (5, "Pay Bills"),
+            (6, "Receive Payments"),
+            (7, "Bank Register"),
+            (8, "Chart of Accounts"),
+            (9, "Customers"),
+            (10, "Vendors"),
+            (11, "Reconcile"),
+            (12, "More"),
         )
         for idx, needle in order:
             assert needle in tabs.tabText(idx)
         tb = tabs.tabBar()
-        for i in range(12):
+        for i in range(13):
             assert tb.isTabVisible(i)
             tabs.setCurrentIndex(i)
             assert tabs.currentIndex() == i
@@ -72,9 +73,9 @@ def test_accounting_landing_tabs_show_page_titles(qapp: QApplication, tmp_path: 
         tabs = w._tabs
         expected = (
             (1, InvoiceScreen),
-            (3, EnterBillsScreen),
-            (4, PayBillsScreen),
-            (5, ReceiveChecksScreen),
+            (4, EnterBillsScreen),
+            (5, PayBillsScreen),
+            (6, ReceiveChecksScreen),
         )
         for idx, spec in expected:
             tabs.setCurrentIndex(idx)
@@ -134,18 +135,27 @@ def test_customers_and_vendors_tabs_use_live_ar_ap_workflows(
     w = MainWindow(db_path=str(db_path))
     try:
         tabs = w._tabs
-        assert isinstance(tabs.widget(8), ARTab)
-        assert isinstance(tabs.widget(9), APTab)
-        assert tabs.widget(8) is w._customers_tab
-        assert tabs.widget(9) is w._vendors_tab
+        assert isinstance(tabs.widget(9), ARTab)
+        assert isinstance(tabs.widget(10), APTab)
+        assert tabs.widget(9) is w._customers_tab
+        assert tabs.widget(10) is w._vendors_tab
         bh = w._business_hub._business_subtabs
-        assert bh.count() == 4
-        assert "Rules" in bh.tabText(0) and "Payroll" in bh.tabText(1) and "Tax" in bh.tabText(2) and "Company" in bh.tabText(3)
+        # Merged Business hub: Rules, Payroll, Tax %, Company (HEAD), AI (dev).
+        # Top-level Customers/Vendors are still the primary AR/AP entry points.
+        assert bh.count() == 5
+        assert "Rules" in bh.tabText(0) and "Payroll" in bh.tabText(1) and "Tax" in bh.tabText(2)
+        assert bh.tabText(3) == "Company"
+        assert bh.tabText(4) == "AI"
     finally:
         w.close()
 
 
-def test_reconcile_hub_hosts_bank_import_and_document_intake(qapp: QApplication, tmp_path: Path) -> None:
+def test_reconcile_hub_hosts_bank_import_document_intake_and_statement_intake(
+    qapp: QApplication, tmp_path: Path
+) -> None:
+    """Reconcile hub hosts the existing Bank statements + Documents tabs and the
+    new phase-1 Bank Statement Intake (review-first) sub-tab as the rightmost
+    option. Top-level tabs are unaffected (still eleven, locked elsewhere)."""
     from desktop_app.main import MainWindow
 
     db_path = tmp_path / "reconcile_hub.db"
@@ -153,9 +163,42 @@ def test_reconcile_hub_hosts_bank_import_and_document_intake(qapp: QApplication,
     w = MainWindow(db_path=str(db_path))
     try:
         rh = w._reconcile_hub
-        assert rh.count() == 3
+        # Merged Reconcile hub: Bank statements, Documents, AR / Invoices (HEAD),
+        # Statement intake (review) (dev).
+        assert rh.count() == 4
         assert rh.widget(0) is w._bank_tab
         assert rh.widget(1) is w._intake_widget
+        assert rh.tabText(0) == "Bank statements"
+        assert rh.tabText(1) == "Documents"
         assert rh.tabText(2) == "AR / Invoices"
+        assert rh.widget(2) is w._ar_recon_widget
+        assert rh.widget(3) is w._statement_intake_panel
+        assert rh.tabText(3) == "Statement intake (review)"
+    finally:
+        w.close()
+
+
+def test_main_window_wires_default_ai_provider_into_statement_intake_panel(
+    qapp: QApplication, tmp_path: Path
+) -> None:
+    """``MainWindow._assemble_main_tabs`` must call ``set_ai_provider`` with
+    the default OpenAI-backed provider so the panel's AI fallback is hot
+    as soon as the user enables it (no app restart required). The
+    provider stays silent until both ``ai_intake_enabled`` AND a key
+    are configured, which is gated by the panel and provider — but the
+    pipe must be plumbed at construction time."""
+    from desktop_app.main import MainWindow
+    from probooksai.bank_statement_intake_ai_provider import OpenAIProvider
+
+    db_path = tmp_path / "ai_wire.db"
+    BankDatabase(str(db_path)).close()
+    w = MainWindow(db_path=str(db_path))
+    try:
+        panel = w._statement_intake_panel
+        assert panel._ai_provider is not None
+        assert isinstance(panel._ai_provider, OpenAIProvider)
+        # Provider reads the *current* company conn; sanity-check it
+        # points at the open window's bank_db.
+        assert panel._ai_provider._conn is w._bank_db._conn
     finally:
         w.close()

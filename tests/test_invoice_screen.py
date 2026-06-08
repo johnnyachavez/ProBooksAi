@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from unittest.mock import patch
 
@@ -19,9 +20,12 @@ from PySide6.QtWidgets import (
 )
 
 from desktop_app.customer_bill_to_panel import CustomerBillToPanel
+from desktop_app.invoice_intake_text_extract import extract_text_intake_fields
+from desktop_app import invoice_screen as invoice_screen_module
 from desktop_app.invoice_screen import (
     InvoiceScreen,
     _INVOICE_LINE_ROW_MIN_HEIGHT_PX,
+    _InvoiceCodeLineEdit,
     _invoice_line_table_qsettings,
 )
 from probooksai import business
@@ -70,7 +74,7 @@ def test_invoice_screen_line_grid_and_headers(qapp: QApplication) -> None:
     assert isinstance(w._date, QLineEdit)
     assert isinstance(w._inv_number, QLineEdit)
     assert w._inv_number.placeholderText() == "INVOICE #"
-    assert w._inv_number.text() == "13001"
+    assert w._inv_number.text() == "1"
     labels = [lb.text() for lb in w.findChildren(QLabel)]
     assert "Invoice Number" not in labels
     assert "Invoice Date" in labels
@@ -90,10 +94,10 @@ def test_invoice_screen_line_grid_and_headers(qapp: QApplication) -> None:
         assert hh.sectionResizeMode(c) == QHeaderView.ResizeMode.Interactive
     assert t.columnCount() == 7
     assert t.rowCount() == InvoiceScreen._N_LINE_ROWS
-    assert t.horizontalHeaderItem(0).text() == "Serviced On"
+    assert t.horizontalHeaderItem(0).text() == "Date"
     assert t.horizontalHeaderItem(2).text() == "Description"
     assert t.horizontalHeaderItem(3).text() == "BOL#"
-    assert t.horizontalHeaderItem(6).text() == "Amount"
+    assert t.horizontalHeaderItem(6).text() == "Total"
     assert isinstance(t.cellWidget(0, 0), QLineEdit)
     assert isinstance(t.cellWidget(0, 1), QLineEdit)
     assert isinstance(t.cellWidget(0, 2), QLineEdit)
@@ -145,43 +149,43 @@ def test_invoice_screen_address_boxes_exist(qapp: QApplication) -> None:
 
 def test_invoice_screen_print_and_nav_buttons_exist(qapp: QApplication) -> None:
     w = InvoiceScreen()
-    assert w._btn_new_invoice.text() == "New Invoice"
     assert w._btn_clear_fields.text() == "Clear Fields"
     assert w._btn_save.text() == "Save"
+    assert w._btn_export_pdf.text() == "Export PDF…"
     assert w._btn_print.text() == "Print…"
-    assert "Prev" in w._btn_reverse.text()
-    assert "Next" in w._btn_forward.text()
-    # Removed buttons
-    assert not hasattr(w, "_btn_import_pdf")
-    assert not hasattr(w, "_btn_new_customer")
-    assert not hasattr(w, "_btn_export_pdf")
-    assert not hasattr(w, "_btn_ar_new_inv")
-    assert not hasattr(w, "_btn_ar_export_inv")
-    assert not hasattr(w, "_status_badge")
+    assert w._btn_new_customer.text() == "New Customer"
+    assert w._btn_reverse.text() == "Reverse"
+    assert w._btn_forward.text() == "Forward"
 
 
-def test_invoice_screen_save_creates_invoice_and_advances(
+def test_invoice_screen_export_pdf_saves_to_chosen_path(
     qapp: QApplication, tmp_path
 ) -> None:
-    """Save persists to DB and advances to next invoice number."""
-    db_path = tmp_path / "invoice_save_adv.db"
+    """Export PDF… persists, then writes to the path from Save file (mocked)."""
+    db_path = tmp_path / "invoice_export.db"
     db = BankDatabase(str(db_path))
     apply_extensions(db._conn)
-    cid = business.add_customer(db._conn, "SaveAdvCo")
+    cid = business.add_customer(db._conn, "ExportCo")
     w = InvoiceScreen(ap_conn=db._conn)
     w._bill_customer_panel.select_customer_by_id(cid)
     w._inv_number.setText("93001")
     desc = w._table.cellWidget(0, 2)
     assert isinstance(desc, QLineEdit)
-    desc.setText("Save line")
+    desc.setText("Export line")
     rate = w._table.cellWidget(0, 4)
     assert isinstance(rate, QDoubleSpinBox)
     rate.setValue(50.0)
     qty = w._table.cellWidget(0, 5)
     assert isinstance(qty, QDoubleSpinBox)
     qty.setValue(1.0)
-    QTest.mouseClick(w._btn_save, Qt.MouseButton.LeftButton)
-    qapp.processEvents()
+    out = tmp_path / "MyInvoice.pdf"
+    with patch(
+        "desktop_app.invoice_screen.QFileDialog.getSaveFileName",
+        return_value=(str(out), "PDF files (*.pdf)"),
+    ):
+        QTest.mouseClick(w._btn_export_pdf, Qt.MouseButton.LeftButton)
+        qapp.processEvents()
+    assert out.is_file()
     invs = business.list_invoices(db._conn)
     assert any((r["invoice_number"] or "").strip() == "93001" for r in invs)
     assert w._inv_number.text() == "93002"
@@ -215,6 +219,7 @@ def test_invoice_screen_save_persists_and_advances_form(qapp: QApplication, tmp_
     assert any((r["invoice_number"] or "").strip() == "91001" for r in invs)
     assert w._inv_number.text() == "91002"
     assert not w._bill_to[1].toPlainText().strip()
+    assert (pdf_dir / "Invoice-91001.pdf").is_file()
     db.close()
 
 
@@ -241,8 +246,10 @@ def test_invoice_screen_print_after_accept_resets_when_connected(
     pdf_dir.mkdir()
     _INV_PREFS_QS.setValue("invoice_prefs/output_folder", str(pdf_dir))
     _INV_PREFS_QS.sync()
-    with patch("desktop_app.invoice_screen.QPrintDialog") as mock_dlg:
-        mock_dlg.return_value.exec.return_value = True
+    with patch(
+        "desktop_app.invoice_screen.configure_printer_for_invoice_print",
+        return_value=True,
+    ):
         with patch.object(QTextDocument, "print_", lambda self, p: None):
             QTest.mouseClick(w._btn_print, Qt.MouseButton.LeftButton)
             qapp.processEvents()
@@ -252,8 +259,8 @@ def test_invoice_screen_print_after_accept_resets_when_connected(
     db.close()
 
 
-def test_invoice_screen_forward_loads_first_invoice(qapp: QApplication, tmp_path) -> None:
-    """Prev from blank draft loads the last (only) saved invoice; Next on blank draft is a no-op."""
+def test_invoice_screen_nav_stops_without_cycling_unpositioned_draft(qapp: QApplication, tmp_path) -> None:
+    """Forward from an unpositioned draft does not jump to the first saved invoice; Reverse opens last by #."""
     db_path = tmp_path / "invoice_nav.db"
     db = BankDatabase(str(db_path))
     apply_extensions(db._conn)
@@ -267,17 +274,24 @@ def test_invoice_screen_forward_loads_first_invoice(qapp: QApplication, tmp_path
     )
     w = InvoiceScreen(ap_conn=db._conn)
     assert w._browse_ids
-    # Next on blank draft (end of queue) is a no-op — stays on blank draft.
+    before = w._inv_number.text()
     w._on_forward_invoice()
-    assert w._current_invoice_id is None
-    # Prev from blank draft navigates back to the last saved invoice.
+    assert w._inv_number.text() == before
     w._on_reverse_invoice()
     assert w._inv_number.text() == "14001"
     assert "Line A" in (w._table.cellWidget(0, 2).text() or "")
+    w._on_forward_invoice()
+    assert w._current_invoice_id is None
+    assert w._browse_slot == 1
+    w._on_forward_invoice()
+    assert w._current_invoice_id is None
     db.close()
 
 
-def test_invoice_screen_clear_fields_keeps_invoice_number(qapp: QApplication, tmp_path) -> None:
+def test_invoice_screen_clear_fields_resets_invoice_number_to_next_suggestion(
+    qapp: QApplication, tmp_path
+) -> None:
+    """Clear Fields starts a new draft: lines/header clear and invoice # follows next company default."""
     db_path = tmp_path / "invoice_clear.db"
     db = BankDatabase(str(db_path))
     apply_extensions(db._conn)
@@ -290,50 +304,14 @@ def test_invoice_screen_clear_fields_keeps_invoice_number(qapp: QApplication, tm
         lines=[{"description": "X", "qty": 1.0, "rate": 1.0}],
     )
     w = InvoiceScreen(ap_conn=db._conn)
-    # Start is blank draft (idx=None); Prev navigates to last (only) saved invoice.
     w._on_reverse_invoice()
     assert w._inv_number.text() == "15001"
-    # Auto-confirm the "leave loaded invoice" dialog in tests.
-    with patch.object(w, "_confirm_leave_loaded_invoice", return_value=True):
-        w._on_clear_fields()
-    assert w._inv_number.text() == "15001"
+    w._on_forward_invoice()
+    assert w._inv_number.text() == "15002"
+    w._on_clear_fields()
+    assert w._inv_number.text() == "15002"
+    assert w._current_invoice_id is None
     assert not (w._table.cellWidget(0, 2).text() or "").strip()
-    db.close()
-
-
-def test_invoice_screen_leave_confirmation_blocks_nav(qapp: QApplication, tmp_path) -> None:
-    """When a saved invoice is loaded, navigation/clear is blocked when user says No."""
-    db_path = tmp_path / "invoice_confirm.db"
-    db = BankDatabase(str(db_path))
-    apply_extensions(db._conn)
-    cid = business.add_customer(db._conn, "ConfirmCo")
-    business.create_invoice(
-        db._conn, cid, "C001", "2025-06-01",
-        lines=[{"description": "Svc", "qty": 1.0, "rate": 100.0}],
-    )
-    w = InvoiceScreen(ap_conn=db._conn)
-    # Navigate to the loaded invoice
-    w._on_reverse_invoice()
-    assert w._current_invoice_id is not None
-    loaded_id = w._current_invoice_id
-
-    # User clicks No → navigation is blocked
-    with patch.object(w, "_confirm_leave_loaded_invoice", return_value=False):
-        w._on_clear_fields()
-    assert w._current_invoice_id == loaded_id, "Clear Fields must be blocked when user says No"
-
-    with patch.object(w, "_confirm_leave_loaded_invoice", return_value=False):
-        w._go_to_new_invoice_draft()
-    assert w._current_invoice_id == loaded_id, "New Invoice must be blocked when user says No"
-
-    with patch.object(w, "_confirm_leave_loaded_invoice", return_value=False):
-        w._on_reverse_invoice()
-    assert w._current_invoice_id == loaded_id, "Prev must be blocked when user says No"
-
-    with patch.object(w, "_confirm_leave_loaded_invoice", return_value=False):
-        w._on_forward_invoice()
-    assert w._current_invoice_id == loaded_id, "Next must be blocked when user says No"
-
     db.close()
 
 
@@ -371,6 +349,10 @@ def test_invoice_screen_update_existing_does_not_duplicate_row(
         "2024-09-01",
         lines=[{"description": "A", "qty": 1.0, "rate": 10.0}],
     )
+    pdf_dir = tmp_path / "invoice_upd_pdf"
+    pdf_dir.mkdir()
+    _INV_PREFS_QS.setValue("invoice_prefs/output_folder", str(pdf_dir))
+    _INV_PREFS_QS.sync()
     w = InvoiceScreen(ap_conn=db._conn)
     w._load_invoice_into_form(inv_id)
     assert w._current_invoice_id == inv_id
@@ -384,6 +366,46 @@ def test_invoice_screen_update_existing_does_not_duplicate_row(
     assert len(rows) == 1
     assert int(rows[0]["id"]) == inv_id
     assert w._inv_number.text() == "UP-001"
+    assert (pdf_dir / "Invoice-UP-001.pdf").is_file()
+    db.close()
+
+
+def test_get_invoice_id_by_number_matches_db(qapp: QApplication, tmp_path) -> None:
+    db_path = tmp_path / "inv_by_num.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "NumCo")
+    inv_id = business.create_invoice(
+        db._conn,
+        cid,
+        "INV-XYZ-9",
+        "2024-11-15",
+        lines=[{"description": "Line", "qty": 1.0, "rate": 1.0}],
+    )
+    assert business.get_invoice_id_by_number(db._conn, "INV-XYZ-9") == inv_id
+    assert business.get_invoice_id_by_number(db._conn, "  INV-XYZ-9  ") == inv_id
+    assert business.get_invoice_id_by_number(db._conn, "missing") is None
+    db.close()
+
+
+def test_invoice_screen_open_invoice_by_number(qapp: QApplication, tmp_path) -> None:
+    db_path = tmp_path / "inv_open_num.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "RouteCo")
+    inv_id = business.create_invoice(
+        db._conn,
+        cid,
+        "RT-500",
+        "2024-12-01",
+        lines=[{"description": "Svc", "qty": 1.0, "rate": 25.0}],
+    )
+    w = InvoiceScreen(ap_conn=db._conn)
+    assert w.open_invoice_by_number("RT-500") is True
+    assert w._current_invoice_id == inv_id
+    assert w._inv_number.text() == "RT-500"
+    with patch("desktop_app.invoice_screen.message_box_information_ok"):
+        assert w.open_invoice_by_number("nope") is False
     db.close()
 
 
@@ -439,88 +461,52 @@ def test_invoice_screen_bill_to_selects_customer(qapp: QApplication, tmp_path) -
     db.close()
 
 
-def test_invoice_validation_rejects_empty_and_zero_amount_lines(
+def test_invoice_screen_customer_records_changed_emitted_from_bill_to_panel(
     qapp: QApplication, tmp_path
 ) -> None:
-    """Pilot: cannot save without at least one line with non-zero rate×qty."""
-    db_path = tmp_path / "invoice_val_lines.db"
+    db_path = tmp_path / "invoice_cust_signal.db"
     db = BankDatabase(str(db_path))
     apply_extensions(db._conn)
-    cid = business.add_customer(db._conn, "ValCo")
     w = InvoiceScreen(ap_conn=db._conn)
-    w._bill_customer_panel.select_customer_by_id(cid)
-    w._inv_number.setText("88001")
-    ok, msg, iid = w._try_persist_invoice()
-    assert ok is False
-    assert iid is None
-    assert "line" in msg.lower() and ("amount" in msg.lower() or "non-zero" in msg.lower())
+    seen: list[bool] = []
+    w.customerRecordsChanged.connect(lambda: seen.append(True))
+    w.bill_to_customer_panel().customerCreated.emit(1)
+    assert seen == [True]
 
-    desc = w._table.cellWidget(0, 2)
-    assert isinstance(desc, QLineEdit)
-    desc.setText("Description only")
-    ok2, msg2, _ = w._try_persist_invoice()
-    assert ok2 is False
-    assert "non-zero" in msg2.lower()
+
+def test_invoice_screen_bill_to_combo_shows_job_hierarchy(
+    qapp: QApplication, tmp_path
+) -> None:
+    db_path = tmp_path / "invoice_bill_hier.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    parent = business.add_customer(db._conn, "Parent Corp")
+    job = business.add_customer(db._conn, "Job Z", parent_customer_id=parent)
+    w = InvoiceScreen(ap_conn=db._conn)
+    panel = w.bill_to_customer_panel()
+    combo = panel._combo
+    texts = [combo.itemText(i) for i in range(combo.count())]
+    assert "Parent Corp" in texts
+    assert "Parent Corp > Job Z" in texts
+    jidx = combo.findText("Parent Corp > Job Z")
+    assert jidx >= 0
+    combo.setCurrentIndex(jidx)
+    assert w.selected_bill_to_customer_id() == job
+    pidx = combo.findText("Parent Corp")
+    assert pidx >= 0
+    combo.setCurrentIndex(pidx)
+    assert w.selected_bill_to_customer_id() == parent
     db.close()
 
 
-def test_invoice_pilot_smoke_save_reload_nav_open_by_id(
+def test_invoice_save_and_print_handlers_require_real_button_sender(
     qapp: QApplication, tmp_path
 ) -> None:
-    """Create → save → reload → forward → open_invoice_by_id still works after validation rules."""
-    db_path = tmp_path / "invoice_pilot_smoke.db"
+    """Direct slot calls without a QPushButton sender must not persist or open print (phantom dialog guard)."""
+    db_path = tmp_path / "invoice_phantom.db"
     db = BankDatabase(str(db_path))
     apply_extensions(db._conn)
-    pdf_dir = tmp_path / "invoice_pilot_pdf"
-    pdf_dir.mkdir()
-    _INV_PREFS_QS.setValue("invoice_prefs/output_folder", str(pdf_dir))
-    _INV_PREFS_QS.sync()
-    cid = business.add_customer(db._conn, "PilotCo")
-    w = InvoiceScreen(ap_conn=db._conn)
-    w._bill_customer_panel.select_customer_by_id(cid)
-    w._inv_number.setText("91050")
-    desc = w._table.cellWidget(0, 2)
-    assert isinstance(desc, QLineEdit)
-    desc.setText("Pilot line")
-    rate = w._table.cellWidget(0, 4)
-    assert isinstance(rate, QDoubleSpinBox)
-    rate.setValue(25.0)
-    qty = w._table.cellWidget(0, 5)
-    assert isinstance(qty, QDoubleSpinBox)
-    qty.setValue(1.0)
-    QTest.mouseClick(w._btn_save, Qt.MouseButton.LeftButton)
-    qapp.processEvents()
-    invs = business.list_invoices(db._conn)
-    assert len(invs) == 1
-    inv_id = int(invs[0]["id"])
-    # Auto-confirm "leave loaded invoice" dialogs throughout this navigation test.
-    with patch.object(w, "_confirm_leave_loaded_invoice", return_value=True):
-        w._go_to_new_invoice_draft()
-        # Next on blank draft now does nothing (end of queue); use Prev to go back.
-        w._on_forward_invoice()
-        assert w._current_invoice_id is None  # still on blank draft
-        w._on_reverse_invoice()
-        assert w._current_invoice_id == inv_id
-        assert w._inv_number.text() == "91050"
-        w._go_to_new_invoice_draft()
-    assert w.open_invoice_by_id(inv_id) is True
-    assert w._current_invoice_id == inv_id
-    with patch("desktop_app.invoice_screen.QPrintDialog") as mock_dlg:
-        mock_dlg.return_value.exec.return_value = True
-        with patch.object(QTextDocument, "print_", lambda self, p: None):
-            QTest.mouseClick(w._btn_print, Qt.MouseButton.LeftButton)
-            qapp.processEvents()
-    db.close()
-
-
-def test_invoice_save_handler_persists_and_print_blocks_without_conn(
-    qapp: QApplication, tmp_path
-) -> None:
-    """_on_save_invoice() saves the invoice; _on_print_invoice() blocks when no conn is open."""
-    db_path = tmp_path / "invoice_save_handler.db"
-    db = BankDatabase(str(db_path))
-    apply_extensions(db._conn)
-    cid = business.add_customer(db._conn, "HandlerCo")
+    cid = business.add_customer(db._conn, "PhantomCo")
     w = InvoiceScreen(ap_conn=db._conn)
     w._bill_customer_panel.select_customer_by_id(cid)
     w._inv_number.setText("77701")
@@ -533,69 +519,510 @@ def test_invoice_save_handler_persists_and_print_blocks_without_conn(
     qty = w._table.cellWidget(0, 5)
     assert isinstance(qty, QDoubleSpinBox)
     qty.setValue(1.0)
-    # Calling the slot directly must save the invoice
-    w._on_save_invoice()
-    saved = business.list_invoices(db._conn)
-    assert len(saved) == 1
-    assert dict(saved[0])["invoice_number"] == "77701"
-    # Print handler without a connection should show an error, not open QPrintDialog
-    w2 = InvoiceScreen(ap_conn=None)
-    with patch("desktop_app.invoice_screen.QPrintDialog") as m_dlg:
-        w2._on_print_invoice()
-        m_dlg.assert_not_called()
+    with patch.object(w, "_try_persist_invoice") as m_persist:
+        w._on_save_invoice()
+        m_persist.assert_not_called()
+    with patch.object(w, "_try_persist_invoice") as m_persist:
+        w._on_export_pdf_as()
+        m_persist.assert_not_called()
+    with patch(
+        "desktop_app.invoice_screen.configure_printer_for_invoice_print"
+    ) as m_cp:
+        w._on_print_invoice()
+        m_cp.assert_not_called()
+    assert business.list_invoices(db._conn) == []
     db.close()
 
 
-def test_invoice_dirty_tracking_no_dialog_when_unchanged(
+def test_apply_intake_item_to_draft_pdf_memo_and_banner(
     qapp: QApplication, tmp_path
 ) -> None:
-    """No confirmation dialog fires when navigating away from an unmodified loaded invoice."""
-    db_path = tmp_path / "invoice_dirty_clean.db"
+    db_path = tmp_path / "apply_intake.db"
     db = BankDatabase(str(db_path))
     apply_extensions(db._conn)
-    cid = business.add_customer(db._conn, "CleanCo")
+    pdf = tmp_path / "source.pdf"
+    pdf.write_bytes(b"%PDF-1.4")
+    w = InvoiceScreen(ap_conn=db._conn)
+    ok = w.apply_intake_item_to_draft(
+        source_display="source.pdf",
+        kind="PDF",
+        path=str(pdf),
+        queue_notes="Check rates",
+    )
+    assert ok is True
+    assert w._invoice_tabs.currentIndex() == 0
+    assert w._current_invoice_id is None
+    assert "source.pdf" in w._invoice_memo_notes
+    assert os.path.normpath(str(pdf)) in w._invoice_memo_notes
+    assert "Queue notes: Check rates" in w._invoice_memo_notes
+    w.show()
+    qapp.processEvents()
+    assert w._invoice_intake_handoff_banner.isVisible()
+    assert "source.pdf" in w._invoice_intake_handoff_banner.text()
+    db.close()
+
+
+def test_apply_intake_item_to_draft_staged_text_in_memo(
+    qapp: QApplication, tmp_path
+) -> None:
+    db_path = tmp_path / "apply_intake_text.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    w = InvoiceScreen(ap_conn=db._conn)
+    ok = w.apply_intake_item_to_draft(
+        source_display="Pasted text (9 chars)",
+        kind="Text",
+        text_payload="Line one\n",
+        queue_notes="",
+    )
+    assert ok is True
+    assert "Line one" in w._invoice_memo_notes
+    assert "--- Staged text" in w._invoice_memo_notes
+    w.show()
+    qapp.processEvents()
+    assert w._invoice_intake_handoff_banner.isVisible()
+    db.close()
+
+
+def test_apply_intake_item_to_draft_hidden_after_opening_saved_invoice(
+    qapp: QApplication, tmp_path
+) -> None:
+    db_path = tmp_path / "apply_intake_hide.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "Co")
+    inv_id = business.create_invoice(
+        db._conn,
+        cid,
+        "Z-9",
+        "2025-01-01",
+        memo="x",
+        lines=[{"description": "A", "qty": 1.0, "rate": 1.0}],
+    )
+    doc = tmp_path / "doc.pdf"
+    doc.write_bytes(b"%PDF-1.4")
+    w = InvoiceScreen(ap_conn=db._conn)
+    w.apply_intake_item_to_draft(
+        source_display="doc.pdf",
+        kind="PDF",
+        path=str(doc),
+        queue_notes="",
+    )
+    w.show()
+    qapp.processEvents()
+    assert w._invoice_intake_handoff_banner.isVisible()
+    assert w.open_invoice_by_id(inv_id) is True
+    qapp.processEvents()
+    assert not w._invoice_intake_handoff_banner.isVisible()
+    db.close()
+
+
+def test_apply_intake_item_to_draft_applies_high_confidence_text_extraction(
+    qapp: QApplication, tmp_path
+) -> None:
+    db_path = tmp_path / "apply_intake_ex.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    w = InvoiceScreen(ap_conn=db._conn)
+    body = """Date: 2025-04-01
+Ticket # ZZ-1
+Customer: Beta LLC
+Notes: Rush job.
+Extra line in body not labeled.
+"""
+    ex = extract_text_intake_fields(body)
+    ok = w.apply_intake_item_to_draft(
+        source_display="Pasted",
+        kind="Text",
+        text_payload=body,
+        queue_notes="",
+        text_extraction=ex,
+    )
+    assert ok is True
+    assert w._date.text().strip() == "04/01/2025"
+    bol = w._table.cellWidget(0, 3)
+    assert isinstance(bol, QLineEdit)
+    assert bol.text().strip() == "ZZ-1"
+    assert "Beta" in w._invoice_memo_notes
+    assert "Rush job" in w._invoice_memo_notes
+    assert "Extra line" in w._invoice_memo_notes
+    w.show()
+    qapp.processEvents()
+    assert w._invoice_intake_handoff_banner.isVisible()
+    db.close()
+
+
+def test_apply_intake_item_to_draft_requires_company_file(qapp: QApplication) -> None:
+    w = InvoiceScreen(ap_conn=None)
+    with patch("desktop_app.invoice_screen.message_box_information_ok") as m:
+        ok = w.apply_intake_item_to_draft(
+            source_display="a",
+            kind="PDF",
+            path="/tmp/x.pdf",
+            queue_notes="",
+        )
+    assert ok is False
+    m.assert_called_once()
+
+
+def test_manual_invoice_save_persists_without_pdf_folder(
+    qapp: QApplication, tmp_path
+) -> None:
+    """Save writes to ``invoices`` / ``invoice_lines`` even when no invoice PDF folder is set."""
+    db_path = tmp_path / "manual_save_no_pdf.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "SaveCo")
+    w = InvoiceScreen(ap_conn=db._conn)
+    w._bill_customer_panel.select_customer_by_id(cid)
+    w._inv_number.setText("91001")
+    desc = w._table.cellWidget(0, 2)
+    assert isinstance(desc, QLineEdit)
+    desc.setText("Consulting")
+    rate = w._table.cellWidget(0, 4)
+    qty = w._table.cellWidget(0, 5)
+    assert isinstance(rate, QDoubleSpinBox) and isinstance(qty, QDoubleSpinBox)
+    rate.setValue(100.0)
+    qty.setValue(1.0)
+    w.show()
+    qapp.processEvents()
+    with patch("desktop_app.invoice_screen.ensure_invoice_output_folder", return_value=None):
+        QTest.mouseClick(w._btn_save, Qt.MouseButton.LeftButton)
+        qapp.processEvents()
+    rows = business.list_invoices(db._conn)
+    assert len(rows) == 1
+    d = dict(rows[0])
+    assert (d.get("invoice_number") or "").strip() == "91001"
+    assert abs(float(d.get("total") or 0) - 100.0) < 0.02
+    db.close()
+
+
+def test_manual_invoice_save_edit_resave_round_trip(
+    qapp: QApplication, tmp_path
+) -> None:
+    """Load saved invoice, edit line, re-save updates the same DB row."""
+    db_path = tmp_path / "manual_edit.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "EditCo")
+    w = InvoiceScreen(ap_conn=db._conn)
+    w._bill_customer_panel.select_customer_by_id(cid)
+    w._inv_number.setText("92001")
+    desc = w._table.cellWidget(0, 2)
+    assert isinstance(desc, QLineEdit)
+    desc.setText("First")
+    rate = w._table.cellWidget(0, 4)
+    qty = w._table.cellWidget(0, 5)
+    assert isinstance(rate, QDoubleSpinBox) and isinstance(qty, QDoubleSpinBox)
+    rate.setValue(50.0)
+    qty.setValue(1.0)
+    w.show()
+    qapp.processEvents()
+    with patch("desktop_app.invoice_screen.ensure_invoice_output_folder", return_value=None):
+        QTest.mouseClick(w._btn_save, Qt.MouseButton.LeftButton)
+        qapp.processEvents()
+    rows = business.list_invoices(db._conn)
+    iid = int(dict(rows[0])["id"])
+    assert w.open_invoice_by_id(iid) is True
+    qapp.processEvents()
+    desc2 = w._table.cellWidget(0, 2)
+    assert isinstance(desc2, QLineEdit)
+    desc2.setText("Updated work")
+    with patch("desktop_app.invoice_screen.ensure_invoice_output_folder", return_value=None):
+        QTest.mouseClick(w._btn_save, Qt.MouseButton.LeftButton)
+        qapp.processEvents()
+    inv, lines = business.get_invoice_detail(db._conn, iid)
+    assert inv is not None
+    assert len(lines) >= 1
+    assert "Updated work" in (dict(lines[0]).get("description") or "")
+    db.close()
+
+
+def test_invoice_save_duplicate_invoice_number_shows_modal_warning(
+    qapp: QApplication, tmp_path, monkeypatch
+) -> None:
+    """Duplicate invoice # on save shows a clear modal warning (SQLite UNIQUE on ``invoice_number``)."""
+    warnings: list[tuple[str, str]] = []
+
+    def _warn(parent, title, text, *, ok_tip: str = "") -> None:
+        warnings.append((title, text))
+
+    monkeypatch.setattr(invoice_screen_module, "message_box_warning_ok", _warn)
+
+    db_path = tmp_path / "inv_dup_warn.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    c1 = business.add_customer(db._conn, "CustA")
+    c2 = business.add_customer(db._conn, "CustB")
     business.create_invoice(
-        db._conn, cid, "D001", "2025-01-01",
+        db._conn,
+        c1,
+        "100",
+        "2024-01-01",
+        lines=[{"description": "existing", "qty": 1, "rate": 1.0}],
+    )
+    w = InvoiceScreen(ap_conn=db._conn)
+    w.show()
+    qapp.processEvents()
+    w._bill_customer_panel.select_customer_by_id(c2)
+    w._inv_number.setText("100")
+    w._date.setText("02/01/2024")
+    ok, msg, iid = w._try_persist_invoice()
+    assert ok is False
+    assert iid is None
+    assert msg == ""
+    assert len(warnings) == 1
+    assert warnings[0][0] == "Duplicate invoice number"
+    assert "already used" in warnings[0][1]
+    db.close()
+
+
+def test_invoice_line_code_applies_rate_from_invoice_item_codes(
+    qapp: QApplication, tmp_path
+) -> None:
+    """Code column uses ``invoice_item_codes``; matching code fills Rate; unknown code leaves Rate."""
+    db_path = tmp_path / "inv_codes_wire.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    business.replace_invoice_item_codes(
+        db._conn,
+        [
+            {
+                "code": "SRV-A",
+                "description": "Service A",
+                "item_type": "Service",
+                "coa_account": "",
+                "rate_value": 75.5,
+                "rate_kind": "amount",
+                "sort_order": 0,
+            },
+            {
+                "code": "SRV-B",
+                "description": "Service B",
+                "item_type": "Service",
+                "coa_account": "",
+                "rate_value": 20.0,
+                "rate_kind": "amount",
+                "sort_order": 1,
+            },
+        ],
+    )
+    w = InvoiceScreen(ap_conn=db._conn)
+    w.show()
+    qapp.processEvents()
+    w.refresh_invoice_item_codes()
+    code_w = w._table.cellWidget(0, 1)
+    rate_w = w._table.cellWidget(0, 4)
+    assert isinstance(code_w, QLineEdit) and isinstance(rate_w, QDoubleSpinBox)
+    code_w.setText("SRV-A")
+    w._on_invoice_line_code_committed(0)
+    assert abs(rate_w.value() - 75.5) < 0.01
+    rate_w.setValue(12.0)
+    w._on_invoice_line_code_committed(0)
+    assert abs(rate_w.value() - 12.0) < 0.01
+    code_w.setText("SRV-B")
+    w._on_invoice_line_code_committed(0)
+    assert abs(rate_w.value() - 20.0) < 0.01
+    rate_w.setValue(99.0)
+    code_w.setText("NOPE")
+    w._on_invoice_line_code_committed(0)
+    assert abs(rate_w.value() - 99.0) < 0.01
+    db.close()
+
+
+def test_invoice_line_code_widget_is_dropdown_typeahead_backed_by_codes_table(
+    qapp: QApplication, tmp_path
+) -> None:
+    """Code column widget is the dropdown/type-ahead :class:`_InvoiceCodeLineEdit` with a populated completer."""
+    db_path = tmp_path / "inv_code_dropdown.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    business.replace_invoice_item_codes(
+        db._conn,
+        [
+            {
+                "code": "SRV-A",
+                "description": "Service A",
+                "item_type": "Service",
+                "coa_account": "",
+                "rate_value": 10.0,
+                "rate_kind": "amount",
+                "sort_order": 0,
+            },
+            {
+                "code": "SRV-B",
+                "description": "Service B",
+                "item_type": "Service",
+                "coa_account": "",
+                "rate_value": 20.0,
+                "rate_kind": "amount",
+                "sort_order": 1,
+            },
+            {
+                "code": "MISC",
+                "description": "Misc",
+                "item_type": "Service",
+                "coa_account": "",
+                "rate_value": 5.0,
+                "rate_kind": "amount",
+                "sort_order": 2,
+            },
+        ],
+    )
+    w = InvoiceScreen(ap_conn=db._conn)
+    w.show()
+    qapp.processEvents()
+    w.refresh_invoice_item_codes()
+
+    code_w = w._table.cellWidget(0, 1)
+    assert isinstance(code_w, _InvoiceCodeLineEdit), (
+        "Manual Invoice Code column must use _InvoiceCodeLineEdit (dropdown + type-ahead)."
+    )
+    assert isinstance(code_w, QLineEdit), (
+        "_InvoiceCodeLineEdit must remain a QLineEdit so save/load paths keep using .text()."
+    )
+
+    comp = code_w.completer()
+    assert comp is not None, "Code cell must have a QCompleter attached."
+    assert comp.caseSensitivity() == Qt.CaseSensitivity.CaseInsensitive
+    model = comp.model()
+    assert model is not None
+    saved_codes = {model.data(model.index(r, 0)) for r in range(model.rowCount())}
+    assert {"SRV-A", "SRV-B", "MISC"} <= saved_codes
+
+    code_w.clear()
+    code_w._show_invoice_code_completer_popup()
+    qapp.processEvents()
+    popup = comp.popup()
+    assert popup is not None and popup.isVisible(), (
+        "Empty Code field must open the saved-Codes dropdown when focused/clicked."
+    )
+    assert comp.completionCount() == len(saved_codes), (
+        "Empty completion prefix should list every saved Code."
+    )
+    popup.hide()
+
+    code_w.setText("SRV")
+    code_w._show_invoice_code_completer_popup()
+    qapp.processEvents()
+    assert comp.completionPrefix() == "SRV"
+    assert comp.completionCount() == 2, (
+        "Typing 'SRV' must narrow the dropdown to the two SRV-* codes."
+    )
+    popup = comp.popup()
+    assert popup is not None and popup.isVisible()
+    popup.hide()
+
+    db.close()
+
+
+def test_invoice_line_code_cell_tooltip_documents_dropdown_typeahead(
+    qapp: QApplication, tmp_path
+) -> None:
+    """Code cell tooltip and placeholder mention the dropdown + type-ahead behavior."""
+    db_path = tmp_path / "inv_code_tooltip.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    w = InvoiceScreen(ap_conn=db._conn)
+    w.show()
+    qapp.processEvents()
+    code_w = w._table.cellWidget(0, 1)
+    assert isinstance(code_w, _InvoiceCodeLineEdit)
+    assert "click" in code_w.placeholderText().lower() or "list" in code_w.placeholderText().lower()
+    tip = code_w.toolTip()
+    assert "saved Codes" in tip
+    assert "type to filter" in tip or "narrows" in tip
+    assert "auto-fill" in tip.lower() or "auto fills" in tip.lower()
+    db.close()
+
+
+def test_refresh_loaded_invoice_payment_status_updates_paid_badge_for_open_invoice(
+    qapp: QApplication, tmp_path
+) -> None:
+    """After AR payment posts to the loaded invoice, badge flips to PAID without form reload."""
+    db_path = tmp_path / "inv_pay_refresh.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "PayRefreshCo")
+    inv_id = business.create_invoice(
+        db._conn,
+        cid,
+        "PR-1",
+        "2025-03-01",
         lines=[{"description": "Svc", "qty": 1.0, "rate": 50.0}],
     )
     w = InvoiceScreen(ap_conn=db._conn)
-    # Load the invoice
-    w._on_reverse_invoice()
-    assert w._current_invoice_id is not None
-    # Form is clean (just loaded, nothing changed) — dirty check should be False
-    assert not w._is_form_dirty(), "Form should be clean right after load"
-    # Navigation should proceed without any dialog (no patching needed)
-    w._on_forward_invoice()
-    assert w._current_invoice_id is None, "Should have navigated to blank draft"
+    assert w.open_invoice_by_id(inv_id) is True
+    assert w._current_invoice_id == inv_id
+    assert w._invoice_status_badge.isHidden() is True, (
+        "Open invoice (balance > 0) must not show PAID badge."
+    )
+    assert w._invoice_status_badge.text() == ""
+
+    business.record_ar_payment(
+        db._conn,
+        cid,
+        "2025-03-02",
+        50.0,
+        [(inv_id, 50.0)],
+        bank_account_id=None,
+        method="Check",
+        reference="",
+        memo="",
+    )
+
+    refreshed = w.refresh_loaded_invoice_payment_status([inv_id])
+    assert refreshed is True
+    assert w._invoice_status_badge.isHidden() is False, (
+        "Badge must become visible (PAID) when balance hits zero via Receive Payments."
+    )
+    assert w._invoice_status_badge.text() == "PAID"
+    assert w._current_invoice_id == inv_id, (
+        "Refresh must NOT clobber the loaded invoice id (Save/Print still target the same row)."
+    )
     db.close()
 
 
-def test_invoice_dirty_tracking_dialog_fires_after_edit(
+def test_refresh_loaded_invoice_payment_status_ignores_other_invoice_ids(
     qapp: QApplication, tmp_path
 ) -> None:
-    """Confirmation dialog fires when the form has been edited since last load."""
-    db_path = tmp_path / "invoice_dirty_edit.db"
+    """Posting against an unrelated invoice must not refresh the currently loaded invoice."""
+    db_path = tmp_path / "inv_pay_refresh_ignore.db"
     db = BankDatabase(str(db_path))
     apply_extensions(db._conn)
-    cid = business.add_customer(db._conn, "DirtyCo")
-    business.create_invoice(
-        db._conn, cid, "D002", "2025-02-01",
-        lines=[{"description": "Original", "qty": 1.0, "rate": 100.0}],
+    cid = business.add_customer(db._conn, "OtherCo")
+    open_id = business.create_invoice(
+        db._conn,
+        cid,
+        "OPEN-1",
+        "2025-04-01",
+        lines=[{"description": "A", "qty": 1.0, "rate": 10.0}],
+    )
+    other_id = business.create_invoice(
+        db._conn,
+        cid,
+        "OTHER-1",
+        "2025-04-02",
+        lines=[{"description": "B", "qty": 1.0, "rate": 20.0}],
     )
     w = InvoiceScreen(ap_conn=db._conn)
-    # Load the invoice
-    w._on_reverse_invoice()
-    assert w._current_invoice_id is not None
-    assert not w._is_form_dirty(), "Should be clean after load"
-    # Make a change
-    desc = w._table.cellWidget(0, 2)
-    assert isinstance(desc, QLineEdit)
-    original_text = desc.text()
-    desc.setText(original_text + " EDITED")
-    assert w._is_form_dirty(), "Should be dirty after editing description"
-    # Navigation must call the dialog; patch it to return False (Stay)
-    with patch.object(w, "_confirm_leave_loaded_invoice", return_value=False) as mock_confirm:
-        w._on_forward_invoice()
-        mock_confirm.assert_called_once()
-    assert w._current_invoice_id is not None, "Should stay on invoice after user chose Stay"
+    assert w.open_invoice_by_id(open_id) is True
+    refreshed = w.refresh_loaded_invoice_payment_status([other_id])
+    assert refreshed is False, (
+        "Refresh must early-return when the posted invoice ids do not include the loaded invoice."
+    )
+    db.close()
+
+
+def test_refresh_loaded_invoice_payment_status_no_op_when_no_invoice_loaded(
+    qapp: QApplication, tmp_path
+) -> None:
+    """No invoice loaded → refresh is a clean no-op (no exception, returns False)."""
+    db_path = tmp_path / "inv_pay_refresh_noop.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    w = InvoiceScreen(ap_conn=db._conn)
+    assert w._current_invoice_id is None
+    assert w.refresh_loaded_invoice_payment_status([1, 2, 3]) is False
+    assert w.refresh_loaded_invoice_payment_status(None) is False
     db.close()

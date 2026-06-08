@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import sys
+from unittest.mock import patch
 
 import pytest
 from PySide6.QtTest import QTest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSettings
 from PySide6.QtWidgets import (
     QApplication,
     QDoubleSpinBox,
@@ -59,6 +60,8 @@ def test_enter_bills_screen_header_and_line_grid(qapp: QApplication) -> None:
     assert any("Save" in b and "Close" in b for b in btns)
     assert any("Save" in b and "New" in b for b in btns)
     assert "Clear" in btns
+    assert "Export PDF…" in btns
+    assert "Print…" in btns
 
 
 def test_enter_bills_clear_resets_rows(qapp: QApplication) -> None:
@@ -86,6 +89,41 @@ def test_enter_bills_clear_resets_rows(qapp: QApplication) -> None:
     assert ticket.text() == ""
     assert amt.value() == 0.0
     assert job.text() == ""
+
+
+def test_enter_bills_header_and_line_dates_normalize_flexible_input(qapp: QApplication) -> None:
+    """Bill date, due date, and the line-item Date column accept the Invoice-screen flexible formats."""
+    w = EnterBillsScreen()
+
+    w._bill_date.setText("5/21/26")
+    w._bill_date.editingFinished.emit()
+    assert w._bill_date.text() == "05/21/2026"
+
+    w._bill_date.setText("05.21.26")
+    w._bill_date.editingFinished.emit()
+    assert w._bill_date.text() == "05/21/2026"
+
+    w._bill_date.setText("052126")
+    w._bill_date.editingFinished.emit()
+    assert w._bill_date.text() == "05/21/2026"
+
+    w._due_date.setText("12/3/27")
+    w._due_date.editingFinished.emit()
+    assert w._due_date.text() == "12/03/2027"
+
+    t = w._table
+    dt = t.cellWidget(0, 0)
+    assert isinstance(dt, QLineEdit)
+    assert dt.placeholderText() == "MM/DD/YYYY"
+    for typed, expected in (
+        ("5/21/26", "05/21/2026"),
+        ("05.21.26", "05/21/2026"),
+        ("052126", "05/21/2026"),
+        ("12/3/2027", "12/03/2027"),
+    ):
+        dt.setText(typed)
+        dt.editingFinished.emit()
+        assert dt.text() == expected, f"line date {typed!r} → {dt.text()!r}"
 
 
 def test_enter_bills_vendor_selection_fills_address(qapp: QApplication, tmp_path) -> None:
@@ -117,6 +155,11 @@ def test_enter_bills_save_persists_bill_and_expense_lines(
     db_path = tmp_path / "enter_bills_save.db"
     db = BankDatabase(str(db_path))
     apply_extensions(db._conn)
+    pdf_dir = tmp_path / "bill_pdf_out"
+    pdf_dir.mkdir()
+    QSettings("ProBooks+ai", "ProBooks+ai").setValue(
+        "bill_prefs/output_folder", str(pdf_dir)
+    )
     vid = business.add_vendor(db._conn, "SuppCo")
     w = EnterBillsScreen(ap_conn=db._conn)
     w._vendor.setCurrentIndex(1)
@@ -148,6 +191,7 @@ def test_enter_bills_save_persists_bill_and_expense_lines(
     assert abs(float(el[0]["amount"]) - 42.5) < 0.01
     assert "Fuel" in (el[0]["memo"] or "")
     assert w._current_bill_id is None
+    assert (pdf_dir / "Bill-INV-900.pdf").is_file()
     db.close()
 
 
@@ -185,10 +229,119 @@ def test_enter_bills_open_bill_by_id_loads_form(qapp: QApplication, tmp_path) ->
     db.close()
 
 
+def test_get_bill_id_by_vendor_invoice_number(qapp: QApplication, tmp_path) -> None:
+    db_path = tmp_path / "bill_by_vin.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    v1 = business.add_vendor(db._conn, "V1")
+    v2 = business.add_vendor(db._conn, "V2")
+    b1 = business.create_bill(
+        db._conn,
+        v1,
+        "2025-01-01",
+        0.0,
+        vendor_invoice_number="PO-77",
+        expense_lines=[
+            {
+                "line_date": "",
+                "ticket_ref": "",
+                "amount": 5.0,
+                "memo": "a",
+                "customer_job": "",
+            }
+        ],
+    )
+    b2 = business.create_bill(
+        db._conn,
+        v2,
+        "2025-01-02",
+        0.0,
+        vendor_invoice_number="PO-77",
+        expense_lines=[
+            {
+                "line_date": "",
+                "ticket_ref": "",
+                "amount": 6.0,
+                "memo": "b",
+                "customer_job": "",
+            }
+        ],
+    )
+    assert business.get_bill_id_by_vendor_invoice_number(db._conn, "PO-77") is None
+    assert business.get_bill_id_by_vendor_invoice_number(
+        db._conn, "PO-77", vendor_id=v1
+    ) == b1
+    assert (
+        business.get_bill_id_by_vendor_invoice_number(db._conn, "  PO-77  ", vendor_id=v2)
+        == b2
+    )
+    db.close()
+
+
+def test_get_bill_id_by_vendor_invoice_number_unique_globally(qapp: QApplication, tmp_path) -> None:
+    db_path = tmp_path / "bill_vin_unique.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    v = business.add_vendor(db._conn, "OnlyV")
+    sole = business.create_bill(
+        db._conn,
+        v,
+        "2025-01-01",
+        0.0,
+        vendor_invoice_number="UNIQUE-REF",
+        expense_lines=[
+            {
+                "line_date": "",
+                "ticket_ref": "",
+                "amount": 1.0,
+                "memo": "",
+                "customer_job": "",
+            }
+        ],
+    )
+    assert business.get_bill_id_by_vendor_invoice_number(db._conn, "UNIQUE-REF") == sole
+    db.close()
+
+
+def test_enter_bills_open_bill_by_vendor_invoice_number(qapp: QApplication, tmp_path) -> None:
+    db_path = tmp_path / "enter_bills_open_vin.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    vid = business.add_vendor(db._conn, "VOpen2")
+    bid = business.create_bill(
+        db._conn,
+        vid,
+        "2025-04-01",
+        0.0,
+        vendor_invoice_number="REF-ZZ",
+        expense_lines=[
+            {
+                "line_date": "",
+                "ticket_ref": "",
+                "amount": 12.0,
+                "memo": "z",
+                "customer_job": "",
+            }
+        ],
+    )
+    w = EnterBillsScreen(ap_conn=db._conn)
+    assert w.open_bill_by_vendor_invoice_number("REF-ZZ", vendor_id=vid) is True
+    assert w._current_bill_id == bid
+    assert w._vendor_inv.text() == "REF-ZZ"
+    with patch("desktop_app.enter_bills_screen.message_box_information_ok"):
+        assert w.open_bill_by_vendor_invoice_number("missing", vendor_id=vid) is False
+    db.close()
+
+
 def test_enter_bills_edit_resaves_same_bill(qapp: QApplication, tmp_path) -> None:
     db_path = tmp_path / "enter_bills_edit.db"
     db = BankDatabase(str(db_path))
     apply_extensions(db._conn)
+    pdf_dir = tmp_path / "bill_pdf_edit"
+    pdf_dir.mkdir()
+    QSettings("ProBooks+ai", "ProBooks+ai").setValue(
+        "bill_prefs/output_folder", str(pdf_dir)
+    )
     vid = business.add_vendor(db._conn, "VEdit")
     bid = business.create_bill(
         db._conn,
@@ -220,4 +373,5 @@ def test_enter_bills_edit_resaves_same_bill(qapp: QApplication, tmp_path) -> Non
     el = business.list_bill_expense_lines(db._conn, bid)
     assert len(el) == 1
     assert float(el[0]["amount"]) == 99.0
+    assert (pdf_dir / "Bill-E-1.pdf").is_file()
     db.close()

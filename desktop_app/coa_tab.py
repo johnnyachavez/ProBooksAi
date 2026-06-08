@@ -48,7 +48,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from probooksai.coa_db import COADatabase, COA_ACCOUNT_TYPES
+from probooksai.coa_db import (
+    COADatabase,
+    COA_ACCOUNT_TYPES,
+    COA_TYPE_UI_LABELS,
+    infer_coa_normal_balance,
+)
 from probooksai.gl import GLDatabase
 
 from desktop_app.audit_dialog import show_entity_audit_history
@@ -97,13 +102,7 @@ class _CoaAccountNumberTableItem(QTableWidgetItem):
             return a < b
         return super().__lt__(other)
 
-_TYPE_LABELS = {
-    "asset":     "Asset",
-    "liability": "Liability",
-    "equity":    "Equity",
-    "income":    "Income",
-    "expense":   "Expense",
-}
+_TYPE_LABELS = dict(COA_TYPE_UI_LABELS)
 
 
 # ===========================================================================
@@ -118,7 +117,7 @@ class AddEditCOADialog(QDialog):
         self._db = db
         self._account_id = account_id
         self.setWindowTitle("Edit Account" if account_id else "Add Account")
-        self.resize(420, 340)
+        self.resize(460, 380)
         self.setToolTip(
             "Add or edit one chart-of-accounts row: number, name, type, optional sub-type and description."
         )
@@ -147,11 +146,11 @@ class AddEditCOADialog(QDialog):
         self._f_name.setToolTip("Display name for this account in lists and reports (required).")
 
         self._f_type = QComboBox()
-        for key, label in _TYPE_LABELS.items():
+        for key, label in COA_TYPE_UI_LABELS:
             self._f_type.addItem(label, userData=key)
         self._f_type.setToolTip(
-            "High-level category (asset, liability, equity, income, expense). "
-            "Determines normal debit/credit balance."
+            "Account type (income, expenses, assets, liabilities, equity, bank, loan, credit card, "
+            "current/fixed/other asset, etc.). Determines normal debit/credit balance and report grouping."
         )
 
         self._f_subtype = QLineEdit()
@@ -236,8 +235,7 @@ class AddEditCOADialog(QDialog):
         description = self._f_description.text().strip()
         is_active   = self._f_active.isChecked()
 
-        # Infer normal balance from type
-        normal_balance = "credit" if acct_type in ("liability", "equity", "income") else "debit"
+        normal_balance = infer_coa_normal_balance(acct_type)
 
         try:
             if self._account_id is None:

@@ -9,14 +9,16 @@ import sqlite3
 from collections import defaultdict
 from typing import TYPE_CHECKING, Optional
 
-from PySide6.QtCore import QDate, Qt
-from PySide6.QtGui import QColor
+from PySide6.QtCore import QDate, Qt, Signal
+from PySide6.QtGui import QColor, QTextDocument
+from PySide6.QtPrintSupport import QPrinter
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,
     QDateEdit,
     QDoubleSpinBox,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -44,6 +46,8 @@ from desktop_app.ar_customer_actions import (
     export_ar_payments_csv,
     open_record_ar_payment_dialog,
 )
+from desktop_app.invoice_preferences import configure_printer_for_payment_print
+from desktop_app.payment_receipt_pdf import ar_payment_html_string, save_ar_payment_pdf
 from desktop_app.theme import (
     WORKFLOW_ALT_ROW as _RC_STRIPE,
     WORKFLOW_CAPTION as _RC_CAPTION,
@@ -92,7 +96,18 @@ def _payment_spin() -> QDoubleSpinBox:
 
 
 class ReceiveChecksScreen(QWidget):
-    """Customer payment header, open invoices from the company DB, post AR + optional bank deposit."""
+    """Customer payment header, open invoices from the company DB, post AR + optional bank deposit.
+
+    Signals
+    -------
+    arPaymentPosted(list[int])
+        Emitted after :meth:`_on_post_payment` successfully records one or more AR payments.
+        Carries the **invoice ids** (``invoice_lines.invoice_id``) that received an allocation in
+        the just-posted batch, so other screens (notably **Manual Invoice**) can refresh PAID
+        badge / balance state for an invoice they currently have open without polling.
+    """
+
+    arPaymentPosted = Signal(list)
 
     _COLS = (
         "",  # checkbox
@@ -117,6 +132,7 @@ class ReceiveChecksScreen(QWidget):
         self._cached_invoices: list = []
         self._row_checks: list[QCheckBox] = []
         self._payment_edits: list[QDoubleSpinBox] = []
+        self._last_ar_payment_ids: list[int] = []
         self.setToolTip(
             "Receive Payments: record customer payments against open invoices from your company file. "
             "Same company .db (File → Backup / Restore, probooks.backup)."
@@ -143,12 +159,30 @@ class ReceiveChecksScreen(QWidget):
         self._btn_export_ar_alloc = QPushButton("Export AR payment allocations CSV…")
         self._btn_export_ar_alloc.setToolTip("Export how payments were applied to invoices.")
         self._btn_export_ar_alloc.clicked.connect(self._on_export_ar_allocations)
-        for b in (self._btn_record_ar, self._btn_export_ar_pay, self._btn_export_ar_alloc):
+        self._btn_export_ar_pdf = QPushButton("Export last payment PDF…")
+        self._btn_export_ar_pdf.setToolTip(
+            "Save the most recently posted customer payment from this session as a PDF (pick path)."
+        )
+        self._btn_export_ar_pdf.clicked.connect(self._on_export_last_ar_payment_pdf)
+        self._btn_print_ar = QPushButton("Print last payment…")
+        self._btn_print_ar.setToolTip("Print the most recently posted payment (same layout as PDF).")
+        self._btn_print_ar.clicked.connect(self._on_print_last_ar_payment)
+        for b in (
+            self._btn_record_ar,
+            self._btn_export_ar_pay,
+            self._btn_export_ar_alloc,
+            self._btn_export_ar_pdf,
+            self._btn_print_ar,
+        ):
             b.setAutoDefault(False)
             b.setDefault(False)
+        self._btn_export_ar_pdf.setEnabled(False)
+        self._btn_print_ar.setEnabled(False)
         ar_row.addWidget(self._btn_record_ar)
         ar_row.addWidget(self._btn_export_ar_pay)
         ar_row.addWidget(self._btn_export_ar_alloc)
+        ar_row.addWidget(self._btn_export_ar_pdf)
+        ar_row.addWidget(self._btn_print_ar)
         ar_row.addStretch(1)
         outer.addLayout(ar_row)
 
@@ -185,7 +219,11 @@ class ReceiveChecksScreen(QWidget):
         play.addLayout(title_row)
 
         sec_pay = _receive_caption_label("Payment details")
-        sec_pay.setToolTip("Payment date, deposit account, method, and reference for posting.")
+        sec_pay.setToolTip(
+            "Payment date, deposit account, method, and reference for posting. "
+            "When Deposit to selects a bank, posting adds a deposit on the Bank Register for that account "
+            "and invoice balances update (Paid when fully applied)."
+        )
         play.addWidget(sec_pay)
 
         # ── Header form ──
@@ -221,7 +259,8 @@ class ReceiveChecksScreen(QWidget):
         self._customer_filter.setMinimumWidth(220)
         self._customer_filter.setStyleSheet(_combo_ss)
         self._customer_filter.setToolTip(
-            "Limit the invoice list to one customer, or show all open invoices."
+            "Limit the invoice list to one customer, or show all open invoices. "
+            "For a parent (mother ship) customer, includes invoices for all jobs under that account."
         )
         self._customer_filter.currentIndexChanged.connect(self._rebuild_table)
 
@@ -399,26 +438,34 @@ class ReceiveChecksScreen(QWidget):
         self._deposit_to.blockSignals(False)
 
     def _populate_customer_filter(self) -> None:
+        prev = coerce_combo_int_id(self._customer_filter.currentData())
         self._customer_filter.blockSignals(True)
         self._customer_filter.clear()
         self._customer_filter.addItem("All customers", None)
         if self._ap_conn is not None:
             try:
-                for r in business.list_customers(self._ap_conn):
-                    cid = coerce_combo_int_id(r["id"])
-                    if cid is None:
-                        continue
-                    name = (dict(r).get("name") or "").strip() or f"Customer #{cid}"
-                    self._customer_filter.addItem(name, cid)
+                for cid, label in business.list_bill_to_customer_choices(self._ap_conn):
+                    self._customer_filter.addItem(label, cid)
             except sqlite3.Error:
                 pass
         self._customer_filter.blockSignals(False)
+        if prev is not None:
+            for i in range(self._customer_filter.count()):
+                if coerce_combo_int_id(self._customer_filter.itemData(i)) == prev:
+                    self._customer_filter.setCurrentIndex(i)
+                    break
 
     def _invoice_passes_filter(self, d: dict) -> bool:
         fcid = coerce_combo_int_id(self._customer_filter.currentData())
         if fcid is None:
             return True
-        return int(d.get("customer_id") or 0) == fcid
+        if self._ap_conn is None:
+            return False
+        try:
+            ids = business.customer_ids_for_receive_payments_filter(self._ap_conn, fcid)
+        except (sqlite3.Error, ValueError):
+            ids = [fcid]
+        return int(d.get("customer_id") or 0) in set(ids)
 
     def _update_cust_balance_label(self, visible_rows: list[dict]) -> None:
         s = sum(float(r.get("balance_due") or 0.0) for r in visible_rows)
@@ -446,6 +493,13 @@ class ReceiveChecksScreen(QWidget):
             self._cust_balance.setText("Customer open balance: —")
             self._refresh_totals()
             return
+        id_to_label: dict[int, str] = {}
+        if self._ap_conn is not None:
+            try:
+                id_to_label = dict(business.list_bill_to_customer_choices(self._ap_conn))
+            except sqlite3.Error:
+                id_to_label = {}
+
         visible: list[dict] = []
         for r in self._cached_invoices:
             d = dict(r)
@@ -463,7 +517,8 @@ class ReceiveChecksScreen(QWidget):
             self._table.setCellWidget(i, 0, cb)
             self._row_checks.append(cb)
 
-            cust_it = _readonly_item((d.get("customer_name") or "").strip() or "—")
+            disp = (id_to_label.get(cid) or (d.get("customer_name") or "").strip()).strip()
+            cust_it = _readonly_item(disp or "—")
             cust_it.setData(_ROLE_CUSTOMER_ID, cid)
             self._table.setItem(i, 1, cust_it)
 
@@ -503,6 +558,8 @@ class ReceiveChecksScreen(QWidget):
         self._btn_record_ar.setEnabled(on)
         self._btn_export_ar_pay.setEnabled(on)
         self._btn_export_ar_alloc.setEnabled(on)
+        self._btn_export_ar_pdf.setEnabled(on and bool(self._last_ar_payment_ids))
+        self._btn_print_ar.setEnabled(on and bool(self._last_ar_payment_ids))
         self._btn_post.setEnabled(on)
         self._btn_refresh.setEnabled(on)
 
@@ -609,6 +666,7 @@ class ReceiveChecksScreen(QWidget):
         bank_db = self._bank_db
         posted = 0
         bank_errors: list[str] = []
+        self._last_ar_payment_ids.clear()
 
         for cid, allocs in sorted(by_customer.items()):
             total = round(sum(a for _, a in allocs), 2)
@@ -630,6 +688,7 @@ class ReceiveChecksScreen(QWidget):
                     reference=ref,
                     memo="",
                 )
+                self._last_ar_payment_ids.append(int(pid))
             except (sqlite3.Error, ValueError, TypeError) as exc:
                 message_box_critical_ok(
                     self,
@@ -655,6 +714,14 @@ class ReceiveChecksScreen(QWidget):
                     bank_errors.append(f"{cname}: {exc}")
 
         self._load_invoices_from_db()
+        self._sync_ar_toolbar()
+
+        # Notify peer screens (Manual Invoice) so an open invoice that just got paid
+        # refreshes its PAID badge / balance without the user navigating away.
+        if posted:
+            posted_invoice_ids = sorted({iid for allocs in by_customer.values() for iid, _ in allocs})
+            if posted_invoice_ids:
+                self.arPaymentPosted.emit(posted_invoice_ids)
 
         if bank_errors:
             message_box_warning_ok(
@@ -671,3 +738,55 @@ class ReceiveChecksScreen(QWidget):
                 f"Posted {posted} payment(s). Open balances were updated.",
                 ok_tip="Close; use Refresh or revisit the tab to reload invoices.",
             )
+
+    def _on_export_last_ar_payment_pdf(self) -> None:
+        if self._ap_conn is None or not self._last_ar_payment_ids:
+            return
+        pid = self._last_ar_payment_ids[-1]
+        default_name = f"AR-Payment-{pid}.pdf"
+        path, _filt = QFileDialog.getSaveFileName(
+            self,
+            "Export AR payment as PDF",
+            default_name,
+            "PDF files (*.pdf);;All files (*.*)",
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".pdf"):
+            path = f"{path}.pdf"
+        try:
+            save_ar_payment_pdf(self._ap_conn, pid, path)
+        except OSError as exc:
+            message_box_warning_ok(
+                self,
+                "Receive Payments",
+                f"Could not write PDF: {exc}",
+                ok_tip="Choose a writable folder and try again.",
+            )
+        except Exception as exc:  # noqa: BLE001
+            message_box_warning_ok(
+                self,
+                "Receive Payments",
+                f"PDF export failed: {exc}",
+                ok_tip="Close and try again.",
+            )
+
+    def _on_print_last_ar_payment(self) -> None:
+        if self._ap_conn is None or not self._last_ar_payment_ids:
+            return
+        pid = self._last_ar_payment_ids[-1]
+        doc = QTextDocument()
+        try:
+            doc.setHtml(ar_payment_html_string(self._ap_conn, pid))
+        except Exception as exc:  # noqa: BLE001
+            message_box_warning_ok(
+                self,
+                "Receive Payments",
+                f"Could not prepare payment for printing: {exc}",
+                ok_tip="Close and try again.",
+            )
+            return
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        if not configure_printer_for_payment_print(self, printer):
+            return
+        doc.print_(printer)

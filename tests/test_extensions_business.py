@@ -63,12 +63,34 @@ def test_list_invoice_ids_chronological_order(db) -> None:
     assert business.list_invoice_ids_chronological(db._conn) == [i1, i2]
 
 
-def test_next_default_invoice_number_starts_at_13001(db) -> None:
-    assert business.next_default_invoice_number(db._conn) == "13001"
+def test_list_invoice_ids_by_invoice_number_sorts_numeric_strings(db) -> None:
+    """Manual Invoice browse order follows invoice number ascending (not insert id)."""
+    assert business.list_invoice_ids_by_invoice_number(db._conn) == []
+    c1 = business.add_customer(db._conn, "A")
+    c2 = business.add_customer(db._conn, "B")
+    i_high = business.create_invoice(
+        db._conn,
+        c2,
+        "2",
+        "2024-02-01",
+        lines=[{"description": "b", "qty": 1, "rate": 1.0}],
+    )
+    i_low = business.create_invoice(
+        db._conn,
+        c1,
+        "1",
+        "2024-01-01",
+        lines=[{"description": "a", "qty": 1, "rate": 1.0}],
+    )
+    assert business.list_invoice_ids_by_invoice_number(db._conn) == [i_low, i_high]
+
+
+def test_next_default_invoice_number_starts_at_one(db) -> None:
+    assert business.next_default_invoice_number(db._conn) == "1"
 
 
 def test_next_default_invoice_number_none_conn() -> None:
-    assert business.next_default_invoice_number(None) == "13001"
+    assert business.next_default_invoice_number(None) == "1"
 
 
 def test_next_default_invoice_number_max_digits_plus_one(db) -> None:
@@ -76,11 +98,11 @@ def test_next_default_invoice_number_max_digits_plus_one(db) -> None:
     business.create_invoice(
         db._conn,
         cid,
-        "13001",
+        "1",
         "2024-01-01",
         lines=[{"description": "x", "qty": 1, "rate": 0.0}],
     )
-    assert business.next_default_invoice_number(db._conn) == "13002"
+    assert business.next_default_invoice_number(db._conn) == "2"
     business.create_invoice(
         db._conn,
         cid,
@@ -88,15 +110,15 @@ def test_next_default_invoice_number_max_digits_plus_one(db) -> None:
         "2024-01-02",
         lines=[{"description": "y", "qty": 1, "rate": 0.0}],
     )
-    assert business.next_default_invoice_number(db._conn) == "13002"
+    assert business.next_default_invoice_number(db._conn) == "2"
     business.create_invoice(
         db._conn,
         cid,
-        "13009",
+        "9",
         "2024-01-03",
         lines=[{"description": "z", "qty": 1, "rate": 0.0}],
     )
-    assert business.next_default_invoice_number(db._conn) == "13010"
+    assert business.next_default_invoice_number(db._conn) == "10"
 
 
 def test_extension_schema_applied(db):

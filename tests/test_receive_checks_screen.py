@@ -44,6 +44,52 @@ def test_receive_checks_screen_table_headers(qapp: QApplication) -> None:
     assert t.horizontalHeaderItem(6).text() == "Amount to Apply"
 
 
+def test_receive_checks_parent_vs_job_customer_filter(
+    qapp: QApplication, db: BankDatabase
+) -> None:
+    """Mother ship lists all job open invoices; selecting a job lists only that job."""
+    p = business.add_customer(db._conn, "ParentCo")
+    j = business.add_customer(db._conn, "JobA", parent_customer_id=p)
+    business.create_invoice(
+        db._conn,
+        p,
+        "INV-P",
+        "2024-05-01",
+        lines=[{"description": "a", "qty": 1, "rate": 30.0}],
+    )
+    business.create_invoice(
+        db._conn,
+        j,
+        "INV-J",
+        "2024-05-02",
+        lines=[{"description": "b", "qty": 1, "rate": 20.0}],
+    )
+    w = ReceiveChecksScreen(ap_conn=db._conn, bank_db=db)
+    t = w.findChild(QTableWidget, "receiveChecksTable")
+    assert t is not None
+    assert t.rowCount() == 2
+    combo = w._customer_filter
+    idx_p = next(
+        i
+        for i in range(combo.count())
+        if combo.itemData(i) is not None and int(combo.itemData(i)) == p
+    )
+    idx_j = next(
+        i
+        for i in range(combo.count())
+        if combo.itemData(i) is not None and int(combo.itemData(i)) == j
+    )
+    combo.setCurrentIndex(idx_j)
+    w._rebuild_table()
+    assert t.rowCount() == 1
+    assert "INV-J" in (t.item(0, 4).text() or "")
+    combo.setCurrentIndex(idx_p)
+    w._rebuild_table()
+    assert t.rowCount() == 2
+    nums = sorted((t.item(i, 4).text() or "") for i in range(t.rowCount()))
+    assert "INV-J" in nums and "INV-P" in nums
+
+
 def test_receive_checks_loads_open_invoice_row(
     qapp: QApplication, db: BankDatabase
 ) -> None:
@@ -65,6 +111,29 @@ def test_receive_checks_loads_open_invoice_row(
     spin = t.cellWidget(0, 6)
     assert isinstance(spin, QDoubleSpinBox)
     assert spin.maximum() == pytest.approx(100.0)
+
+
+def test_receive_checks_shows_hierarchical_customer_label_for_job(
+    qapp: QApplication, db: BankDatabase
+) -> None:
+    p = business.add_customer(db._conn, "ShipCo")
+    j = business.add_customer(db._conn, "Berth1", parent_customer_id=p)
+    business.create_invoice(
+        db._conn,
+        j,
+        "INV-H",
+        "2024-09-01",
+        lines=[{"description": "x", "qty": 1, "rate": 15.0}],
+    )
+    w = ReceiveChecksScreen(ap_conn=db._conn, bank_db=db)
+    t = w.findChild(QTableWidget, "receiveChecksTable")
+    assert t is not None
+    assert t.rowCount() == 1
+    assert t.item(0, 1).text() == "ShipCo > Berth1"
+    assert "INV-H" in (t.item(0, 4).text() or "")
+    spin = t.cellWidget(0, 6)
+    assert isinstance(spin, QDoubleSpinBox)
+    assert spin.maximum() == pytest.approx(15.0)
 
 
 def test_receive_checks_totals_update_when_checked(
@@ -154,3 +223,41 @@ def test_receive_payment_post_reduces_balance(qapp: QApplication, db: BankDataba
     ).fetchone()
     assert float(bt["amount"]) == pytest.approx(40.0)
     assert business.bank_match_link_for_navigation(db._conn, tid) == ("ar_payment", pid)
+    assert w._btn_export_ar_pdf.isEnabled()
+    assert w._btn_print_ar.isEnabled()
+    assert w._last_ar_payment_ids[-1] == pid
+
+
+def test_receive_payment_post_emits_ar_payment_posted_with_invoice_ids(
+    qapp: QApplication, db: BankDatabase
+) -> None:
+    """``arPaymentPosted`` carries the invoice ids that just received an allocation.
+
+    Other screens (Manual Invoice) wire to this signal to refresh the PAID badge /
+    balance for an invoice they currently have open without polling.
+    """
+    db.add_bank_account("Checking")
+    cid = business.add_customer(db._conn, "EmitCo")
+    inv_id = business.create_invoice(
+        db._conn,
+        cid,
+        "INV-EMIT",
+        "2024-08-01",
+        lines=[{"description": "Work", "qty": 1, "rate": 25.0}],
+    )
+    w = ReceiveChecksScreen(ap_conn=db._conn, bank_db=db)
+    received: list[list[int]] = []
+    w.arPaymentPosted.connect(lambda ids: received.append(list(ids)))
+    t = w.findChild(QTableWidget, "receiveChecksTable")
+    assert t is not None
+    cb = t.cellWidget(0, 0)
+    spin = t.cellWidget(0, 6)
+    assert isinstance(cb, QCheckBox)
+    assert isinstance(spin, QDoubleSpinBox)
+    cb.setChecked(True)
+    spin.setValue(25.0)
+    w._deposit_to.setCurrentIndex(1)
+    with patch("desktop_app.receive_checks_screen.message_box_information_ok"):
+        w._on_post_payment()
+    assert received, "arPaymentPosted should fire after a successful post"
+    assert inv_id in received[-1]

@@ -13,7 +13,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
-EXTENSION_SCHEMA_VERSION = 4
+EXTENSION_SCHEMA_VERSION = 8
 
 _DDL_VERSION = """
 CREATE TABLE IF NOT EXISTS extension_schema_version (
@@ -226,6 +226,58 @@ CREATE TABLE IF NOT EXISTS bill_expense_lines (
 );
 """
 
+# v5 – Customer / job hierarchy (job rows point to a root “mother ship” customer)
+_MIGRATION_V5 = """
+ALTER TABLE customers ADD COLUMN parent_customer_id INTEGER REFERENCES customers(id);
+"""
+
+# v6 – Invoice item / service codes (master list for Manual Invoice line Code column)
+_MIGRATION_V6 = """
+CREATE TABLE IF NOT EXISTS invoice_item_codes (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    code           TEXT    NOT NULL COLLATE NOCASE,
+    description    TEXT    NOT NULL DEFAULT '',
+    item_type      TEXT    NOT NULL DEFAULT 'Service',
+    coa_account    TEXT    NOT NULL DEFAULT '',
+    rate_value     REAL    NOT NULL DEFAULT 0,
+    rate_kind      TEXT    NOT NULL DEFAULT 'amount',
+    sort_order     INTEGER NOT NULL DEFAULT 0,
+    created_at     TEXT    NOT NULL,
+    UNIQUE (code)
+);
+"""
+
+# v7 – Bank Statement Intake review queue (Phase 2; persisted across sessions).
+# Mirrors :class:`probooksai.bank_statement_intake.BankStatementIntakeRow` so
+# the review panel can hydrate after restart. This queue is staging only —
+# rows here have NOT been posted to bank_transactions; the panel's explicit
+# "Send to Bank Register" hand-off is what posts to the register.
+_MIGRATION_V7 = """
+CREATE TABLE IF NOT EXISTS bank_statement_intake_queue (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at      TEXT    NOT NULL,
+    txn_date        TEXT    NOT NULL DEFAULT '',
+    description_raw TEXT    NOT NULL DEFAULT '',
+    debit           REAL,
+    credit          REAL,
+    amount_signed   REAL,
+    running_balance REAL,
+    source_type     TEXT    NOT NULL DEFAULT '',
+    source_ref      TEXT    NOT NULL DEFAULT '',
+    confidence      REAL    NOT NULL DEFAULT 0,
+    needs_review    INTEGER NOT NULL DEFAULT 1,
+    sort_order      INTEGER NOT NULL DEFAULT 0
+);
+"""
+
+# v8 — Phase 3 step 2: persist the COA suggestion / chosen category
+# alongside each staged review row so it survives panel reload and is
+# carried into ``bank_transactions`` by the Phase-2 hand-off.
+_MIGRATION_V8 = """
+ALTER TABLE bank_statement_intake_queue
+ADD COLUMN coa_account TEXT NOT NULL DEFAULT '';
+"""
+
 
 def _seed_payroll_tax_items(conn: sqlite3.Connection) -> None:
     """Default federal/state placeholder codes (amounts entered manually per run)."""
@@ -296,6 +348,34 @@ def apply_extensions(conn: sqlite3.Connection) -> None:
             if s:
                 conn.execute(s)
         current = 4
+
+    if current < 5:
+        for stmt in _MIGRATION_V5.strip().split(";"):
+            s = stmt.strip()
+            if s:
+                conn.execute(s)
+        current = 5
+
+    if current < 6:
+        for stmt in _MIGRATION_V6.strip().split(";"):
+            s = stmt.strip()
+            if s:
+                conn.execute(s)
+        current = 6
+
+    if current < 7:
+        for stmt in _MIGRATION_V7.strip().split(";"):
+            s = stmt.strip()
+            if s:
+                conn.execute(s)
+        current = 7
+
+    if current < 8:
+        for stmt in _MIGRATION_V8.strip().split(";"):
+            s = stmt.strip()
+            if s:
+                conn.execute(s)
+        current = 8
 
     conn.execute(
         "UPDATE extension_schema_version SET version = ? WHERE id = 1",

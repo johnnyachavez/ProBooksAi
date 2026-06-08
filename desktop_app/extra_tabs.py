@@ -82,6 +82,7 @@ from desktop_app.qt_mnemonic import (
     tip_message_box_buttons,
     tip_qdialog_button_box,
 )
+from desktop_app.new_customer_dialog import run_new_customer_dialog
 from desktop_app.theme import ar_ap_master_tab_stylesheet
 from desktop_app.table_clipboard import (
     CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
@@ -944,6 +945,12 @@ class ARTab(QWidget):
         self._d_notes = QLabel("—")
         self._d_notes.setWordWrap(True)
         df.addRow("Customer Name", self._d_name)
+        self._d_relationship = QLabel("—")
+        self._d_relationship.setToolTip(
+            "Standalone: its own account. Parent: mother ship with job accounts below it. "
+            "Job: …: invoices roll up to the parent in Receive Payments when the parent is selected."
+        )
+        df.addRow("Relationship", self._d_relationship)
         df.addRow("Address", self._d_address)
         df.addRow("Phone", self._d_phone)
         df.addRow("Email", self._d_email)
@@ -960,10 +967,11 @@ class ARTab(QWidget):
         list_box.setToolTip("Click a row to show that customer in the detail card above.")
         lb_lay = QVBoxLayout(list_box)
         self._customer_tbl = QTableWidget()
-        self._customer_tbl.setColumnCount(7)
+        self._customer_tbl.setColumnCount(8)
         self._customer_tbl.setHorizontalHeaderLabels(
             [
                 "Customer",
+                "Relationship",
                 "Open Balance",
                 "Current Due",
                 "Overdue",
@@ -1067,6 +1075,13 @@ class ARTab(QWidget):
         self._d_terms.setText("—")
         notes = (d.get("notes") or "").strip()
         self._d_notes.setText(escape_ampersand_for_qt(notes) if notes else "—")
+        if summ is not None:
+            rel = summ.get("relationship") or ""
+        else:
+            rel = business.customer_relationship_label(
+                self._conn, self._focused_customer_id
+            )
+        self._d_relationship.setText(escape_ampersand_for_qt(rel) if rel else "—")
         if summ is None:
             self._d_open_bal.setText("—")
             self._d_cur_due.setText("—")
@@ -1083,6 +1098,7 @@ class ARTab(QWidget):
     def _clear_detail_card(self) -> None:
         for w in (
             self._d_name,
+            self._d_relationship,
             self._d_address,
             self._d_phone,
             self._d_email,
@@ -1107,20 +1123,23 @@ class ARTab(QWidget):
             it0 = QTableWidgetItem(escape_ampersand_for_qt(nm))
             it0.setData(Qt.ItemDataRole.UserRole, cid)
             self._customer_tbl.setItem(i, 0, it0)
+            self._customer_tbl.setItem(
+                i, 1, plain_display_table_item(r.get("relationship") or "")
+            )
             ob = float(r["open_balance"] or 0)
             cd = float(r["current_due"] or 0)
             ov = float(r["overdue"] or 0)
-            self._customer_tbl.setItem(i, 1, _FloatSortTableItem(f"{ob:.2f}", ob))
-            self._customer_tbl.setItem(i, 2, _FloatSortTableItem(f"{cd:.2f}", cd))
-            self._customer_tbl.setItem(i, 3, _FloatSortTableItem(f"{ov:.2f}", ov))
+            self._customer_tbl.setItem(i, 2, _FloatSortTableItem(f"{ob:.2f}", ob))
+            self._customer_tbl.setItem(i, 3, _FloatSortTableItem(f"{cd:.2f}", cd))
+            self._customer_tbl.setItem(i, 4, _FloatSortTableItem(f"{ov:.2f}", ov))
             self._customer_tbl.setItem(
-                i, 4, plain_display_table_item(r["last_invoice_date"] or "")
+                i, 5, plain_display_table_item(r["last_invoice_date"] or "")
             )
             self._customer_tbl.setItem(
-                i, 5, plain_display_table_item(r["last_payment_date"] or "")
+                i, 6, plain_display_table_item(r["last_payment_date"] or "")
             )
             self._customer_tbl.setItem(
-                i, 6, plain_display_table_item(r.get("ar_status") or "")
+                i, 7, plain_display_table_item(r.get("ar_status") or "")
             )
         self._customer_tbl.setSortingEnabled(True)
         ids = {int(r["customer_id"]) for r in rows}
@@ -1142,48 +1161,9 @@ class ARTab(QWidget):
             self._clear_detail_card()
 
     def _new_cust(self):
-        d = QDialog(self)
-        d.setWindowTitle("New customer")
-        d.setToolTip("Create a customer record used for AR invoices, payments, and aging.")
-        f = QFormLayout(d)
-        ne = QLineEdit()
-        ne.setToolTip("Customer display name (required).")
-        em = QLineEdit()
-        em.setToolTip("Contact email (optional).")
-        ph = QLineEdit()
-        ph.setToolTip("Phone number (optional).")
-        ad = QPlainTextEdit()
-        ad.setFixedHeight(56)
-        ad.setToolTip("Mailing or service address (optional).")
-        no = QPlainTextEdit()
-        no.setFixedHeight(48)
-        no.setToolTip("Internal notes about this customer (optional).")
-        f.addRow("Name *", ne)
-        f.addRow("Email", em)
-        f.addRow("Phone", ph)
-        f.addRow("Address", ad)
-        f.addRow("Notes", no)
-        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        _tip_dialog_ok_cancel(bb, "Add the customer with these details.")
-        bb.accepted.connect(d.accept)
-        bb.rejected.connect(d.reject)
-        f.addRow(bb)
-        if d.exec() != QDialog.DialogCode.Accepted or not ne.text().strip():
+        nid = run_new_customer_dialog(self, self._conn, show_success_message=True)
+        if nid is None:
             return
-        business.add_customer(
-            self._conn,
-            ne.text().strip(),
-            email=em.text().strip(),
-            phone=ph.text().strip(),
-            address=ad.toPlainText().strip(),
-            notes=no.toPlainText().strip(),
-        )
-        message_box_information_ok(
-            self,
-            "Done",
-            "Customer added.",
-            ok_tip="Close; the customer appears in lists and filters.",
-        )
         self._refresh()
 
     def _edit_cust(self):
@@ -1219,6 +1199,34 @@ class ARTab(QWidget):
         no.setFixedHeight(48)
         no.setToolTip("Internal notes about this customer (optional).")
 
+        type_cb = QComboBox()
+        type_cb.setToolTip(
+            "Standalone: top-level customer (or mother ship with job accounts). "
+            "Job: link to a parent to roll up open invoices in Receive Payments."
+        )
+        type_cb.addItem("Standalone Customer", "standalone")
+        type_cb.addItem("Job under Existing Customer", "job")
+        parent_lbl = QLabel("Parent customer *")
+        parent_lbl.setToolTip("Mother ship customer for this job.")
+        parent_cb = QComboBox()
+        parent_cb.setToolTip("Clear by switching to Standalone, or pick another parent.")
+
+        def fill_parent_combo(exclude_id: int | None) -> None:
+            parent_cb.clear()
+            for r in business.list_parent_customer_choices(self._conn):
+                rid = int(r["id"])
+                if exclude_id is not None and rid == exclude_id:
+                    continue
+                nm = (r["name"] or "").strip() or f"#{rid}"
+                parent_cb.addItem(nm, rid)
+
+        def sync_parent_visibility() -> None:
+            is_job = type_cb.currentData() == "job"
+            parent_lbl.setVisible(is_job)
+            parent_cb.setVisible(is_job)
+
+        type_cb.currentIndexChanged.connect(lambda _i=None: sync_parent_visibility())
+
         def load_customer(_index: int | None = None) -> None:
             cid = coerce_combo_int_id(cb.currentData())
             if cid is None:
@@ -1226,11 +1234,24 @@ class ARTab(QWidget):
             row = business.get_customer(self._conn, cid)
             if row is None:
                 return
+            fill_parent_combo(cid)
             ne.setText(row["name"] or "")
             em.setText(row["email"] or "")
             ph.setText(row["phone"] or "")
             ad.setPlainText(row["address"] or "")
             no.setPlainText(row["notes"] or "")
+            rd = dict(row)
+            pid = rd.get("parent_customer_id")
+            type_cb.blockSignals(True)
+            if pid is not None:
+                type_cb.setCurrentIndex(1)
+                ix = combo_index_for_int_user_data(parent_cb, int(pid))
+                if ix >= 0:
+                    parent_cb.setCurrentIndex(ix)
+            else:
+                type_cb.setCurrentIndex(0)
+            type_cb.blockSignals(False)
+            sync_parent_visibility()
 
         def sync_customer_combo() -> None:
             _sync_filtered_entity_combo(
@@ -1246,6 +1267,8 @@ class ARTab(QWidget):
         f.addRow("Filter list", filt)
         f.addRow("Customer", cb)
         sync_customer_combo()
+        f.addRow("Customer type", type_cb)
+        f.addRow(parent_lbl, parent_cb)
         f.addRow("Name *", ne)
         f.addRow("Email", em)
         f.addRow("Phone", ph)
@@ -1269,6 +1292,26 @@ class ARTab(QWidget):
                 ok_tip="Close; pick a customer in the list or clear the filter.",
             )
             return
+        mode = type_cb.currentData()
+        parent_id = None
+        if mode == "job":
+            if parent_cb.count() == 0:
+                message_box_warning_ok(
+                    self,
+                    "Customer",
+                    "No eligible parent customer exists. Add a standalone customer first.",
+                    ok_tip="Close; create a top-level customer, then set this one as a job under it.",
+                )
+                return
+            parent_id = coerce_combo_int_id(parent_cb.currentData())
+            if parent_id is None:
+                message_box_warning_ok(
+                    self,
+                    "Customer",
+                    "Choose a parent customer for a job account.",
+                    ok_tip="Close; pick Parent customer or switch to Standalone.",
+                )
+                return
         try:
             business.update_customer(
                 self._conn,
@@ -1278,6 +1321,7 @@ class ARTab(QWidget):
                 phone=ph.text().strip(),
                 address=ad.toPlainText().strip(),
                 notes=no.toPlainText().strip(),
+                parent_customer_id=parent_id,
             )
         except ValueError as exc:
             message_box_warning_ok(
@@ -2712,7 +2756,7 @@ def _business_keyboard_shortcuts_help_text() -> str:
         "Ctrl+S — Save default tax name and rate (standard Save shortcut)\n\n"
         "On Company (settings):\n"
         "Ctrl+S — Save company name and address for invoice letterhead\n\n"
-        "View menu tab focus: Ctrl+1 Invoices … Ctrl+9 Reconcile, Ctrl+0 More (Reports, Journal, Business, Audit log).\n\n"
+        "View menu tab focus: Ctrl+1 Invoices, Ctrl+2 Codes, Ctrl+3 Write Checks … Ctrl+0 Vendors, Ctrl+Shift+R Reconcile, Ctrl+Shift+M More (Reports, Journal, Business, Audit log).\n\n"
         "Tools menu: Ctrl+Shift+I — Invoice… (top-level Invoices tab).\n\n"
         "Right-click the Rules or Payroll grid (including empty area) "
         "for Keyboard shortcuts… (same as this dialog).\n\n"
@@ -2743,6 +2787,183 @@ def show_business_keyboard_shortcuts_dialog(parent: QWidget) -> None:
     )
 
 
+class AISettingsTab(QWidget):
+    """**AI** sub-tab on the Business hub: opt-in AI fallback for bank
+    statement intake categorization.
+
+    The desktop app ships with the AI fallback **off by default**. This
+    tab is the only user-facing place to:
+
+    * Toggle ``ai_intake_enabled`` (the panel-side gate that decides
+      whether the AI provider is consulted at all).
+    * Provide an OpenAI API key (``openai_api_key``) so the bundled
+      :class:`probooksai.bank_statement_intake_ai_provider.OpenAIProvider`
+      can actually make a request. Without a key the fallback is silent
+      even with the toggle on.
+    * Optionally override the model (``openai_ai_model``), endpoint
+      (``openai_ai_endpoint``) and request timeout
+      (``openai_ai_timeout_sec``) — useful for self-hosted /
+      OpenAI-compatible gateways.
+
+    Settings are read on every suggestion call (no app restart
+    required) and AI suggestions are tagged with ``<ai>`` in the
+    Bank Statement Intake review panel so they are clearly
+    distinguishable from rules-engine matches.
+    """
+
+    SETTING_API_KEY = "openai_api_key"
+    SETTING_MODEL = "openai_ai_model"
+    SETTING_ENDPOINT = "openai_ai_endpoint"
+    SETTING_TIMEOUT = "openai_ai_timeout_sec"
+    SETTING_ENABLED = "ai_intake_enabled"
+
+    DEFAULT_MODEL = "gpt-4o-mini"
+    DEFAULT_ENDPOINT = "https://api.openai.com/v1/chat/completions"
+    DEFAULT_TIMEOUT_SEC = "8"
+
+    def __init__(self, conn: sqlite3.Connection, parent=None):
+        super().__init__(parent)
+        self._conn = conn
+        self.setToolTip(
+            "AI assist for bank statement intake categorization (off by default). "
+            "Suggestions are tagged with <ai> in the Statement intake (review) panel; "
+            "the AI is consulted only when no rule matches and a key is configured."
+        )
+        root = QVBoxLayout(self)
+
+        intro = QLabel(
+            "AI assist (opt-in) suggests a chart-of-accounts entry for "
+            "bank-statement rows when no categorization rule matches. "
+            "Suggestions appear in the Statement intake (review) panel "
+            "tagged with \u201c<ai>\u201d \u2014 they are never posted "
+            "to the Bank Register without your explicit approval."
+        )
+        intro.setWordWrap(True)
+        intro.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        root.addWidget(intro)
+
+        self._enabled_chk = QCheckBox(
+            escape_ampersand_for_qt("Enable AI fallback for bank statement intake")
+        )
+        self._enabled_chk.setToolTip(
+            "When on, the Statement intake panel asks the configured AI provider "
+            "for a category whenever no categorization rule matches a row. "
+            "Off by default; AI never runs without an API key."
+        )
+        self._enabled_chk.setChecked(
+            _coerce_bool_setting(business.get_setting(self._conn, self.SETTING_ENABLED, "0"))
+        )
+        root.addWidget(self._enabled_chk)
+
+        form = QFormLayout()
+        self._key_edit = QLineEdit()
+        self._key_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self._key_edit.setPlaceholderText("sk-\u2026 (kept in this company's settings)")
+        self._key_edit.setText(business.get_setting(self._conn, self.SETTING_API_KEY, "") or "")
+        self._key_edit.setToolTip(
+            "OpenAI-compatible API key. Stored in the company .db only "
+            "(not in any global / user-wide config). Leave blank to keep AI silent."
+        )
+        form.addRow(escape_ampersand_for_qt("OpenAI API key"), self._key_edit)
+
+        self._model_edit = QLineEdit()
+        self._model_edit.setPlaceholderText(self.DEFAULT_MODEL)
+        self._model_edit.setText(business.get_setting(self._conn, self.SETTING_MODEL, "") or "")
+        self._model_edit.setToolTip(
+            "Chat-completions model name. Defaults to gpt-4o-mini when blank."
+        )
+        form.addRow(escape_ampersand_for_qt("Model"), self._model_edit)
+
+        self._endpoint_edit = QLineEdit()
+        self._endpoint_edit.setPlaceholderText(self.DEFAULT_ENDPOINT)
+        self._endpoint_edit.setText(
+            business.get_setting(self._conn, self.SETTING_ENDPOINT, "") or ""
+        )
+        self._endpoint_edit.setToolTip(
+            "Chat-completions endpoint URL. Override only for self-hosted or "
+            "OpenAI-compatible gateways. Defaults to api.openai.com when blank."
+        )
+        form.addRow(escape_ampersand_for_qt("Endpoint URL"), self._endpoint_edit)
+
+        self._timeout_edit = QLineEdit()
+        self._timeout_edit.setPlaceholderText(self.DEFAULT_TIMEOUT_SEC)
+        self._timeout_edit.setText(
+            business.get_setting(self._conn, self.SETTING_TIMEOUT, "") or ""
+        )
+        self._timeout_edit.setToolTip(
+            "Request timeout in seconds (clamped to 1\u201360). "
+            f"Defaults to {self.DEFAULT_TIMEOUT_SEC}s when blank."
+        )
+        form.addRow(escape_ampersand_for_qt("Timeout (seconds)"), self._timeout_edit)
+
+        root.addLayout(form)
+
+        ai_save = QPushButton("Save AI settings")
+        ai_save.setToolTip(
+            "Save AI fallback toggle, API key, model, endpoint, and timeout to "
+            "this company's settings (Ctrl+S does the same)."
+        )
+        ai_save.clicked.connect(self._save)
+        root.addWidget(ai_save)
+
+        ai_tip = QLabel(
+            "AI assist is off by default. Suggestions are advisory: nothing posts "
+            "to the Bank Register without your approval. Per-call settings are "
+            "re-read on every suggestion, so changes here take effect immediately."
+        )
+        ai_tip.setWordWrap(True)
+        ai_tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        ai_tip.setToolTip(
+            "AI fallback is review-only \u2014 the Bank Register is the source of truth."
+        )
+        root.addWidget(ai_tip)
+
+        save_sc = QShortcut(QKeySequence(QKeySequence.StandardKey.Save), self)
+        save_sc.setContext(Qt.WidgetWithChildrenShortcut)
+        save_sc.activated.connect(self._save)
+
+    def _save(self) -> None:
+        business.set_setting(
+            self._conn,
+            self.SETTING_ENABLED,
+            "1" if self._enabled_chk.isChecked() else "0",
+        )
+        business.set_setting(
+            self._conn,
+            self.SETTING_API_KEY,
+            (self._key_edit.text() or "").strip(),
+        )
+        business.set_setting(
+            self._conn,
+            self.SETTING_MODEL,
+            (self._model_edit.text() or "").strip(),
+        )
+        business.set_setting(
+            self._conn,
+            self.SETTING_ENDPOINT,
+            (self._endpoint_edit.text() or "").strip(),
+        )
+        business.set_setting(
+            self._conn,
+            self.SETTING_TIMEOUT,
+            (self._timeout_edit.text() or "").strip(),
+        )
+        message_box_information_ok(
+            self,
+            "AI settings",
+            "Saved.",
+            ok_tip=(
+                "Close; AI fallback applies to new suggestions in the "
+                "Statement intake (review) panel."
+            ),
+        )
+
+
+def _coerce_bool_setting(raw: str) -> bool:
+    """Match :meth:`BankStatementIntakePanel._effective_ai_provider` semantics."""
+    return (raw or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 class BusinessHub(QWidget):
     """Nested tabs for rules, payroll, and tax (AR/AP workflows: main Customers / Vendors tabs)."""
 
@@ -2766,6 +2987,7 @@ class BusinessHub(QWidget):
         self._business_subtabs.addTab(PayrollTaxTab(conn), "Payroll")
         self._business_subtabs.addTab(TaxSettingsTab(conn), "Tax %")
         self._business_subtabs.addTab(CompanySetupTab(conn), "Company")
+        self._business_subtabs.addTab(AISettingsTab(conn), "AI")
         bar = self._business_subtabs.tabBar()
         bar.setTabToolTip(
             0,
@@ -2782,6 +3004,10 @@ class BusinessHub(QWidget):
         bar.setTabToolTip(
             3,
             "Company name, address, and contact for invoice print and PDF letterhead.",
+        )
+        bar.setTabToolTip(
+            4,
+            "AI fallback for bank statement intake categorization (off by default; needs an API key).",
         )
         raw_idx = QSettings().value(_BUSINESS_HUB_SUBTAB_KEY, 0)
         want_idx = coerce_combo_int_id(raw_idx)

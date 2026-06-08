@@ -3,6 +3,8 @@ Line-level statement vs register matching (AI reconciliation workflow).
 
 Compares *extracted* statement rows to *register* ``bank_transactions``-shaped dicts
 (description / ref_number / memo).
+Classifies rows as **Matched**, **Likely match** (conservative fuzzy / date slip), **Needs review**
+(statement-only with no pair), or **Extra** (register-only).
 Used by the Bank Import tab; does not modify the database or the register grid.
 ``write_line_match_comparison_csv`` exports compare results plus UI reconciled flags (UTF-8 with
 BOM for Excel-friendly open).
@@ -29,12 +31,16 @@ PDF optional hyphenation) are removed.
 from __future__ import annotations
 
 import csv
+import sqlite3
 from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 from typing import Any, Optional
 
 STATUS_MATCHED = "Matched"
-STATUS_MISSING = "Missing"
+STATUS_LIKELY_MATCH = "Likely match"
+STATUS_NEEDS_REVIEW = "Needs review"
+# Backward-compatible name (same value as ``STATUS_NEEDS_REVIEW``).
+STATUS_MISSING = STATUS_NEEDS_REVIEW
 STATUS_EXTRA = "Extra"
 
 
@@ -206,6 +212,27 @@ def transaction_pair_matches(stmt: dict[str, Any], reg: dict[str, Any]) -> bool:
     )
 
 
+def transaction_pair_likely(stmt: dict[str, Any], reg: dict[str, Any]) -> bool:
+    """Conservative *likely* pair: same amount, not a full :func:`transaction_pair_matches`.
+
+    Covers (1) description similarity strong enough for full rules but date slip 3–5 days
+    within ±5d, or (2) ±2d date with fuzzy text ratio 0.22–0.35 (below full fuzzy threshold).
+    """
+    if not amounts_equal(stmt.get("amount"), reg.get("amount")):
+        return False
+    ds, dr = str(stmt.get("txn_date") or ""), str(reg.get("txn_date") or "")
+    na = _combined_description_for_match(stmt)
+    nb = _combined_description_for_match(reg)
+    ratio = SequenceMatcher(None, na.casefold(), nb.casefold()).ratio()
+    if dates_within_days(ds, dr, 5) and not dates_within_days(ds, dr, 2):
+        if descriptions_match(na, nb) or ratio >= 0.35:
+            return True
+    if dates_within_days(ds, dr, 2) and not descriptions_match(na, nb):
+        if 0.22 <= ratio < 0.35:
+            return True
+    return False
+
+
 def _description_match_score(stmt: dict[str, Any], reg: dict[str, Any]) -> float:
     na = _combined_description_for_match(stmt).casefold()
     nb = _combined_description_for_match(reg).casefold()
@@ -235,7 +262,8 @@ def compare_statement_to_register(
     Classify each statement line and unmatched register lines.
 
     Returns dicts with keys:
-      status, stmt_date, stmt_amount, stmt_description,
+      status, stmt_transaction_id (import ``bank_transactions.id`` when present),
+      stmt_date, stmt_amount, stmt_description,
       register_id, reg_date, reg_amount, reg_description
 
     ``stmt_description`` / ``reg_description`` use the same join as matching
@@ -264,11 +292,36 @@ def compare_statement_to_register(
                 best_j = j
         return best_j
 
+    def pick_best_likely(stmt: dict[str, Any]) -> Optional[int]:
+        best_j: Optional[int] = None
+        best_key: tuple[float, int] = (-1.0, 9999)
+        for j, reg in enumerate(reg_list):
+            if j in used_reg:
+                continue
+            if not transaction_pair_likely(stmt, reg):
+                continue
+            score = _description_match_score(stmt, reg)
+            dd = _date_distance_days(stmt, reg)
+            key = (score, -dd)
+            if best_j is None or key > best_key:
+                best_key = key
+                best_j = j
+        return best_j
+
     def _row_amount_rounded(row: dict[str, Any]) -> float:
         v = _coerce_amount(row.get("amount"))
         if v is not None:
             return round(v, 2)
         return 0.0
+
+    def _stmt_tid(stmt: dict[str, Any]) -> Optional[int]:
+        x = stmt.get("id")
+        if x is None:
+            return None
+        try:
+            return int(x)
+        except (TypeError, ValueError):
+            return None
 
     for stmt in stmt_list:
         j = pick_best_reg(stmt)
@@ -280,9 +333,11 @@ def compare_statement_to_register(
                 reg_id = int(rid) if rid is not None else None
             except (TypeError, ValueError):
                 reg_id = None
+            tid = _stmt_tid(stmt)
             out.append(
                 {
                     "status": STATUS_MATCHED,
+                    "stmt_transaction_id": tid,
                     "stmt_date": str(stmt.get("txn_date") or ""),
                     "stmt_amount": _row_amount_rounded(stmt),
                     "stmt_description": _combined_description_for_match(stmt),
@@ -290,21 +345,52 @@ def compare_statement_to_register(
                     "reg_date": str(reg.get("txn_date") or ""),
                     "reg_amount": _row_amount_rounded(reg),
                     "reg_description": _combined_description_for_match(reg),
+                    "review_notes": str(stmt.get("review_notes") or ""),
                 }
             )
         else:
-            out.append(
-                {
-                    "status": STATUS_MISSING,
-                    "stmt_date": str(stmt.get("txn_date") or ""),
-                    "stmt_amount": _row_amount_rounded(stmt),
-                    "stmt_description": _combined_description_for_match(stmt),
-                    "register_id": None,
-                    "reg_date": "",
-                    "reg_amount": 0.0,
-                    "reg_description": "",
-                }
-            )
+            lj = pick_best_likely(stmt)
+            if lj is not None:
+                used_reg.add(lj)
+                reg = reg_list[lj]
+                rid = reg.get("id")
+                try:
+                    reg_id = int(rid) if rid is not None else None
+                except (TypeError, ValueError):
+                    reg_id = None
+                tid = _stmt_tid(stmt)
+                out.append(
+                    {
+                        "status": STATUS_LIKELY_MATCH,
+                        "stmt_transaction_id": tid,
+                        "stmt_date": str(stmt.get("txn_date") or ""),
+                        "stmt_amount": _row_amount_rounded(stmt),
+                        "stmt_description": _combined_description_for_match(stmt),
+                        "register_id": reg_id,
+                        "reg_date": str(reg.get("txn_date") or ""),
+                        "reg_amount": _row_amount_rounded(reg),
+                        "reg_description": _combined_description_for_match(reg),
+                        "review_notes": str(stmt.get("review_notes") or ""),
+                        "draft_coa_account": str(stmt.get("draft_coa_account") or ""),
+                    }
+                )
+            else:
+                tid = _stmt_tid(stmt)
+                out.append(
+                    {
+                        "status": STATUS_NEEDS_REVIEW,
+                        "stmt_transaction_id": tid,
+                        "stmt_date": str(stmt.get("txn_date") or ""),
+                        "stmt_amount": _row_amount_rounded(stmt),
+                        "stmt_description": _combined_description_for_match(stmt),
+                        "register_id": None,
+                        "reg_date": "",
+                        "reg_amount": 0.0,
+                        "reg_description": "",
+                        "review_notes": str(stmt.get("review_notes") or ""),
+                        "draft_coa_account": str(stmt.get("draft_coa_account") or ""),
+                    }
+                )
 
     for j, reg in enumerate(reg_list):
         if j in used_reg:
@@ -317,6 +403,7 @@ def compare_statement_to_register(
         out.append(
             {
                 "status": STATUS_EXTRA,
+                "stmt_transaction_id": None,
                 "stmt_date": "",
                 "stmt_amount": 0.0,
                 "stmt_description": "",
@@ -324,10 +411,194 @@ def compare_statement_to_register(
                 "reg_date": str(reg.get("txn_date") or ""),
                 "reg_amount": _row_amount_rounded(reg),
                 "reg_description": _combined_description_for_match(reg),
+                "review_notes": "",
             }
         )
 
     return out
+
+
+def line_reconcile_review_key(row: dict[str, Any]) -> Optional[str]:
+    """Stable key for persisting Reconcile UI state: imported line ``t:{txn_id}`` or Extra ``e:{reg_id}``."""
+    stid = row.get("stmt_transaction_id")
+    if stid is not None:
+        try:
+            return f"t:{int(stid)}"
+        except (TypeError, ValueError):
+            pass
+    if str(row.get("status") or "") == STATUS_EXTRA:
+        rid = row.get("register_id")
+        if rid is not None:
+            try:
+                return f"e:{int(rid)}"
+            except (TypeError, ValueError):
+                pass
+    return None
+
+
+def merge_persisted_line_reconcile_review(
+    rows: list[dict[str, Any]],
+    persisted: dict[str, dict[str, Any]],
+) -> None:
+    """Apply saved review fields from :meth:`~probooksai.bank_import.BankDatabase.fetch_line_reconcile_review`."""
+    for row in rows:
+        key = line_reconcile_review_key(row)
+        if not key or key not in persisted:
+            continue
+        p = persisted[key]
+        sd = p.get("stmt_date")
+        if sd is not None and str(sd).strip() != "":
+            row["stmt_date"] = str(sd).strip()[:10]
+        sa = p.get("stmt_amount")
+        if sa is not None:
+            try:
+                row["stmt_amount"] = round(float(sa), 2)
+            except (TypeError, ValueError):
+                pass
+        row["stmt_description"] = str(p.get("stmt_description") or "")
+        row["review_notes"] = str(p.get("review_notes") or "")
+        row["draft_coa_account"] = str(p.get("draft_coa_account") or "")
+        row["register_draft_handoff"] = bool(p.get("register_draft_handoff"))
+        row["panel_reconciled"] = bool(p.get("panel_reconciled"))
+
+
+def _norm_desc_key(text: str) -> str:
+    t = _normalize_paste_whitespace(text or "").casefold()
+    return " ".join(t.split())
+
+
+def _history_best_payee_coa(
+    conn: sqlite3.Connection,
+    bank_account_id: int,
+    needle: str,
+    *,
+    max_scan: int = 400,
+) -> tuple[Optional[str], Optional[str], float]:
+    """Return payee text, COA, and similarity ratio for the best past register row on this account."""
+    n = _norm_desc_key(needle)
+    if len(n) < 4:
+        return None, None, 0.0
+    try:
+        rows = conn.execute(
+            """
+            SELECT description, memo, ref_number, coa_account
+            FROM bank_transactions
+            WHERE bank_account_id = ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (int(bank_account_id), int(max_scan)),
+        ).fetchall()
+    except sqlite3.Error:
+        return None, None, 0.0
+    best_ratio = 0.0
+    best_desc = ""
+    best_coa = ""
+    for r in rows:
+        d = _combined_description_for_match(dict(r))
+        rj = _norm_desc_key(d)
+        if not rj:
+            continue
+        ratio = SequenceMatcher(None, n, rj).ratio()
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_desc = d.strip() or (dict(r).get("description") or "").strip()
+            raw_coa = dict(r).get("coa_account")
+            best_coa = (str(raw_coa).strip() if raw_coa is not None else "") or ""
+    if best_ratio < 0.28:
+        return None, None, best_ratio
+    return (best_desc or None), (best_coa or None) if best_coa else None, best_ratio
+
+
+def enrich_line_match_rows_with_suggestions(
+    conn: Optional[sqlite3.Connection],
+    bank_account_id: int,
+    rows: list[dict[str, Any]],
+    coa_labels: list[str],
+) -> None:
+    """Fill suggestion fields on **Needs review** / **Likely match** rows (mutates *rows* in place).
+
+    Uses :func:`~probooksai.coa_ai_suggest.coa_hints` (rules + optional AI), similar past
+    ``bank_transactions`` on the same bank account, and the register line for likely matches.
+    Never writes to the database. Weak matches set ``suggestion_source`` to a clear review note.
+    """
+    if conn is None:
+        for r in rows:
+            if str(r.get("status") or "") in (STATUS_NEEDS_REVIEW, STATUS_LIKELY_MATCH):
+                r.setdefault("suggested_payee", "")
+                r.setdefault("suggested_coa", "")
+                r.setdefault("suggestion_source", "")
+        return
+
+    for row in rows:
+        st = str(row.get("status") or "")
+        if st not in (STATUS_NEEDS_REVIEW, STATUS_LIKELY_MATCH):
+            continue
+        stmt_d = str(row.get("stmt_description") or "").strip()
+        payee_s = ""
+        coa_s = ""
+        notes: list[str] = []
+
+        if st == STATUS_LIKELY_MATCH:
+            reg_d = str(row.get("reg_description") or "").strip()
+            if reg_d:
+                payee_s = reg_d
+                notes.append("Register line (likely match)")
+            rid = row.get("register_id")
+            if rid is not None:
+                try:
+                    tid = int(rid)
+                    cur = conn.execute(
+                        "SELECT coa_account FROM bank_transactions WHERE id = ?",
+                        (tid,),
+                    ).fetchone()
+                    if cur is not None:
+                        ca = (dict(cur).get("coa_account") or "").strip()
+                        if ca:
+                            coa_s = ca
+                            notes.append("COA on matched register row")
+                except (TypeError, ValueError, sqlite3.Error):
+                    pass
+
+        hints: list[str] = []
+        if coa_labels and stmt_d:
+            try:
+                from probooksai.coa_ai_suggest import coa_hints
+
+                hints = coa_hints(conn, stmt_d, coa_labels, limit=3)
+            except (sqlite3.Error, ImportError, TypeError, ValueError):
+                hints = []
+        if hints and not coa_s:
+            coa_s = hints[0]
+            notes.append("Rules / catalog COA")
+        elif hints and coa_s and hints[0] != coa_s:
+            notes.append(f"Alt COA: {hints[0]}")
+
+        hp, hc, ratio = _history_best_payee_coa(conn, bank_account_id, stmt_d)
+        if ratio >= 0.5 and hp:
+            if not payee_s or ratio >= 0.72:
+                payee_s = hp
+            notes.append(f"Past similar txn (~{int(ratio * 100)}%)")
+        if ratio >= 0.5 and hc and not coa_s:
+            coa_s = hc
+            notes.append("COA from similar past txn")
+
+        row["suggested_payee"] = payee_s.strip() if payee_s else ""
+        row["suggested_coa"] = coa_s.strip() if coa_s else ""
+        if notes:
+            uniq: list[str] = []
+            for n in notes:
+                if n not in uniq:
+                    uniq.append(n)
+            row["suggestion_source"] = "; ".join(uniq)
+        elif not coa_s and not payee_s:
+            row["suggestion_source"] = "Needs review — no strong history or rules match"
+        else:
+            row["suggestion_source"] = "Review suggested values"
+
+        draft = str(row.get("draft_coa_account") or "").strip()
+        if not draft and row["suggested_coa"]:
+            row["draft_coa_account"] = row["suggested_coa"]
 
 
 def write_line_match_comparison_csv(
@@ -372,6 +643,35 @@ def write_line_match_comparison_csv(
                     "" if rid is None else rid,
                 ]
             )
+
+
+def statement_rows_for_line_compare(
+    bank_transaction_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Build *statement*-side rows for :func:`compare_statement_to_register` from imported activity.
+
+    Each item is a ``bank_transactions``-shaped dict (typically from
+    :meth:`~probooksai.bank_import.BankDatabase.list_transactions` with ``import_batch_id`` set).
+    Dates and amounts match the stored import; description fields follow the same join rules
+    as register rows in matching.
+    """
+    out: list[dict[str, Any]] = []
+    for raw in bank_transaction_rows:
+        d = dict(raw)
+        raw_amt = _coerce_amount(d.get("amount"))
+        amt = round(raw_amt, 2) if raw_amt is not None else 0.0
+        date_s = str(d.get("txn_date") or "").strip()[:10]
+        out.append(
+            {
+                "id": d.get("id"),
+                "txn_date": date_s,
+                "amount": amt,
+                "description": d.get("description"),
+                "ref_number": d.get("ref_number"),
+                "memo": d.get("memo"),
+            }
+        )
+    return out
 
 
 def mock_statement_lines_for_comparison(register_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -114,3 +114,6 @@ def test_pay_bills_post_updates_bill_balance(qapp: QApplication, db: BankDatabas
     ).fetchone()
     assert txn is not None
     assert float(txn["amount"]) == pytest.approx(-80.0)
+    assert w._btn_export_ap_pdf.isEnabled()
+    assert w._btn_print_ap.isEnabled()
+    assert len(w._last_ap_payment_ids) == 1

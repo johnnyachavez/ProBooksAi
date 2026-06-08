@@ -5,6 +5,10 @@ alwaysApply: true
 
 # GitHub and local work context
 
+**Canonical GitHub repository:** https://github.com/johnnyachavez/ProBooksAi — use this for remote URL, issues, PRs, and “open on GitHub” context unless the user specifies a fork or mirror.
+
+**Implementation roadmap doc in this repo:** `docs/ROADMAP.md` — title *ProBooks+ai – Implementation Roadmap*; it also states the canonical GitHub URL in the header blockquote.
+
 When discussing roadmap, bugs, features, refactors, or what to do next:
 
 1. Prefer reading `integrations/work-context.json` if it exists. It lists **all local repository files** under `localWorkFiles` together with **open GitHub pull requests and issues** (generated on the developer machine).
