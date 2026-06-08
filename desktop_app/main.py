@@ -37,7 +37,9 @@ from pathlib import Path
 
 from PySide6.QtCore import (
     Qt,
+    QEvent,
     QMimeData,
+    QObject,
     QSettings,
     QThread,
     QTimer,
@@ -75,6 +77,7 @@ from probooksai.bank_import import BankDatabase
 from probooksai.coa_db import COADatabase
 from probooksai.extensions_schema import apply_extensions
 from probooksai.gl import GLDatabase
+from probooksai.business import backfill_ar_invoice_journals
 from desktop_app.bank_import_tab import (
     BankImportTab,
     show_bank_import_keyboard_shortcuts_dialog,
@@ -90,6 +93,10 @@ from desktop_app.extra_tabs import (
     show_business_keyboard_shortcuts_dialog,
 )
 from desktop_app.audit_tab import AuditTab
+from desktop_app.asset_register_tab import AssetRegisterTab
+from desktop_app.dashboard_tab import DashboardTab
+from desktop_app.first_run_wizard import FirstRunWizard, apply_wizard_results
+from desktop_app.check_screen import CheckScreen
 from desktop_app.enter_bills_screen import EnterBillsScreen
 from desktop_app.invoice_screen import InvoiceScreen
 from desktop_app.pay_bills_screen import PayBillsScreen
@@ -114,6 +121,7 @@ from desktop_app.qt_mnemonic import (
     message_box_about_ok,
     message_box_critical_ok,
     message_box_information_ok,
+    message_box_question_yes_no,
     message_box_warning_ok,
     tip_message_box_buttons,
 )
@@ -228,6 +236,7 @@ class InboxWidget(QTableWidget):
     COLUMNS = ["#", "Filename", "Type", "Status", "Date"]
 
     filesDropped = Signal(list)
+    deleteRequested = Signal(int)   # emitted with doc_id when user confirms delete
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -273,13 +282,27 @@ class InboxWidget(QTableWidget):
             m.exec(self.viewport().mapToGlobal(pos))
             return
         row = idx.row()
+        it = self.item(row, 0)
+        doc_id = (
+            coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole)) if it is not None else None
+        )
         m.addSeparator()
         act_copy = m.addAction("Copy row", partial(copy_table_row_as_tsv, self, row))
         act_copy.setToolTip(
             "Copy this inbox row as tab-separated text for pasting into a spreadsheet or editor. "
             + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
         )
-        m.exec(self.viewport().mapToGlobal(pos))
+        m.addSeparator()
+        act_delete = m.addAction("🗑  Delete document…")
+        act_delete.setToolTip(
+            "Permanently delete this document and its extraction data from the company file. "
+            "The original file on disk is NOT removed. Use File → Backup first if unsure."
+        )
+        if doc_id is None:
+            act_delete.setEnabled(False)
+        chosen = m.exec(self.viewport().mapToGlobal(pos))
+        if chosen == act_delete and doc_id is not None:
+            self.deleteRequested.emit(doc_id)
 
     # -- drag & drop ---------------------------------------------------------
 
@@ -353,10 +376,12 @@ _COA_SELECT_LABEL = "– select –"
 class DetailPane(QScrollArea):
     """Shows document preview + extracted fields + action buttons."""
 
-    runAI      = Signal(int)    # doc_id
-    approve    = Signal(int)
-    markPosted = Signal(int)
-    reject     = Signal(int)
+    runAI         = Signal(int)    # doc_id
+    approve       = Signal(int)
+    markPosted    = Signal(int)
+    reject        = Signal(int)
+    routeToInvoice = Signal(dict)  # extracted field values
+    routeToBill    = Signal(dict)
 
     def __init__(self, coa_list: list[str], parent=None):
         super().__init__(parent)
@@ -534,6 +559,32 @@ class DetailPane(QScrollArea):
         self._btn_reject.clicked.connect(self._on_reject)
 
         layout.addLayout(btn_layout)
+
+        # Route buttons \u2014 push extracted fields directly to Invoice or Bills screen
+        route_layout = QHBoxLayout()
+        self._btn_route_invoice = QPushButton("\U0001f4c4 Create Invoice")
+        self._btn_route_invoice.setMinimumHeight(32)
+        self._btn_route_invoice.setToolTip(
+            "Pre-fill the Invoices tab with extracted fields and switch to it."
+        )
+        self._btn_route_invoice.setStyleSheet(
+            "background: #1565C0; color: white; font-weight: bold;"
+        )
+        self._btn_route_invoice.clicked.connect(self._on_route_invoice)
+
+        self._btn_route_bill = QPushButton("\U0001f4e5 Enter as Bill")
+        self._btn_route_bill.setMinimumHeight(32)
+        self._btn_route_bill.setToolTip(
+            "Pre-fill the Enter Bills tab with extracted fields and switch to it."
+        )
+        self._btn_route_bill.setStyleSheet(
+            "background: #6A1B9A; color: white; font-weight: bold;"
+        )
+        self._btn_route_bill.clicked.connect(self._on_route_bill)
+
+        route_layout.addWidget(self._btn_route_invoice)
+        route_layout.addWidget(self._btn_route_bill)
+        layout.addLayout(route_layout)
         layout.addStretch()
 
         self._set_buttons_enabled(False)
@@ -665,7 +716,10 @@ class DetailPane(QScrollArea):
         self._f_confidence.setText(f"{result.confidence:.0%}")
 
     def _set_buttons_enabled(self, enabled: bool):
-        for btn in (self._btn_run, self._btn_approve, self._btn_post, self._btn_reject):
+        for btn in (
+            self._btn_run, self._btn_approve, self._btn_post, self._btn_reject,
+            self._btn_route_invoice, self._btn_route_bill,
+        ):
             btn.setEnabled(enabled)
 
     # -- button slots --------------------------------------------------------
@@ -685,6 +739,14 @@ class DetailPane(QScrollArea):
     def _on_reject(self):
         if self._doc_id is not None:
             self.reject.emit(self._doc_id)
+
+    def _on_route_invoice(self):
+        if self._doc_id is not None:
+            self.routeToInvoice.emit(self.collect_approved_values())
+
+    def _on_route_bill(self):
+        if self._doc_id is not None:
+            self.routeToBill.emit(self.collect_approved_values())
 
     def update_coa(self, coa_list: list[str]):
         """Refresh the COA dropdown with an updated list."""
@@ -823,6 +885,42 @@ class AppHeaderWidget(QFrame):
 
 
 # ---------------------------------------------------------------------------
+# Global tooltip toggle
+# ---------------------------------------------------------------------------
+
+_TIPS_QSETTINGS_KEY = "ui/show_hover_tips"
+
+
+class _TipFilter(QObject):
+    """App-level event filter that suppresses all QToolTip popups when tips are disabled.
+
+    Install once on QApplication; toggle ``enabled`` at runtime — no widget code changes needed.
+    """
+
+    def __init__(self, enabled: bool, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self.enabled = enabled
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # type: ignore[override]
+        if not self.enabled and event.type() == QEvent.Type.ToolTip:
+            return True   # consume — tooltip never shows
+        return super().eventFilter(watched, event)
+
+
+_tip_filter: _TipFilter | None = None   # set once in main()
+
+
+def _tips_enabled() -> bool:
+    return QSettings().value(_TIPS_QSETTINGS_KEY, False, type=bool)  # type: ignore[return-value]
+
+
+def _set_tips_enabled(on: bool) -> None:
+    QSettings().setValue(_TIPS_QSETTINGS_KEY, on)
+    if _tip_filter is not None:
+        _tip_filter.enabled = on
+
+
+# ---------------------------------------------------------------------------
 # Main window
 # ---------------------------------------------------------------------------
 
@@ -834,9 +932,20 @@ def _menu_action_tip(act: QAction, tip: str) -> None:
 
 
 class MainWindow(QMainWindow):
+    _SETTINGS_ORG = "ProBooksAI"
+    _SETTINGS_APP = "ProBooksAI"
+    _GEOMETRY_KEY = "mainwindow/geometry"
+    _MAXIMIZED_KEY = "mainwindow/maximized"
+
     def __init__(self, db_path: str | None = None):
         super().__init__()
-        self.resize(1100, 700)
+        # Restore last window size/position; default to maximised on first run
+        _win_settings = QSettings(self._SETTINGS_ORG, self._SETTINGS_APP)
+        _saved_geom = _win_settings.value(self._GEOMETRY_KEY)
+        if _saved_geom:
+            self.restoreGeometry(_saved_geom)
+        else:
+            self.showMaximized()
 
         self._db_path = db_path
         self._db = DocumentDatabase(db_path)
@@ -847,6 +956,19 @@ class MainWindow(QMainWindow):
         self._coa_db.seed_from_workbook()
         self._coa = load_coa()
         self._worker: AIWorker | None = None
+        # Ensure COA asset accounts exist in bank_accounts before tabs are built.
+        # Heal duplicates first (e.g. phantom account from a COA rename), then sync.
+        self._sync_coa_assets_to_bank_accounts()
+        self._heal_duplicate_bank_accounts()
+        self._deactivate_coa_noise_bank_accounts()
+        self._heal_duplicate_opening_balance_entries()
+        # Seed bank_transactions for any existing GL opening-balance entries
+        self._migrate_opening_balances_to_bank_register()
+        # Back-fill AR journal entries for any invoices that don't have one yet
+        try:
+            backfill_ar_invoice_journals(self._bank_db._conn)
+        except Exception:
+            pass  # non-fatal — journal entries will be created on next save
 
         self._build_ui()
         self._refresh_inbox()
@@ -864,6 +986,89 @@ class MainWindow(QMainWindow):
         lbl.setWordWrap(True)
         outer.addWidget(lbl)
         return w
+
+    def _build_ar_recon_panel(self, conn) -> "QWidget":
+        """AR / Invoices subtab in the Reconcile hub — view Open/Sent invoices, receive payment."""
+        from PySide6.QtWidgets import (
+            QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
+            QHeaderView, QPushButton, QLabel, QAbstractItemView,
+        )
+        from PySide6.QtCore import Qt
+
+        outer = QWidget()
+        outer.setToolTip("Open and Sent invoices; receive payment here. Status updates automatically when paid.")
+        lay = QVBoxLayout(outer)
+        lay.setContentsMargins(8, 8, 8, 8)
+        lay.setSpacing(6)
+
+        banner = QLabel("<b>AR / Invoices</b> — Open and Sent invoices awaiting payment.")
+        banner.setTextFormat(Qt.TextFormat.RichText)
+        banner.setWordWrap(True)
+        banner.setStyleSheet("color:#A0A0B0; font-size:12px;")
+        lay.addWidget(banner)
+
+        btn_row = QHBoxLayout()
+        btn_refresh = QPushButton("↻ Refresh")
+        btn_refresh.setToolTip("Reload the invoice list from the company file.")
+        btn_receive = QPushButton("Receive Payment…")
+        btn_receive.setToolTip("Go to Customers tab → Receive Payments to post a customer payment against open invoices.")
+        btn_row.addWidget(btn_refresh)
+        btn_row.addWidget(btn_receive)
+        btn_row.addStretch(1)
+        lay.addLayout(btn_row)
+
+        cols = ["Invoice #", "Date", "Customer", "Total", "Balance Due", "Status"]
+        tbl = QTableWidget(0, len(cols))
+        tbl.setHorizontalHeaderLabels(cols)
+        tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        tbl.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        tbl.setAlternatingRowColors(True)
+        tbl.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        tbl.setToolTip("Double-click an invoice to open it in the Invoices tab.")
+        lay.addWidget(tbl, stretch=1)
+
+        def _reload():
+            tbl.setRowCount(0)
+            if conn is None:
+                return
+            try:
+                rows = conn.execute(
+                    """SELECT i.invoice_number, i.invoice_date, c.name, i.total, i.balance_due, i.status, i.id
+                       FROM invoices i
+                       LEFT JOIN customers c ON c.id = i.customer_id
+                       WHERE i.status IN ('Open','Sent','Unpaid')
+                       ORDER BY i.invoice_date DESC, i.id DESC"""
+                ).fetchall()
+            except Exception:
+                return
+            for row in rows:
+                r = tbl.rowCount()
+                tbl.insertRow(r)
+                for c_idx, val in enumerate(row[:6]):
+                    item = QTableWidgetItem(str(val or ""))
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (
+                        Qt.AlignmentFlag.AlignRight if c_idx in (3, 4) else Qt.AlignmentFlag.AlignLeft
+                    ))
+                    if c_idx == 0:
+                        item.setData(Qt.ItemDataRole.UserRole, row[6])  # invoice id
+                    tbl.setItem(r, c_idx, item)
+
+        btn_refresh.clicked.connect(_reload)
+
+        def _go_receive():
+            try:
+                for i in range(self._tabs.count()):
+                    if "Customer" in (self._tabs.tabText(i) or ""):
+                        self._tabs.setCurrentIndex(i)
+                        break
+            except Exception:
+                pass
+
+        btn_receive.clicked.connect(_go_receive)
+
+        _reload()
+        outer._reload_ar = _reload  # attach for external refresh calls
+        return outer
 
     def _build_document_intake_widget(self) -> None:
         """Build the Document Intake UI (hosted under Reconcile → Documents)."""
@@ -916,6 +1121,7 @@ class MainWindow(QMainWindow):
         self._inbox = InboxWidget()
         self._inbox.filesDropped.connect(self._on_files_dropped)
         self._inbox.itemSelectionChanged.connect(self._on_selection_changed)
+        self._inbox.deleteRequested.connect(self._on_delete_document)
         left_layout.addWidget(self._inbox)
 
         splitter.addWidget(left)
@@ -926,6 +1132,8 @@ class MainWindow(QMainWindow):
         self._detail.approve.connect(self._on_approve)
         self._detail.markPosted.connect(self._on_mark_posted)
         self._detail.reject.connect(self._on_reject)
+        self._detail.routeToInvoice.connect(self._on_route_to_invoice)
+        self._detail.routeToBill.connect(self._on_route_to_bill)
         splitter.addWidget(self._detail)
 
         splitter.setSizes([380, 720])
@@ -954,6 +1162,11 @@ class MainWindow(QMainWindow):
         self._receive_payments_screen = ReceiveChecksScreen(
             ap_conn=conn, bank_db=self._bank_db
         )
+        self._check_screen = CheckScreen(
+            bank_db=self._bank_db,
+            coa_list=[r["account_name"] for r in (self._coa_db.list_accounts() or [])],
+        )
+        self._check_screen.transactionSaved.connect(self._on_check_screen_saved)
 
         self._register_tab = RegisterTab(self._bank_db, self._coa_db, self._gl_db)
         self._bank_tab = BankImportTab(
@@ -962,7 +1175,7 @@ class MainWindow(QMainWindow):
             register_tab=self._register_tab,
             after_stmt_match_sync=self._focus_bank_register_tab,
         )
-        self._coa_tab = COATab(self._coa_db)
+        self._coa_tab = COATab(self._coa_db, gl_db=self._gl_db)
         self._coa_tab.coaChanged.connect(self._on_coa_changed)
 
         # AR/AP primary UI: top-level Customers / Vendors (Business hub keeps Rules, Payroll, Tax %).
@@ -976,6 +1189,8 @@ class MainWindow(QMainWindow):
         )
         self._reconcile_hub.addTab(self._bank_tab, "Bank statements")
         self._reconcile_hub.addTab(self._intake_widget, "Documents")
+        self._ar_recon_widget = self._build_ar_recon_panel(conn)
+        self._reconcile_hub.addTab(self._ar_recon_widget, "AR / Invoices")
 
         self._reconcile_root = QWidget()
         self._reconcile_root.setToolTip(
@@ -986,8 +1201,7 @@ class MainWindow(QMainWindow):
         reconcile_root_layout.setContentsMargins(8, 8, 8, 0)
         reconcile_root_layout.setSpacing(6)
         reconcile_banner = QLabel(
-            "<b>Reconcile</b> — intake on the subtabs below, then review and match against <b>Bank Register</b> "
-            "(Ctrl+5; source of truth for posted activity)."
+            "<b>Reconcile</b> — Bank statements (import/match), Documents (intake), and <b>AR / Invoices</b> (receive payment)."
         )
         reconcile_banner.setTextFormat(Qt.TextFormat.RichText)
         reconcile_banner.setWordWrap(True)
@@ -999,22 +1213,32 @@ class MainWindow(QMainWindow):
         reconcile_root_layout.addWidget(reconcile_banner)
         reconcile_root_layout.addWidget(self._reconcile_hub, stretch=1)
 
+        self._dashboard_tab = DashboardTab(conn)
+        self._dashboard_tab.navigateRequested.connect(self._on_dashboard_navigate)
+
         self._reports_tab = ReportsTab(conn)
-        self._journal_tab = JournalTab(conn)
+        self._journal_tab = JournalTab(
+            conn,
+            coa_list=self._coa_db.display_list() if hasattr(self, "_coa_db") else None,
+        )
         self._business_hub = BusinessHub(conn)
         self._audit_tab = AuditTab(conn)
+        self._asset_register_tab = AssetRegisterTab(conn, coa_list=self._coa_db.display_list() if hasattr(self, "_coa_db") else None)
 
         self._more_hub = QTabWidget()
         self._more_hub.setToolTip(
-            "More: Reports, Journal, Business, and Audit log (legacy locations; full migration pending). "
+            "More: Reports, Journal, Business, Asset Register, and Audit log. "
             "Same company .db (File → Backup / Restore, probooks.backup)."
         )
         self._more_hub.addTab(self._reports_tab, "Reports")
         self._more_hub.addTab(self._journal_tab, "Journal")
         self._more_hub.addTab(self._business_hub, "Business")
+        self._more_hub.addTab(self._asset_register_tab, "Assets")
         self._more_hub.addTab(self._audit_tab, "Audit log")
 
+        self._tabs.addTab(self._dashboard_tab, "Dashboard")
         self._tabs.addTab(self._invoice_screen, "Invoices")
+        self._tabs.addTab(self._check_screen, "Write Checks")
         self._tabs.addTab(self._enter_bills_screen, "Enter Bills")
         self._tabs.addTab(self._pay_bills_screen, "Pay Bills")
         self._tabs.addTab(self._receive_payments_screen, "Receive Payments")
@@ -1024,6 +1248,28 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(self._vendors_tab, "Vendors")
         self._tabs.addTab(self._reconcile_root, "Reconcile")
         self._tabs.addTab(self._more_hub, "More")
+        self._tabs.currentChanged.connect(self._on_main_tab_changing)
+        self._prev_main_tab_index: int = 0
+
+    def _on_main_tab_changing(self, new_index: int) -> None:
+        """Guard switching away from a screen that has unsaved invoice changes."""
+        old_index = self._prev_main_tab_index
+        if old_index == new_index:
+            return
+        old_widget = self._tabs.widget(old_index)
+        if isinstance(old_widget, InvoiceScreen) and old_widget._is_form_dirty():
+            # Switch back before showing the dialog so the form is visible
+            self._tabs.blockSignals(True)
+            self._tabs.setCurrentIndex(old_index)
+            self._tabs.blockSignals(False)
+            if not old_widget._confirm_leave_loaded_invoice():
+                # User chose Stay — stay on the invoice screen
+                return
+            # User saved or discarded — proceed to the requested tab
+            self._tabs.blockSignals(True)
+            self._tabs.setCurrentIndex(new_index)
+            self._tabs.blockSignals(False)
+        self._prev_main_tab_index = new_index
 
     def _apply_main_tab_bar_tooltips(self) -> None:
         main_tab_bar = self._tabs.tabBar()
@@ -1172,35 +1418,22 @@ class MainWindow(QMainWindow):
         act_import_docs.triggered.connect(self._on_import)
         file_menu.addAction(act_import_docs)
 
-        act_open_company = QAction("Open &company database\u2026", self)
-        act_open_company.setShortcut("Ctrl+Shift+O")
-        _menu_action_tip(
-            act_open_company,
-            "Open a different company SQLite database (Ctrl+Shift+O). "
-            "File → Backup copies the active .db first (same engine as probooks backup).",
-        )
-        act_open_company.triggered.connect(self._on_open_company_database)
-        file_menu.addAction(act_open_company)
+        file_menu.addSeparator()
 
-        act_new_company = QAction("&New company database\u2026", self)
+        act_create_company = QAction("Create &New Company…", self)
         _menu_action_tip(
-            act_new_company,
-            "Create a new empty company SQLite database at a path you choose. "
-            "Use File → Backup / probooks backup on any file you rely on before switching.",
+            act_create_company,
+            "Launch the setup wizard to create a new company database.",
         )
-        act_new_company.triggered.connect(self._on_new_company_database)
-        file_menu.addAction(act_new_company)
+        act_create_company.triggered.connect(self._on_create_new_company)
+        file_menu.addAction(act_create_company)
 
-        act_company_setup = QAction("Company &Setup\u2026", self)
-        _menu_action_tip(
-            act_company_setup,
-            "Open Company Setup (More → Business → Company): name, address, and contact "
-            "used as the letterhead on printed and exported invoices.",
-        )
-        act_company_setup.triggered.connect(self._on_company_setup)
-        file_menu.addAction(act_company_setup)
+        self._switch_company_menu = file_menu.addMenu("S&witch Company →")
+        self._rebuild_switch_company_menu()
 
-        act_backup = QAction("&Backup company file\u2026", self)
+        file_menu.addSeparator()
+
+        act_backup = QAction("&Backup company file…", self)
         _menu_action_tip(
             act_backup,
             "Back up the company database to a file you choose (SQLite online backup via probooks.backup; "
@@ -1209,7 +1442,7 @@ class MainWindow(QMainWindow):
         act_backup.triggered.connect(self._on_backup_company)
         file_menu.addAction(act_backup)
 
-        act_restore = QAction("&Restore from backup\u2026", self)
+        act_restore = QAction("&Restore from backup…", self)
         _menu_action_tip(
             act_restore,
             "Replace the company database from a backup .db file (probooks.backup / probooks restore; "
@@ -1217,33 +1450,6 @@ class MainWindow(QMainWindow):
         )
         act_restore.triggered.connect(self._on_restore_company)
         file_menu.addAction(act_restore)
-
-        act_copy_db_path = QAction("Copy company database &path", self)
-        act_copy_db_path.setShortcut("Ctrl+Alt+P")
-        act_copy_db_path.setShortcutContext(Qt.ApplicationShortcut)
-        _menu_action_tip(
-            act_copy_db_path,
-            "Copy the resolved company .db path to the clipboard (Ctrl+Alt+P); "
-            "matches the file File → Backup and probooks backup read from. "
-            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
-        )
-        act_copy_db_path.triggered.connect(self._on_copy_company_database_path)
-        file_menu.addAction(act_copy_db_path)
-
-        act_save = QAction("&Save", self)
-        act_save.setShortcut("Ctrl+S")
-        _menu_action_tip(
-            act_save, "Save is not used in this desktop shell yet (Ctrl+S)."
-        )
-        act_save.setEnabled(False)
-        file_menu.addAction(act_save)
-
-        act_save_as = QAction("Save &As \u2026", self)
-        _menu_action_tip(
-            act_save_as, "Save As is not used in this desktop shell yet."
-        )
-        act_save_as.setEnabled(False)
-        file_menu.addAction(act_save_as)
 
         file_menu.addSeparator()
 
@@ -1261,18 +1467,22 @@ class MainWindow(QMainWindow):
         _view_tab_tip_suffix = (
             " Same company SQLite file (File → Backup / Restore, probooks.backup)."
         )
+        # Tab indices: 0=Dashboard, 1=Invoices, 2=Enter Bills, 3=Pay Bills,
+        #              4=Receive Payments, 5=Bank Register, 6=Chart of Accounts,
+        #              7=Customers, 8=Vendors, 9=Reconcile, 10=More
         _view_tab_tip_extra = {
-            0: " Invoice entry workflow.",
-            1: " Enter Bills screen.",
-            2: " Pay Bills screen.",
-            3: " Receive Payments screen.",
-            4: " Bank Register: Match overlay (Bank Import can populate).",
-            5: " Chart of Accounts editor.",
-            6: " AR: customers, invoices, payments (primary route; Business hub is Rules/Payroll/Tax %).",
-            7: " AP: vendors, bills, payments (primary route; Business hub is Rules/Payroll/Tax %).",
-            8: " Reconcile: Bank statements + Documents (intake → review/match).",
+            1: " Invoice entry workflow.",
+            2: " Enter Bills screen.",
+            3: " Pay Bills screen.",
+            4: " Receive Payments screen.",
+            5: " Bank Register: Match overlay (Bank Import can populate).",
+            6: " Chart of Accounts editor.",
+            7: " AR: customers, invoices, payments (primary route; Business hub is Rules/Payroll/Tax %).",
+            8: " AP: vendors, bills, payments (primary route; Business hub is Rules/Payroll/Tax %).",
+            9: " Reconcile: Bank statements + Documents (intake → review/match).",
         }
-        for idx, (sc, label) in enumerate(
+        for tab_idx, (sc, label) in zip(
+            range(1, 11),  # skip Dashboard (index 0); Invoices=1 … More=10
             [
                 ("Ctrl+1", "&Invoices"),
                 ("Ctrl+2", "&Enter Bills"),
@@ -1289,12 +1499,12 @@ class MainWindow(QMainWindow):
             act = QAction(label, self)
             act.setShortcut(sc)
             act.setShortcutContext(Qt.ApplicationShortcut)
-            extra = _view_tab_tip_extra.get(idx, " Reports, Journal, Business, Audit log.")
+            extra = _view_tab_tip_extra.get(tab_idx, " Reports, Journal, Business, Audit log.")
             _menu_action_tip(
                 act, f"Show this main tab ({sc}).{extra}{_view_tab_tip_suffix}"
             )
             act.triggered.connect(
-                lambda checked=False, i=idx: self._set_main_tab_index(i)
+                lambda checked=False, i=tab_idx: self._set_main_tab_index(i)
             )
             view_menu.addAction(act)
 
@@ -1326,6 +1536,15 @@ class MainWindow(QMainWindow):
         act_prefs.setEnabled(False)
         edit_menu.addAction(act_prefs)
 
+        act_set_logo = QAction("Set Company &Logo\u2026", self)
+        _menu_action_tip(
+            act_set_logo,
+            "Choose a PNG or JPEG logo image to display on printed and saved invoices. "
+            "The path is stored in the open company file.",
+        )
+        act_set_logo.triggered.connect(self._on_set_company_logo)
+        edit_menu.addAction(act_set_logo)
+
         # Tools menu — general utilities (invoice entry on top-level Invoices tab)
         tools_menu = mb.addMenu("&Tools")
         act_tools_invoice = QAction("&Invoice\u2026", self)
@@ -1339,6 +1558,27 @@ class MainWindow(QMainWindow):
         )
         act_tools_invoice.triggered.connect(self._on_tools_invoice)
         tools_menu.addAction(act_tools_invoice)
+
+        tools_menu.addSeparator()
+
+        act_opening_balance = QAction("&Opening Balance Wizard…", self)
+        _menu_action_tip(
+            act_opening_balance,
+            "Open the Opening Balance Wizard to set a historical cut-off date and enter "
+            "per-account opening balances. Posts one balanced GL journal entry. "
+            "More → Assets for the fixed asset register.",
+        )
+        act_opening_balance.triggered.connect(self._on_tools_opening_balance)
+        tools_menu.addAction(act_opening_balance)
+
+        act_payee_categ = QAction("&Bulk Categorize Payees…", self)
+        _menu_action_tip(
+            act_payee_categ,
+            "Assign COA accounts to uncategorized payees in one pass. "
+            "Updates all matching bank transactions and saves categorization rules for future imports.",
+        )
+        act_payee_categ.triggered.connect(self._on_tools_payee_categorize)
+        tools_menu.addAction(act_payee_categ)
 
         # Recon menu — bank register bulk actions (moved from the register tab for a table-focused UI)
         recon_menu = mb.addMenu("&Recon")
@@ -1551,6 +1791,17 @@ class MainWindow(QMainWindow):
         )
         help_menu.addAction(act_more_tab_keys)
         help_menu.addSeparator()
+        act_tips = QAction("Show &hover tips", self)
+        act_tips.setCheckable(True)
+        act_tips.setChecked(_tips_enabled())
+        _menu_action_tip(
+            act_tips,
+            "Toggle verbose hover tooltips on/off — takes effect immediately, saved across sessions.",
+        )
+        act_tips.triggered.connect(lambda checked: _set_tips_enabled(checked))
+        help_menu.addAction(act_tips)
+
+        help_menu.addSeparator()
         act_about = QAction("&About ProBooks+ai", self)
         _menu_action_tip(
             act_about,
@@ -1572,22 +1823,6 @@ class MainWindow(QMainWindow):
             self._import_files(paths)
 
     # -- slots ---------------------------------------------------------------
-
-    def _on_copy_company_database_path(self) -> None:
-        raw = getattr(self._bank_db, "_db_path", None) or self._db_path or ""
-        if not raw:
-            message_box_information_ok(
-                self,
-                "Copy path",
-                "No company database path is available.",
-                ok_tip="Open or create a company first (File menu); then File → Backup / probooks backup (probooks.backup) applies.",
-            )
-            return
-        resolved = str(Path(raw).resolve())
-        QApplication.clipboard().setText(resolved)
-        self._status_bar.showMessage(
-            f"Copied path: {escape_ampersand_for_qt(resolved)}", 6000
-        )
 
     def _on_help_roadmap(self):
         path = resolve_local_roadmap_path()
@@ -1779,6 +2014,36 @@ class MainWindow(QMainWindow):
         self._refresh_inbox()
         self._status_bar.showMessage("Document flagged \u2013 Needs Review.")
 
+    def _on_route_to_invoice(self, values: dict) -> None:
+        """Switch to Invoices tab and pre-fill header fields from extracted document."""
+        self._invoice_screen.prefill_from_document(values)
+        idx = self._tabs.indexOf(self._invoice_screen)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+        vendor = (values.get("vendor") or "").strip()
+        total = values.get("total")
+        hint = f"Routed to Invoices"
+        if vendor:
+            hint += f" \u2014 {vendor}"
+        if total is not None:
+            hint += f", total ${total:,.2f}"
+        self._status_bar.showMessage(hint)
+
+    def _on_route_to_bill(self, values: dict) -> None:
+        """Switch to Enter Bills tab and pre-fill header fields from extracted document."""
+        self._enter_bills_screen.prefill_from_document(values)
+        idx = self._tabs.indexOf(self._enter_bills_screen)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+        vendor = (values.get("vendor") or "").strip()
+        total = values.get("total")
+        hint = f"Routed to Enter Bills"
+        if vendor:
+            hint += f" \u2014 {vendor}"
+        if total is not None:
+            hint += f", total ${total:,.2f}"
+        self._status_bar.showMessage(hint)
+
     # -- helpers -------------------------------------------------------------
 
     def _refresh_inbox(self):
@@ -1786,13 +2051,421 @@ class MainWindow(QMainWindow):
         self._inbox.populate(docs)
         self._on_selection_changed()
 
+    def _on_delete_document(self, doc_id: int) -> None:
+        """Confirm and permanently delete a document from the inbox."""
+        if not hasattr(self, "_db") or self._db is None:
+            return
+        row = self._db.get_document(doc_id)
+        if row is None:
+            return
+        filename = (dict(row).get("filename") or f"document #{doc_id}")
+        confirmed = message_box_question_yes_no(
+            self,
+            "Delete Document",
+            f"Permanently delete <b>{escape_ampersand_for_qt(filename)}</b> and all its "
+            f"extraction data from the company file?<br><br>"
+            "The original file on disk is <b>not</b> removed. "
+            "Use <b>File → Backup</b> first if unsure.",
+            yes_tip="Delete this document and its extraction data permanently.",
+            no_tip="Cancel — keep the document.",
+        )
+        if not confirmed:
+            return
+        try:
+            self._db.delete_document(doc_id)
+        except Exception as exc:
+            message_box_critical_ok(
+                self, "Delete failed",
+                f"Could not delete document: {exc}",
+                ok_tip="Close; try File → Backup then retry.",
+            )
+            return
+        self._detail.clear_view()
+        self._refresh_inbox()
+        self._status_bar.showMessage(f"Deleted document: {filename}")
+
+    def _sync_coa_assets_to_bank_accounts(self) -> None:
+        """
+        Keep existing bank_accounts rows in sync with the COA when accounts are renamed.
+
+        Matching priority (prevents phantom duplicate accounts on rename):
+          1. gl_display_account exact match — already in sync, skip.
+          2. account_number match — COA was renamed; UPDATE the existing bank_account
+             name + gl_display_account in place so all transactions remain attached.
+          3. name match — manually-created bank account, skip.
+          4. No match — intentionally not auto-creating.  Bank accounts are created
+             explicitly by the user via Manage Accounts.  Auto-creating entries for
+             every COA asset (Equipment, Receivables, etc.) pollutes the dropdown.
+
+        This means renaming "1000 Cash – Checking" to "CHASE BANK" updates the single
+        existing bank_accounts row rather than creating an empty duplicate.
+        """
+        try:
+            coa_rows = self._coa_db.list_accounts(include_inactive=False)
+            conn = self._bank_db._conn
+
+            # Build lookup structures — all keyed to bank_account_id
+            by_gl_key: dict[str, int] = {}   # gl_display_account → bank_account_id
+            by_acct_num: dict[str, int] = {} # account_number     → bank_account_id
+            by_name: dict[str, int] = {}     # name               → bank_account_id
+
+            for ba in self._bank_db.list_bank_accounts(include_inactive=True):
+                ba_id = int(ba["id"])
+                gl = (ba["gl_display_account"] or "").strip()
+                if gl:
+                    by_gl_key[gl] = ba_id
+                num = (ba["account_number"] or "").strip()
+                if num:
+                    by_acct_num.setdefault(num, ba_id)  # first match wins
+                nm = (ba["name"] or "").strip()
+                if nm:
+                    by_name.setdefault(nm, ba_id)
+
+            for row in coa_rows:
+                atype = (row["account_type"] or "").lower()
+                if atype != "asset":
+                    continue
+                num  = str(row["account_number"] or "").strip()
+                name = str(row["account_name"] or "").strip()
+                if not name:
+                    continue
+                display_key = f"{num} {name}".strip() if num else name
+                sub = str(row["sub_type"] if "sub_type" in row.keys() else "").strip()
+
+                # 1. Already perfectly in sync
+                if display_key in by_gl_key:
+                    continue
+
+                # 2. Same account number → COA was renamed; UPDATE the existing row
+                if num and num in by_acct_num:
+                    ba_id = by_acct_num[num]
+                    conn.execute(
+                        "UPDATE bank_accounts SET name = ?, gl_display_account = ?, "
+                        "updated_at = datetime('now') WHERE id = ?",
+                        (name, display_key, ba_id),
+                    )
+                    conn.commit()
+                    by_gl_key[display_key] = ba_id   # keep lookup fresh
+                    continue
+
+                # 3. Name match — manually-created bank account, leave it alone
+                if name in by_name or display_key in by_name:
+                    continue
+
+                # 4. No match — do NOT auto-create a bank_account row for every
+                #    COA asset.  Equipment, Receivables, Fixed Assets etc. are not
+                #    bank accounts.  The user creates bank accounts explicitly via
+                #    Manage Accounts.  (This case intentionally left empty.)
+
+        except Exception:
+            import traceback
+            traceback.print_exc()  # visible in console; never blocks a COA save
+
+    def _heal_duplicate_bank_accounts(self) -> None:
+        """
+        One-time (and idempotent) cleanup: when a COA rename previously created a
+        phantom empty bank_account alongside the original, consolidate them.
+
+        Heuristic: for each account_number that appears on multiple bank_accounts rows,
+        the row with the most transactions is the "canonical" one.  All transactions
+        on the others are re-pointed to the canonical row, the duplicates are then
+        deactivated (not deleted, to preserve audit trail), and the canonical row's
+        name/gl_display_account are updated to match the current COA account name.
+        """
+        try:
+            conn = self._bank_db._conn
+
+            # Find account_numbers that appear on more than one bank_accounts row
+            dupes = conn.execute("""
+                SELECT account_number, COUNT(*) AS cnt
+                FROM bank_accounts
+                WHERE account_number != '' AND account_number IS NOT NULL
+                GROUP BY account_number
+                HAVING cnt > 1
+            """).fetchall()
+
+            if not dupes:
+                return
+
+            # Build current COA display_key map: account_number → display_key, name
+            coa_map: dict[str, tuple[str, str]] = {}
+            for row in self._coa_db.list_accounts(include_inactive=False):
+                num = str(row["account_number"] or "").strip()
+                nm  = str(row["account_name"] or "").strip()
+                if num and nm:
+                    coa_map[num] = (f"{num} {nm}".strip(), nm)
+
+            for dupe_row in dupes:
+                acct_num = str(dupe_row["account_number"] or "").strip()
+                if not acct_num:
+                    continue
+
+                # All bank_accounts rows for this number, sorted: most transactions first
+                rows = conn.execute("""
+                    SELECT ba.id,
+                           ba.name,
+                           ba.gl_display_account,
+                           ba.is_active,
+                           COUNT(bt.id) AS txn_count
+                    FROM bank_accounts ba
+                    LEFT JOIN bank_transactions bt ON bt.bank_account_id = ba.id
+                    WHERE ba.account_number = ?
+                    GROUP BY ba.id
+                    ORDER BY txn_count DESC, ba.id ASC
+                """, (acct_num,)).fetchall()
+
+                if len(rows) < 2:
+                    continue
+
+                canonical_id = int(rows[0]["id"])
+
+                # Point every transaction from the duplicate rows to the canonical row
+                for dup in rows[1:]:
+                    dup_id = int(dup["id"])
+                    # Re-point transactions (fingerprint may clash — skip on conflict)
+                    conn.execute("""
+                        UPDATE OR IGNORE bank_transactions
+                        SET bank_account_id = ?
+                        WHERE bank_account_id = ?
+                    """, (canonical_id, dup_id))
+                    # Re-point import batches
+                    conn.execute("""
+                        UPDATE bank_import_batches
+                        SET bank_account_id = ?
+                        WHERE bank_account_id = ?
+                    """, (canonical_id, dup_id))
+                    # Deactivate (not delete) the empty duplicate
+                    conn.execute(
+                        "UPDATE bank_accounts SET is_active = 0, updated_at = datetime('now') "
+                        "WHERE id = ?",
+                        (dup_id,),
+                    )
+
+                # Update the canonical row to reflect the current COA name and
+                # always reactivate it — it is the surviving account and must be
+                # visible in dropdowns even if it was previously soft-deactivated.
+                if acct_num in coa_map:
+                    new_display, new_name = coa_map[acct_num]
+                    conn.execute(
+                        "UPDATE bank_accounts SET name = ?, gl_display_account = ?, "
+                        "is_active = 1, updated_at = datetime('now') WHERE id = ?",
+                        (new_name, new_display, canonical_id),
+                    )
+                else:
+                    # No COA entry — still reactivate so it isn't lost
+                    conn.execute(
+                        "UPDATE bank_accounts SET is_active = 1, "
+                        "updated_at = datetime('now') WHERE id = ?",
+                        (canonical_id,),
+                    )
+
+                conn.commit()
+
+        except Exception:
+            import traceback
+            traceback.print_exc()
+
+    def _deactivate_coa_noise_bank_accounts(self) -> None:
+        """
+        Deactivate bank_account rows that were created by a previous version of
+        ``_sync_coa_assets_to_bank_accounts`` for non-bank GL accounts (Equipment,
+        Accounts Receivable, Fixed Assets, etc.) that have zero transactions and
+        zero import batches.
+
+        Safe to call multiple times; idempotent.  Leaves any account with even one
+        transaction or batch intact regardless of type.
+        """
+        try:
+            conn = self._bank_db._conn
+            # Find accounts with no transactions and no batches whose account_number
+            # suggests a non-cash GL account (numbers >= 1100 are generally not banks)
+            noise = conn.execute("""
+                SELECT ba.id
+                FROM bank_accounts ba
+                WHERE ba.is_active = 1
+                  AND (ba.account_number IS NOT NULL AND ba.account_number != '')
+                  AND CAST(ba.account_number AS INTEGER) >= 1100
+                  AND NOT EXISTS (
+                      SELECT 1 FROM bank_transactions bt WHERE bt.bank_account_id = ba.id
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM bank_import_batches bib WHERE bib.bank_account_id = ba.id
+                  )
+            """).fetchall()
+            if not noise:
+                return
+            ids = [int(r["id"]) for r in noise]
+            conn.execute(
+                "UPDATE bank_accounts SET is_active = 0, updated_at = datetime('now') "
+                f"WHERE id IN ({','.join('?' * len(ids))})",
+                ids,
+            )
+            conn.commit()
+        except Exception:
+            import traceback
+            traceback.print_exc()
+
+    def _heal_duplicate_opening_balance_entries(self) -> None:
+        """
+        If the Opening Balance Wizard was run more than once before the dedup fix,
+        multiple journal_entries rows with source='opening_balance' may exist.
+        Keep only the most recent one (highest id) and delete the rest, including
+        any bank_transactions that were seeded for the discarded entries.
+        """
+        try:
+            conn = self._bank_db._conn
+            rows = conn.execute(
+                "SELECT id FROM journal_entries WHERE source = 'opening_balance' ORDER BY id DESC"
+            ).fetchall()
+            if len(rows) <= 1:
+                return  # nothing to heal
+            # Keep the latest; delete the rest
+            keep_id = int(rows[0]["id"])
+            stale_ids = [int(r["id"]) for r in rows[1:]]
+            # Wipe ALL opening-balance bank transactions — migrate re-seeds from the
+            # surviving entry, so no data is permanently lost.
+            conn.execute(
+                "DELETE FROM bank_transactions "
+                "WHERE description LIKE 'Opening balance as of %' "
+                "AND batch_id IN ("
+                "  SELECT id FROM bank_import_batches "
+                "  WHERE filename = '(Opening Balance)'"
+                ")"
+            )
+            # Delete stale journal entries (lines cascade-delete)
+            for stale_id in stale_ids:
+                conn.execute("DELETE FROM journal_entries WHERE id = ?", (stale_id,))
+            conn.commit()
+        except Exception:
+            import traceback
+            traceback.print_exc()
+
+    def _migrate_opening_balances_to_bank_register(self) -> None:
+        """
+        One-time migration: for every GL journal entry with source='opening_balance'
+        find lines whose account name matches a bank_accounts row and create a
+        bank_transaction so the balance appears in the register.
+
+        Safe to run on every startup — skips lines that already have a transaction
+        (matched by description + date + bank_account_id).
+        """
+        try:
+            from probooksai.bank_import import make_manual_entry_fingerprint
+            conn = self._bank_db._conn
+
+            # GL opening-balance lines (exclude the Retained Earnings offset)
+            gl_rows = conn.execute("""
+                SELECT jel.account, jel.debit, jel.credit, je.entry_date
+                FROM journal_entry_lines jel
+                JOIN journal_entries je ON jel.entry_id = je.id
+                WHERE je.source = 'opening_balance'
+            """).fetchall()
+            if not gl_rows:
+                return
+
+            # Build account-name → bank_account_id lookup
+            bank_rows = conn.execute(
+                "SELECT id, name, gl_display_account FROM bank_accounts"
+            ).fetchall()
+            acct_map: dict[str, int] = {}
+            for ba in bank_rows:
+                k = (ba["gl_display_account"] or "").strip()
+                if k:
+                    acct_map[k] = int(ba["id"])
+                n = (ba["name"] or "").strip()
+                if n and n not in acct_map:
+                    acct_map[n] = int(ba["id"])
+
+            OB_BATCH_NAME = "(Opening Balance)"
+            for gl in gl_rows:
+                acct_key = (gl["account"] or "").strip()
+                bank_id = acct_map.get(acct_key)
+                if bank_id is None:
+                    continue
+                debit  = float(gl["debit"]  or 0.0)
+                credit = float(gl["credit"] or 0.0)
+                amount = round(debit - credit, 2)   # positive = asset increase
+                if abs(amount) < 0.005:
+                    continue
+                txn_date = gl["entry_date"]
+                desc = f"Opening balance as of {txn_date}"
+
+                # Skip if already migrated
+                exists = conn.execute(
+                    """SELECT id FROM bank_transactions
+                       WHERE bank_account_id=? AND description=? AND txn_date=?
+                       LIMIT 1""",
+                    (bank_id, desc, txn_date),
+                ).fetchone()
+                if exists:
+                    continue
+
+                # Get or create opening-balance batch for this account
+                batch_row = conn.execute(
+                    "SELECT id FROM bank_import_batches WHERE bank_account_id=? AND filename=? LIMIT 1",
+                    (bank_id, OB_BATCH_NAME),
+                ).fetchone()
+                if batch_row:
+                    batch_id = int(batch_row["id"])
+                else:
+                    from probooksai.bank_import import _now as _bi_now
+                    cur = conn.execute(
+                        """INSERT INTO bank_import_batches
+                               (bank_account_id, filename, imported_at)
+                           VALUES (?, ?, ?)""",
+                        (bank_id, OB_BATCH_NAME, _bi_now()),
+                    )
+                    conn.commit()
+                    batch_id = int(cur.lastrowid)
+
+                fp = make_manual_entry_fingerprint()
+                conn.execute(
+                    """INSERT INTO bank_transactions
+                           (batch_id, bank_account_id, txn_date,
+                            description, amount, ref_number, fingerprint,
+                            memo, coa_account)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (batch_id, bank_id, txn_date, desc, amount,
+                     "OB", fp, "Opening balance", acct_key),
+                )
+                conn.commit()
+        except Exception:
+            import traceback
+            traceback.print_exc()
+
     def _on_coa_changed(self):
         """Called when the COA editor modifies the chart of accounts."""
+        # Sync COA asset accounts → bank_accounts; heal any duplicates from a rename
+        self._sync_coa_assets_to_bank_accounts()
+        self._heal_duplicate_bank_accounts()
         # Refresh the dropdown list used in the document intake detail pane
         self._coa = load_coa()
         coa_display = self._coa_db.display_list()
         self._detail.update_coa(coa_display)
         self._register_tab.refresh_coa_choices()
+        self._register_tab.refresh_bank_accounts()
+        if hasattr(self, "_asset_register_tab"):
+            self._asset_register_tab.update_coa_list(coa_display)
+        if hasattr(self, "_check_screen"):
+            coa_names = [r["account_name"] for r in (self._coa_db.list_accounts() or [])]
+            self._check_screen.refresh_coa(coa_names)
+        if hasattr(self, "_journal_tab"):
+            self._journal_tab.refresh_coa(self._coa_db.display_list())
+
+    def _on_dashboard_navigate(self, target: str) -> None:
+        """Dashboard quick-action buttons → jump to the requested tab."""
+        if not hasattr(self, "_tabs"):
+            return
+        target_map = {
+            "invoices": getattr(self, "_invoice_screen", None),
+            "bills": getattr(self, "_enter_bills_screen", None),
+            "register": getattr(self, "_register_tab", None),
+        }
+        widget = target_map.get(target)
+        if widget is not None:
+            idx = self._tabs.indexOf(widget)
+            if idx >= 0:
+                self._tabs.setCurrentIndex(idx)
 
     def _on_tools_invoice(self) -> None:
         """Tools → Invoice: top-level Invoices tab."""
@@ -1802,19 +2475,25 @@ class MainWindow(QMainWindow):
         if idx >= 0:
             self._tabs.setCurrentIndex(idx)
 
-    def _on_company_setup(self) -> None:
-        """File → Company Setup: navigate to More → Business → Company sub-tab."""
-        if not hasattr(self, "_tabs") or not hasattr(self, "_more_hub"):
+    def _on_tools_opening_balance(self) -> None:
+        """Tools → Opening Balance Wizard."""
+        if not hasattr(self, "_bank_db"):
+            message_box_warning_ok(self, "No company file", "Open a company file first.")
             return
-        idx = self._tabs.indexOf(self._more_hub)
-        if idx >= 0:
-            self._tabs.setCurrentIndex(idx)
-        if not hasattr(self, "_business_hub"):
+        from desktop_app.opening_balance_wizard import OpeningBalanceWizard
+        coa_entries = self._coa_db.list_accounts() if hasattr(self, "_coa_db") else []
+        dlg = OpeningBalanceWizard(self._bank_db._conn, coa_entries, parent=self)
+        dlg.exec()
+
+    def _on_tools_payee_categorize(self) -> None:
+        """Tools → Bulk Categorize Payees."""
+        if not hasattr(self, "_bank_db"):
+            message_box_warning_ok(self, "No company file", "Open a company file first.")
             return
-        biz_idx = self._more_hub.indexOf(self._business_hub)
-        if biz_idx >= 0:
-            self._more_hub.setCurrentIndex(biz_idx)
-        self._business_hub.focus_company_subtab()
+        from desktop_app.payee_categorize_dialog import PayeeCategorizeDialog
+        coa_list = self._coa_db.display_list() if hasattr(self, "_coa_db") else []
+        dlg = PayeeCategorizeDialog(self._bank_db._conn, coa_list, parent=self)
+        dlg.exec()
 
     def _set_main_tab_index(self, index: int) -> None:
         if not hasattr(self, "_tabs"):
@@ -1822,6 +2501,11 @@ class MainWindow(QMainWindow):
         if index < 0 or index >= self._tabs.count():
             return
         self._tabs.setCurrentIndex(index)
+
+    def _on_check_screen_saved(self) -> None:
+        """Called when CheckScreen saves or deletes a transaction; reload the Bank Register."""
+        if hasattr(self, "_register_tab"):
+            self._register_tab._reload_current()
 
     def _focus_bank_register_tab(self) -> None:
         """Focus **Bank register** after Bank Import syncs line-match results to the Match overlay.
@@ -1959,6 +2643,19 @@ class MainWindow(QMainWindow):
         self._register_tab.openBankMatchNavigationRequested.connect(
             self._navigate_register_bank_match_link
         )
+        if hasattr(self, "_check_screen"):
+            self._register_tab.openInCheckScreenRequested.connect(
+                self._open_txn_in_check_screen
+            )
+
+    def _open_txn_in_check_screen(self, txn_id: int) -> None:
+        """Switch to Write Checks tab and navigate to *txn_id*."""
+        if not hasattr(self, "_check_screen") or not hasattr(self, "_tabs"):
+            return
+        self._check_screen.navigate_to_transaction(txn_id)
+        idx = self._tabs.indexOf(self._check_screen)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
 
     def _sync_window_title(self) -> None:
         ver = application_version()
@@ -2004,11 +2701,29 @@ class MainWindow(QMainWindow):
         self._coa_db = COADatabase(self._bank_db._conn)
         self._coa_db.seed_from_workbook()
         self._coa = load_coa()
+        # Ensure any COA asset accounts are represented in bank_accounts before building tabs
+        self._sync_coa_assets_to_bank_accounts()
+        self._heal_duplicate_bank_accounts()
+        self._deactivate_coa_noise_bank_accounts()
+        self._heal_duplicate_opening_balance_entries()
+        # Seed bank_transactions for any existing GL opening-balance entries
+        self._migrate_opening_balances_to_bank_register()
         self._rebuild_bank_related_tabs()
         self._detail.clear_view()
         self._detail.update_coa(self._coa_db.display_list())
         self._refresh_inbox()
         self._update_company_status()
+        if hasattr(self, "_dashboard_tab"):
+            self._dashboard_tab.set_connection(self._bank_db._conn)
+        # Track in recent companies
+        try:
+            row = self._bank_db._conn.execute(
+                "SELECT value FROM company_settings WHERE key='company_name'"
+            ).fetchone()
+            _co_name = row[0] if row else Path(resolved).stem
+        except Exception:
+            _co_name = Path(resolved).stem
+        self._add_to_recent_companies(resolved, _co_name)
 
     def _switch_company_database(self, path: str, *, create_new: bool = False) -> None:
         if self._worker and self._worker.isRunning():
@@ -2196,33 +2911,83 @@ class MainWindow(QMainWindow):
             ok_tip="Close; you are now on the restored company database.",
         )
 
-    def _on_open_company_database(self):
-        prev = QSettings().value("company_database_path", "", type=str) or ""
-        start_dir = str(Path(prev).parent) if prev else ""
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Open company database (File → Backup copies the current .db first)",
-            start_dir,
-            "SQLite Database (*.db);;All Files (*.*)",
-        )
-        if path:
-            self._switch_company_database(path, create_new=False)
+    def _on_set_company_logo(self) -> None:
+        """Edit → Set Company Logo: browse for a PNG/JPEG and save its path in company settings."""
+        from PySide6.QtWidgets import QFileDialog
+        from probooksai import business
+        from desktop_app.qt_mnemonic import message_box_information_ok, message_box_warning_ok
 
-    def _on_new_company_database(self):
-        prev = QSettings().value("company_database_path", "", type=str) or ""
-        start_dir = str(Path(prev).parent) if prev else ""
-        path, _ = QFileDialog.getSaveFileName(
-            self,
-            "New company database (back up any existing .db from File → Backup first)",
-            start_dir,
-            "SQLite Database (*.db);;All Files (*.*)",
+        if not hasattr(self, "_bank_db") or self._bank_db is None:
+            message_box_warning_ok(self, "No Company Open",
+                "Open a company file first (File → Switch company) before setting a logo.")
+            return
+        conn = self._bank_db._conn
+        current = (business.get_setting(conn, "company_logo_path", "") or "").strip()
+        start_dir = str(Path(current).parent) if current else ""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select Company Logo Image", start_dir,
+            "Image files (*.png *.jpg *.jpeg *.gif *.svg);;All files (*.*)"
         )
-        if path:
-            if not path.lower().endswith(".db"):
-                path += ".db"
-            self._switch_company_database(path, create_new=True)
+        if not path:
+            return
+        business.set_setting(conn, "company_logo_path", path)
+        conn.commit()
+        message_box_information_ok(
+            self, "Logo Saved",
+            f"Company logo set to:\n{path}\n\nIt will appear on the next printed or saved invoice.",
+            ok_tip="Close — the logo is now saved in this company file.",
+        )
+
+    def _on_create_new_company(self) -> None:
+        """File → Create New Company: launch the setup wizard."""
+        from desktop_app.first_run_wizard import FirstRunWizard, apply_wizard_results
+        wiz = FirstRunWizard(parent=self)
+        if wiz.exec() != FirstRunWizard.DialogCode.Accepted or not wiz.db_path:
+            return
+        self._switch_company_database(wiz.db_path, create_new=True)
+        apply_wizard_results(wiz, self._bank_db)
+        # Rebuild bank-related tabs now that the wizard has written the bank account
+        self._rebuild_bank_related_tabs()
+        if hasattr(self, "_dashboard_tab"):
+            self._dashboard_tab.refresh()
+
+    def _add_to_recent_companies(self, path: str, name: str) -> None:
+        """Prepend path|name to the QSettings recent-companies list (max 10, deduplicated)."""
+        settings = QSettings()
+        raw: list = settings.value("recent_companies", [], type=list)  # type: ignore[assignment]
+        entry = f"{name}|{path}"
+        # Remove any existing entry for this path
+        raw = [r for r in raw if not r.endswith(f"|{path}") and not r == entry]
+        raw.insert(0, entry)
+        settings.setValue("recent_companies", raw[:10])
+        self._rebuild_switch_company_menu()
+
+    def _rebuild_switch_company_menu(self) -> None:
+        """Repopulate the Switch Company submenu from QSettings."""
+        if not hasattr(self, "_switch_company_menu"):
+            return
+        menu = self._switch_company_menu
+        menu.clear()
+        settings = QSettings()
+        raw: list = settings.value("recent_companies", [], type=list)  # type: ignore[assignment]
+        if not raw:
+            placeholder = menu.addAction("(no recent companies)")
+            placeholder.setEnabled(False)
+            return
+        for entry in raw:
+            parts = entry.split("|", 1)
+            if len(parts) != 2:
+                continue
+            display_name, db_path = parts
+            action = menu.addAction(f"{display_name}  —  {db_path}")
+            action.setData(db_path)
+            action.triggered.connect(lambda checked=False, p=db_path: self._switch_company_database(p, create_new=False))
 
     def closeEvent(self, event):
+        # Persist window geometry so next launch restores the same size/position
+        _win_settings = QSettings(self._SETTINGS_ORG, self._SETTINGS_APP)
+        _win_settings.setValue(self._GEOMETRY_KEY, self.saveGeometry())
+        _win_settings.setValue(self._MAXIMIZED_KEY, self.isMaximized())
         self._db.close()
         self._bank_db.close()
         super().closeEvent(event)
@@ -2253,6 +3018,28 @@ def _suppress_qt_font_pointsize_stderr_spam() -> None:
 
 
 def main():
+    # Load .env — walk up from this file's location until we find one (handles worktrees)
+    _env_file = ""
+    _search = os.path.abspath(__file__)
+    for _ in range(8):
+        _search = os.path.dirname(_search)
+        _candidate = os.path.join(_search, ".env")
+        if os.path.isfile(_candidate):
+            _env_file = _candidate
+            break
+    if _env_file and os.path.isfile(_env_file):
+        try:
+            with open(_env_file) as _f:
+                for _line in _f:
+                    _line = _line.strip()
+                    if _line and not _line.startswith("#") and "=" in _line:
+                        _k, _v = _line.split("=", 1)
+                        _k = _k.strip()
+                        _v = _v.strip().strip('"').strip("'")
+                        if _k and _k not in os.environ:
+                            os.environ[_k] = _v
+        except Exception:
+            pass
     _suppress_qt_font_pointsize_stderr_spam()
     ver = application_version()
     parser = argparse.ArgumentParser(
@@ -2282,12 +3069,36 @@ def main():
     app.setApplicationName("ProBooks+ai")
     app.setOrganizationName("ProBooks+ai")
     apply_dark_theme(app)
+
+    # Install global tooltip filter (default: tips off; user can enable in Help menu)
+    global _tip_filter
+    _tip_filter = _TipFilter(enabled=_tips_enabled(), parent=app)
+    app.installEventFilter(_tip_filter)
     db_path = args.database
     if db_path is None:
         last = QSettings().value("company_database_path", "", type=str) or ""
         if last and Path(last).is_file():
             db_path = last
+
+    # First run: no company file configured → launch setup wizard
+    _wizard_results: FirstRunWizard | None = None
+    if db_path is None:
+        wiz = FirstRunWizard()
+        if wiz.exec() != FirstRunWizard.DialogCode.Accepted or not wiz.db_path:
+            sys.exit(0)  # user cancelled — exit cleanly
+        db_path = wiz.db_path
+        _wizard_results = wiz
+
     window = MainWindow(db_path=db_path)
+
+    # Apply company info + bank account saved in the wizard, then refresh UI
+    if _wizard_results is not None:
+        apply_wizard_results(_wizard_results, window._bank_db)
+        # Bank account was just written — rebuild register/import tabs so they see it
+        window._rebuild_bank_related_tabs()
+        if hasattr(window, "_dashboard_tab"):
+            window._dashboard_tab.refresh()
+
     window.show()
     sys.exit(app.exec())
 

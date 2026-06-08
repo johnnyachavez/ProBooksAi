@@ -45,7 +45,7 @@ from functools import partial
 from pathlib import Path
 from typing import Callable, Optional
 
-from PySide6.QtCore import QDate, QSettings, Qt, Signal
+from PySide6.QtCore import QDate, QSettings, Qt, QThread, Signal
 from PySide6.QtGui import QColor, QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -1134,6 +1134,33 @@ class ReconciliationPanel(QGroupBox):
 
 
 # ===========================================================================
+# AI PDF extraction worker
+# ===========================================================================
+
+class _AiPdfWorker(QThread):
+    """Background thread that calls ``extract_rows_from_statement_scan``.
+
+    Emits :attr:`finished` with the :class:`StatementScanExtractionResult` on success,
+    or :attr:`errored` with a plain error string on unexpected exception.
+    """
+
+    finished = Signal(object)   # StatementScanExtractionResult
+    errored  = Signal(str)      # unexpected exception message
+
+    def __init__(self, path: str, parent=None):
+        super().__init__(parent)
+        self._path = path
+
+    def run(self) -> None:  # noqa: D102
+        try:
+            from probooksai.statement_ocr_stub import extract_rows_from_statement_scan
+            result = extract_rows_from_statement_scan(self._path, mime_type="application/pdf")
+            self.finished.emit(result)
+        except Exception as exc:  # pragma: no cover
+            self.errored.emit(str(exc))
+
+
+# ===========================================================================
 # BankImportTab
 # ===========================================================================
 
@@ -1163,6 +1190,7 @@ class BankImportTab(QWidget):
         self._current_batch_id: Optional[int] = None
         self._current_account_id: Optional[int] = None
         self._import_worker: Optional[CsvImportWorker] = None
+        self._ai_pdf_worker: Optional[_AiPdfWorker] = None
         self._build_ui()
         self._refresh_accounts()
 
@@ -1206,35 +1234,14 @@ class BankImportTab(QWidget):
             "Same company SQLite database as other main tabs; File → Backup / Restore (probooks.backup)."
         )
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(8, 8, 8, 8)
-        outer.setSpacing(10)
+        outer.setContentsMargins(6, 6, 6, 6)
+        outer.setSpacing(6)
 
-        intake_gb = QGroupBox("Intake")
-        intake_gb.setToolTip(
-            "Import bank CSV or PDF (or paste CSV) for the selected account. "
-            "Creates import batches using the same logic as before."
-        )
-        intake_lay = QVBoxLayout(intake_gb)
-        intake_lay.setSpacing(8)
-
-        intake_intro = QLabel(
-            "<b>Bring in statements</b> — pick the bank account, then <b>Import CSV</b>, <b>Import PDF</b>, "
-            "<b>paste CSV</b> (same wizard as file import), or <b>paste raw statement text</b> for a separate "
-            "staging review (no import). Formats and mapping for CSV/PDF are unchanged."
-        )
-        intake_intro.setTextFormat(Qt.TextFormat.RichText)
-        intake_intro.setWordWrap(True)
-        intake_intro.setStyleSheet("color: #A0A0B0; font-size: 12px;")
-        intake_intro.setToolTip(
-            "Digital PDFs need selectable text (no OCR). CSV is UTF-8 with optional BOM, same as exports."
-        )
-        intake_lay.addWidget(intake_intro)
-
-        # ── Header row ──────────────────────────────────────────────────────
+        # ── Single toolbar row ──────────────────────────────────────────────
         hdr_row = QHBoxLayout()
-        hdr_lbl = QLabel("🏦  Bank Account:")
+        hdr_lbl = QLabel("Bank Account:")
         hdr_lbl.setToolTip(
-            "Label for the account selector; import batches below belong to this bank account."
+            "Import batches below belong to this bank account."
         )
         hdr_row.addWidget(hdr_lbl)
 
@@ -1268,32 +1275,42 @@ class BankImportTab(QWidget):
 
         btn_pdf = QPushButton("📄  Import PDF\u2026")
         btn_pdf.setToolTip(
-            "Digital PDFs with a text layer only. Scanned statements need OCR (not included). "
-            "The open dialog reuses the last folder you picked from Import CSV or Import PDF, "
-            "or the last Bank Import CSV export folder if you have not imported yet. "
-            "Parsed rows write to the company SQLite file (File → Backup / probooks backup first if unsure)."
+            "Import a bank statement PDF. Digital PDFs (selectable text) are parsed locally. "
+            "Scanned/image-only PDFs are sent to Claude AI when ANTHROPIC_API_KEY is set in .env. "
+            "The open dialog reuses the last folder. "
+            "Parsed rows write to the company SQLite file (File → Backup first if unsure)."
         )
         btn_pdf.clicked.connect(self._on_import_pdf)
         hdr_row.addWidget(btn_pdf)
 
+        btn_pdf_review = QPushButton("\U0001f50d  Import PDF (Review)…")
+        btn_pdf_review.setToolTip(
+            "Import a bank statement PDF with a smart review screen.\n\n"
+            "Automatically filters out deposits, checks, and online ACH payments "
+            "(those need manual entry to match against invoices and vendor bills). "
+            "Shows ATM/debit-card charges, electronic debits, and fees — the "
+            "recurring and misc debits you actually want to import.\n\n"
+            "Duplicates already in the register are highlighted and skipped by default. "
+            "Toggle any row before importing."
+        )
+        btn_pdf_review.clicked.connect(self._on_import_pdf_review)
+        hdr_row.addWidget(btn_pdf_review)
+
+        btn_batch = QPushButton("\U0001f4e6  Import Multiple Statements…")
+        btn_batch.setToolTip(
+            "Import many PDFs, JPGs, or PNGs at once (historical catch-up). "
+            "Dates are inferred from transaction rows; no period dialog needed. "
+            "Scanned/image files are sent to Claude AI when AI_PROVIDER=anthropic is set. "
+            "A progress bar tracks each file."
+        )
+        btn_batch.clicked.connect(self._on_import_batch)
+        hdr_row.addWidget(btn_batch)
+        self._btn_batch = btn_batch
+
         hdr_row.addStretch()
-        intake_lay.addLayout(hdr_row)
+        outer.addLayout(hdr_row)
 
-        import_hint = QLabel(
-            "Import formats: <b>CSV</b> — typical bank export (UTF-8, optional BOM for Excel). "
-            "<b>PDF</b> — digital statements with <i>selectable</i> text only; "
-            "image-only (scanned) PDFs are not supported yet — use CSV or a download from your bank."
-        )
-        import_hint.setTextFormat(Qt.TextFormat.RichText)
-        import_hint.setWordWrap(True)
-        import_hint.setStyleSheet("color: #A0A0B0; font-size: 11px;")
-        import_hint.setToolTip(
-            "CSV is read as UTF-8 with an optional byte-order mark (same family as ProBooks+ai CSV exports). "
-            "ProBooks+ai reads text embedded in PDFs; it does not OCR scans. "
-            "For photo or scanned statements, use CSV until automatic OCR ships (Phase 7)."
-        )
-        intake_lay.addWidget(import_hint)
-
+        # Paste panels — widgets exist so their methods work, but kept off-screen (not in layout)
         paste_box = QGroupBox("Paste bank CSV")
         paste_box.setToolTip(
             "Paste the same bank-export CSV you would pick from disk (include the header row). "
@@ -1318,32 +1335,25 @@ class BankImportTab(QWidget):
         paste_row.addWidget(btn_paste_import)
         paste_row.addStretch()
         paste_lay.addLayout(paste_row)
-        intake_lay.addWidget(paste_box)
+
+        # Paste CSV panel — kept as a widget (methods reference it) but not added to layout
+        self._paste_csv_wrap = paste_box
+        self._paste_csv_wrap.setVisible(False)
 
         raw_box = QGroupBox("Paste raw statement text")
         raw_box.setToolTip(
-            "Paste copied bank or card statement text (not CSV-shaped). "
-            "Parse to review rows stages Date, Description, Amount, and flags unclear lines as Needs Review. "
-            "Does not import or post to Bank Register — use Import CSV / PDF for that."
+            "Paste copied bank/card statement text. "
+            "Parse to review rows stages Date, Description, Amount — staging only, no import."
         )
         raw_lay = QVBoxLayout(raw_box)
         raw_lay.setSpacing(6)
-        raw_hint = QLabel(
-            "For messy copy/paste from web or PDF: dates, payees, and amounts when recognizable. "
-            "<b>Parse to review rows</b> fills the table below for you to check — staging only."
-        )
-        raw_hint.setTextFormat(Qt.TextFormat.RichText)
-        raw_hint.setWordWrap(True)
-        raw_hint.setStyleSheet("color: #A0A0B0; font-size: 11px;")
-        raw_lay.addWidget(raw_hint)
         self._paste_raw_statement_edit = QPlainTextEdit()
         self._paste_raw_statement_edit.setPlaceholderText(
             "Paste raw statement lines here (not the CSV block above), then Parse to review rows…"
         )
         self._paste_raw_statement_edit.setFixedHeight(90)
         self._paste_raw_statement_edit.setToolTip(
-            "Any bank- or card-style text: one transaction per line when possible. "
-            "Separate from the CSV paste box so column mapping is unchanged for CSV imports."
+            "Any bank- or card-style text: one transaction per line when possible."
         )
         raw_lay.addWidget(self._paste_raw_statement_edit)
         raw_btn_row = QHBoxLayout()
@@ -1382,35 +1392,15 @@ class BankImportTab(QWidget):
             self._raw_statement_review_table.horizontalHeader().setSectionResizeMode(
                 col, QHeaderView.ResizeMode.ResizeToContents
             )
-        self._raw_statement_review_table.setMinimumHeight(140)
+        self._raw_statement_review_table.setMinimumHeight(120)
         self._raw_statement_review_table.setToolTip(
-            "Staged rows from raw statement paste — review before using Import CSV/PDF for the register. "
-            "Needs Review highlights uncertain lines."
+            "Staged rows from raw statement paste — staging only, does not write to the database."
         )
         raw_lay.addWidget(self._raw_statement_review_table)
-        intake_lay.addWidget(raw_box)
 
-        outer.addWidget(intake_gb)
-
-        review_gb = QGroupBox("Review & match")
-        review_gb.setToolTip(
-            "Imported batches, register-styled preview, reconciliation summary, and AI line match vs Bank Register."
-        )
-        review_lay = QVBoxLayout(review_gb)
-        review_lay.setSpacing(8)
-
-        review_intro = QLabel(
-            "<b>Review and reconcile</b> — select an import batch, check rows and balances, then use "
-            "<b>Line Reconciliation (AI)</b>. Open <b>Bank Register</b> (Ctrl+5) to work the Match overlay; "
-            "the register remains the source of truth for posted bank activity."
-        )
-        review_intro.setTextFormat(Qt.TextFormat.RichText)
-        review_intro.setWordWrap(True)
-        review_intro.setStyleSheet("color: #A0A0B0; font-size: 12px;")
-        review_intro.setToolTip(
-            "Matched / Missing / Extra and tolerance behave as before; extract & compare can sync the register overlay."
-        )
-        review_lay.addWidget(review_intro)
+        # Raw paste panel — kept as a widget (methods reference it) but not added to layout
+        self._paste_raw_wrap = raw_box
+        self._paste_raw_wrap.setVisible(False)
 
         # ── Splitter: batch list (left) | detail (right) ──────────────────
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -1418,31 +1408,16 @@ class BankImportTab(QWidget):
         # Left: batch list
         left = QWidget()
         left.setToolTip(
-            "Import batches column for the selected bank account; pick a batch to load the preview, "
-            "**Reconciliation Summary**, and **Line Reconciliation (AI)** on the right. "
-            "Batches and transactions live in the company SQLite file (File → Backup / Restore, probooks.backup)."
+            "Import batches for the selected bank account. Pick a batch to load the preview, "
+            "Reconciliation Summary, and Line Reconciliation (AI) on the right."
         )
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
         lbl_import_batches = QLabel("Import Batches:")
         lbl_import_batches.setToolTip(
-            "CSV import batches for the selected bank account; choose one to load the preview, "
-            "reconciliation summary, and line reconciliation (AI). "
-            "Same shared company .db as the rest of the app (File → Backup / probooks backup)."
+            "Select a batch to load the preview, reconciliation summary, and AI line match."
         )
         left_layout.addWidget(lbl_import_batches)
-        batch_hint = QLabel(
-            "Batches appear after you <b>Import CSV</b>, <b>paste CSV</b>, or <b>Import PDF</b> for the account above. "
-            "Select a batch to load the preview and reconciliation panels on the right."
-        )
-        batch_hint.setTextFormat(Qt.TextFormat.RichText)
-        batch_hint.setWordWrap(True)
-        batch_hint.setStyleSheet("color: #A0A0B0; font-size: 11px;")
-        batch_hint.setToolTip(
-            "Each import creates a batch for the selected bank account. "
-            "Use Manage Accounts… if no account is listed yet."
-        )
-        left_layout.addWidget(batch_hint)
         self._batch_table = QTableWidget()
         self._batch_table.setColumnCount(3)
         self._batch_table.setHorizontalHeaderLabels(["Imported", "Statement Period", "Reconciled"])
@@ -1563,29 +1538,21 @@ class BankImportTab(QWidget):
             "All bank import data is in the open company .db (File → Backup / Restore, probooks.backup)."
         )
 
-        review_lay.addWidget(splitter, stretch=1)
+        outer.addWidget(splitter, stretch=1)
 
         tip = QLabel(
-            "F5 refreshes accounts and import batches; if a batch is selected, it is re-opened when "
-            "it still exists (preview + reconciliation refresh). "
-            "CSV exports (reconciliation report and line-compare) use UTF-8 BOM for Excel. "
-            "Right-click the batch list, register preview, Manage Bank Accounts table, or "
-            "AI line-reconciliation grid (empty area where supported) for Keyboard shortcuts…; "
-            "preview rows and that grid also offer Copy row and field copies. "
-            "Help → Bank import shortcuts…; Register tab: Help → Bank register keyboard shortcuts…. "
-            "View: Ctrl+9 Reconcile → this tab; Ctrl+5 Bank Register (Match overlay). "
-            "Company SQLite: File → Backup / Restore (probooks.backup, CLI probooks backup/restore)."
+            "F5 refreshes accounts and import batches. "
+            "Right-click the batch list to delete a batch, copy rows, or view change history. "
+            "Ctrl+5 → Bank Register (Match overlay). File → Backup to save the company .db."
         )
         tip.setWordWrap(True)
-        tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        tip.setStyleSheet("color: #606070; font-size: 10px;")
         tip.setToolTip(
             "F5 reloads accounts and batches; right-click batch list, preview, accounts, or "
             "line-reconciliation grid for Keyboard shortcuts… (see Help → Bank import shortcuts…). "
-            "Preview and line-reconciliation rows include Copy row and field copies. "
-            "Back up the company .db from File → Backup / probooks backup before destructive imports."
+            "Right-click any batch → Delete batch… to remove a failed or unwanted import."
         )
-        review_lay.addWidget(tip)
-        outer.addWidget(review_gb, stretch=1)
+        outer.addWidget(tip)
 
         sc_reload = QShortcut(QKeySequence("F5"), self)
         sc_reload.setContext(Qt.WidgetWithChildrenShortcut)
@@ -1659,11 +1626,25 @@ class BankImportTab(QWidget):
                 self._acct_combo.addItem(escape_ampersand_for_qt(label), aid)
         self._acct_combo.blockSignals(False)
 
-        # Restore previous selection if possible (int-safe: combo userData may not match type)
+        # Restore previous selection; fall back to first checking account (or index 0)
         if prev_id is not None:
             ix = combo_index_for_int_user_data(self._acct_combo, prev_id)
             if ix is not None:
                 self._acct_combo.setCurrentIndex(ix)
+            else:
+                self._acct_combo.setCurrentIndex(0)
+        else:
+            # Prefer the first checking-type account as the default so the Reconcile page
+            # opens on the main checking account rather than an alphabetically first entry.
+            default_ix = 0
+            for acct in accounts:
+                if (acct["account_type"] or "").lower() == "checking":
+                    aid = coerce_combo_int_id(acct["id"])
+                    ix = combo_index_for_int_user_data(self._acct_combo, aid)
+                    if ix is not None:
+                        default_ix = ix
+                        break
+            self._acct_combo.setCurrentIndex(default_ix)
 
         self._on_account_changed()
 
@@ -1940,6 +1921,13 @@ class BankImportTab(QWidget):
         act_history.setToolTip(
             "Open field-level audit history for this import batch (metadata and reconciliation edits)."
         )
+        menu.addSeparator()
+        act_delete = menu.addAction("🗑  Delete batch…")
+        act_delete.setToolTip(
+            "Permanently delete this import batch and all its transactions. "
+            "Use this to remove a failed, duplicate, or unwanted PDF/CSV import. "
+            "Back up with File → Backup before deleting if unsure."
+        )
         chosen = menu.exec(self._batch_table.viewport().mapToGlobal(pos))
         if chosen == act_history:
             show_entity_audit_history(
@@ -1950,6 +1938,58 @@ class BankImportTab(QWidget):
                 window_title=f"Change history — import batch #{bid}",
                 empty_message="No audit entries recorded for this import batch yet.",
             )
+        elif chosen == act_delete:
+            self._on_delete_batch(bid)
+
+    def _on_delete_batch(self, batch_id: int) -> None:
+        """Permanently delete an import batch and its transactions after confirmation."""
+        # Find how many transactions are in the batch so the user knows what they're deleting
+        conn = self._db._conn
+        row = conn.execute(
+            "SELECT COUNT(*) FROM bank_transactions WHERE batch_id = ?", (batch_id,)
+        ).fetchone()
+        txn_count = row[0] if row else 0
+
+        box = QMessageBox(self)
+        box.setWindowTitle("Delete Import Batch")
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setText(
+            f"<b>Permanently delete import batch #{batch_id}</b> and its "
+            f"<b>{txn_count} transaction(s)</b>?<br><br>"
+            "This cannot be undone. Use <b>File → Backup</b> first if unsure."
+        )
+        box.setTextFormat(Qt.TextFormat.RichText)
+        box.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        box.setDefaultButton(QMessageBox.StandardButton.No)
+        tip_message_box_buttons(
+            box,
+            yes=(
+                "Delete this batch and all its transactions permanently. "
+                "Reimport the PDF/CSV to recreate it."
+            ),
+            no="Cancel — keep the batch.",
+        )
+        if box.exec() != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            # CASCADE takes care of bank_transactions (defined ON DELETE CASCADE)
+            conn.execute("DELETE FROM bank_import_batches WHERE id = ?", (batch_id,))
+            conn.commit()
+        except Exception as exc:
+            message_box_critical_ok(
+                self,
+                "Delete failed",
+                f"Could not delete batch #{batch_id}: {exc}",
+                ok_tip="Close; try File → Backup then retry, or contact support.",
+            )
+            return
+
+        if self._current_batch_id == batch_id:
+            self._current_batch_id = None
+        self._refresh_batches(self._current_account_id)
 
     def _on_batch_selected(self):
         row = self._batch_table.currentRow()
@@ -2048,7 +2088,7 @@ class BankImportTab(QWidget):
 
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Import bank statement PDF (selectable text required)",
+            "Import bank statement PDF",
             bank_import_open_dialog_start_dir(),
             "PDF documents (*.pdf);;All files (*.*)",
         )
@@ -2056,25 +2096,20 @@ class BankImportTab(QWidget):
             return
         remember_bank_import_import_dir(path)
 
-        ocr_result = None
+        # ------------------------------------------------------------------
+        # Stage 1 — fast synchronous text-layer extraction (no network)
+        # ------------------------------------------------------------------
         text_layer_empty = False
+        rows: list[dict] = []
         try:
             from probooksai.statement_extract import parse_statement_text
-            from probooksai.statement_ocr_stub import (
-                StatementScanStatus,
-                extract_rows_from_statement_scan,
-            )
             from probooksai.statement_pdf import extract_text_from_pdf
 
             text = extract_text_from_pdf(path)
             text_layer_empty = not (text or "").strip()
-            rows = parse_statement_text(text)
-            if text_layer_empty or not rows:
-                ocr_result = extract_rows_from_statement_scan(
-                    path, mime_type="application/pdf"
-                )
-                if ocr_result.rows:
-                    rows = ocr_result.rows
+            # filter_deposits=True: deposits must be entered manually and matched
+            # to invoices / received payments — do not auto-import them from PDFs.
+            rows = parse_statement_text(text, filter_deposits=True)
         except ImportError as exc:
             message_box_warning_ok(
                 self,
@@ -2091,6 +2126,60 @@ class BankImportTab(QWidget):
                 ok_tip="Close; try another PDF or use Import CSV.",
             )
             return
+
+        if rows:
+            # Text layer gave us rows — skip AI, go straight to import
+            self._finish_pdf_import(path, rows, text_layer_empty, ocr_result=None)
+            return
+
+        # ------------------------------------------------------------------
+        # Stage 2 — AI extraction (network call); run in background thread
+        # ------------------------------------------------------------------
+        prog = QProgressDialog(
+            "AI is reading your PDF…\n\nSending to Claude for transaction extraction.",
+            None,           # no Cancel button (AI calls can't be safely interrupted)
+            0,
+            0,              # min == max == 0 → indeterminate / busy spinner
+            self,
+        )
+        prog.setWindowTitle("AI PDF Import")
+        prog.setWindowModality(Qt.WindowModality.WindowModal)
+        prog.setMinimumDuration(0)
+        prog.setValue(0)
+        prog.show()
+
+        # Keep a strong reference so Qt doesn't GC the thread
+        self._ai_pdf_worker = _AiPdfWorker(path, parent=self)
+
+        def _on_ai_finished(ocr_result):
+            prog.close()
+            self._ai_pdf_worker = None
+            ai_rows = ocr_result.rows if ocr_result.rows else []
+            self._finish_pdf_import(path, ai_rows, text_layer_empty, ocr_result=ocr_result)
+
+        def _on_ai_errored(error_msg: str):
+            prog.close()
+            self._ai_pdf_worker = None
+            message_box_critical_ok(
+                self,
+                "AI PDF error",
+                escape_ampersand_for_qt(error_msg),
+                ok_tip="Close; try another PDF or use Import CSV.",
+            )
+
+        self._ai_pdf_worker.finished.connect(_on_ai_finished)
+        self._ai_pdf_worker.errored.connect(_on_ai_errored)
+        self._ai_pdf_worker.start()
+
+    def _finish_pdf_import(
+        self,
+        path: str,
+        rows: list[dict],
+        text_layer_empty: bool,
+        ocr_result,
+    ) -> None:
+        """Complete PDF import after rows have been extracted (sync or AI path)."""
+        from probooksai.statement_ocr_stub import StatementScanStatus
 
         if not rows:
             lines = [
@@ -2118,7 +2207,7 @@ class BankImportTab(QWidget):
             ):
                 lines.append(
                     escape_ampersand_for_qt(
-                        f"Statement scan could not finish: {ocr_result.error}"
+                        f"AI extraction could not finish: {ocr_result.detail or ocr_result.error}"
                     )
                 )
                 lines.append("")
@@ -2127,8 +2216,8 @@ class BankImportTab(QWidget):
                 and ocr_result.status == StatementScanStatus.NOT_IMPLEMENTED
             ):
                 lines.append(
-                    "Automatic OCR for scanned statements is not available in this build yet "
-                    "(Phase 7 vision path)."
+                    "No AI API key found.  Add ANTHROPIC_API_KEY to your .env file to "
+                    "enable AI reading of scanned or image-only PDFs."
                 )
                 lines.append("")
             lines.append("You can still use Import CSV.")
@@ -2163,13 +2252,185 @@ class BankImportTab(QWidget):
             batch_id, self._current_account_id, rows
         )
         self._refresh_batches(self._current_account_id)
+        ai_note = " (AI extracted)" if ocr_result is not None and ocr_result.rows else ""
         message_box_information_ok(
             self,
             "Import complete",
-            f"Imported {result['inserted']} new transaction(s) from PDF.\n"
+            f"Imported {result['inserted']} new transaction(s) from PDF{ai_note}.\n"
             f"Skipped {result['skipped']} duplicate(s).",
             ok_tip="Close; review batches and transactions below.",
         )
+
+    # -----------------------------------------------------------------------
+    # Section-aware PDF import with review dialog
+    # -----------------------------------------------------------------------
+
+    def _on_import_pdf_review(self) -> None:
+        """Open a bank statement PDF, parse it section-by-section, and show the
+        review dialog so the user can confirm which entries to import."""
+        if self._current_account_id is None:
+            message_box_information_ok(
+                self,
+                "No Account",
+                "Please create and select a bank account first (Manage Accounts).",
+                ok_tip="Close; use Manage Accounts to add an account, then select it above.",
+            )
+            return
+
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import bank statement PDF (Review)",
+            bank_import_open_dialog_start_dir(),
+            "PDF documents (*.pdf);;All files (*.*)",
+        )
+        if not path:
+            return
+        remember_bank_import_import_dir(path)
+
+        from desktop_app.bank_statement_review_dialog import run_statement_review
+
+        selected = run_statement_review(
+            path,
+            self._db,
+            self._current_account_id,
+            parent=self,
+        )
+        if not selected:
+            return
+
+        # ── Ask for the statement period (beginning/ending balance) ──────────
+        period_dlg = StatementPeriodDialog(parent=self)
+        if period_dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        # ── Convert StatementEntry objects → row dicts for import_transactions ─
+        rows: list[dict] = []
+        for entry in selected:
+            rows.append({
+                "txn_date":    entry.txn_date,
+                "description": entry.description,
+                "amount":      entry.amount,
+                "ref_number":  "",
+            })
+
+        # ── Apply categorisation rules ───────────────────────────────────────
+        try:
+            from probooksai.rules_engine import apply_rules_to_parsed_rows
+            apply_rules_to_parsed_rows(self._db._conn, rows)
+        except Exception:
+            pass
+
+        # ── Create batch and import ──────────────────────────────────────────
+        from pathlib import Path as _Path
+        batch_id = self._db.create_batch(
+            self._current_account_id,
+            filename=_Path(path).name,
+            statement_start=period_dlg.statement_start,
+            statement_end=period_dlg.statement_end,
+            beginning_balance=period_dlg.beginning_balance,
+            ending_balance=period_dlg.ending_balance,
+        )
+        result = self._db.import_transactions(
+            batch_id, self._current_account_id, rows
+        )
+        self._refresh_batches(self._current_account_id)
+        message_box_information_ok(
+            self,
+            "Import complete",
+            f"Imported {result['inserted']} new transaction(s) from PDF (Review).\n"
+            f"Skipped {result['skipped']} duplicate(s).",
+            ok_tip="Close; review batches and transactions below.",
+        )
+
+    # -----------------------------------------------------------------------
+    # Batch statement import (multi-file historical catch-up)
+    # -----------------------------------------------------------------------
+
+    def _on_import_batch(self):
+        if self._current_account_id is None:
+            message_box_information_ok(
+                self,
+                "No Account",
+                "Please create and select a bank account first (Manage Accounts).",
+                ok_tip="Close; use Manage Accounts to add an account, then select it.",
+            )
+            return
+
+        from desktop_app.bank_import_csv_export_paths import (
+            bank_import_open_dialog_start_dir,
+            remember_bank_import_import_dir,
+        )
+        paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Import Multiple Bank Statements",
+            bank_import_open_dialog_start_dir(),
+            "Statements (*.pdf *.jpg *.jpeg *.png *.webp *.gif *.bmp *.tiff *.tif);;All files (*.*)",
+        )
+        if not paths:
+            return
+        remember_bank_import_import_dir(paths[0])
+
+        from PySide6.QtWidgets import QProgressDialog
+        from PySide6.QtCore import Qt
+
+        prog = QProgressDialog(
+            f"Importing 0 of {len(paths)}…",
+            "Cancel",
+            0,
+            len(paths),
+            self,
+        )
+        prog.setWindowTitle("Batch Statement Import")
+        prog.setWindowModality(Qt.WindowModality.WindowModal)
+        prog.setMinimumDuration(0)
+        prog.setValue(0)
+
+        db_path = self._db._db_path
+
+        from desktop_app.batch_statement_worker import BatchStatementWorker
+        self._batch_worker = BatchStatementWorker(
+            db_path=db_path,
+            account_id=self._current_account_id,
+            file_paths=paths,
+        )
+
+        def _on_file_started(idx, total, name):
+            if prog.wasCanceled():
+                self._batch_worker.request_cancel()
+                return
+            prog.setLabelText(f"Importing {idx} of {total}: {name}")
+            prog.setValue(idx - 1)
+
+        def _on_file_done(idx, total, name, inserted, skipped):
+            prog.setValue(idx)
+
+        def _on_all_done(inserted, skipped, errors):
+            prog.setValue(len(paths))
+            prog.close()
+            self._refresh_batches(self._current_account_id)
+            lines = [
+                f"Batch import complete — {len(paths)} file(s) processed.",
+                f"  Inserted: {inserted} transaction(s)",
+                f"  Skipped (duplicates): {skipped}",
+            ]
+            if errors:
+                lines.append(f"  Errors: {len(errors)}")
+                for fname, err in errors[:5]:
+                    lines.append(f"    {fname}: {err}")
+                if len(errors) > 5:
+                    lines.append(f"    … and {len(errors) - 5} more.")
+            message_box_information_ok(
+                self,
+                "Batch Import Complete",
+                "\n".join(lines),
+                ok_tip="Close; review the imported batches and transactions below.",
+            )
+
+        self._batch_worker.file_started.connect(_on_file_started)
+        self._batch_worker.file_done.connect(_on_file_done)
+        self._batch_worker.all_done.connect(_on_all_done)
+        prog.canceled.connect(self._batch_worker.request_cancel)
+        self._batch_worker.start()
 
     def _on_import_csv(self):
         if self._current_account_id is None:

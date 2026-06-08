@@ -59,7 +59,8 @@ def test_list_invoice_ids_chronological_order(db) -> None:
         "2024-01-01",
         lines=[{"description": "a", "qty": 1, "rate": 1.0}],
     )
-    assert business.list_invoice_ids_chronological(db._conn) == [i2, i1]
+    # ASC order: Jan (i1) before Feb (i2) so ◄/► nav goes oldest → newest
+    assert business.list_invoice_ids_chronological(db._conn) == [i1, i2]
 
 
 def test_next_default_invoice_number_starts_at_13001(db) -> None:

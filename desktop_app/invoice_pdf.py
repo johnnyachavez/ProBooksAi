@@ -79,6 +79,84 @@ def _letterhead_plain_from_company_settings(conn: sqlite3.Connection) -> str:
     return "\n".join(legacy)
 
 
+def _logo_display_dimensions(logo_path: str, max_w: int = 400, max_h: int = 180) -> tuple[int, int]:
+    """Return (display_w, display_h) scaled to fit within max_w×max_h, preserving aspect ratio.
+
+    Reads only the image header — no PIL/Qt dependency.  Falls back to (max_w, max_h) on
+    any parse error so the caller always gets usable integers.
+    """
+    import struct
+
+    try:
+        with open(logo_path, "rb") as fh:
+            header = fh.read(26)
+        w: int = 0
+        h: int = 0
+        # PNG: 8-byte signature + IHDR chunk (4 len + 4 "IHDR" + 4 width + 4 height)
+        if header[:8] == b"\x89PNG\r\n\x1a\n" and len(header) >= 24:
+            w, h = struct.unpack(">II", header[16:24])
+        # JPEG: scan for SOF0/SOF1/SOF2 markers (0xFF C0/C1/C2)
+        elif header[:2] == b"\xff\xd8":
+            with open(logo_path, "rb") as fh:
+                data = fh.read()
+            i = 2
+            while i + 8 < len(data):
+                if data[i] != 0xFF:
+                    break
+                marker = data[i + 1]
+                seg_len = struct.unpack(">H", data[i + 2 : i + 4])[0]
+                if marker in (0xC0, 0xC1, 0xC2):
+                    h, w = struct.unpack(">HH", data[i + 5 : i + 9])
+                    break
+                i += 2 + seg_len
+        if w > 0 and h > 0:
+            scale = min(max_w / w, max_h / h, 1.0)
+            return max(1, int(w * scale)), max(1, int(h * scale))
+    except Exception:
+        pass
+    return max_w, max_h
+
+
+def _logo_data_uri_from_settings(conn: sqlite3.Connection) -> str:
+    """Return a base64 data URI for the company logo, or '' if not configured / file missing."""
+    import base64
+    import os
+    from probooksai import business
+
+    logo_path = (business.get_setting(conn, "company_logo_path", "") or "").strip()
+    if not logo_path or not os.path.isfile(logo_path):
+        return ""
+    try:
+        with open(logo_path, "rb") as fh:
+            raw = fh.read()
+        lower = logo_path.lower()
+        if lower.endswith(".png"):
+            mime = "image/png"
+        elif lower.endswith((".jpg", ".jpeg")):
+            mime = "image/jpeg"
+        elif lower.endswith(".gif"):
+            mime = "image/gif"
+        elif lower.endswith(".svg"):
+            mime = "image/svg+xml"
+        else:
+            mime = "image/png"
+        b64 = base64.b64encode(raw).decode("ascii")
+        return f"data:{mime};base64,{b64}"
+    except Exception:
+        return ""
+
+
+def _logo_dimensions_from_settings(conn: sqlite3.Connection) -> tuple[int, int]:
+    """Return (display_w, display_h) for the configured logo, or (220, 80) if not set."""
+    import os
+    from probooksai import business
+
+    logo_path = (business.get_setting(conn, "company_logo_path", "") or "").strip()
+    if not logo_path or not os.path.isfile(logo_path):
+        return 400, 180
+    return _logo_display_dimensions(logo_path)
+
+
 def invoice_html_string(conn: sqlite3.Connection, invoice_id: int) -> str:
     """Build the same HTML used for PDF export and **Invoices** tab printing (saved invoice row)."""
     from probooksai import business
@@ -114,8 +192,14 @@ def invoice_html_string(conn: sqlite3.Connection, invoice_id: int) -> str:
     total = float(inv_d.get("total") or 0)
     balance_plain = f"${total:,.2f}"
 
+    logo_uri = _logo_data_uri_from_settings(conn)
+    logo_w, logo_h = _logo_dimensions_from_settings(conn) if logo_uri else (220, 80)
+
     return build_invoice_print_html(
         company_block_plain=_letterhead_plain_from_company_settings(conn),
+        logo_data_uri=logo_uri,
+        logo_display_w=logo_w,
+        logo_display_h=logo_h,
         invoice_date=inv_date,
         invoice_number=(inv_d.get("invoice_number") or "").strip(),
         bill_to_plain=bill_to_plain,

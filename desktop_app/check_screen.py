@@ -1,0 +1,861 @@
+"""Write Checks screen — create, browse, and edit bank payments in a check-style UI.
+
+Each check maps to one ``bank_transactions`` row.  Saving here writes through
+``BankDatabase.update_transaction`` / ``insert_manual_transaction``, so the Bank
+Register automatically reflects every change when it next refreshes.
+
+Navigation browses ALL transactions for the selected bank account (deposits AND
+payments) so the screen doubles as a full-register viewer with a check-form UI.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+from datetime import date
+from typing import Optional
+
+from PySide6.QtCore import QDate, Qt, Signal
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QCheckBox,
+    QComboBox,
+    QDateEdit,
+    QDoubleSpinBox,
+    QFrame,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QSplitter,
+    QTabWidget,
+    QTableWidget,
+    QTableWidgetItem,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
+from desktop_app.flexible_date import configure_qdate_edit_us, format_iso_to_us_display
+from desktop_app.qt_combo_ids import coerce_combo_int_id, combo_index_for_int_user_data
+from desktop_app.qt_mnemonic import (
+    escape_ampersand_for_qt,
+    message_box_information_ok,
+    message_box_question_yes_no,
+    message_box_warning_ok,
+)
+from desktop_app.table_clipboard import plain_display_table_item
+
+# ── Amount → words ────────────────────────────────────────────────────────────
+_ONES = [
+    "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+    "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen",
+    "Seventeen", "Eighteen", "Nineteen",
+]
+_TENS = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
+
+
+def _int_to_words(n: int) -> str:
+    if n == 0:
+        return "Zero"
+    if n < 0:
+        return "Negative " + _int_to_words(-n)
+    parts = []
+    if n >= 1_000_000:
+        parts.append(_int_to_words(n // 1_000_000) + " Million")
+        n %= 1_000_000
+    if n >= 1_000:
+        parts.append(_int_to_words(n // 1_000) + " Thousand")
+        n %= 1_000
+    if n >= 100:
+        parts.append(_ONES[n // 100] + " Hundred")
+        n %= 100
+    if n >= 20:
+        word = _TENS[n // 10]
+        if n % 10:
+            word += "-" + _ONES[n % 10]
+        parts.append(word)
+    elif n > 0:
+        parts.append(_ONES[n])
+    return " ".join(parts)
+
+
+def _amount_to_words(amount: float) -> str:
+    """Convert *amount* to written-check English, e.g. 1234.56 → 'One Thousand Two Hundred Thirty-Four and 56/100'."""
+    amount = abs(round(amount, 2))
+    dollars = int(amount)
+    cents = round((amount - dollars) * 100)
+    words = _int_to_words(dollars) if dollars else "Zero"
+    return f"{words} and {cents:02d}/100"
+
+
+# ── QB-inspired light palette ─────────────────────────────────────────────────
+_PAGE_BG       = "#F2F2F2"
+_TOOLBAR_BG    = "#DEDEDE"
+_ACCT_BAR_BG   = "#EEEEEE"
+_PAPER_BG      = "#E3F2E9"   # light mint green
+_PAPER_BORDER  = "#80AF90"
+_PAPER_LBL     = "#3D5C45"   # dark muted green labels
+_FIELD_BG      = "#FFFFFF"
+_FIELD_BORDER  = "#A8C4A8"
+_GRID_BG       = "#FFFFFF"
+_GRID_ALT      = "#D0E6F4"   # QB-style light blue alternating
+_GRID_HDR_BG   = "#DBDBDB"
+_GRID_HDR_TEXT = "#333333"
+_GRID_LINES    = "#C8C8C8"
+_GRID_TEXT     = "#111111"
+_BTN_QSS = (
+    "QPushButton {"
+    " background:#F5F5F5; border:1px solid #BCBCBC; border-radius:3px;"
+    " padding:4px 10px; font-size:11px; color:#222222; min-height:22px;"
+    "}"
+    "QPushButton:hover { background:#E0EAF4; border-color:#7A9AC8; }"
+    "QPushButton:pressed { background:#C8D8EC; }"
+    "QPushButton:disabled { color:#AAAAAA; background:#EEEEEE; border-color:#DDDDDD; }"
+)
+
+
+class CheckScreen(QWidget):
+    """A QuickBooks-style Write Checks / transaction viewer for one bank account."""
+
+    #: Emitted after any save or delete so the Bank Register can refresh.
+    transactionSaved = Signal()
+
+    def __init__(self, bank_db, coa_list: list | None = None, parent=None):
+        """
+        *bank_db* — ``BankDatabase`` instance.
+        *coa_list* — list of COA display strings for the expense account dropdown.
+        """
+        super().__init__(parent)
+        self._db = bank_db
+        self._coa_list: list[str] = coa_list or []
+        self._current_account_id: Optional[int] = None
+        self._browse_ids: list[int] = []      # txn ids for current account
+        self._browse_index: Optional[int] = None  # index into _browse_ids; None = blank draft
+        self._loading = False
+        self._build_ui()
+
+    # ── UI construction ───────────────────────────────────────────────────────
+
+    def _build_ui(self) -> None:
+        self.setStyleSheet(f"CheckScreen {{ background:{_PAGE_BG}; }}")
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # ── Toolbar ───────────────────────────────────────────────────────────
+        toolbar = QWidget()
+        toolbar.setStyleSheet(f"background:{_TOOLBAR_BG};")
+        tb_lay = QHBoxLayout(toolbar)
+        tb_lay.setContentsMargins(8, 5, 8, 5)
+        tb_lay.setSpacing(4)
+
+        def _sep():
+            sep = QFrame()
+            sep.setFrameShape(QFrame.Shape.VLine)
+            sep.setStyleSheet("color:#BBBBBB;")
+            return sep
+
+        # Left group
+        self._btn_find = QPushButton("Find")
+        self._btn_find.setStyleSheet(_BTN_QSS)
+        self._btn_find.setToolTip("Find a transaction.")
+        self._btn_find.clicked.connect(self._on_prev)   # placeholder
+        tb_lay.addWidget(self._btn_find)
+
+        self._btn_prev = QPushButton("◄ Prev")
+        self._btn_prev.setStyleSheet(_BTN_QSS)
+        self._btn_prev.setToolTip("Go to the previous transaction for this bank account.")
+        self._btn_prev.clicked.connect(self._on_prev)
+        tb_lay.addWidget(self._btn_prev)
+
+        self._btn_next = QPushButton("Next ►")
+        self._btn_next.setStyleSheet(_BTN_QSS)
+        self._btn_next.setToolTip("Go to the next transaction, or start a new blank check.")
+        self._btn_next.clicked.connect(self._on_next)
+        tb_lay.addWidget(self._btn_next)
+
+        self._btn_new = QPushButton("New")
+        self._btn_new.setStyleSheet(_BTN_QSS)
+        self._btn_new.setToolTip("Start a new blank check / payment entry.")
+        self._btn_new.clicked.connect(self._on_new)
+        tb_lay.addWidget(self._btn_new)
+
+        self._btn_save = QPushButton("Save")
+        self._btn_save.setStyleSheet(_BTN_QSS)
+        self._btn_save.setToolTip("Save this check / transaction to the Bank Register.")
+        self._btn_save.clicked.connect(self._on_save)
+        tb_lay.addWidget(self._btn_save)
+
+        self._btn_delete = QPushButton("Delete")
+        self._btn_delete.setStyleSheet(_BTN_QSS)
+        self._btn_delete.setToolTip("Delete this transaction from the register.")
+        self._btn_delete.clicked.connect(self._on_delete)
+        tb_lay.addWidget(self._btn_delete)
+
+        tb_lay.addWidget(_sep())
+
+        # Middle group
+        btn_copy = QPushButton("Create a Copy")
+        btn_copy.setStyleSheet(_BTN_QSS)
+        tb_lay.addWidget(btn_copy)
+
+        btn_mem = QPushButton("Memorize")
+        btn_mem.setStyleSheet(_BTN_QSS)
+        tb_lay.addWidget(btn_mem)
+
+        btn_print = QPushButton("Print ▼")
+        btn_print.setStyleSheet(_BTN_QSS)
+        tb_lay.addWidget(btn_print)
+
+        chk_later = QCheckBox("Print Later")
+        chk_later.setStyleSheet(f"color:#333; background:transparent;")
+        tb_lay.addWidget(chk_later)
+
+        chk_online = QCheckBox("Pay Online")
+        chk_online.setStyleSheet(f"color:#333; background:transparent;")
+        tb_lay.addWidget(chk_online)
+
+        tb_lay.addWidget(_sep())
+
+        # Right group
+        btn_attach = QPushButton("Attach File")
+        btn_attach.setStyleSheet(_BTN_QSS)
+        tb_lay.addWidget(btn_attach)
+
+        btn_clear = QPushButton("Clear Splits")
+        btn_clear.setStyleSheet(_BTN_QSS)
+        btn_clear.clicked.connect(self._clear_expense_rows)
+        tb_lay.addWidget(btn_clear)
+
+        btn_recalc = QPushButton("Recalculate")
+        btn_recalc.setStyleSheet(_BTN_QSS)
+        tb_lay.addWidget(btn_recalc)
+
+        tb_lay.addStretch()
+
+        self._lbl_position = QLabel("")
+        self._lbl_position.setStyleSheet("color:#555; font-size:11px; background:transparent;")
+        tb_lay.addWidget(self._lbl_position)
+
+        root.addWidget(toolbar)
+
+        # ── Account bar ───────────────────────────────────────────────────────
+        acct_bar = QWidget()
+        acct_bar.setStyleSheet(f"background:{_ACCT_BAR_BG}; border-bottom:1px solid #CCCCCC;")
+        ab_lay = QHBoxLayout(acct_bar)
+        ab_lay.setContentsMargins(10, 4, 10, 4)
+        ab_lay.setSpacing(6)
+
+        lbl_ba = QLabel("BANK ACCOUNT")
+        lbl_ba.setStyleSheet("font-size:10px; font-weight:bold; color:#444; background:transparent; border:none;")
+        ab_lay.addWidget(lbl_ba)
+
+        self._acct_combo = QComboBox()
+        self._acct_combo.setMinimumWidth(220)
+        self._acct_combo.setToolTip("Bank account to write checks against.")
+        self._acct_combo.setStyleSheet(
+            f"QComboBox {{ background:{_FIELD_BG}; border:1px solid {_FIELD_BORDER}; "
+            f"border-radius:2px; padding:2px 6px; color:#111; }}"
+        )
+        self._acct_combo.currentIndexChanged.connect(self._on_account_changed)
+        ab_lay.addWidget(self._acct_combo)
+
+        ab_lay.addStretch()
+
+        lbl_eb = QLabel("ENDING BALANCE")
+        lbl_eb.setStyleSheet("font-size:10px; font-weight:bold; color:#444; background:transparent; border:none;")
+        ab_lay.addWidget(lbl_eb)
+
+        self._lbl_balance = QLabel("—")
+        self._lbl_balance.setStyleSheet(
+            "font-size:14px; font-weight:bold; color:#222; background:transparent; border:none;"
+        )
+        ab_lay.addWidget(self._lbl_balance)
+
+        root.addWidget(acct_bar)
+
+        # ── Splitter: check paper (top) + expense area (bottom) ───────────────
+        splitter = QSplitter(Qt.Orientation.Vertical)
+        splitter.setStyleSheet(f"background:{_PAGE_BG};")
+
+        check_frame = self._build_check_paper()
+        splitter.addWidget(check_frame)
+
+        expense_area = self._build_expense_area()
+        splitter.addWidget(expense_area)
+
+        splitter.setSizes([320, 240])
+        root.addWidget(splitter, 1)
+
+        self._refresh_accounts()
+
+    def _build_check_paper(self) -> QFrame:
+        """Build the mint-green check-paper UI."""
+        frame = QFrame()
+        frame.setStyleSheet(
+            f"QFrame {{ background:{_PAPER_BG}; border:2px solid {_PAPER_BORDER}; "
+            f"border-radius:6px; margin:8px; }}"
+        )
+        frame.setMinimumHeight(240)
+
+        vbox = QVBoxLayout(frame)
+        vbox.setContentsMargins(16, 12, 16, 12)
+        vbox.setSpacing(6)
+
+        def _lbl(text: str) -> QLabel:
+            w = QLabel(text)
+            w.setStyleSheet(
+                f"color:{_PAPER_LBL}; font-size:10px; font-weight:bold; "
+                f"background:transparent; border:none;"
+            )
+            return w
+
+        def _inp(min_w: int = 120) -> QLineEdit:
+            w = QLineEdit()
+            w.setMinimumWidth(min_w)
+            w.setStyleSheet(
+                f"QLineEdit {{ background:{_FIELD_BG}; color:#111; "
+                f"border:1px solid {_FIELD_BORDER}; border-radius:2px; padding:2px 4px; }}"
+            )
+            return w
+
+        # Row 0 — NO + DATE (right-aligned)
+        row0 = QHBoxLayout()
+        row0.addStretch()
+        row0.addWidget(_lbl("NO."))
+        self._fld_number = _inp(80)
+        self._fld_number.setToolTip("Check number / reference (stored as ref_number).")
+        row0.addWidget(self._fld_number)
+        row0.addSpacing(12)
+        row0.addWidget(_lbl("DATE"))
+        self._date_edit = QDateEdit()
+        configure_qdate_edit_us(self._date_edit)
+        self._date_edit.setToolTip("Transaction date.")
+        self._date_edit.setMinimumWidth(130)
+        self._date_edit.setStyleSheet(
+            f"QDateEdit {{ background:{_FIELD_BG}; color:#111; "
+            f"border:1px solid {_FIELD_BORDER}; border-radius:2px; padding:2px 4px; }}"
+        )
+        row0.addWidget(self._date_edit)
+        vbox.addLayout(row0)
+
+        # Row 1 — PAY TO THE ORDER OF + $ + amount
+        row1 = QHBoxLayout()
+        row1.addWidget(_lbl("PAY TO THE ORDER OF"))
+        self._fld_payee = _inp(300)
+        self._fld_payee.setToolTip("Payee / vendor name stored as the transaction description.")
+        row1.addWidget(self._fld_payee, 1)
+        row1.addSpacing(6)
+        row1.addWidget(_lbl("$"))
+        self._spin_amount = QDoubleSpinBox()
+        self._spin_amount.setRange(0, 99_999_999.99)
+        self._spin_amount.setDecimals(2)
+        self._spin_amount.setMinimumWidth(130)
+        self._spin_amount.setToolTip(
+            "Check amount. Stored as negative (payment) in the register; "
+            "deposits are created as positive via the New Deposit button."
+        )
+        self._spin_amount.setStyleSheet(
+            f"QDoubleSpinBox {{ background:{_FIELD_BG}; color:#111; "
+            f"border:1px solid {_FIELD_BORDER}; border-radius:2px; padding:2px 4px; }}"
+        )
+        self._spin_amount.valueChanged.connect(self._on_amount_changed)
+        row1.addWidget(self._spin_amount)
+        vbox.addLayout(row1)
+
+        # Row 2 — written-out dollars line
+        row2 = QHBoxLayout()
+        self._fld_dollars = QLineEdit()
+        self._fld_dollars.setReadOnly(True)
+        self._fld_dollars.setToolTip("Amount in words — updates automatically.")
+        self._fld_dollars.setStyleSheet(
+            f"QLineEdit {{ border:none; border-bottom:1px solid {_PAPER_BORDER}; "
+            f"background:transparent; color:#333; padding:2px 0; }}"
+        )
+        row2.addWidget(self._fld_dollars, 1)
+        row2.addWidget(_lbl("DOLLARS"))
+        vbox.addLayout(row2)
+
+        # Row 3 — ADDRESS label
+        row3 = QHBoxLayout()
+        row3.addWidget(_lbl("ADDRESS"))
+        row3.addStretch()
+        vbox.addLayout(row3)
+
+        # Row 4 — address text box
+        row4 = QHBoxLayout()
+        self._address_edit = QTextEdit()
+        self._address_edit.setFixedSize(200, 70)
+        self._address_edit.setStyleSheet(
+            f"QTextEdit {{ background:{_FIELD_BG}; color:#111; "
+            f"border:1px solid {_FIELD_BORDER}; border-radius:2px; padding:2px 4px; }}"
+        )
+        row4.addWidget(self._address_edit)
+        row4.addStretch()
+        vbox.addLayout(row4)
+
+        # Row 5 — MEMO + TYPE
+        row5 = QHBoxLayout()
+        row5.addWidget(_lbl("MEMO"))
+        self._fld_memo = _inp(300)
+        self._fld_memo.setToolTip("Internal memo for this transaction.")
+        row5.addWidget(self._fld_memo, 1)
+        row5.addSpacing(16)
+        row5.addWidget(_lbl("TYPE"))
+        self._type_combo = QComboBox()
+        self._type_combo.addItem("Payment / Check", "payment")
+        self._type_combo.addItem("Deposit / Credit", "deposit")
+        self._type_combo.setToolTip(
+            "Payment = money leaving (stored negative). "
+            "Deposit = money arriving (stored positive)."
+        )
+        self._type_combo.setStyleSheet(
+            f"QComboBox {{ background:{_FIELD_BG}; color:#111; "
+            f"border:1px solid {_FIELD_BORDER}; border-radius:2px; padding:2px 4px; }}"
+        )
+        row5.addWidget(self._type_combo)
+        vbox.addLayout(row5)
+
+        return frame
+
+    def _build_expense_area(self) -> QWidget:
+        """Build the Expenses / account-coding tab area below the check."""
+        self._expense_tab = QTabWidget()
+        self._expense_tab.setStyleSheet(
+            "QTabWidget::pane { border:1px solid #C8C8C8; background:#FFFFFF; }"
+            "QTabBar::tab { background:#DEDEDE; color:#333; padding:5px 14px; "
+            "               border:1px solid #C8C8C8; border-bottom:none; margin-right:2px; }"
+            "QTabBar::tab:selected { background:#FFFFFF; font-weight:bold; "
+            "                        border-bottom:2px solid #4A90D9; color:#1A5276; }"
+            "QTabBar::tab:hover { background:#EAF3FB; }"
+        )
+
+        # Tab 0 — Expenses
+        self._exp_table = QTableWidget(10, 3)
+        self._exp_table.setHorizontalHeaderLabels(["ACCOUNT", "AMOUNT", "MEMO"])
+        self._exp_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self._exp_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        self._exp_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self._exp_table.setColumnWidth(1, 120)
+        self._exp_table.verticalHeader().setVisible(False)
+        self._exp_table.setAlternatingRowColors(True)
+        self._exp_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._exp_table.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked
+            | QAbstractItemView.EditTrigger.SelectedClicked
+            | QAbstractItemView.EditTrigger.EditKeyPressed
+        )
+        self._exp_table.setStyleSheet(
+            f"QTableWidget {{ background:{_GRID_BG}; color:{_GRID_TEXT}; "
+            f"gridline-color:{_GRID_LINES}; "
+            f"alternate-background-color:{_GRID_ALT}; }}"
+            f"QHeaderView::section {{ background:{_GRID_HDR_BG}; "
+            f"color:{_GRID_HDR_TEXT}; border:1px solid {_GRID_LINES}; padding:3px; "
+            f"font-weight:bold; }}"
+        )
+        self._exp_table.setToolTip(
+            "Account coding: enter one or more COA accounts with amounts. "
+            "The first non-empty row is saved as the transaction's primary COA category."
+        )
+        self._populate_expense_rows()
+        self._exp_table.cellChanged.connect(self._on_exp_cell_changed)
+
+        self._expense_tab.addTab(self._exp_table, "Expenses  $0.00")
+
+        # Tab 1 — Items (placeholder)
+        items_placeholder = QLabel("Items not yet implemented")
+        items_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        items_placeholder.setStyleSheet("color:#888; font-size:12px;")
+        self._expense_tab.addTab(items_placeholder, "Items  $0.00")
+
+        return self._expense_tab
+
+    def _populate_expense_rows(self) -> None:
+        """Fill expense table with COA combo boxes in the Account column."""
+        self._exp_table.blockSignals(True)
+        for r in range(self._exp_table.rowCount()):
+            # Account column — QComboBox
+            coa_combo = QComboBox()
+            coa_combo.addItem("(select account)", "")
+            for c in self._coa_list:
+                coa_combo.addItem(escape_ampersand_for_qt(c), c)
+            coa_combo.setEditable(True)
+            coa_combo.setToolTip("Chart-of-accounts category for this expense line.")
+            coa_combo.setStyleSheet(
+                f"QComboBox {{ background:{_FIELD_BG}; color:#111; "
+                f"border:1px solid {_FIELD_BORDER}; }}"
+            )
+            self._exp_table.setCellWidget(r, 0, coa_combo)
+
+            # Amount column
+            amt_item = QTableWidgetItem("")
+            amt_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            self._exp_table.setItem(r, 1, amt_item)
+
+            # Memo column
+            self._exp_table.setItem(r, 2, QTableWidgetItem(""))
+        self._exp_table.blockSignals(False)
+
+    # ── Account combo ─────────────────────────────────────────────────────────
+
+    def _refresh_accounts(self) -> None:
+        self._acct_combo.blockSignals(True)
+        prev_id = self._current_account_id
+        self._acct_combo.clear()
+        accounts = self._db.list_bank_accounts()
+        self._accounts = accounts
+        if not accounts:
+            self._acct_combo.addItem("(no accounts)", None)
+        else:
+            for acct in accounts:
+                aid = coerce_combo_int_id(acct["id"])
+                if aid is None:
+                    continue
+                label = f"{acct['name']} – {acct['bank_name'] or 'Bank'}"
+                self._acct_combo.addItem(escape_ampersand_for_qt(label), aid)
+        self._acct_combo.blockSignals(False)
+
+        if prev_id is not None:
+            ix = combo_index_for_int_user_data(self._acct_combo, prev_id)
+            self._acct_combo.setCurrentIndex(ix if ix is not None else 0)
+        else:
+            self._acct_combo.setCurrentIndex(0)
+        self._on_account_changed()
+
+    def _on_account_changed(self) -> None:
+        aid = coerce_combo_int_id(self._acct_combo.currentData())
+        self._current_account_id = aid
+        self._browse_ids = []
+        self._browse_index = None
+        if aid is not None:
+            self._reload_browse_list()
+        self._update_balance_label()
+        self._load_current()
+
+    def _reload_browse_list(self) -> None:
+        if self._current_account_id is None:
+            self._browse_ids = []
+            return
+        txns = self._db.list_transactions(self._current_account_id)
+        self._browse_ids = [int(t["id"]) for t in txns]
+
+    # ── Navigation ────────────────────────────────────────────────────────────
+
+    def _on_prev(self) -> None:
+        if not self._browse_ids:
+            return
+        if self._browse_index is None:
+            # Was on blank draft → go to last saved
+            self._browse_index = len(self._browse_ids) - 1
+        elif self._browse_index > 0:
+            self._browse_index -= 1
+        self._load_current()
+
+    def _on_next(self) -> None:
+        if not self._browse_ids:
+            # No saved transactions → blank draft
+            self._browse_index = None
+            self._load_current()
+            return
+        if self._browse_index is None:
+            # Already on blank
+            return
+        if self._browse_index < len(self._browse_ids) - 1:
+            self._browse_index += 1
+        else:
+            # Past last → blank new
+            self._browse_index = None
+        self._load_current()
+
+    def _on_new(self) -> None:
+        self._browse_index = None
+        self._load_current()
+
+    def _update_nav_buttons(self) -> None:
+        n = len(self._browse_ids)
+        has_any = n > 0
+        is_draft = self._browse_index is None
+        self._btn_prev.setEnabled(has_any and not (is_draft is False and self._browse_index == 0)
+                                  and not (is_draft and not has_any))
+        can_prev = has_any and (is_draft or self._browse_index > 0)
+        can_next = has_any  # can always go forward if there's anything saved
+        self._btn_prev.setEnabled(can_prev)
+        self._btn_next.setEnabled(can_next)
+        self._btn_delete.setEnabled(not is_draft)
+
+        if is_draft:
+            self._lbl_position.setText("New")
+        else:
+            idx = self._browse_index
+            self._lbl_position.setText(f"{idx + 1} / {n}")
+
+    # ── Load / save ───────────────────────────────────────────────────────────
+
+    def _load_current(self) -> None:
+        self._loading = True
+        try:
+            if self._browse_index is None or not self._browse_ids:
+                self._load_blank()
+            else:
+                tid = self._browse_ids[self._browse_index]
+                txn = self._db.get_transaction(tid)
+                if txn is None:
+                    self._load_blank()
+                else:
+                    self._load_txn(dict(txn))
+        finally:
+            self._loading = False
+        self._update_nav_buttons()
+
+    def _load_blank(self) -> None:
+        today = date.today()
+        self._date_edit.setDate(QDate(today.year, today.month, today.day))
+        self._fld_payee.clear()
+        self._fld_number.clear()
+        self._fld_memo.clear()
+        self._spin_amount.setValue(0.0)
+        self._fld_dollars.setText("")
+        self._type_combo.setCurrentIndex(0)  # Payment
+        self._clear_expense_rows()
+
+    def _load_txn(self, d: dict) -> None:
+        # Date
+        raw_date = (d.get("txn_date") or "").strip()
+        if raw_date:
+            parts = raw_date.split("-")
+            if len(parts) == 3:
+                try:
+                    self._date_edit.setDate(QDate(int(parts[0]), int(parts[1]), int(parts[2])))
+                except Exception:
+                    pass
+
+        # Payee
+        self._fld_payee.setText(d.get("description") or "")
+
+        # Number
+        self._fld_number.setText(d.get("ref_number") or "")
+
+        # Memo
+        self._fld_memo.setText(d.get("memo") or "")
+
+        # Amount + type
+        amt = float(d.get("amount") or 0)
+        self._spin_amount.setValue(abs(amt))
+        self._fld_dollars.setText(_amount_to_words(abs(amt)))
+        if amt >= 0:
+            self._type_combo.setCurrentIndex(1)  # Deposit
+        else:
+            self._type_combo.setCurrentIndex(0)  # Payment
+
+        # Expense row — populate first line with saved COA
+        coa = (d.get("coa_account") or "").strip()
+        self._clear_expense_rows()
+        if coa:
+            coa_combo = self._exp_table.cellWidget(0, 0)
+            if coa_combo:
+                ix = coa_combo.findData(coa)
+                if ix >= 0:
+                    coa_combo.setCurrentIndex(ix)
+                else:
+                    coa_combo.setCurrentText(escape_ampersand_for_qt(coa))
+            amt_item = self._exp_table.item(0, 1)
+            if amt_item:
+                amt_item.setText(f"{abs(amt):.2f}")
+
+    def _clear_expense_rows(self) -> None:
+        self._exp_table.blockSignals(True)
+        for r in range(self._exp_table.rowCount()):
+            coa_combo = self._exp_table.cellWidget(r, 0)
+            if coa_combo:
+                coa_combo.setCurrentIndex(0)
+            amt_item = self._exp_table.item(r, 1)
+            if amt_item:
+                amt_item.setText("")
+            memo_item = self._exp_table.item(r, 2)
+            if memo_item:
+                memo_item.setText("")
+        self._exp_table.blockSignals(False)
+
+    def _on_amount_changed(self, val: float) -> None:
+        if not self._loading:
+            self._fld_dollars.setText(_amount_to_words(val) if val else "")
+
+    def _update_expense_total(self) -> None:
+        total = 0.0
+        for r in range(self._exp_table.rowCount()):
+            item = self._exp_table.item(r, 1)
+            if item:
+                try:
+                    total += float(item.text().replace(",", "").strip())
+                except ValueError:
+                    pass
+        self._expense_tab.setTabText(0, f"Expenses  ${total:,.2f}")
+
+    def _on_exp_cell_changed(self, row: int, col: int) -> None:
+        self._update_expense_total()
+
+    def _collect_form(self) -> dict:
+        """Return form values as a dict ready for insert/update."""
+        qd = self._date_edit.date()
+        txn_date = f"{qd.year():04d}-{qd.month():02d}-{qd.day():02d}"
+        payee = self._fld_payee.text().strip()
+        ref = self._fld_number.text().strip()
+        memo = self._fld_memo.text().strip()
+        raw_amt = self._spin_amount.value()
+        is_payment = self._type_combo.currentData() == "payment"
+        amount = -raw_amt if is_payment else raw_amt
+
+        # COA from first non-empty expense row
+        coa = ""
+        for r in range(self._exp_table.rowCount()):
+            combo = self._exp_table.cellWidget(r, 0)
+            if combo:
+                val = combo.currentData() or combo.currentText().strip()
+                if val and val != "(select account)":
+                    coa = val
+                    break
+
+        return dict(
+            txn_date=txn_date,
+            description=payee,
+            ref_number=ref,
+            memo=memo,
+            amount=amount,
+            coa_account=coa,
+        )
+
+    def _on_save(self) -> None:
+        if self._current_account_id is None:
+            message_box_warning_ok(
+                self, "No account", "Select a bank account first.",
+                ok_tip="Close; choose a bank account from the combo at the top."
+            )
+            return
+        data = self._collect_form()
+        is_draft = self._browse_index is None
+
+        try:
+            if is_draft:
+                # Create new
+                new_id = self._db.insert_manual_transaction(
+                    self._current_account_id,
+                    data["txn_date"],
+                    data["amount"],
+                    description=data["description"],
+                    ref_number=data["ref_number"],
+                    memo=data["memo"],
+                    coa_account=data["coa_account"],
+                )
+                self._reload_browse_list()
+                try:
+                    self._browse_index = self._browse_ids.index(new_id)
+                except ValueError:
+                    self._browse_index = len(self._browse_ids) - 1
+            else:
+                tid = self._browse_ids[self._browse_index]
+                self._db.update_transaction(
+                    tid,
+                    description=data["description"],
+                    txn_date=data["txn_date"],
+                    amount=data["amount"],
+                    memo=data["memo"],
+                    ref_number=data["ref_number"],
+                    coa_account=data["coa_account"],
+                )
+        except ValueError as exc:
+            message_box_warning_ok(
+                self, "Cannot save",
+                escape_ampersand_for_qt(str(exc)),
+                ok_tip="Close; fix the value and try again."
+            )
+            return
+
+        self._update_balance_label()
+        self._update_nav_buttons()
+        self.transactionSaved.emit()
+
+    def _on_delete(self) -> None:
+        if self._browse_index is None or not self._browse_ids:
+            return
+        tid = self._browse_ids[self._browse_index]
+        txn = self._db.get_transaction(tid)
+        if txn is None:
+            return
+        d = dict(txn)
+        amt = float(d.get("amount") or 0)
+        label = "payment" if amt < 0 else "deposit"
+        desc = (d.get("description") or "").strip() or f"#{tid}"
+        date_s = (d.get("txn_date") or "").strip()
+        ans = message_box_question_yes_no(
+            self,
+            f"Delete {label}?",
+            f"Permanently delete this {label}?\n\n"
+            f"  Date: {date_s}\n"
+            f"  Payee: {escape_ampersand_for_qt(desc)}\n"
+            f"  Amount: ${abs(amt):,.2f}\n\n"
+            "This cannot be undone.",
+            yes_tip=f"Delete this {label} permanently.",
+            no_tip="Cancel.",
+        )
+        if not ans:
+            return
+        try:
+            self._db.delete_transaction(tid)
+        except ValueError as exc:
+            message_box_warning_ok(
+                self, "Cannot delete",
+                escape_ampersand_for_qt(str(exc)),
+                ok_tip="Close; void the GL posting first if posted."
+            )
+            return
+        # Move to adjacent transaction
+        prev_idx = self._browse_index
+        self._reload_browse_list()
+        if self._browse_ids:
+            self._browse_index = min(prev_idx, len(self._browse_ids) - 1)
+        else:
+            self._browse_index = None
+        self._load_current()
+        self._update_balance_label()
+        self.transactionSaved.emit()
+
+    # ── Balance label ─────────────────────────────────────────────────────────
+
+    def _update_balance_label(self) -> None:
+        if self._current_account_id is None:
+            self._lbl_balance.setText("—")
+            return
+        try:
+            txns = self._db.list_transactions(self._current_account_id)
+            bal = sum(float(t["amount"] or 0) for t in txns)
+            self._lbl_balance.setText(f"${bal:,.2f}")
+            self._lbl_balance.setStyleSheet(
+                f"color: {'#C0392B' if bal < 0 else '#1A6B2A'}; font-size:14px; font-weight:bold;"
+            )
+        except Exception:
+            self._lbl_balance.setText("—")
+
+    # ── Public API ────────────────────────────────────────────────────────────
+
+    def reload(self) -> None:
+        """Called by main window after external changes (e.g. CSV import)."""
+        self._reload_browse_list()
+        self._update_balance_label()
+        self._update_nav_buttons()
+
+    def refresh_accounts(self) -> None:
+        """Rebuild the bank account combo (e.g. after Manage Accounts)."""
+        self._refresh_accounts()
+
+    def refresh_coa(self, coa_list: list[str]) -> None:
+        """Update the COA dropdown options in all expense rows."""
+        self._coa_list = coa_list
+        self._populate_expense_rows()
+
+    def navigate_to_transaction(self, txn_id: int) -> None:
+        """Jump directly to *txn_id* — called from the Bank Register 'Open in Checks' context menu."""
+        self._reload_browse_list()
+        if txn_id in self._browse_ids:
+            self._browse_index = self._browse_ids.index(txn_id)
+            self._load_current()

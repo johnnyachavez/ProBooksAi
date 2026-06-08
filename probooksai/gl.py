@@ -190,6 +190,87 @@ class GLDatabase:
             "SELECT * FROM journal_entries WHERE id = ?", (entry_id,)
         ).fetchone()
 
+    def delete_journal_entry(self, entry_id: int) -> None:
+        """
+        Permanently delete a journal entry and all its lines (CASCADE).
+
+        Raises ``ValueError`` if the entry does not exist.
+        """
+        row = self.get_journal_entry(entry_id)
+        if row is None:
+            raise ValueError(f"No journal entry with id={entry_id}")
+        # journal_entry_lines have ON DELETE CASCADE, so lines go automatically
+        self._conn.execute("DELETE FROM journal_entries WHERE id = ?", (entry_id,))
+        self._conn.commit()
+
+    def update_journal_entry(
+        self,
+        entry_id: int,
+        *,
+        entry_date: Optional[str] = None,
+        memo: Optional[str] = None,
+        lines: Optional[list[dict]] = None,
+    ) -> None:
+        """
+        Update a journal entry's header and/or replace its lines.
+
+        *lines* (when provided) must be the complete balanced replacement set —
+        the existing lines are deleted and the new ones inserted.  Each dict must
+        have ``account`` (str), ``debit`` (float), ``credit`` (float), and
+        optionally ``description`` (str).
+
+        Raises ``ValueError`` if the entry does not exist, or if *lines* are
+        provided but are not balanced.
+        """
+        row = self.get_journal_entry(entry_id)
+        if row is None:
+            raise ValueError(f"No journal entry with id={entry_id}")
+
+        updates: list[str] = []
+        params: list = []
+        if entry_date is not None:
+            updates.append("entry_date = ?")
+            params.append(entry_date)
+        if memo is not None:
+            updates.append("memo = ?")
+            params.append(memo)
+        if updates:
+            params.append(entry_id)
+            self._conn.execute(
+                f"UPDATE journal_entries SET {', '.join(updates)} WHERE id = ?",
+                params,
+            )
+
+        if lines is not None:
+            total_debit  = round(sum(ln.get("debit",  0.0) for ln in lines), 2)
+            total_credit = round(sum(ln.get("credit", 0.0) for ln in lines), 2)
+            if abs(total_debit - total_credit) > 0.005:
+                raise ValueError(
+                    f"Journal entry is not balanced: "
+                    f"debit={total_debit:.2f}, credit={total_credit:.2f}"
+                )
+            # Replace lines
+            self._conn.execute(
+                "DELETE FROM journal_entry_lines WHERE entry_id = ?", (entry_id,)
+            )
+            for ln in lines:
+                self._conn.execute(
+                    """
+                    INSERT INTO journal_entry_lines
+                        (entry_id, account, debit, credit, description)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        entry_id,
+                        ln["account"],
+                        round(ln.get("debit", 0.0), 2),
+                        round(ln.get("credit", 0.0), 2),
+                        ln.get("description", ""),
+                    ),
+                )
+
+        self._conn.commit()
+
     def get_entry_lines(self, entry_id: int) -> list:
         return self._conn.execute(
             "SELECT * FROM journal_entry_lines WHERE entry_id = ? ORDER BY id",

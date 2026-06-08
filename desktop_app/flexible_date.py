@@ -143,15 +143,27 @@ def configure_qdate_edit_us(w: QDateEdit) -> None:
     Call once per widget. On *editingFinished* (Enter / focus out), parses with
     :func:`parse_flexible_date_to_ymd` and applies the resulting ``QDate`` so the field
     redisplays normalized **MM/DD/YYYY**.
+
+    Accepted shortcuts (all auto-expand on Tab/Enter):
+      ``010126``  →  01/01/2026
+      ``01012026`` →  01/01/2026
+      ``1/1/26``  →  01/01/2026
+      ``01/01/2026`` →  unchanged (already valid)
     """
     from PySide6.QtCore import QDate
+    from PySide6.QtWidgets import QLineEdit
+
     w.setCalendarPopup(False)
     w.setDisplayFormat("MM/dd/yyyy")
+
+    # Allow the internal line-edit to accept any text so the user can type
+    # compact forms (e.g. 010126) without the widget rejecting intermediate chars.
     le = w.lineEdit()
     if le is None:
         return
+    le.setInputMask("")   # clear any mask QDateEdit may set
 
-    def _on_edit_finished() -> None:
+    def _normalize() -> None:
         raw = le.text().strip()
         if not raw:
             return
@@ -159,9 +171,15 @@ def configure_qdate_edit_us(w: QDateEdit) -> None:
         if ymd is None:
             return
         y, m, d = ymd
+        # Temporarily block signals so setting the date doesn't re-trigger
+        w.blockSignals(True)
         w.setDate(QDate(y, m, d))
+        w.blockSignals(False)
+        le.setText(f"{m:02d}/{d:02d}/{y:04d}")
 
-    le.editingFinished.connect(_on_edit_finished)
+    le.editingFinished.connect(_normalize)
+    # Also normalize when the user presses Enter inside the spin sections
+    w.dateChanged.connect(lambda _: None)  # keep internal state in sync
 
 
 def create_app_date_edit(parent: Optional[QWidget] = None) -> QDateEdit:

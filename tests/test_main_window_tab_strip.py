@@ -30,23 +30,25 @@ def test_main_window_tab_count_and_fixed_top_level_order(qapp: QApplication, tmp
     w = MainWindow(db_path=str(db_path))
     try:
         tabs = w._tabs
-        assert tabs.count() == 10
+        assert tabs.count() == 12
         order = (
-            (0, "Invoices"),
-            (1, "Enter Bills"),
-            (2, "Pay Bills"),
-            (3, "Receive Payments"),
-            (4, "Bank Register"),
-            (5, "Chart of Accounts"),
-            (6, "Customers"),
-            (7, "Vendors"),
-            (8, "Reconcile"),
-            (9, "More"),
+            (0, "Dashboard"),
+            (1, "Invoices"),
+            (2, "Write Checks"),
+            (3, "Enter Bills"),
+            (4, "Pay Bills"),
+            (5, "Receive Payments"),
+            (6, "Bank Register"),
+            (7, "Chart of Accounts"),
+            (8, "Customers"),
+            (9, "Vendors"),
+            (10, "Reconcile"),
+            (11, "More"),
         )
         for idx, needle in order:
             assert needle in tabs.tabText(idx)
         tb = tabs.tabBar()
-        for i in range(10):
+        for i in range(12):
             assert tb.isTabVisible(i)
             tabs.setCurrentIndex(i)
             assert tabs.currentIndex() == i
@@ -55,7 +57,7 @@ def test_main_window_tab_count_and_fixed_top_level_order(qapp: QApplication, tmp
 
 
 def test_accounting_landing_tabs_show_page_titles(qapp: QApplication, tmp_path: Path) -> None:
-    """Tabs 0–3: Invoice, Enter Bills, Pay Bills, Receive Payments use structured screens."""
+    """Tabs 1–4: Invoice, Enter Bills, Pay Bills, Receive Payments use structured screens (tab 0 is Dashboard)."""
     from desktop_app.enter_bills_screen import EnterBillsScreen
     from desktop_app.invoice_screen import InvoiceScreen
     from desktop_app.main import MainWindow
@@ -69,12 +71,12 @@ def test_accounting_landing_tabs_show_page_titles(qapp: QApplication, tmp_path: 
     try:
         tabs = w._tabs
         expected = (
-            InvoiceScreen,
-            EnterBillsScreen,
-            PayBillsScreen,
-            ReceiveChecksScreen,
+            (1, InvoiceScreen),
+            (3, EnterBillsScreen),
+            (4, PayBillsScreen),
+            (5, ReceiveChecksScreen),
         )
-        for idx, spec in enumerate(expected):
+        for idx, spec in expected:
             tabs.setCurrentIndex(idx)
             cw = tabs.currentWidget()
             assert isinstance(cw, spec)
@@ -111,11 +113,12 @@ def test_more_hub_contains_reports_journal_business_audit(qapp: QApplication, tm
     w = MainWindow(db_path=str(db_path))
     try:
         mh = w._more_hub
-        assert mh.count() == 4
+        assert mh.count() == 5
         assert mh.widget(0) is w._reports_tab
         assert mh.widget(1) is w._journal_tab
         assert mh.widget(2) is w._business_hub
-        assert mh.widget(3) is w._audit_tab
+        assert mh.widget(3) is w._asset_register_tab
+        assert mh.widget(4) is w._audit_tab
     finally:
         w.close()
 
@@ -131,13 +134,13 @@ def test_customers_and_vendors_tabs_use_live_ar_ap_workflows(
     w = MainWindow(db_path=str(db_path))
     try:
         tabs = w._tabs
-        assert isinstance(tabs.widget(6), ARTab)
-        assert isinstance(tabs.widget(7), APTab)
-        assert tabs.widget(6) is w._customers_tab
-        assert tabs.widget(7) is w._vendors_tab
+        assert isinstance(tabs.widget(8), ARTab)
+        assert isinstance(tabs.widget(9), APTab)
+        assert tabs.widget(8) is w._customers_tab
+        assert tabs.widget(9) is w._vendors_tab
         bh = w._business_hub._business_subtabs
-        assert bh.count() == 3
-        assert "Rules" in bh.tabText(0) and "Payroll" in bh.tabText(1) and "Tax" in bh.tabText(2)
+        assert bh.count() == 4
+        assert "Rules" in bh.tabText(0) and "Payroll" in bh.tabText(1) and "Tax" in bh.tabText(2) and "Company" in bh.tabText(3)
     finally:
         w.close()
 
@@ -150,8 +153,9 @@ def test_reconcile_hub_hosts_bank_import_and_document_intake(qapp: QApplication,
     w = MainWindow(db_path=str(db_path))
     try:
         rh = w._reconcile_hub
-        assert rh.count() == 2
+        assert rh.count() == 3
         assert rh.widget(0) is w._bank_tab
         assert rh.widget(1) is w._intake_widget
+        assert rh.tabText(2) == "AR / Invoices"
     finally:
         w.close()

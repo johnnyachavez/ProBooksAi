@@ -955,10 +955,32 @@ class BankDatabase:
             "SELECT * FROM bank_transactions WHERE id = ?", (txn_id,)
         ).fetchone()
 
+    def delete_transaction(self, txn_id: int) -> None:
+        """
+        Permanently delete a bank transaction row.
+
+        Posted rows (``is_posted = 1``) are refused so GL integrity is preserved.
+        Raises ``ValueError`` if the row does not exist or is posted.
+        """
+        row = self.get_transaction(txn_id)
+        if row is None:
+            raise ValueError(f"No transaction with id={txn_id}")
+        keys = row.keys()
+        if "is_posted" in keys and int(row["is_posted"] or 0) == 1:
+            raise ValueError(
+                "Cannot delete a posted transaction. "
+                "Void the GL posting first, then delete."
+            )
+        self._conn.execute("DELETE FROM bank_transactions WHERE id = ?", (txn_id,))
+        self._conn.commit()
+
     def update_transaction(
         self,
         txn_id: int,
         *,
+        description: Optional[str] = None,
+        txn_date: Optional[str] = None,
+        amount: Any = ...,
         memo: Optional[str] = None,
         ref_number: Optional[str] = None,
         coa_account: Optional[str] = None,
@@ -970,8 +992,9 @@ class BankDatabase:
         """
         Persist inline edits on a bank transaction.
 
-        Pass ``None`` to leave *memo* / *ref_number* / *coa_account* unchanged;
-        pass ``""`` to clear *memo* or *coa_account*.
+        Pass ``None`` to leave *memo* / *ref_number* / *coa_account* / *description*
+        / *txn_date* unchanged; pass ``""`` to clear *memo* or *coa_account*.
+        Pass ``...`` (ellipsis) for *amount* to leave it unchanged.
 
         For *attachment_path*, *needs_receipt* (0/1), *cleared* (0/1), and
         *transfer_to_bank_account_id*, pass the special default (ellipsis ``...``)
@@ -988,7 +1011,10 @@ class BankDatabase:
         posted = "is_posted" in keys and int(row["is_posted"] or 0) == 1
         if posted:
             disallowed = (
-                memo is not None
+                description is not None
+                or txn_date is not None
+                or amount is not ...
+                or memo is not None
                 or ref_number is not None
                 or coa_account is not None
                 or attachment_path is not ...
@@ -1002,6 +1028,15 @@ class BankDatabase:
 
         updates: list[str] = []
         params: list = []
+        if description is not None:
+            updates.append("description = ?")
+            params.append(description)
+        if txn_date is not None:
+            updates.append("txn_date = ?")
+            params.append(txn_date)
+        if amount is not ...:
+            updates.append("amount = ?")
+            params.append(float(amount))
         if memo is not None:
             updates.append("memo = ?")
             params.append(memo)

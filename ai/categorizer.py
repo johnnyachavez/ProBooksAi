@@ -9,7 +9,8 @@ category.
 
 Environment variables
 ---------------------
-Same as ``ai.extractor``:  AI_PROVIDER, OPENAI_API_KEY, OPENAI_MODEL, AI_BASE_URL
+Same as ``ai.extractor``:  AI_PROVIDER, OPENAI_API_KEY, OPENAI_MODEL, AI_BASE_URL,
+ANTHROPIC_API_KEY, ANTHROPIC_MODEL
 """
 
 from __future__ import annotations
@@ -73,6 +74,37 @@ def _extraction_summary(result: ExtractionResult) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Anthropic text caller (no vision needed for categorisation)
+# ---------------------------------------------------------------------------
+
+def _call_anthropic_text(system: str, user: str) -> str:
+    """Call Claude with a plain text prompt and return the response string."""
+    try:
+        import anthropic
+    except ImportError as exc:
+        raise RuntimeError(
+            "The 'anthropic' package is required. Install: pip install anthropic"
+        ) from exc
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError(
+            "ANTHROPIC_API_KEY environment variable is not set. "
+            "Get a key at console.anthropic.com."
+        )
+
+    model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+    client = anthropic.Anthropic(api_key=api_key)
+    msg = client.messages.create(
+        model=model,
+        max_tokens=1024,
+        system=system,
+        messages=[{"role": "user", "content": user}],
+    )
+    return msg.content[0].text
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -97,9 +129,9 @@ def suggest_categories(
         Populated dataclass; ``error`` is set if the call fails.
     """
     provider = os.environ.get("AI_PROVIDER", "openai").lower()
-    if provider != "openai":
+    if provider not in ("openai", "anthropic"):
         return CategorySuggestions(
-            error=f"Unsupported AI_PROVIDER: {provider!r}. Only 'openai' is currently supported."
+            error=f"Unsupported AI_PROVIDER: {provider!r}. Set to 'anthropic' or 'openai'."
         )
 
     coa_text = _build_coa_summary(chart_of_accounts)
@@ -119,7 +151,10 @@ def suggest_categories(
     try:
         from ai.extractor import _call_openai, _parse_response
 
-        raw = _call_openai(messages)
+        if provider == "anthropic":
+            raw = _call_anthropic_text(_SYSTEM_PROMPT, user_message)
+        else:
+            raw = _call_openai(messages)
         data = _parse_response(raw)
 
         acct_num = data.get("coa_account")

@@ -6,11 +6,13 @@ full extraction and draft creation are not implemented yet.
 
 from __future__ import annotations
 
+import json
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -27,6 +29,155 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+
+class _ExtractWorker(QThread):
+    """Background thread: AI extraction + DB writes using its own SQLite connection.
+
+    Never touches Qt widgets or the main thread's DB connection — safe to run in a
+    QThread.  Signals are queued across thread boundary automatically by Qt.
+    """
+
+    row_done = Signal(str, str, str)   # path, outcome ("ok"|"skip"|"error"), message
+    all_done = Signal(int, int, list)  # imported, skipped, errors[]
+
+    def __init__(self, db_path: str, pdf_paths: list[str], parent=None):
+        super().__init__(parent)
+        self._db_path = db_path
+        self._paths = pdf_paths
+
+    def run(self) -> None:
+        import sqlite3 as _sql
+        import logging as _log
+
+        # Set up file logger BEFORE any imports that might fail
+        _log_path = os.path.join(os.environ.get("APPDATA", ""), "ProBooksAi", "extraction.log")
+        try:
+            os.makedirs(os.path.dirname(_log_path), exist_ok=True)
+            _fh = _log.FileHandler(_log_path, encoding="utf-8")
+            _fh.setFormatter(_log.Formatter("%(asctime)s %(levelname)s %(message)s"))
+            _logger = _log.getLogger("intake_extract")
+            _logger.handlers.clear()
+            _logger.addHandler(_fh)
+            _logger.setLevel(_log.DEBUG)
+        except Exception:
+            _logger = _log.getLogger("intake_extract")
+
+        _logger.info(f"Worker started — {len(self._paths)} file(s), db={self._db_path}")
+        _logger.info(f"ANTHROPIC_API_KEY set: {bool(os.environ.get('ANTHROPIC_API_KEY','').strip())}")
+
+        # Import business modules — log any ImportError so it's visible in extraction.log
+        try:
+            from probooksai import business as _biz  # noqa: PLC0415
+            from desktop_app.invoice_screen import _ai_extract_invoice, _find_or_create_customer  # noqa: PLC0415
+        except Exception as _imp_exc:
+            import traceback as _tb
+            _logger.error(f"Import failed — extraction cannot run: {_imp_exc}\n{_tb.format_exc()}")
+            self.all_done.emit(0, 0, [f"Import error: {_imp_exc}"])
+            return
+
+        try:
+            conn = _sql.connect(self._db_path)
+            conn.row_factory = _sql.Row
+        except Exception as exc:
+            _logger.error(f"Cannot open DB: {exc}")
+            self.all_done.emit(0, 0, [f"Cannot open company file: {exc}"])
+            return
+
+        imported = 0
+        skipped = 0
+        errors: list[str] = []
+
+        try:
+            for pdf_path in self._paths:
+                fname = os.path.basename(pdf_path)
+                _logger.info(f"Extracting: {fname}")
+                data = _ai_extract_invoice(pdf_path)
+                if not data:
+                    msg = f"{fname}: Could not extract (check ANTHROPIC_API_KEY)"
+                    _logger.error(msg)
+                    errors.append(msg)
+                    self.row_done.emit(pdf_path, "error", msg)
+                    continue
+                _logger.info(f"AI returned data for {fname}: inv={data.get('invoice_number')} customer={data.get('customer_name')}")
+
+                inv_num = (data.get("invoice_number") or "").strip()
+                inv_date = (data.get("invoice_date") or "").strip()
+                customer_name = (data.get("customer_name") or "").strip()
+                po = (data.get("po_contract") or "").strip()
+                name_job = (data.get("name_job") or "").strip()
+                total = float(data.get("total") or 0.0)
+
+                if not customer_name:
+                    msg = f"{fname}: No customer name found"
+                    _logger.error(msg)
+                    errors.append(msg)
+                    self.row_done.emit(pdf_path, "error", msg)
+                    continue
+
+                try:
+                    customer_id = _find_or_create_customer(
+                        conn, customer_name, data.get("customer_address", "")
+                    )
+                except Exception as exc:
+                    msg = f"{fname}: Customer error — {exc}"
+                    errors.append(msg)
+                    self.row_done.emit(pdf_path, "error", msg)
+                    continue
+
+                memo_parts = []
+                if po:
+                    memo_parts.append(f"PO: {po}")
+                if name_job:
+                    memo_parts.append(f"Job: {name_job}")
+                memo = "\n".join(memo_parts)
+
+                inv_lines = []
+                for ln in (data.get("lines") or []):
+                    so = (ln.get("serviced_on") or "").strip()
+                    jl = (ln.get("jl_num") or "").strip()
+                    desc = (ln.get("description") or "Service").strip()
+                    bol = (ln.get("bol") or "").strip()
+                    parts = [so, jl, desc, bol]
+                    while parts and not parts[-1]:
+                        parts.pop()
+                    full_desc = " — ".join(parts)
+                    inv_lines.append({
+                        "description": full_desc,
+                        "qty": float(ln.get("qty") or 1),
+                        "rate": float(ln.get("rate") or total),
+                    })
+                if not inv_lines:
+                    inv_lines = [{"description": "Trucking Service", "qty": 1.0, "rate": total}]
+
+                try:
+                    existing = conn.execute(
+                        "SELECT id FROM invoices WHERE invoice_number = ?", (inv_num,)
+                    ).fetchone()
+                    if existing:
+                        skipped += 1
+                        self.row_done.emit(pdf_path, "skip", f"Duplicate #{inv_num}")
+                        continue
+
+                    _biz.create_invoice(
+                        conn,
+                        customer_id=customer_id,
+                        invoice_number=inv_num,
+                        invoice_date=inv_date,
+                        memo=memo,
+                        lines=inv_lines,
+                        status="Sent",
+                    )
+                    imported += 1
+                    self.row_done.emit(pdf_path, "ok", f"#{inv_num} — {customer_name}")
+                except Exception as exc:
+                    msg = f"{fname}: Save error — {exc}"
+                    errors.append(msg)
+                    self.row_done.emit(pdf_path, "error", msg)
+        finally:
+            conn.close()
+
+        self.all_done.emit(imported, skipped, errors)
 
 from desktop_app.qt_mnemonic import message_box_information_ok
 from desktop_app.theme import (
@@ -51,6 +202,27 @@ _INTAKE_COLS = (
     "Status",
     "Notes / Needs Review",
 )
+
+_QUEUE_SAVE_PATH = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "ProBooksAi" / "intake_queue.json"
+
+
+def _load_queue_from_disk() -> list[dict]:
+    """Load persisted intake queue rows from disk. Returns [] if missing or corrupt."""
+    try:
+        if _QUEUE_SAVE_PATH.exists():
+            return json.loads(_QUEUE_SAVE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return []
+
+
+def _save_queue_to_disk(rows: list[dict]) -> None:
+    """Persist the current queue rows to disk."""
+    try:
+        _QUEUE_SAVE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _QUEUE_SAVE_PATH.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
 
 _ROLE_PATH = Qt.ItemDataRole.UserRole
 _ROLE_TEXT_PAYLOAD = Qt.ItemDataRole.UserRole + 1
@@ -91,6 +263,7 @@ class InvoiceIntakePanel(QWidget):
     ) -> None:
         super().__init__(parent)
         self._invoice_screen = invoice_screen
+        self._extract_worker: Optional[_ExtractWorker] = None
         self.setObjectName("invoiceIntakePanel")
         self.setMinimumHeight(200)
         self.setToolTip(
@@ -98,6 +271,7 @@ class InvoiceIntakePanel(QWidget):
             "Review here, then a future step will map lines to the invoice grid below."
         )
         self._build_ui()
+        self._restore_queue()
         if self._invoice_screen is not None and hasattr(self._invoice_screen, "_inv_number"):
             invn = getattr(self._invoice_screen, "_inv_number", None)
             if invn is not None:
@@ -133,16 +307,17 @@ class InvoiceIntakePanel(QWidget):
         lay.addLayout(head)
 
         flow = QLabel(
-            "Flow: source document in → review / edit → invoice draft out (extraction and drafting are next steps)."
+            "Stage PDFs here, then click <b>Extract &amp; Create Invoice</b> to import via Claude AI."
         )
         flow.setWordWrap(True)
+        flow.setTextFormat(Qt.TextFormat.RichText)
         flow.setStyleSheet(f"color: {_INV_CAPTION}; font-size: 11px; background: transparent;")
         lay.addWidget(flow)
 
         actions = QHBoxLayout()
         actions.setSpacing(8)
         self._btn_pdf = QPushButton("Import PDF…")
-        self._btn_pdf.setToolTip("Add a PDF to the intake queue (staged for future parsing).")
+        self._btn_pdf.setToolTip("Add one or more PDFs to the intake queue.")
         self._btn_pdf.clicked.connect(self._on_import_pdf)
         self._btn_img = QPushButton("Import image…")
         self._btn_img.setToolTip("Add an image (PNG, JPG, …) to the intake queue.")
@@ -153,19 +328,39 @@ class InvoiceIntakePanel(QWidget):
         self._btn_remove = QPushButton("Remove selected")
         self._btn_remove.setToolTip("Remove the selected queue row.")
         self._btn_remove.clicked.connect(self._on_remove_selected)
+
+        self._btn_extract_all = QPushButton("⚡ Extract & Create Invoices")
+        self._btn_extract_all.setToolTip(
+            "Send all Staged PDFs to Claude AI, extract invoice data, "
+            "and create invoice records (status: Sent)."
+        )
+        self._btn_extract_all.clicked.connect(self._on_extract_all)
+        self._btn_extract_all.setStyleSheet(
+            "QPushButton { background-color: #1a4b8b; color: #fff; "
+            "border: 1px solid #2a6bd0; border-radius: 4px; padding: 4px 14px; font-weight: 700; }"
+            "QPushButton:hover { background-color: #2255a0; }"
+            "QPushButton:pressed { background-color: #143870; }"
+            "QPushButton:disabled { background-color: #333; color: #666; border-color: #444; }"
+        )
+        # Keep a stub reference so existing code that checks _btn_extract_selected still works
+        self._btn_extract_selected = self._btn_extract_all
+
         for b in (
             self._btn_pdf,
             self._btn_img,
             self._btn_paste,
             self._btn_remove,
+            self._btn_extract_all,
         ):
             b.setAutoDefault(False)
             b.setDefault(False)
+
         actions.addWidget(self._btn_pdf)
         actions.addWidget(self._btn_img)
         actions.addWidget(self._btn_paste)
         actions.addWidget(self._btn_remove)
         actions.addStretch(1)
+        actions.addWidget(self._btn_extract_all)
         lay.addLayout(actions)
 
         split = QSplitter(Qt.Orientation.Horizontal)
@@ -205,6 +400,7 @@ class InvoiceIntakePanel(QWidget):
             " }}"
         )
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
+        self._table.itemSelectionChanged.connect(self._update_extract_button_state)
 
         review = QFrame()
         review.setObjectName("invoiceIntakeReviewPanel")
@@ -282,6 +478,7 @@ class InvoiceIntakePanel(QWidget):
         outer.addWidget(band, 1)
         self._on_selection_changed()
         self._sync_draft_target_hint()
+        self._update_extract_button_state()
 
     def _sync_draft_target_hint(self) -> None:
         inv = self._invoice_screen
@@ -295,6 +492,16 @@ class InvoiceIntakePanel(QWidget):
             f"Suggested invoice # (current form): {num or '—'}"
         )
         self._txt_draft.setPlainText(body)
+
+    def _update_extract_button_state(self) -> None:
+        r = self._table.currentRow()
+        enabled = False
+        if r >= 0:
+            src_it = self._table.item(r, 0)
+            if src_it is not None:
+                path = src_it.data(_ROLE_PATH)
+                enabled = isinstance(path, str) and bool(path.strip())
+        self._btn_extract_selected.setEnabled(enabled)
 
     def _on_selection_changed(self) -> None:
         r = self._table.currentRow()
@@ -339,6 +546,54 @@ class InvoiceIntakePanel(QWidget):
 
         self._sync_draft_target_hint()
 
+    def _current_queue_rows(self) -> list[dict]:
+        """Snapshot the table into a list of dicts for persistence."""
+        rows = []
+        for r in range(self._table.rowCount()):
+            src_it = self._table.item(r, 0)
+            kind_it = self._table.item(r, 1)
+            date_it = self._table.item(r, 2)
+            status_it = self._table.item(r, 3)
+            notes_it = self._table.item(r, 4)
+            if src_it is None:
+                continue
+            rows.append({
+                "source": src_it.text(),
+                "path": src_it.data(_ROLE_PATH) or "",
+                "payload": src_it.data(_ROLE_TEXT_PAYLOAD) or "",
+                "kind": kind_it.text() if kind_it else "",
+                "date_added": date_it.text() if date_it else "",
+                "status": status_it.text() if status_it else "Staged",
+                "notes": notes_it.text() if notes_it else "",
+            })
+        return rows
+
+    def _save_queue(self) -> None:
+        _save_queue_to_disk(self._current_queue_rows())
+
+    def _restore_queue(self) -> None:
+        """Reload persisted queue rows from disk into the table."""
+        rows = _load_queue_from_disk()
+        for row in rows:
+            r = self._table.rowCount()
+            self._table.insertRow(r)
+            s0 = _readonly_item(row.get("source", ""))
+            p = row.get("path", "")
+            payload = row.get("payload", "")
+            if p:
+                s0.setData(_ROLE_PATH, p)
+            if payload:
+                s0.setData(_ROLE_TEXT_PAYLOAD, payload)
+            self._table.setItem(r, 0, s0)
+            self._table.setItem(r, 1, _readonly_item(row.get("kind", "PDF")))
+            self._table.setItem(r, 2, _readonly_item(row.get("date_added", _now_display())))
+            status = row.get("status", "Staged")
+            # Re-stage anything that was mid-extraction when app closed
+            if status == "Extracting…":
+                status = "Staged"
+            self._table.setItem(r, 3, _editable_item(status))
+            self._table.setItem(r, 4, _editable_item(row.get("notes", "")))
+
     def _append_row(
         self,
         *,
@@ -362,21 +617,174 @@ class InvoiceIntakePanel(QWidget):
         self._table.setItem(r, 4, _editable_item(notes))
         self._table.selectRow(r)
         self._on_selection_changed()
+        self._save_queue()
 
     def _on_import_pdf(self) -> None:
-        path, _filt = QFileDialog.getOpenFileName(
+        paths, _filt = QFileDialog.getOpenFileNames(
             self,
-            "Import PDF",
+            "Import PDFs",
             "",
             "PDF files (*.pdf);;All files (*.*)",
         )
-        if not path:
+        for path in paths:
+            self._append_row(
+                source_display=os.path.basename(path),
+                kind="PDF",
+                path=os.path.abspath(path),
+            )
+
+    def _is_worker_busy(self) -> bool:
+        return self._extract_worker is not None and self._extract_worker.isRunning()
+
+    def _get_db_path(self) -> str:
+        """Return the file path of the open company SQLite DB (empty string if unknown)."""
+        import sqlite3 as _sql
+        inv = self._invoice_screen
+        if inv is None:
+            return ""
+        conn = getattr(inv, "_ap_conn", None)
+        if conn is None:
+            return ""
+        try:
+            for _seq, _name, fname in conn.execute("PRAGMA database_list").fetchall():
+                if fname and str(fname) not in ("", ":memory:"):
+                    return os.path.abspath(str(fname))
+        except _sql.Error:
+            pass
+        return ""
+
+    def _start_extraction(self, paths: list[str], row_map: dict[str, int]) -> None:
+        """Kick off _ExtractWorker for *paths*; update table rows via signals (non-blocking)."""
+        if self._invoice_screen is None:
+            message_box_information_ok(self, "Not available", "Invoice screen is not connected.", ok_tip="Close.")
             return
-        self._append_row(
-            source_display=os.path.basename(path),
-            kind="PDF",
-            path=os.path.abspath(path),
-        )
+
+        if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
+            message_box_information_ok(
+                self, "API key missing",
+                "ANTHROPIC_API_KEY is not set.\n\n"
+                "Add it to your .env file in the ProBooksAi folder:\n"
+                "  ANTHROPIC_API_KEY=sk-ant-...\n\n"
+                "Then restart the app.",
+                ok_tip="Close.",
+            )
+            # Reset statuses back to Staged
+            for r in row_map.values():
+                it = self._table.item(r, 3)
+                if it and it.text() == "Extracting…":
+                    it.setText("Staged")
+            return
+
+        db_path = self._get_db_path()
+        if not db_path:
+            message_box_information_ok(self, "No company file", "Open a company file first (File → Open company…).", ok_tip="Close.")
+            return
+
+        if self._is_worker_busy():
+            message_box_information_ok(self, "Busy", "Extraction already in progress — wait for it to finish.", ok_tip="Close.")
+            return
+
+        # Disable buttons while running
+        self._btn_extract_selected.setEnabled(False)
+        self._btn_extract_all.setEnabled(False)
+        self._btn_extract_all.setText("Extracting…")
+
+        worker = _ExtractWorker(db_path, paths)
+        self._extract_worker = worker
+
+        def _on_row(pdf_path, outcome, msg):
+            r = row_map.get(pdf_path)
+            if r is None:
+                return
+            status_it = self._table.item(r, 3)
+            notes_it = self._table.item(r, 4)
+            label = {"ok": "Imported", "skip": "Duplicate", "error": "Error"}.get(outcome, outcome)
+            if status_it:
+                status_it.setText(label)
+            if notes_it:
+                notes_it.setText(msg)
+
+        def _on_all_done(imported, skipped, errors):
+            self._btn_extract_all.setText("⚡ Extract & Create Invoices")
+            self._update_extract_button_state()
+            self._btn_extract_all.setEnabled(True)
+            self._save_queue()
+            # Refresh the invoice browse queue and customer list on the main thread
+            inv = self._invoice_screen
+            if inv is not None and imported > 0:
+                if hasattr(inv, "_refresh_browse_state"):
+                    inv._refresh_browse_state()
+                if hasattr(inv, "_sync_invoice_number_suggestion"):
+                    inv._sync_invoice_number_suggestion()
+                bp = getattr(inv, "_bill_customer_panel", None)
+                if bp is not None and hasattr(bp, "reload_customers"):
+                    bp.reload_customers()
+                # Navigate to the most recent invoice so the user can see the results
+                ids = getattr(inv, "_browse_ids", [])
+                if ids and hasattr(inv, "_load_invoice_by_list_index"):
+                    inv._load_invoice_by_list_index(len(ids) - 1)
+            parts = [f"Imported: {imported}", f"Skipped (duplicates): {skipped}"]
+            if errors:
+                parts.append(f"Errors: {len(errors)}")
+                parts.extend(f"  {x}" for x in errors[:5])
+            message_box_information_ok(self, "Extraction complete", "\n".join(parts), ok_tip="Close.")
+
+        worker.row_done.connect(_on_row)
+        worker.all_done.connect(_on_all_done)
+        worker.start()
+
+    def _on_extract_selected(self) -> None:
+        """Extract the currently selected staged PDF row via Claude AI (background thread)."""
+        if self._is_worker_busy():
+            message_box_information_ok(self, "Busy", "Extraction already in progress.", ok_tip="Close.")
+            return
+        r = self._table.currentRow()
+        if r < 0:
+            message_box_information_ok(self, "No row selected", "Select a staged PDF row first.", ok_tip="Close.")
+            return
+        src_it = self._table.item(r, 0)
+        if src_it is None:
+            return
+        path = src_it.data(_ROLE_PATH)
+        if not isinstance(path, str) or not path.strip():
+            message_box_information_ok(self, "No file", "Selected row has no file path (text rows cannot be extracted).", ok_tip="Close.")
+            return
+
+        status_it = self._table.item(r, 3)
+        if status_it:
+            status_it.setText("Extracting…")
+
+        self._start_extraction([path], {path: r})
+
+    def _on_extract_all(self) -> None:
+        """Extract and import every Staged PDF row in the queue (background thread)."""
+        if self._is_worker_busy():
+            message_box_information_ok(self, "Busy", "Extraction already in progress.", ok_tip="Close.")
+            return
+
+        staged_rows: list[tuple[int, str]] = []
+        for r in range(self._table.rowCount()):
+            kind_it = self._table.item(r, 1)
+            status_it = self._table.item(r, 3)
+            src_it = self._table.item(r, 0)
+            if kind_it and kind_it.text() == "PDF" and status_it and status_it.text() == "Staged":
+                if src_it is not None:
+                    path = src_it.data(_ROLE_PATH)
+                    if isinstance(path, str) and path.strip():
+                        staged_rows.append((r, path))
+
+        if not staged_rows:
+            message_box_information_ok(self, "Nothing to extract", "No Staged PDF rows found in the queue.", ok_tip="Close.")
+            return
+
+        # Mark all as Extracting… immediately so the user sees progress
+        for r, _ in staged_rows:
+            status_it = self._table.item(r, 3)
+            if status_it:
+                status_it.setText("Extracting…")
+
+        row_map = {path: r for r, path in staged_rows}
+        self._start_extraction([p for _, p in staged_rows], row_map)
 
     def _on_import_image(self) -> None:
         path, _filt = QFileDialog.getOpenFileName(
@@ -419,3 +827,4 @@ class InvoiceIntakePanel(QWidget):
             return
         self._table.removeRow(r)
         self._on_selection_changed()
+        self._save_queue()

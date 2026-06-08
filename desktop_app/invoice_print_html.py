@@ -3,6 +3,15 @@
 Plain-text inputs are escaped. Used by :class:`desktop_app.invoice_screen.InvoiceScreen` (Print)
 and :func:`desktop_app.invoice_pdf.save_invoice_pdf` (programmatic PDF to a known path).
 This module does not open dialogs.
+
+Layout (top → bottom)
+----------------------
+1. Header row: logo (top-left, no border) | "Invoice" title (right)
+2. Body row:   BILL TO (left 50%) | four stacked label+value cells (right 48%):
+               DATE / INVOICE # / PO-CONTRACT# / NAME-JOB#
+3. Line-items grid (7 columns)
+4. Balance Due footer row
+5. Notes footer
 """
 
 from __future__ import annotations
@@ -11,6 +20,17 @@ from probooksai.html_escape import escape_html_text as _he
 
 # Body rows (excluding header): at least this many for a printable blank grid.
 DEFAULT_MIN_LINE_ROWS = 18
+
+# Shared inline styles (kept as constants to reduce repetition)
+_HDR_TH = (
+    "text-align:left; font-weight:bold; padding:3px 8px; "
+    "border:1px solid #000; background:#f0f0f0; font-size:8pt; "
+    "text-transform:uppercase;"
+)
+_HDR_TD = (
+    "text-align:left; border:1px solid #000; "
+    "padding:5px 8px; min-height:22px; vertical-align:top;"
+)
 
 
 def parse_invoice_line_description(raw: str) -> tuple[str, str, str, str]:
@@ -78,6 +98,46 @@ def _footer_html(plain: str) -> str:
     return _he(t).replace("\n", "<br/>")
 
 
+def _logo_block_html(
+    logo_data_uri: str,
+    company_block_plain: str,
+    logo_display_w: int = 400,
+    logo_display_h: int = 180,
+) -> str:
+    """Return the top-left cell content: logo image (no border) or fallback company text.
+
+    ``logo_display_w`` / ``logo_display_h`` must be explicit pixel integers because
+    Qt's QTextDocument HTML renderer does not honour CSS ``max-width`` / ``max-height``
+    on ``<img>`` tags — only literal ``width``/``height`` attributes work.
+    """
+    if logo_data_uri:
+        # Explicit width/height so Qt renders at the correct scaled size, not full resolution.
+        logo_img = (
+            f'<img src="{logo_data_uri}" '
+            f'width="{logo_display_w}" height="{logo_display_h}" '
+            'style="border:none; display:block;" />'
+        )
+        # If there is also a company address block, show it in smaller text below the logo
+        contact = ""
+        if company_block_plain:
+            lines = [ln.strip() for ln in company_block_plain.splitlines() if ln.strip()]
+            # Skip first line (usually company name — already in the logo)
+            if len(lines) > 1:
+                contact_text = "<br/>".join(_he(x) for x in lines[1:])
+                contact = (
+                    f'<div style="font-size:8.5pt;color:#333;line-height:1.35;margin-top:5px;">'
+                    f"{contact_text}</div>"
+                )
+        return logo_img + contact
+    # No logo: fall back to bordered company block
+    return (
+        '<table width="100%" cellspacing="0" cellpadding="8" '
+        'style="border:1px solid #000; border-collapse:collapse;">'
+        f'<tr><td valign="top" style="min-height:88px;">{_company_html(company_block_plain)}</td></tr>'
+        "</table>"
+    )
+
+
 def build_invoice_print_html(
     *,
     company_block_plain: str = "",
@@ -90,6 +150,9 @@ def build_invoice_print_html(
     line_rows: list[tuple[str, str, str, str, str, str, str]] | None = None,
     balance_due_plain: str = "",
     min_body_rows: int = DEFAULT_MIN_LINE_ROWS,
+    logo_data_uri: str = "",
+    logo_display_w: int = 400,
+    logo_display_h: int = 180,
 ) -> str:
     """
     Trucking-style invoice layout for QTextDocument print/PDF.
@@ -97,6 +160,11 @@ def build_invoice_print_html(
     ``line_rows`` tuples are
     ``(serviced_on, jl_num, description, bol, rate, qty, amount)`` — caller supplies
     display strings (already formatted numbers where needed).
+
+    ``logo_data_uri`` — base64 data URI (``data:image/png;base64,...``) for the company
+    logo.  When supplied the logo is rendered top-left with no border; the company block
+    text is shown below it as contact details.  When omitted the classic bordered company
+    text block is used instead.
     """
     rows = list(line_rows or [])
     n = max(len(rows), max(0, min_body_rows))
@@ -105,23 +173,25 @@ def build_invoice_print_html(
         if i < len(rows):
             so, jl, desc, bol, rate, qty, amt = rows[i]
             cells = [
-                _he(so.strip()),
-                _he(jl.strip()),
-                _he(desc.strip()),
-                _he(bol.strip()),
-                _he(rate.strip()),
-                _he(qty.strip()),
-                _he(amt.strip()),
+                _he(so.strip()).replace("\n", "<br/>"),
+                _he(jl.strip()).replace("\n", "<br/>"),
+                _he(desc.strip()).replace("\n", "<br/>"),
+                _he(bol.strip()).replace("\n", "<br/>"),
+                _he(rate.strip()).replace("\n", "<br/>"),
+                _he(qty.strip()).replace("\n", "<br/>"),
+                _he(amt.strip()).replace("\n", "<br/>"),
             ]
         else:
             cells = ["&#160;"] * 7
         body_html.append(
             "<tr>"
             + "".join(
-                f'<td style="text-align:left;vertical-align:top;padding:3px 4px;">{c}</td>'
+                f'<td style="text-align:left;vertical-align:top;padding:3px 4px;'
+                f'border:0;border-left:1px solid #000;border-right:1px solid #000;">{c}</td>'
                 if j < 4
                 else f'<td style="text-align:right;vertical-align:top;padding:3px 4px;'
-                f'font-variant-numeric:tabular-nums;">{c}</td>'
+                f'font-variant-numeric:tabular-nums;'
+                f'border:0;border-left:1px solid #000;border-right:1px solid #000;">{c}</td>'
                 for j, c in enumerate(cells)
             )
             + "</tr>"
@@ -133,69 +203,77 @@ def build_invoice_print_html(
     nj = _he((name_job or "").strip()) or "&#160;"
     bal = _he((balance_due_plain or "").strip()) or "&#160;"
 
+    top_left = _logo_block_html(logo_data_uri, company_block_plain, logo_display_w, logo_display_h)
+
     parts = [
         "<html><head><meta charset=\"utf-8\"/></head><body "
         "style=\"margin:0.5in; font-family: Arial, Helvetica, sans-serif; "
         "font-size:10pt; color:#000;\">",
-        # Top: company (left) + Invoice title / date / number (right)
+
+        # ── Row 1: Logo / company block (left) + "Invoice" title (right) ──────
         "<table width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border:none;\">",
         "<tr>",
-        '<td width="55%" valign="top" style="border:none; padding:0 12px 0 0;">',
-        '<table width="100%" cellspacing="0" cellpadding="8" '
-        'style="border:1px solid #000; border-collapse:collapse;">',
-        f'<tr><td valign="top" style="min-height:88px;">{_company_html(company_block_plain)}</td></tr>',
-        "</table>",
+        # Left: logo (no border) or company text block
+        '<td width="55%" valign="middle" style="border:none; padding:0 16px 0 0;">',
+        top_left,
         "</td>",
+        # Right: "Invoice" heading only
         '<td width="45%" valign="top" style="border:none; padding:0;">',
-        '<div style="font-size:20pt; font-weight:bold; text-align:right; letter-spacing:0.02em; '
-        'line-height:1.1;margin-bottom:6px;">Invoice</div>',
-        '<table width="100%" cellspacing="0" cellpadding="0" '
-        'style="border:2px solid #000; border-collapse:collapse; margin-top:2px;">',
-        "<tr>",
-        '<th style="text-align:center; font-weight:bold; border:1px solid #000; width:50%; '
-        'background:#f0f0f0; font-size:8pt; padding:4px 6px;">DATE</th>',
-        '<th style="text-align:center; font-weight:bold; border:1px solid #000; width:50%; '
-        'background:#f0f0f0; font-size:8pt; padding:4px 6px;">INVOICE #</th>',
-        "</tr>",
-        "<tr>",
-        f'<td style="text-align:center; border:1px solid #000; padding:5px 8px;">{inv_d}</td>',
-        f'<td style="text-align:center; border:1px solid #000; padding:5px 8px;">{inv_n}</td>',
-        "</tr>",
-        "</table>",
+        '<div style="font-size:22pt; font-weight:bold; text-align:right; '
+        'letter-spacing:0.02em; line-height:1.1; margin-bottom:4px;">Invoice</div>',
         "</td>",
         "</tr>",
         "</table>",
-        # Bill To + PO / Job
-        '<table width="100%" cellspacing="0" cellpadding="0" style="border:none; margin-top:14px;">',
-        "<tr>",
-        '<td width="50%" valign="top" style="border:none; padding:0;">',
+
+        # ── Row 2: BILL TO (left) + 4 stacked meta-fields (right) ────────────
         '<table width="100%" cellspacing="0" cellpadding="0" '
+        'style="border:none; margin-top:12px;">',
+        "<tr>",
+
+        # Left: BILL TO — height="216" matches the 4×(th+td) stack on the right;
+        # Qt's QTextDocument ignores height:100% on nested tables so we use the
+        # HTML height attribute instead.
+        '<td width="50%" valign="top" style="border:none; padding:0;">',
+        '<table width="100%" cellspacing="0" cellpadding="0" height="216" '
         'style="border:1px solid #000; border-collapse:collapse;">',
-        '<tr><th style="text-align:left; padding:5px 8px; font-weight:bold; border-bottom:1px solid #000; '
-        'background:#f0f0f0; font-size:8pt;">BILL TO</th></tr>',
-        '<tr><td valign="top" style="padding:8px; min-height:72px;line-height:1.35;">'
+        '<tr><th style="text-align:left; padding:5px 8px; font-weight:bold; '
+        'border-bottom:1px solid #000; background:#f0f0f0; font-size:8pt; '
+        'text-transform:uppercase;">BILL TO</th></tr>',
+        '<tr><td valign="top" style="padding:8px; height:190px; line-height:1.35;">'
         f"{_bill_to_html(bill_to_plain)}</td></tr>",
         "</table>",
         "</td>",
+
+        # Gap
         '<td width="2%" style="border:none;">&#160;</td>',
+
+        # Right: 4 stacked cells — DATE, INVOICE #, PO/CONTRACT#, NAME/JOB#
         '<td width="48%" valign="top" style="border:none; padding:0;">',
         '<table width="100%" cellspacing="0" cellpadding="0" '
         'style="border:1px solid #000; border-collapse:collapse;">',
-        "<tr>",
-        '<th style="text-align:center; font-weight:bold; padding:4px 6px; border:1px solid #000; '
-        'width:50%; background:#f0f0f0; font-size:8pt;">PO/CONTRACT#</th>',
-        '<th style="text-align:center; font-weight:bold; padding:4px 6px; border:1px solid #000; '
-        'width:50%; background:#f0f0f0; font-size:8pt;">NAME/JOB#</th>',
-        "</tr>",
-        "<tr>",
-        f'<td valign="top" style="padding:8px; border:1px solid #000; min-height:44px;">{po}</td>',
-        f'<td valign="top" style="padding:8px; border:1px solid #000; min-height:44px;">{nj}</td>',
-        "</tr>",
+
+        # DATE
+        f'<tr><th style="{_HDR_TH}">DATE</th></tr>',
+        f'<tr><td style="{_HDR_TD}">{inv_d}</td></tr>',
+
+        # INVOICE #
+        f'<tr><th style="{_HDR_TH}">INVOICE #</th></tr>',
+        f'<tr><td style="{_HDR_TD}">{inv_n}</td></tr>',
+
+        # PO/CONTRACT#
+        f'<tr><th style="{_HDR_TH}">PO / CONTRACT #</th></tr>',
+        f'<tr><td style="{_HDR_TD}">{po}</td></tr>',
+
+        # NAME/JOB#
+        f'<tr><th style="{_HDR_TH}">NAME / JOB #</th></tr>',
+        f'<tr><td style="{_HDR_TD}">{nj}</td></tr>',
+
         "</table>",
         "</td>",
         "</tr>",
         "</table>",
-        # Line grid (column widths aligned with static invoice.html template)
+
+        # ── Line-items grid ───────────────────────────────────────────────────
         '<table width="100%" cellspacing="0" cellpadding="0" '
         'style="border-collapse:collapse; margin-top:14px; border:1px solid #000; '
         'table-layout:fixed;">',
@@ -221,7 +299,7 @@ def build_invoice_print_html(
         'font-size:8pt; text-transform:uppercase; padding:5px 3px;">Amount</th>',
         "</tr></thead><tbody>",
         *body_html,
-        # Balance due — label in column 6, amount in column 7 (matches static template)
+        # Balance Due row
         "<tr>",
         '<td colspan="5" style="border:1px solid #000; border-top:2px solid #000;">&#160;</td>',
         '<td style="border:2px solid #000; border-top:2px solid #000; font-weight:700; '
@@ -232,7 +310,8 @@ def build_invoice_print_html(
         f'font-variant-numeric:tabular-nums;">{bal}</td>',
         "</tr>",
         "</tbody></table>",
-        # Footer
+
+        # ── Footer notes ──────────────────────────────────────────────────────
         '<table width="100%" cellspacing="0" cellpadding="0" style="border:none; margin-top:18px;">',
         '<tr><td valign="top" style="border:none; border-top:1px solid #ccc; min-height:32px; '
         'padding:8px 0 4px 0; font-size:9.5pt; line-height:1.35; color:#222;">'

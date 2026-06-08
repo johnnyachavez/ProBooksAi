@@ -389,6 +389,33 @@ class EnterBillsScreen(QWidget):
         self._btn_save_close.setEnabled(on)
         self._btn_save_new.setEnabled(on)
 
+    def prefill_from_document(self, data: dict) -> None:
+        """Pre-fill header fields from AI-extracted document data (skips blank values)."""
+        from desktop_app.flexible_date import format_ymd_as_us
+
+        def _iso_to_us(iso: str) -> str:
+            y, m, d = (int(p) for p in iso.split("-"))
+            return format_ymd_as_us(m, d, y)
+
+        ref = (data.get("invoice_number") or "").strip()
+        if ref:
+            self._vendor_inv.setText(ref)
+        iso_date = (data.get("doc_date") or "").strip()
+        if iso_date:
+            try:
+                self._bill_date.setText(_iso_to_us(iso_date))
+            except (ValueError, AttributeError):
+                pass
+        iso_due = (data.get("due_date") or "").strip()
+        if iso_due:
+            try:
+                self._due_date.setText(_iso_to_us(iso_due))
+            except (ValueError, AttributeError):
+                pass
+        memo = (data.get("notes") or "").strip()
+        if memo:
+            self._header_memo.setText(memo)
+
     def _feedback(self, msg: str) -> None:
         if not (msg or "").strip():
             return

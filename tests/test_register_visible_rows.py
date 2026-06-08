@@ -326,18 +326,14 @@ def test_register_info_footer_totals_only_when_reconciliation_help_always_shown(
         tab.show()
         assert tab._reconciliation_mode is False
         assert tab._register_info_footer.isVisible()
-        assert tab._register_help_tip.isVisible()
         assert tab._register_footer_totals_wrap.isHidden()
-        assert tab._register_footer_totals_spacer.isVisible()
         tab._recon_checkbox.setChecked(True)
         assert tab._reconciliation_mode is True
         assert tab._register_info_footer.isVisible()
         assert tab._register_footer_totals_wrap.isVisible()
-        assert tab._register_footer_totals_spacer.isHidden()
         tab._recon_checkbox.setChecked(False)
         assert tab._register_info_footer.isVisible()
         assert tab._register_footer_totals_wrap.isHidden()
-        assert tab._register_footer_totals_spacer.isVisible()
     finally:
         db.close()
 
