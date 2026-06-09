@@ -83,21 +83,23 @@ from desktop_app.ar_customer_actions import (
     export_invoices_csv,
     open_new_ar_invoice_dialog,
 )
-from desktop_app.theme import (
-    DISABLED_FG,
-    WORKFLOW_ALT_ROW as _INV_STRIPE,
-    WORKFLOW_CAPTION as _INV_CAPTION,
-    WORKFLOW_CONTROL_FACE,
-    WORKFLOW_CONTROL_HOVER,
-    WORKFLOW_CONTROL_PRESSED,
-    WORKFLOW_GRID as _INV_GRID,
-    WORKFLOW_HEADER_BG as _INV_HEADER,
-    WORKFLOW_INPUT_BG,
-    WORKFLOW_PAGE_BG as _INV_BG,
-    WORKFLOW_PANEL_BG as _INV_PANEL,
-    WORKFLOW_STRIP_BTN_OUTLINE as _INV_STRIP_ACTION_BTN_OUTLINE,
-    WORKFLOW_TEXT as _INV_TEXT,
-)
+from desktop_app.theme import DISABLED_FG
+
+# QuickBooks-style light palette (consistent with desktop_app/check_screen.py).
+# White invoice "paper" on a light-gray canvas, QB light-blue striped line grid.
+_INV_CANVAS   = "#F2F2F2"   # gray surround behind the white form
+_INV_BG       = "#FFFFFF"   # invoice paper
+_INV_PANEL    = "#FBFBFB"   # header band (slightly off-white)
+_INV_STRIPE   = "#D0E6F4"   # QB light-blue alternating rows
+_INV_CAPTION  = "#555555"   # muted field captions
+_INV_GRID     = "#C8C8C8"   # hairlines / borders
+_INV_HEADER   = "#DBDBDB"   # table header fill
+_INV_TEXT     = "#1A1A1A"   # primary text on light
+WORKFLOW_INPUT_BG = "#FFFFFF"
+WORKFLOW_CONTROL_FACE = "#F5F5F5"
+WORKFLOW_CONTROL_HOVER = "#E0EAF4"
+WORKFLOW_CONTROL_PRESSED = "#C8D8EC"
+_INV_STRIP_ACTION_BTN_OUTLINE = "#BCBCBC"
 
 # Dark navy workflow theme (aligned with Customers / Vendors AR/AP master tabs).
 # Invoice # box: max width. Title uses same 20px weight as Pay Bills / Receive Payments.
@@ -118,7 +120,7 @@ _TOP_STRIP_CAPTION_FONT_PX = 11
 _TOP_STRIP_BODY_FONT_PX = 12
 # Clear Fields / Save / Export PDF / Print / New Customer / Reverse / Forward — per-button outline on dark
 # faces (not the outer panel). Same on all six.
-_INV_STRIP_ACTION_BTN_BORDER_W = 4
+_INV_STRIP_ACTION_BTN_BORDER_W = 1
 
 
 def _top_strip_caption_line_height_px() -> int:
@@ -476,6 +478,7 @@ class InvoiceScreen(QWidget):
         return fr
 
     def _build_ui(self) -> None:
+        self.setStyleSheet(f"InvoiceScreen {{ background: {_INV_CANVAS}; }}")
         outer = QVBoxLayout(self)
         outer.setContentsMargins(8, 6, 8, 8)
         outer.setSpacing(0)
