@@ -27,16 +27,15 @@ from PySide6.QtWidgets import (
 from probooksai import business
 
 from desktop_app.new_customer_dialog import run_new_customer_dialog
-from desktop_app.theme import (
-    WORKFLOW_CONTROL_FACE,
-    WORKFLOW_CONTROL_HOVER,
-    WORKFLOW_CONTROL_PRESSED,
-    WORKFLOW_GRID as _INV_GRID,
-    WORKFLOW_INPUT_BG,
-    WORKFLOW_PANEL_BG as _INV_PANEL,
-    WORKFLOW_STRIP_BTN_OUTLINE,
-    WORKFLOW_TEXT as _INV_TEXT,
-)
+# QuickBooks-style light palette (matches desktop_app/invoice_screen.py / check_screen.py).
+_INV_PANEL = "#FBFBFB"
+_INV_GRID = "#C8C8C8"
+_INV_TEXT = "#1A1A1A"
+WORKFLOW_INPUT_BG = "#FFFFFF"
+WORKFLOW_CONTROL_FACE = "#F5F5F5"
+WORKFLOW_CONTROL_HOVER = "#E0EAF4"
+WORKFLOW_CONTROL_PRESSED = "#C8D8EC"
+WORKFLOW_STRIP_BTN_OUTLINE = "#BCBCBC"
 
 
 def format_customer_bill_to_plaintext(customer: dict) -> str:

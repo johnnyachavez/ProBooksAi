@@ -44,16 +44,17 @@ from desktop_app.qt_mnemonic import (
 )
 from probooksai import business
 
-from desktop_app.theme import (
-    WORKFLOW_ALT_ROW as _PAY_STRIPE,
-    WORKFLOW_CAPTION as _PAY_CAPTION,
-    WORKFLOW_GRID as _PAY_GRID,
-    WORKFLOW_HEADER_BG as _PAY_HEADER,
-    WORKFLOW_INPUT_BG,
-    WORKFLOW_PAGE_BG as _PAY_BG,
-    WORKFLOW_PANEL_BG as _PAY_PANEL,
-    WORKFLOW_TEXT as _PAY_TEXT,
-)
+# QuickBooks-style light palette (consistent with desktop_app/invoice_screen.py).
+# Light-gray canvas with white panels and a QB light-blue striped bills table.
+_PAY_CANVAS  = "#F2F2F2"   # gray canvas behind the white panels
+_PAY_BG      = "#F2F2F2"   # page background (gray)
+_PAY_PANEL   = "#FFFFFF"   # white panels / form areas
+_PAY_STRIPE  = "#D0E6F4"   # QB light-blue alternating table rows
+_PAY_CAPTION = "#555555"   # muted field captions
+_PAY_GRID    = "#C8C8C8"   # hairlines / borders
+_PAY_HEADER  = "#DBDBDB"   # table header fill
+_PAY_TEXT    = "#1A1A1A"   # primary text on light
+WORKFLOW_INPUT_BG = "#FFFFFF"
 
 if TYPE_CHECKING:
     from probooksai.bank_import import BankDatabase
@@ -124,6 +125,7 @@ class PayBillsScreen(QWidget):
         self._load_bills_from_db()
 
     def _build_ui(self) -> None:
+        self.setStyleSheet(f"PayBillsScreen {{ background: {_PAY_CANVAS}; }}")
         outer = QVBoxLayout(self)
         outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(10)

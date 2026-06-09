@@ -65,16 +65,17 @@ def _safe_bill_pdf_stem(vendor_invoice_number: str, bill_id: int) -> str:
     return cleaned[:120]
 
 
-from desktop_app.theme import (
-    WORKFLOW_ALT_ROW as _BILL_STRIPE,
-    WORKFLOW_CAPTION as _BILL_CAPTION,
-    WORKFLOW_GRID as _BILL_GRID,
-    WORKFLOW_HEADER_BG as _BILL_HEADER,
-    WORKFLOW_INPUT_BG,
-    WORKFLOW_PAGE_BG as _BILL_BG,
-    WORKFLOW_PANEL_BG as _BILL_PANEL,
-    WORKFLOW_TEXT as _BILL_TEXT,
-)
+# QuickBooks-style light palette (consistent with desktop_app/invoice_screen.py).
+# A light-blue "Bill" paper form on a light-gray canvas, with QB light-blue striped line grid.
+_BILL_CANVAS  = "#F2F2F2"   # gray surround behind the blue form
+_BILL_BG      = "#EAF1FB"   # light-blue bill "paper"
+_BILL_PANEL   = "#F4F8FD"   # header band (lighter blue-white)
+_BILL_STRIPE  = "#D0E6F4"   # QB light-blue alternating grid rows
+_BILL_CAPTION = "#555555"   # muted field captions
+_BILL_GRID    = "#C8C8C8"   # gridlines / borders
+_BILL_HEADER  = "#DBDBDB"   # table header fill
+_BILL_TEXT    = "#1A1A1A"   # dark text on light
+WORKFLOW_INPUT_BG = "#FFFFFF"  # white field backgrounds
 
 
 def _amount_spin() -> QDoubleSpinBox:
@@ -149,6 +150,7 @@ class EnterBillsScreen(QWidget):
         self._update_save_enabled()
 
     def _build_ui(self) -> None:
+        self.setStyleSheet(f"EnterBillsScreen {{ background: {_BILL_CANVAS}; }}")
         outer = QVBoxLayout(self)
         outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(10)
