@@ -177,6 +177,7 @@ def invoice_html_string(conn: sqlite3.Connection, invoice_id: int) -> str:
     if addr:
         bill_parts.append(addr)
     bill_to_plain = "\n".join(bill_parts)
+    ship_to_plain = (inv_d.get("ship_to") or "").strip()
 
     line_rows: list[tuple[str, str, str, str, str, str, str]] = []
     for ln in lines:
@@ -203,6 +204,7 @@ def invoice_html_string(conn: sqlite3.Connection, invoice_id: int) -> str:
         invoice_date=inv_date,
         invoice_number=(inv_d.get("invoice_number") or "").strip(),
         bill_to_plain=bill_to_plain,
+        ship_to_plain=ship_to_plain,
         po_contract=po,
         name_job=job,
         footer_plain=footer,

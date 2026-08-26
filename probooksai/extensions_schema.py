@@ -13,7 +13,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
-EXTENSION_SCHEMA_VERSION = 8
+EXTENSION_SCHEMA_VERSION = 9
 
 _DDL_VERSION = """
 CREATE TABLE IF NOT EXISTS extension_schema_version (
@@ -278,6 +278,13 @@ ALTER TABLE bank_statement_intake_queue
 ADD COLUMN coa_account TEXT NOT NULL DEFAULT '';
 """
 
+# v9 — Create Invoices header: Ship To snapshot + payment terms (QB Pro).
+# ``due_date`` already exists on ``invoices``; terms drive it in the desktop form.
+_MIGRATION_V9 = """
+ALTER TABLE invoices ADD COLUMN ship_to TEXT NOT NULL DEFAULT '';
+ALTER TABLE invoices ADD COLUMN terms TEXT NOT NULL DEFAULT '';
+"""
+
 
 def _seed_payroll_tax_items(conn: sqlite3.Connection) -> None:
     """Default federal/state placeholder codes (amounts entered manually per run)."""
@@ -376,6 +383,13 @@ def apply_extensions(conn: sqlite3.Connection) -> None:
             if s:
                 conn.execute(s)
         current = 8
+
+    if current < 9:
+        for stmt in _MIGRATION_V9.strip().split(";"):
+            s = stmt.strip()
+            if s:
+                conn.execute(s)
+        current = 9
 
     conn.execute(
         "UPDATE extension_schema_version SET version = ? WHERE id = 1",
