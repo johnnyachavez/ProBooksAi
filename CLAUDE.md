@@ -17,7 +17,7 @@ Headless notes:
   real modal loop are `skipif`-guarded on `QT_QPA_PLATFORM == "offscreen"` (see
   `tests/test_vendor_roundup_dialog.py`). Don't add unguarded `.exec()` calls to tests.
 - Headless screenshot: `QT_QPA_PLATFORM=offscreen python scripts/capture_ui_screenshot.py`
-  → `artifacts/ui/main_window.png`.
+  → `artifacts/ui/main_window.png` (Invoices tab), `artifacts/ui/invoice_create.png` (Create Invoices form), and `artifacts/ui/invoice_create_header.png` (header close-up).
 
 ## Branching workflow (read this first)
 

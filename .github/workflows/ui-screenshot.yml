@@ -50,9 +50,9 @@ jobs:
       - name: Create output directory
         run: mkdir -p artifacts/ui
 
-      - name: Capture main-window screenshot
+      - name: Capture main-window and Create Invoices screenshots
         run: |
-          xvfb-run --auto-servernum --server-args="-screen 0 1280x800x24" \
+          xvfb-run --auto-servernum --server-args="-screen 0 1440x960x24" \
             python scripts/capture_ui_screenshot.py
         env:
           QT_QPA_PLATFORM: xcb
@@ -76,7 +76,10 @@ jobs:
             const body = [
               '## ProBooks+ai — UI screenshot',
               '',
-              'A screenshot of the main window was captured for this pull request.',
+              'Headless capture of the **Invoices** tab and **Create Invoices** form',
+              '(Bill To, Ship To, invoice number, dates/terms, line Amount).',
+              '',
+              'Files in the **ui-screenshots** artifact: `main_window.png`, `invoice_create.png`, `invoice_create_header.png`.',
               '',
               `**Download:** Open [this workflow run](${runUrl}) and download the **ui-screenshots** artifact.`,
               '',
