@@ -1332,12 +1332,19 @@ class MainWindow(QMainWindow):
         if old_index == new_index:
             return
         old_widget = self._tabs.widget(old_index)
-        if isinstance(old_widget, InvoiceScreen) and old_widget._is_form_dirty():
+        is_dirty = getattr(old_widget, "_is_form_dirty", None)
+        confirm_leave = getattr(old_widget, "_confirm_leave_loaded_invoice", None)
+        if (
+            isinstance(old_widget, InvoiceScreen)
+            and callable(is_dirty)
+            and callable(confirm_leave)
+            and is_dirty()
+        ):
             # Switch back before showing the dialog so the form is visible
             self._tabs.blockSignals(True)
             self._tabs.setCurrentIndex(old_index)
             self._tabs.blockSignals(False)
-            if not old_widget._confirm_leave_loaded_invoice():
+            if not confirm_leave():
                 # User chose Stay — stay on the invoice screen
                 return
             # User saved or discarded — proceed to the requested tab
