@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
     QDoubleSpinBox,
+    QFrame,
     QHeaderView,
     QLabel,
     QLineEdit,
@@ -148,11 +149,14 @@ def test_invoice_line_table_column_widths_persist_in_qsettings(
     assert t2 is not None
     w2.show()
     qapp.processEvents()
-    for c in range(6):
+    desc = InvoiceScreen._LINE_DESC_COL
+    for c in range(7):
+        if c == desc:
+            continue
         assert t2.columnWidth(c) == max(mins[c], want[c])
     vw = t2.viewport().width()
-    sum_first = sum(t2.columnWidth(c) for c in range(6))
-    assert t2.columnWidth(6) == max(mins[6], vw - sum_first)
+    sum_others = sum(t2.columnWidth(c) for c in range(7) if c != desc)
+    assert t2.columnWidth(desc) == max(mins[desc], vw - sum_others)
     db.close()
 
 
@@ -197,6 +201,7 @@ def test_invoice_screen_print_and_nav_buttons_exist(qapp: QApplication) -> None:
     assert w._btn_new_invoice.text() == "New"
     assert w._btn_email.text() == "Email"
     assert not w._btn_email.isEnabled()
+    assert w._btn_intake.text() == "Intake"
 
 
 def test_invoice_screen_export_pdf_saves_to_chosen_path(
@@ -1226,6 +1231,36 @@ def test_create_invoices_qb_header_layout(qapp: QApplication) -> None:
     assert "Total: $0.00" in w._lbl_total.text()
     assert "Payments Applied: $0.00" in w._lbl_payments.text()
     assert "Balance Due: $0.00" in w._lbl_balance.text()
+
+
+def test_create_invoices_line_grid_dominates_window_height(qapp: QApplication) -> None:
+    """QB Pro proportions: the line grid is the tallest region, many blank rows visible."""
+    w = InvoiceScreen()
+    w.resize(1200, 800)
+    w.show()
+    qapp.processEvents()
+    t = w.findChild(QTableWidget, "invoiceLinesTable")
+    assert t is not None
+    row_h = max(1, t.rowHeight(0))
+    visible_rows = t.viewport().height() // row_h
+    assert visible_rows >= 8
+    assert t.height() >= int(w.height() * 0.40)
+    widths = [t.columnWidth(i) for i in range(t.columnCount())]
+    desc_w = widths[InvoiceScreen._LINE_DESC_COL]
+    assert desc_w == max(widths)
+    assert desc_w >= int(sum(widths) * 0.32)
+    assert t.horizontalScrollBar().maximum() == 0
+    assert not w._invoice_tabs.tabBar().isVisible()
+    ribbon = w.findChild(QTabWidget, "invoiceRibbonTabs")
+    assert ribbon is not None
+    assert ribbon.height() <= 56
+    header = w.findChild(QFrame, "invoiceHeaderBand")
+    assert header is not None
+    assert t.height() > header.height()
+    w._btn_intake.click()
+    qapp.processEvents()
+    assert w._invoice_tabs.currentIndex() == 1
+    assert w._invoice_tabs.tabBar().isVisible()
 
 
 def test_create_invoices_save_close_stays_on_saved_invoice(

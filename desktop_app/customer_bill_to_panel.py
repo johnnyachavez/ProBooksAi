@@ -106,10 +106,15 @@ class CustomerBillToPanel(QFrame):
             "border-radius: 6px; }}"
         )
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(8, 6, 8, 8)
-        lay.setSpacing(4)
+        if show_combo_in_panel:
+            lay.setContentsMargins(8, 6, 8, 8)
+            lay.setSpacing(4)
+        else:
+            # Create Invoices reparents the combo onto the Customer:Job bar; keep Bill To short.
+            lay.setContentsMargins(6, 2, 6, 4)
+            lay.setSpacing(2)
         cap = QLabel("Bill To")
-        cap.setStyleSheet(f"color: {_INV_TEXT}; font-size: 12px; font-weight: 600; background: transparent;")
+        cap.setStyleSheet(f"color: {_INV_TEXT}; font-size: 11px; font-weight: 600; background: transparent;")
         lay.addWidget(cap)
 
         row = QHBoxLayout()
