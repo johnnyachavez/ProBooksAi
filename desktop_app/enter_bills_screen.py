@@ -143,7 +143,17 @@ def _input_qss(widget: str = "QLineEdit") -> str:
     )
 
 
-def _money_spin(*, prefix: str = "") -> QDoubleSpinBox:
+def _zebra_cell_qss(widget: str, row: int) -> str:
+    """Transparent-border editors so QB white / light-blue row stripes stay visible."""
+    bg = _BILL_STRIPE if row % 2 else WORKFLOW_INPUT_BG
+    return (
+        f"{widget} {{ background-color: {bg}; border: none; "
+        f"padding: 1px 4px; color: {_BILL_TEXT}; font-size: {_TOP_STRIP_BODY_FONT_PX}px; }}"
+        f"{widget}:focus {{ background-color: {WORKFLOW_INPUT_BG}; }}"
+    )
+
+
+def _money_spin(*, prefix: str = "", row: int | None = None) -> QDoubleSpinBox:
     s = QDoubleSpinBox()
     s.setRange(0.0, 999_999_999.99)
     s.setDecimals(2)
@@ -151,23 +161,26 @@ def _money_spin(*, prefix: str = "") -> QDoubleSpinBox:
         s.setPrefix(prefix)
     s.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
     s.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-    s.setStyleSheet(_input_qss("QDoubleSpinBox"))
+    if row is None:
+        s.setStyleSheet(_input_qss("QDoubleSpinBox"))
+    else:
+        s.setStyleSheet(_zebra_cell_qss("QDoubleSpinBox", row))
     return s
 
 
-def _qty_spin() -> QDoubleSpinBox:
+def _qty_spin(*, row: int = 0) -> QDoubleSpinBox:
     s = QDoubleSpinBox()
     s.setRange(0.0, 999_999.99)
     s.setDecimals(2)
     s.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
     s.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-    s.setStyleSheet(_input_qss("QDoubleSpinBox"))
+    s.setStyleSheet(_zebra_cell_qss("QDoubleSpinBox", row))
     return s
 
 
-def _cell_line() -> QLineEdit:
+def _cell_line(*, row: int = 0) -> QLineEdit:
     le = QLineEdit()
-    le.setStyleSheet(_input_qss())
+    le.setStyleSheet(_zebra_cell_qss("QLineEdit", row))
     return le
 
 
@@ -282,7 +295,7 @@ class EnterBillsScreen(QWidget):
         cap = QLabel(text)
         cap.setStyleSheet(
             f"color: {_BILL_CAPTION}; font-size: {_TOP_STRIP_CAPTION_FONT_PX}px; "
-            "font-weight: 700; letter-spacing: 0.04em; background: transparent;"
+            "font-weight: bold; letter-spacing: 0.04em; background: transparent;"
         )
         return cap
 
@@ -298,28 +311,31 @@ class EnterBillsScreen(QWidget):
         cap.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         if isinstance(editor, (QLineEdit, QDateEdit, QComboBox, QDoubleSpinBox)):
             editor.setFixedHeight(_FIELD_HEIGHT_PX)
+        if isinstance(editor, (QLineEdit, QComboBox, QDoubleSpinBox)):
             editor.setStyleSheet(_input_qss(editor.metaObject().className()))
+        elif isinstance(editor, QDateEdit):
+            editor.setStyleSheet(_input_qss("QDateEdit"))
         lay.addWidget(cap)
         lay.addWidget(editor, 1)
         return wrap
 
-    def _make_account_combo(self) -> QComboBox:
+    def _make_account_combo(self, *, row: int = 0) -> QComboBox:
         cb = QComboBox()
         cb.setEditable(True)
         cb.addItem(_ACCOUNT_PLACEHOLDER, "")
         for label in self._coa_labels:
             cb.addItem(escape_ampersand_for_qt(label), label)
-        cb.setStyleSheet(_input_qss("QComboBox"))
+        cb.setStyleSheet(_zebra_cell_qss("QComboBox", row))
         cb.setToolTip("Expense account for this line (chart of accounts when a company file is open).")
         return cb
 
-    def _make_item_combo(self) -> QComboBox:
+    def _make_item_combo(self, *, row: int = 0) -> QComboBox:
         cb = QComboBox()
         cb.setEditable(True)
         cb.addItem(_ITEM_PLACEHOLDER, "")
         for code in self._item_codes:
             cb.addItem(escape_ampersand_for_qt(code), code)
-        cb.setStyleSheet(_input_qss("QComboBox"))
+        cb.setStyleSheet(_zebra_cell_qss("QComboBox", row))
         cb.setToolTip("Item / service code (from Codes when a company file is open).")
         return cb
 
@@ -342,8 +358,8 @@ class EnterBillsScreen(QWidget):
             f" background-color: {_BILL_HEADER};"
             f" color: {_BILL_CAPTION};"
             f" padding: 4px; border: 1px solid {_BILL_GRID};"
-            " font-weight: 700; font-size: 11px;"
-            " }}"
+            " font-weight: bold; font-size: 11px;"
+            " }"
         )
 
     def _build_ui(self) -> None:
@@ -488,7 +504,7 @@ class EnterBillsScreen(QWidget):
         self._title = QLabel("Bill")
         self._title.setObjectName("enterBillsTitle")
         self._title.setStyleSheet(
-            f"font-size: {_TITLE_FONT_PX}px; font-weight: 700; color: {_BILL_TITLE}; "
+            f"font-size: {_TITLE_FONT_PX}px; font-weight: bold; color: {_BILL_TITLE}; "
             "background: transparent;"
         )
 
@@ -501,8 +517,9 @@ class EnterBillsScreen(QWidget):
         self._address = QPlainTextEdit()
         self._address.setObjectName("enterBillsAddress")
         self._address.setPlaceholderText("Address")
-        self._address.setMaximumHeight(78)
-        self._address.setMinimumHeight(56)
+        # Compact: header must stay in the top third so the expenses grid can dominate.
+        self._address.setMaximumHeight(64)
+        self._address.setMinimumHeight(44)
         self._address.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         self._address.setStyleSheet(
             f"QPlainTextEdit {{ background: {WORKFLOW_INPUT_BG}; color: {_BILL_TEXT}; "
@@ -560,6 +577,7 @@ class EnterBillsScreen(QWidget):
         addr_row.addWidget(addr_cap)
         addr_row.addWidget(self._address, 1)
         left.addLayout(addr_row, 1)
+        left.addWidget(self._hfield("TERMS", self._terms))
 
         right = QVBoxLayout()
         right.setSpacing(4)
@@ -575,9 +593,6 @@ class EnterBillsScreen(QWidget):
 
         bottom = QHBoxLayout()
         bottom.setSpacing(8)
-        terms_wrap = self._hfield("TERMS", self._terms)
-        terms_wrap.setMaximumWidth(280)
-        bottom.addWidget(terms_wrap, 0)
         bottom.addWidget(self._hfield("MEMO", self._header_memo), 1)
         hb.addLayout(bottom)
 
@@ -597,7 +612,7 @@ class EnterBillsScreen(QWidget):
             f"QTabWidget#enterBillsLineTabs QTabBar::tab {{ background: {_BILL_HEADER}; color: {_BILL_CAPTION}; "
             "padding: 4px 14px; border: 1px solid #C8C8C8; border-bottom: none; margin-right: 2px; }"
             f"QTabWidget#enterBillsLineTabs QTabBar::tab:selected {{ background: {WORKFLOW_INPUT_BG}; "
-            f"color: #1A5276; font-weight: 700; border-bottom: 2px solid {_BILL_ACCENT}; }}"
+            f"color: #1A5276; font-weight: bold; border-bottom: 2px solid {_BILL_ACCENT}; }}"
         )
         self._table = QTableWidget(self._N_EXPENSE_ROWS, len(self._EXPENSE_COLS))
         self._table.setObjectName("enterBillsExpensesTable")
@@ -617,7 +632,7 @@ class EnterBillsScreen(QWidget):
         play.addWidget(self._line_tabs, 1)
 
     def _configure_grid(self, table: QTableWidget) -> None:
-        table.verticalHeader().setVisible(True)
+        table.verticalHeader().setVisible(False)
         table.verticalHeader().setDefaultSectionSize(_LINE_ROW_HEIGHT_PX)
         table.verticalHeader().setMinimumSectionSize(18)
         table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
@@ -634,11 +649,18 @@ class EnterBillsScreen(QWidget):
         last = table.columnCount() - 1
         for col in range(table.columnCount()):
             if col == last:
-                hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+                hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
             elif col in (1, 2, 3, 4) and table is getattr(self, "_items_table", None):
                 hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+            elif col == 1 and table is getattr(self, "_table", None):
+                hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
             else:
                 hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.Stretch)
+        if table is getattr(self, "_table", None):
+            table.setColumnWidth(1, 110)
+            table.setColumnWidth(last, 78)
+        else:
+            table.setColumnWidth(last, 78)
         for r in range(table.rowCount()):
             table.setRowHeight(r, _LINE_ROW_HEIGHT_PX)
 
@@ -646,18 +668,18 @@ class EnterBillsScreen(QWidget):
         self._amount_spins = []
         self._expense_billable = []
         for row in range(self._N_EXPENSE_ROWS):
-            acct = self._make_account_combo()
+            acct = self._make_account_combo(row=row)
             self._table.setCellWidget(row, 0, acct)
-            amt = _money_spin(prefix="$ ")
+            amt = _money_spin(prefix="$ ", row=row)
             amt.setValue(0.0)
             amt.valueChanged.connect(self._on_line_amount_changed)
             self._table.setCellWidget(row, 1, amt)
             self._amount_spins.append(amt)
-            memo = _cell_line()
+            memo = _cell_line(row=row)
             memo.setPlaceholderText("Memo")
             memo.textChanged.connect(lambda _t: self._on_line_amount_changed(0.0))
             self._table.setCellWidget(row, 2, memo)
-            job = _cell_line()
+            job = _cell_line(row=row)
             job.setPlaceholderText("Customer:Job")
             self._table.setCellWidget(row, 3, job)
             billable = self._make_billable_check()
@@ -670,13 +692,13 @@ class EnterBillsScreen(QWidget):
         self._item_amount_spins = []
         self._item_billable = []
         for row in range(_N_ITEM_ROWS):
-            self._items_table.setCellWidget(row, 0, self._make_item_combo())
-            desc = _cell_line()
+            self._items_table.setCellWidget(row, 0, self._make_item_combo(row=row))
+            desc = _cell_line(row=row)
             desc.setPlaceholderText("Description")
             self._items_table.setCellWidget(row, 1, desc)
-            qty = _qty_spin()
-            cost = _money_spin(prefix="$ ")
-            amt = _money_spin(prefix="$ ")
+            qty = _qty_spin(row=row)
+            cost = _money_spin(prefix="$ ", row=row)
+            amt = _money_spin(prefix="$ ", row=row)
             qty.valueChanged.connect(lambda _v, r=row: self._on_item_qty_cost_changed(r))
             cost.valueChanged.connect(lambda _v, r=row: self._on_item_qty_cost_changed(r))
             amt.valueChanged.connect(self._on_line_amount_changed)
@@ -686,7 +708,7 @@ class EnterBillsScreen(QWidget):
             self._item_qty_spins.append(qty)
             self._item_cost_spins.append(cost)
             self._item_amount_spins.append(amt)
-            job = _cell_line()
+            job = _cell_line(row=row)
             job.setPlaceholderText("Customer:Job")
             self._items_table.setCellWidget(row, 5, job)
             billable = self._make_billable_check()

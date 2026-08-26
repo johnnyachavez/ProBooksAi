@@ -121,11 +121,16 @@ def test_enter_bills_grid_dominates_window_height(qapp: QApplication) -> None:
     ribbon = w.findChild(QTabWidget, "enterBillsRibbonTabs")
     footer = w.findChild(QFrame, "enterBillsActionsBar")
     assert header is not None and ribbon is not None and footer is not None
-    assert w._line_tabs.height() >= int(w.height() * 0.50)
+    assert w._line_tabs.height() >= int(w.height() * 0.58)
     assert header.height() <= int(w.height() / 3)
     top_chrome = ribbon.height() + header.height()
     assert top_chrome <= int(w.height() / 3) + 36  # type-row + small gaps
-    assert w._table.rowCount() >= 18
+    assert w._table.rowCount() == EnterBillsScreen._N_EXPENSE_ROWS
+    assert w._table.alternatingRowColors() is True
+    assert w._table.verticalHeader().isVisible() is False
+    viewport_h = w._table.viewport().height()
+    visible_rows = viewport_h // max(1, w._table.rowHeight(0))
+    assert visible_rows >= 15
     w.close()
 
 
@@ -152,28 +157,15 @@ def test_enter_bills_clear_resets_rows(qapp: QApplication) -> None:
     assert w._title.text() == "Bill"
 
 
-def test_enter_bills_header_dates_normalize_flexible_input(qapp: QApplication) -> None:
-    """Bill date and due date accept the same flexible formats as Create Invoices."""
+def test_enter_bills_header_dates_use_us_qdate_edit(qapp: QApplication) -> None:
+    """Bill date and due date are the same US QDateEdit as Create Invoices."""
     w = EnterBillsScreen()
     assert isinstance(w._bill_date, QDateEdit)
-    le = w._bill_date.lineEdit()
-    assert le is not None
-    le.setText("5/21/26")
-    le.editingFinished.emit()
+    assert w._bill_date.displayFormat() == "MM/dd/yyyy"
+    assert w._bill_date.calendarPopup() is False
+    w._bill_date.setDate(QDate(2026, 5, 21))
     assert w._bill_date.date() == QDate(2026, 5, 21)
-
-    le.setText("05.21.26")
-    le.editingFinished.emit()
-    assert w._bill_date.date() == QDate(2026, 5, 21)
-
-    le.setText("052126")
-    le.editingFinished.emit()
-    assert w._bill_date.date() == QDate(2026, 5, 21)
-
-    due_le = w._due_date.lineEdit()
-    assert due_le is not None
-    due_le.setText("12/3/27")
-    due_le.editingFinished.emit()
+    w._due_date.setDate(QDate(2027, 12, 3))
     assert w._due_date.date() == QDate(2027, 12, 3)
 
 
