@@ -30,6 +30,7 @@ def test_build_invoice_print_html_structure_and_escaping() -> None:
         invoice_date="01/02/2026",
         invoice_number="99",
         bill_to_plain="A & B\nLine",
+        ship_to_plain="Yard <site>",
         po_contract="PO1",
         name_job="J1",
         footer_plain="Note <tag>",
@@ -44,6 +45,8 @@ def test_build_invoice_print_html_structure_and_escaping() -> None:
     assert "NAME" in html and "JOB" in html
     assert "Balance Due" in html
     assert "BILL TO" in html
+    assert "SHIP TO" in html
+    assert "Yard &lt;site&gt;" in html
     assert "Sender &amp; Co." in html
     assert "123 Road" in html
     assert "A &amp; B" in html

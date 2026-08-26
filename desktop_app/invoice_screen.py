@@ -2,6 +2,11 @@
 
 **Invoice Intake** (sub-tab): stage PDFs, images, and pasted text; **Send to Manual Invoice** opens a new draft with source in memo + banner. **Manual Invoice** sub-tab saves to ``invoices`` / ``invoice_lines``.
 
+Create Invoices (Manual Invoice) follows QuickBooks Pro Desktop: **Bill To** from the
+selected customer, editable **Ship To** saved on the invoice (defaults to Bill To when
+the customer has no separate shipping address), auto-sequenced editable invoice #,
+``QDateEdit`` invoice date, terms-driven due date, and line **Amount** (qty × rate).
+
 Dark navy panel styling matches Customers / Vendors AR/AP master tabs. Line grid uses in-cell widgets
 so editors stay inline (no multiline popup editors). Bill To is wired to
 ``probooksai.business`` customers when *ap_conn* is set (same source as Business → Customers).
@@ -38,7 +43,10 @@ from PySide6.QtGui import QFont, QFontMetrics, QHideEvent, QShowEvent, QTextDocu
 from PySide6.QtPrintSupport import QPrinter
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QAbstractSpinBox,
+    QComboBox,
     QCompleter,
+    QDateEdit,
     QDoubleSpinBox,
     QFrame,
     QHBoxLayout,
@@ -65,8 +73,7 @@ from desktop_app.customer_bill_to_panel import (
 )
 from desktop_app.flexible_date import (
     attach_line_edit_us_date_normalization,
-    format_iso_to_us_display,
-    format_ymd_as_us,
+    configure_qdate_edit_us,
     parse_flexible_date_to_ymd,
 )
 from desktop_app.invoice_preferences import (
@@ -145,6 +152,22 @@ def _top_strip_line_edit_qss() -> str:
     )
 
 
+def _top_strip_date_edit_qss() -> str:
+    """Borderless ``QDateEdit`` inside the outer QFrame (single chrome ring)."""
+    return (
+        f"QDateEdit {{ background-color: {WORKFLOW_INPUT_BG}; border: none; color: {_INV_TEXT}; "
+        f"font-size: {_TOP_STRIP_BODY_FONT_PX}px; padding: 1px 8px; }}"
+    )
+
+
+def _top_strip_combo_qss() -> str:
+    """Borderless ``QComboBox`` inside the outer QFrame (single chrome ring)."""
+    return (
+        f"QComboBox {{ background-color: {WORKFLOW_INPUT_BG}; border: none; color: {_INV_TEXT}; "
+        f"font-size: {_TOP_STRIP_BODY_FONT_PX}px; padding: 1px 8px; }}"
+    )
+
+
 def _top_strip_action_button_qss() -> str:
     """Stylesheet for the six invoice header-row action buttons (Clear Fields … Forward)."""
     bw = _INV_STRIP_ACTION_BTN_BORDER_W
@@ -162,10 +185,6 @@ def _top_strip_action_button_qss() -> str:
         f"border: {bw}px solid {bc}; border-radius: {r}px; }}"
     )
 
-
-# When True, show **Ship To** next to **Bill To** in the invoice header (same layout as before).
-# UI-only toggle for a future preference; no persistence yet.
-_INVOICE_SHOW_SHIP_TO_UI = False
 
 # Line grid: user-resizable row heights via vertical header; sensible startup defaults.
 _INVOICE_LINE_ROW_MIN_HEIGHT_PX = 22
@@ -290,7 +309,7 @@ class InvoiceScreen(QWidget):
         "BOL#",
         "Rate",
         "Qty",
-        "Total",
+        "Amount",
     )
     _N_LINE_ROWS = 15
 
@@ -309,6 +328,8 @@ class InvoiceScreen(QWidget):
         self._current_invoice_id: int | None = None
         # Block line grid valueChanged/textChanged while loading or clearing (avoids footer flicker).
         self._suppress_invoice_line_recalc: bool = False
+        # Block Ship To autofill / due-date recalc while hydrating a saved invoice.
+        self._suppress_invoice_header_autofill: bool = False
         # Memo text from DB when loading (no longer a visible header box after removing blank field).
         self._invoice_memo_notes: str = ""
         # Set True only inside Print click handler while QPrintDialog may run (blocks stray callers).
@@ -318,7 +339,8 @@ class InvoiceScreen(QWidget):
         self.setToolTip(
             "Manual Invoice: enter lines and totals; Save writes to your company file. "
             "Invoice # suggests the next number from your company file (editable). "
-            "Bill To searches customers when connected. "
+            "Bill To searches customers when connected. Ship To defaults to Bill To "
+            "(QuickBooks Pro when the customer has no separate shipping address) and is saved with the invoice. "
             "Same .db (File → Backup / Restore, probooks.backup)."
         )
         self._build_ui()
@@ -392,6 +414,81 @@ class InvoiceScreen(QWidget):
         if cur == "" or cur == self._invoice_number_autofill_value:
             self._inv_number.setText(sug)
         self._invoice_number_autofill_value = sug
+
+    def _iso_from_date_edit(self, w: QDateEdit) -> str:
+        d = w.date()
+        if not d.isValid():
+            d = QDate.currentDate()
+        return f"{d.year():04d}-{d.month():02d}-{d.day():02d}"
+
+    def _set_date_edit_iso(self, w: QDateEdit, iso: str) -> None:
+        ymd = parse_flexible_date_to_ymd((iso or "").strip())
+        if ymd is None:
+            w.setDate(QDate.currentDate())
+            return
+        y, m, d = ymd
+        w.setDate(QDate(y, m, d))
+
+    def _set_date_edit_from_display(self, w: QDateEdit, display: str) -> None:
+        ymd = parse_flexible_date_to_ymd((display or "").strip())
+        if ymd is None:
+            return
+        y, m, d = ymd
+        w.setDate(QDate(y, m, d))
+
+    def _set_terms_text(self, terms: str) -> None:
+        raw = (terms or "").strip()
+        if not raw:
+            raw = business.default_invoice_terms(self._ap_conn)
+        idx = self._terms.findText(raw)
+        if idx < 0:
+            self._terms.addItem(raw)
+            idx = self._terms.findText(raw)
+        self._terms.setCurrentIndex(max(0, idx))
+
+    def _reset_terms_and_due_date_for_draft(self) -> None:
+        self._suppress_invoice_header_autofill = True
+        try:
+            self._set_terms_text(business.default_invoice_terms(self._ap_conn))
+            self._set_date_edit_iso(self._date, "")
+            self._apply_due_date_from_terms()
+        finally:
+            self._suppress_invoice_header_autofill = False
+
+    def _apply_due_date_from_terms(self) -> None:
+        iso = self._iso_from_date_edit(self._date)
+        due = business.due_date_iso_from_terms(iso, self._terms.currentText())
+        self._set_date_edit_iso(self._due_date, due)
+
+    def _on_invoice_date_or_terms_changed(self, *_args) -> None:
+        if self._suppress_invoice_header_autofill:
+            return
+        self._apply_due_date_from_terms()
+
+    def _on_bill_to_customer_changed(self, _cid: object) -> None:
+        """QB Pro: selecting a customer fills Ship To from that customer's shipping address.
+
+        This company file does not store a separate customer ship-to yet, so Ship To
+        defaults to the Bill To block (same as QB when shipping is blank).
+        """
+        if self._suppress_invoice_header_autofill:
+            return
+        ship = getattr(self, "_ship_to", None)
+        if ship is None:
+            return
+        ship[1].setPlainText(self._bill_to[1].toPlainText())
+
+    def _ship_to_plain(self) -> str:
+        ship = getattr(self, "_ship_to", None)
+        if ship is None:
+            return ""
+        return ship[1].toPlainText().strip()
+
+    def _set_ship_to_plain(self, text: str) -> None:
+        ship = getattr(self, "_ship_to", None)
+        if ship is None:
+            return
+        ship[1].setPlainText(text or "")
 
     def bill_to_customer_panel(self) -> CustomerBillToPanel:
         return self._bill_customer_panel
@@ -469,6 +566,14 @@ class InvoiceScreen(QWidget):
             editor.setFixedHeight(_INVOICE_TOP_FOUR_LINE_HEIGHT_PX)
             if unified_top_strip:
                 editor.setStyleSheet(_top_strip_line_edit_qss())
+        elif compact_vertical and isinstance(editor, QDateEdit):
+            editor.setFixedHeight(_INVOICE_TOP_FOUR_LINE_HEIGHT_PX)
+            if unified_top_strip:
+                editor.setStyleSheet(_top_strip_date_edit_qss())
+        elif compact_vertical and isinstance(editor, QComboBox):
+            editor.setFixedHeight(_INVOICE_TOP_FOUR_LINE_HEIGHT_PX)
+            if unified_top_strip:
+                editor.setStyleSheet(_top_strip_combo_qss())
         if unified_top_strip and compact_vertical:
             fr.setFixedHeight(_top_strip_field_outer_height_px())
             fr.setSizePolicy(
@@ -584,20 +689,43 @@ class InvoiceScreen(QWidget):
         )
         self._bill_customer_panel = bill_panel
         self._bill_to = (bill_panel, bill_te)
-        if _INVOICE_SHOW_SHIP_TO_UI:
-            self._ship_to = self._address_box("Ship To")
-        else:
-            self._ship_to = None
+        self._ship_to = self._address_box(
+            "Ship To",
+            height_px=_INVOICE_BILL_TO_TEXT_HEIGHT_PX,
+            max_width_px=_INVOICE_BILL_TO_MAX_WIDTH_PX,
+        )
+        self._bill_customer_panel.customerIdChanged.connect(
+            self._on_bill_to_customer_changed
+        )
 
-        # ── Header: Invoice Date / PO / Job + Bill To; buttons evenly spread under the three fields. ──
+        # ── Header: Invoice Date / Terms / Due Date / PO / Job + Bill To + Ship To ──
         top_fields_row = QHBoxLayout()
         top_fields_row.setSpacing(10)
 
-        self._date = QLineEdit()
-        qd = QDate.currentDate()
-        self._date.setText(format_ymd_as_us(qd.month(), qd.day(), qd.year()))
-        self._date.setPlaceholderText("MM/DD/YYYY")
-        attach_line_edit_us_date_normalization(self._date)
+        self._date = QDateEdit()
+        configure_qdate_edit_us(self._date)
+        self._date.setDate(QDate.currentDate())
+        self._date.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        self._date.setToolTip("Invoice date (QuickBooks Pro date control).")
+
+        self._terms = QComboBox()
+        self._terms.setEditable(False)
+        self._terms.addItems(list(business.INVOICE_TERMS_CHOICES))
+        self._terms.setToolTip(
+            "Payment terms. Changing terms (or the invoice date) fills Due Date, "
+            "as in QuickBooks Pro Desktop."
+        )
+
+        self._due_date = QDateEdit()
+        configure_qdate_edit_us(self._due_date)
+        self._due_date.setDate(QDate.currentDate())
+        self._due_date.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        self._due_date.setToolTip(
+            "Due date. Filled from Terms when you change Invoice Date or Terms; "
+            "you can still edit it before Save."
+        )
+        self._date.dateChanged.connect(self._on_invoice_date_or_terms_changed)
+        self._terms.currentIndexChanged.connect(self._on_invoice_date_or_terms_changed)
 
         self._po = QLineEdit()
 
@@ -619,6 +747,14 @@ class InvoiceScreen(QWidget):
         fields_h.setSpacing(10)
         fields_h.addWidget(
             self._header_field_box("Invoice Date", self._date, **_top_three_kw),
+            0,
+        )
+        fields_h.addWidget(
+            self._header_field_box("Terms", self._terms, **_top_three_kw),
+            0,
+        )
+        fields_h.addWidget(
+            self._header_field_box("Due Date", self._due_date, **_top_three_kw),
             0,
         )
         fields_h.addWidget(
@@ -713,8 +849,7 @@ class InvoiceScreen(QWidget):
         bill_lay.setSpacing(8)
         bill_lay.addWidget(self._bill_to[0], 0, Qt.AlignmentFlag.AlignTop)
         top_fields_row.addWidget(bill_col, 0, Qt.AlignmentFlag.AlignTop)
-        if _INVOICE_SHOW_SHIP_TO_UI and self._ship_to is not None:
-            top_fields_row.addWidget(self._ship_to[0], 0, Qt.AlignmentFlag.AlignTop)
+        top_fields_row.addWidget(self._ship_to[0], 0, Qt.AlignmentFlag.AlignTop)
 
         header_band = QFrame()
         header_band.setObjectName("invoiceHeaderBand")
@@ -746,6 +881,7 @@ class InvoiceScreen(QWidget):
         self._update_new_customer_button_state()
 
         self._sync_invoice_number_suggestion()
+        self._reset_terms_and_due_date_for_draft()
 
         self._invoice_intake_handoff_banner = QLabel("")
         self._invoice_intake_handoff_banner.setObjectName("invoiceIntakeHandoffBanner")
@@ -848,6 +984,7 @@ class InvoiceScreen(QWidget):
 
             total = _line_total_spin()
             total.setValue(0.0)
+            total.setToolTip("Amount — quantity × rate (QuickBooks Pro).")
             self._table.setCellWidget(row, 6, total)
 
         self._wire_invoice_line_recalc()
@@ -1025,7 +1162,7 @@ class InvoiceScreen(QWidget):
 
         if ex is not None:
             if ex.date_confidence == "high" and ex.date_display:
-                self._date.setText(ex.date_display)
+                self._set_date_edit_from_display(self._date, ex.date_display)
             if ex.ticket_confidence == "high" and ex.ticket_ref:
                 bol_w = self._table.cellWidget(0, 3)
                 if isinstance(bol_w, QLineEdit):
@@ -1572,16 +1709,21 @@ class InvoiceScreen(QWidget):
     def _on_clear_fields(self) -> None:
         self._current_invoice_id = None
         self._browse_slot = None
-        qd = QDate.currentDate()
-        self._date.setText(format_ymd_as_us(qd.month(), qd.day(), qd.year()))
-        self._po.clear()
-        self._job.clear()
-        self._invoice_memo_notes = ""
-        self._hide_invoice_intake_handoff_banner()
-        self._bill_customer_panel.clear_bill_to()
-        self._clear_line_grid()
-        self._inv_number.clear()
-        self._invoice_number_autofill_value = ""
+        self._suppress_invoice_header_autofill = True
+        try:
+            self._set_date_edit_iso(self._date, "")
+            self._po.clear()
+            self._job.clear()
+            self._invoice_memo_notes = ""
+            self._hide_invoice_intake_handoff_banner()
+            self._bill_customer_panel.clear_bill_to()
+            self._set_ship_to_plain("")
+            self._clear_line_grid()
+            self._inv_number.clear()
+            self._invoice_number_autofill_value = ""
+        finally:
+            self._suppress_invoice_header_autofill = False
+        self._reset_terms_and_due_date_for_draft()
         self._sync_invoice_number_suggestion()
         self._update_browse_buttons()
         self._sync_invoice_status_badge(status=None, balance_due=None)
@@ -1649,16 +1791,20 @@ class InvoiceScreen(QWidget):
     def _go_to_new_invoice_draft(self) -> None:
         self._current_invoice_id = None
         self._browse_slot = None
-        self._po.clear()
-        self._job.clear()
-        self._invoice_memo_notes = ""
-        self._hide_invoice_intake_handoff_banner()
-        self._bill_customer_panel.clear_bill_to()
-        self._clear_line_grid()
-        self._inv_number.clear()
-        self._invoice_number_autofill_value = ""
-        qd = QDate.currentDate()
-        self._date.setText(format_ymd_as_us(qd.month(), qd.day(), qd.year()))
+        self._suppress_invoice_header_autofill = True
+        try:
+            self._po.clear()
+            self._job.clear()
+            self._invoice_memo_notes = ""
+            self._hide_invoice_intake_handoff_banner()
+            self._bill_customer_panel.clear_bill_to()
+            self._set_ship_to_plain("")
+            self._clear_line_grid()
+            self._inv_number.clear()
+            self._invoice_number_autofill_value = ""
+        finally:
+            self._suppress_invoice_header_autofill = False
+        self._reset_terms_and_due_date_for_draft()
         self._sync_invoice_number_suggestion()
         self._refresh_browse_state()
         self._browse_slot = len(self._browse_ids)
@@ -1692,18 +1838,34 @@ class InvoiceScreen(QWidget):
         self._inv_number.setText(num)
         self._invoice_number_autofill_value = num
         iso = (d.get("invoice_date") or "").strip()
-        self._date.setText(format_iso_to_us_display(iso) if iso else "")
-        po, job, memo_rest = self._split_memo_po_job((d.get("memo") or "").strip())
-        self._po.setText(po)
-        self._job.setText(job)
-        self._invoice_memo_notes = memo_rest
-        self._bill_customer_panel.reload_customers()
+        self._suppress_invoice_header_autofill = True
         try:
-            cid = int(d["customer_id"])
-        except (KeyError, TypeError, ValueError):
-            self._bill_customer_panel.clear_bill_to()
-        else:
-            self._bill_customer_panel.select_customer_by_id(cid)
+            self._set_date_edit_iso(self._date, iso)
+            terms_raw = (d.get("terms") or "").strip()
+            self._set_terms_text(terms_raw)
+            due_raw = (d.get("due_date") or "").strip()
+            if due_raw:
+                self._set_date_edit_iso(self._due_date, due_raw)
+            else:
+                self._apply_due_date_from_terms()
+            po, job, memo_rest = self._split_memo_po_job((d.get("memo") or "").strip())
+            self._po.setText(po)
+            self._job.setText(job)
+            self._invoice_memo_notes = memo_rest
+            self._bill_customer_panel.reload_customers()
+            try:
+                cid = int(d["customer_id"])
+            except (KeyError, TypeError, ValueError):
+                self._bill_customer_panel.clear_bill_to()
+            else:
+                self._bill_customer_panel.select_customer_by_id(cid)
+            ship_saved = (d.get("ship_to") or "").strip()
+            if ship_saved:
+                self._set_ship_to_plain(ship_saved)
+            else:
+                self._set_ship_to_plain(self._bill_to[1].toPlainText())
+        finally:
+            self._suppress_invoice_header_autofill = False
         self._clear_line_grid()
         self._suppress_invoice_line_recalc = True
         try:
@@ -1907,11 +2069,12 @@ class InvoiceScreen(QWidget):
         num = self._inv_number.text().strip()
         if not num:
             return False, "Enter an invoice number.", None
-        ymd = parse_flexible_date_to_ymd(self._date.text().strip())
-        if ymd is None:
+        iso_date = self._iso_from_date_edit(self._date)
+        if not iso_date:
             return False, "Enter a valid invoice date.", None
-        y, m, d = ymd
-        iso_date = f"{y:04d}-{m:02d}-{d:02d}"
+        due_s = self._iso_from_date_edit(self._due_date)
+        terms_s = self._terms.currentText().strip()
+        ship_s = self._ship_to_plain()
         memo = self._build_invoice_memo()
         lines = self._collect_invoice_lines()
         conn = self._ap_conn
@@ -1919,12 +2082,6 @@ class InvoiceScreen(QWidget):
         tax_pct = self._invoice_tax_rate_pct()
         try:
             if edit_id is not None:
-                due_s = ""
-                row = conn.execute(
-                    "SELECT due_date FROM invoices WHERE id = ?", (edit_id,)
-                ).fetchone()
-                if row is not None and (row["due_date"] or "").strip():
-                    due_s = (row["due_date"] or "").strip()[:10]
                 business.update_invoice(
                     conn,
                     edit_id,
@@ -1935,6 +2092,8 @@ class InvoiceScreen(QWidget):
                     memo=memo,
                     lines=lines,
                     tax_rate_pct=tax_pct,
+                    ship_to=ship_s,
+                    terms=terms_s,
                 )
                 self.openInvoicesChanged.emit()
                 return True, "", edit_id
@@ -1943,10 +2102,12 @@ class InvoiceScreen(QWidget):
                 cid,
                 num,
                 iso_date,
-                due_date="",
+                due_date=due_s,
                 memo=memo,
                 lines=lines,
                 tax_rate_pct=tax_pct,
+                ship_to=ship_s,
+                terms=terms_s,
             )
         except ValueError as exc:
             return False, str(exc), None
@@ -2094,12 +2255,24 @@ class InvoiceScreen(QWidget):
         finally:
             self._invoice_print_dialog_armed = False
 
-    def _address_box(self, caption: str) -> tuple[QFrame, QPlainTextEdit]:
+    def _address_box(
+        self,
+        caption: str,
+        *,
+        height_px: int | None = None,
+        max_width_px: int | None = None,
+    ) -> tuple[QFrame, QPlainTextEdit]:
         fr = QFrame()
         fr.setStyleSheet(
             f"QFrame {{ background-color: {_INV_PANEL}; border: 1px solid {_INV_GRID}; "
             "border-radius: 6px; }}"
         )
+        if max_width_px is not None:
+            fr.setMaximumWidth(max_width_px)
+            fr.setSizePolicy(
+                QSizePolicy.Policy.Maximum,
+                QSizePolicy.Policy.Preferred,
+            )
         lay = QVBoxLayout(fr)
         lay.setContentsMargins(8, 6, 8, 8)
         lay.setSpacing(4)
@@ -2107,10 +2280,16 @@ class InvoiceScreen(QWidget):
         cap.setStyleSheet(f"color: {_INV_TEXT}; font-size: 12px; font-weight: 600;")
         te = QPlainTextEdit()
         te.setPlaceholderText(caption)
-        te.setFixedHeight(68)
+        te.setFixedHeight(
+            height_px if height_px is not None else _INVOICE_BILL_TO_TEXT_HEIGHT_PX
+        )
         te.setStyleSheet(
             f"QPlainTextEdit {{ background: {_INV_PANEL}; color: {_INV_TEXT}; "
             f"border: 1px solid {_INV_GRID}; border-radius: 4px; padding: 4px; }}"
+        )
+        te.setToolTip(
+            "Ship To is saved with this invoice. Selecting a customer copies Bill To "
+            "(QuickBooks Pro default when the customer has no separate shipping address)."
         )
         lay.addWidget(cap)
         lay.addWidget(te)

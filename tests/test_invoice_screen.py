@@ -7,15 +7,18 @@ import sys
 from unittest.mock import patch
 
 import pytest
-from PySide6.QtCore import Qt, QSettings
+from PySide6.QtCore import Qt, QSettings, QDate
 from PySide6.QtTest import QTest
 from PySide6.QtGui import QTextDocument
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
+    QDateEdit,
     QDoubleSpinBox,
     QHeaderView,
     QLabel,
     QLineEdit,
+    QPlainTextEdit,
     QTableWidget,
 )
 
@@ -71,13 +74,17 @@ def test_invoice_screen_footer_recalcs_from_rate_qty(qapp: QApplication, tmp_pat
 
 def test_invoice_screen_line_grid_and_headers(qapp: QApplication) -> None:
     w = InvoiceScreen()
-    assert isinstance(w._date, QLineEdit)
+    assert isinstance(w._date, QDateEdit)
+    assert isinstance(w._due_date, QDateEdit)
+    assert isinstance(w._terms, QComboBox)
     assert isinstance(w._inv_number, QLineEdit)
     assert w._inv_number.placeholderText() == "INVOICE #"
     assert w._inv_number.text() == "1"
     labels = [lb.text() for lb in w.findChildren(QLabel)]
     assert "Invoice Number" not in labels
     assert "Invoice Date" in labels
+    assert "Due Date" in labels
+    assert "Terms" in labels
     t = w.findChild(QTableWidget, "invoiceLinesTable")
     assert t is not None
     assert t.objectName() == "invoiceLinesTable"
@@ -97,7 +104,7 @@ def test_invoice_screen_line_grid_and_headers(qapp: QApplication) -> None:
     assert t.horizontalHeaderItem(0).text() == "Date"
     assert t.horizontalHeaderItem(2).text() == "Description"
     assert t.horizontalHeaderItem(3).text() == "BOL#"
-    assert t.horizontalHeaderItem(6).text() == "Total"
+    assert t.horizontalHeaderItem(6).text() == "Amount"
     assert isinstance(t.cellWidget(0, 0), QLineEdit)
     assert isinstance(t.cellWidget(0, 1), QLineEdit)
     assert isinstance(t.cellWidget(0, 2), QLineEdit)
@@ -144,7 +151,9 @@ def test_invoice_screen_address_boxes_exist(qapp: QApplication) -> None:
     w = InvoiceScreen()
     assert isinstance(w._bill_to[0], CustomerBillToPanel)
     assert w._bill_to[1].placeholderText() == "Bill To"
-    assert w._ship_to is None
+    assert w._ship_to is not None
+    assert isinstance(w._ship_to[1], QPlainTextEdit)
+    assert w._ship_to[1].placeholderText() == "Ship To"
 
 
 def test_invoice_screen_print_and_nav_buttons_exist(qapp: QApplication) -> None:
@@ -639,7 +648,7 @@ Extra line in body not labeled.
         text_extraction=ex,
     )
     assert ok is True
-    assert w._date.text().strip() == "04/01/2025"
+    assert w._date.date() == QDate(2025, 4, 1)
     bol = w._table.cellWidget(0, 3)
     assert isinstance(bol, QLineEdit)
     assert bol.text().strip() == "ZZ-1"
@@ -766,7 +775,7 @@ def test_invoice_save_duplicate_invoice_number_shows_modal_warning(
     qapp.processEvents()
     w._bill_customer_panel.select_customer_by_id(c2)
     w._inv_number.setText("100")
-    w._date.setText("02/01/2024")
+    w._date.setDate(QDate(2024, 2, 1))
     ok, msg, iid = w._try_persist_invoice()
     assert ok is False
     assert iid is None
@@ -1025,4 +1034,115 @@ def test_refresh_loaded_invoice_payment_status_no_op_when_no_invoice_loaded(
     assert w._current_invoice_id is None
     assert w.refresh_loaded_invoice_payment_status([1, 2, 3]) is False
     assert w.refresh_loaded_invoice_payment_status(None) is False
+    db.close()
+
+
+def test_invoice_screen_ship_to_defaults_from_bill_to_on_customer_select(
+    qapp: QApplication, tmp_path
+) -> None:
+    """QB Pro: no separate customer ship-to → Ship To copies the Bill To block."""
+    db_path = tmp_path / "inv_ship_default.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(
+        db._conn,
+        "Acme Rentals",
+        address="200 Oak Ave\nPortland, OR 97201",
+    )
+    w = InvoiceScreen(ap_conn=db._conn)
+    w.bill_to_customer_panel().select_customer_by_id(cid)
+    qapp.processEvents()
+    bill = w._bill_to[1].toPlainText()
+    ship = w._ship_to[1].toPlainText()
+    assert "Acme Rentals" in bill
+    assert "200 Oak Ave" in bill
+    assert ship == bill
+    db.close()
+
+
+def test_invoice_screen_terms_drive_due_date(qapp: QApplication, tmp_path) -> None:
+    """Changing Terms or Invoice Date fills Due Date (QuickBooks Pro)."""
+    db_path = tmp_path / "inv_terms_due.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    w = InvoiceScreen(ap_conn=db._conn)
+    w._date.setDate(QDate(2026, 1, 1))
+    w._terms.setCurrentText("Net 30")
+    qapp.processEvents()
+    assert w._due_date.date() == QDate(2026, 1, 31)
+    w._terms.setCurrentText("Due on receipt")
+    qapp.processEvents()
+    assert w._due_date.date() == QDate(2026, 1, 1)
+    w._terms.setCurrentText("Net 15")
+    w._date.setDate(QDate(2026, 3, 1))
+    qapp.processEvents()
+    assert w._due_date.date() == QDate(2026, 3, 16)
+    db.close()
+
+
+def test_invoice_screen_save_persists_ship_to_terms_and_due_date(
+    qapp: QApplication, tmp_path
+) -> None:
+    """Ship To, terms, and computed due date round-trip on Save / reload."""
+    db_path = tmp_path / "inv_ship_save.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "ShipCo", address="1 Main St")
+    w = InvoiceScreen(ap_conn=db._conn)
+    w._bill_customer_panel.select_customer_by_id(cid)
+    w._inv_number.setText("88001")
+    w._date.setDate(QDate(2026, 3, 1))
+    w._terms.setCurrentText("Net 15")
+    qapp.processEvents()
+    w._ship_to[1].setPlainText("Warehouse 9\nDock B")
+    desc = w._table.cellWidget(0, 2)
+    assert isinstance(desc, QLineEdit)
+    desc.setText("Haul")
+    rate = w._table.cellWidget(0, 4)
+    qty = w._table.cellWidget(0, 5)
+    assert isinstance(rate, QDoubleSpinBox) and isinstance(qty, QDoubleSpinBox)
+    rate.setValue(40.0)
+    qty.setValue(3.0)
+    amt = w._table.cellWidget(0, 6)
+    assert isinstance(amt, QDoubleSpinBox)
+    assert abs(amt.value() - 120.0) < 0.01
+    w.show()
+    qapp.processEvents()
+    with patch("desktop_app.invoice_screen.ensure_invoice_output_folder", return_value=None):
+        QTest.mouseClick(w._btn_save, Qt.MouseButton.LeftButton)
+        qapp.processEvents()
+    rows = business.list_invoices(db._conn)
+    assert len(rows) == 1
+    iid = int(dict(rows[0])["id"])
+    inv, lines = business.get_invoice_detail(db._conn, iid)
+    d = dict(inv)
+    assert (d.get("ship_to") or "").strip() == "Warehouse 9\nDock B"
+    assert (d.get("terms") or "").strip() == "Net 15"
+    assert (d.get("due_date") or "").strip()[:10] == "2026-03-16"
+    assert abs(float(dict(lines[0]).get("line_total") or 0) - 120.0) < 0.02
+    assert w.open_invoice_by_id(iid) is True
+    qapp.processEvents()
+    assert w._ship_to[1].toPlainText().strip() == "Warehouse 9\nDock B"
+    assert w._terms.currentText() == "Net 15"
+    assert w._due_date.date() == QDate(2026, 3, 16)
+    db.close()
+
+
+def test_invoice_screen_suggested_number_increments_prefix_from_last_saved(
+    qapp: QApplication, tmp_path
+) -> None:
+    """Next invoice # follows the last saved number, including a prefix (QB Pro)."""
+    db_path = tmp_path / "inv_prefix_num.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "PrefCo")
+    business.create_invoice(
+        db._conn,
+        cid,
+        "INV-100",
+        "2026-01-01",
+        lines=[{"description": "A", "qty": 1.0, "rate": 1.0}],
+    )
+    w = InvoiceScreen(ap_conn=db._conn)
+    assert w._inv_number.text() == "INV-101"
     db.close()

@@ -93,6 +93,20 @@ def test_next_default_invoice_number_none_conn() -> None:
     assert business.next_default_invoice_number(None) == "1"
 
 
+def test_increment_document_number_preserves_prefix_and_padding() -> None:
+    assert business.increment_document_number("100") == "101"
+    assert business.increment_document_number("INV-009") == "INV-010"
+    assert business.increment_document_number("ABC") is None
+    assert business.increment_document_number("") is None
+
+
+def test_due_date_iso_from_terms() -> None:
+    assert business.due_date_iso_from_terms("2026-01-01", "Due on receipt") == "2026-01-01"
+    assert business.due_date_iso_from_terms("2026-01-01", "Net 30") == "2026-01-31"
+    assert business.due_date_iso_from_terms("2026-03-01", "Net 15") == "2026-03-16"
+    assert business.net_days_from_payment_terms("net10") == 10
+
+
 def test_next_default_invoice_number_max_digits_plus_one(db) -> None:
     cid = business.add_customer(db._conn, "C")
     business.create_invoice(
@@ -110,7 +124,8 @@ def test_next_default_invoice_number_max_digits_plus_one(db) -> None:
         "2024-01-02",
         lines=[{"description": "y", "qty": 1, "rate": 0.0}],
     )
-    assert business.next_default_invoice_number(db._conn) == "2"
+    # Last saved is INV-9 → QB Pro offers INV-10 (not max all-digit + 1).
+    assert business.next_default_invoice_number(db._conn) == "INV-10"
     business.create_invoice(
         db._conn,
         cid,
@@ -121,6 +136,39 @@ def test_next_default_invoice_number_max_digits_plus_one(db) -> None:
     assert business.next_default_invoice_number(db._conn) == "10"
 
 
+def test_create_invoice_persists_ship_to_and_terms(db) -> None:
+    cid = business.add_customer(db._conn, "ShipCust")
+    iid = business.create_invoice(
+        db._conn,
+        cid,
+        "ST-1",
+        "2026-04-01",
+        due_date="2026-05-01",
+        ship_to="Dock 4",
+        terms="Net 30",
+        lines=[{"description": "A", "qty": 2, "rate": 5.0}],
+    )
+    inv, lines = business.get_invoice_detail(db._conn, iid)
+    d = dict(inv)
+    assert (d.get("ship_to") or "") == "Dock 4"
+    assert (d.get("terms") or "") == "Net 30"
+    assert abs(float(dict(lines[0])["line_total"]) - 10.0) < 0.01
+    cols = {r[1] for r in db._conn.execute("PRAGMA table_info(invoices)").fetchall()}
+    assert "ship_to" in cols and "terms" in cols
+    business.update_invoice(
+        db._conn,
+        iid,
+        cid,
+        "ST-1",
+        "2026-04-01",
+        lines=[{"description": "A", "qty": 2, "rate": 5.0}],
+    )
+    inv2, _ln = business.get_invoice_detail(db._conn, iid)
+    d2 = dict(inv2)
+    assert (d2.get("ship_to") or "") == "Dock 4"
+    assert (d2.get("terms") or "") == "Net 30"
+
+
 def test_extension_schema_applied(db):
     row = db._conn.execute(
         "SELECT version FROM extension_schema_version WHERE id = 1"
@@ -129,6 +177,7 @@ def test_extension_schema_applied(db):
     db._conn.execute("SELECT * FROM payroll_tax_items LIMIT 0")
     db._conn.execute("SELECT * FROM payroll_run_tax_lines LIMIT 0")
     db._conn.execute("SELECT * FROM categorization_rules LIMIT 0")
+    db._conn.execute("SELECT ship_to, terms FROM invoices LIMIT 0")
 
 
 def test_suggest_coa_matches_respects_priority(db):

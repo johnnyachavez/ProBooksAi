@@ -7,8 +7,9 @@ AR, AP, payroll, aging, tax settings, and bank matching MVP operations.
 from __future__ import annotations
 
 import csv
+import re
 import sqlite3
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 
@@ -362,6 +363,8 @@ def create_invoice(
     lines: Optional[list[dict]] = None,
     tax_rate_pct: float = 0.0,
     status: str = "Open",
+    ship_to: str = "",
+    terms: str = "",
 ) -> int:
     lines = lines or [{"description": "Service", "qty": 1.0, "rate": 0.0}]
     subtotal = 0.0
@@ -374,8 +377,9 @@ def create_invoice(
         """
         INSERT INTO invoices (
             customer_id, invoice_number, invoice_date, due_date, memo,
-            subtotal, tax_total, total, balance_due, status, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            subtotal, tax_total, total, balance_due, status, created_at,
+            ship_to, terms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             customer_id,
@@ -389,6 +393,8 @@ def create_invoice(
             total,
             status,
             _now(),
+            (ship_to or "").strip(),
+            (terms or "").strip(),
         ),
     )
     inv_id = cur.lastrowid
@@ -426,13 +432,23 @@ def update_invoice(
     memo: str = "",
     lines: Optional[list[dict]] = None,
     tax_rate_pct: float = 0.0,
+    ship_to: str | None = None,
+    terms: str | None = None,
 ) -> None:
-    """Replace invoice header and lines. Raises ``ValueError`` if any AR payment applies."""
+    """Replace invoice header and lines. Raises ``ValueError`` if any AR payment applies.
+
+    *ship_to* / *terms* default to ``None`` (keep stored values) so callers that do not
+    know those fields (AR edit dialog) do not blank them.
+    """
     if invoice_has_payment_allocations(conn, invoice_id):
         raise ValueError("Cannot edit an invoice that has payments applied.")
-    exists = conn.execute("SELECT id FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
+    exists = conn.execute(
+        "SELECT id, ship_to, terms FROM invoices WHERE id = ?", (invoice_id,)
+    ).fetchone()
     if exists is None:
         raise ValueError("Invoice not found.")
+    ship_val = (exists["ship_to"] or "") if ship_to is None else (ship_to or "").strip()
+    terms_val = (exists["terms"] or "") if terms is None else (terms or "").strip()
     lines = lines or [{"description": "Service", "qty": 1.0, "rate": 0.0}]
     subtotal = 0.0
     for ln in lines:
@@ -446,7 +462,7 @@ def update_invoice(
         UPDATE invoices SET
             customer_id = ?, invoice_number = ?, invoice_date = ?, due_date = ?,
             memo = ?, subtotal = ?, tax_total = ?, total = ?, balance_due = ?,
-            status = 'Open'
+            status = 'Open', ship_to = ?, terms = ?
         WHERE id = ?
         """,
         (
@@ -459,6 +475,8 @@ def update_invoice(
             tax_total,
             total,
             total,
+            ship_val,
+            terms_val,
             invoice_id,
         ),
     )
@@ -702,31 +720,135 @@ def list_invoices(conn: sqlite3.Connection) -> list:
 
 _DEFAULT_FIRST_INVOICE_NUMBER = "1"
 
+# QuickBooks Pro Desktop Create Invoices terms list (subset of common US terms).
+INVOICE_TERMS_CHOICES: tuple[str, ...] = (
+    "Due on receipt",
+    "Net 10",
+    "Net 15",
+    "Net 30",
+    "Net 60",
+)
+
+_NET_DAYS_RE = re.compile(r"net\s*(\d+)", re.IGNORECASE)
+
+
+def increment_document_number(value: str) -> str | None:
+    """Increment trailing digits of a document number, preserving prefix and padding.
+
+    ``100`` → ``101``, ``INV-009`` → ``INV-010``. Returns ``None`` when there is
+    no trailing digit run (QuickBooks cannot auto-step those values).
+    """
+    s = (value or "").strip()
+    if not s:
+        return None
+    i = len(s)
+    while i > 0 and s[i - 1].isdigit():
+        i -= 1
+    if i == len(s):
+        return None
+    prefix, digits = s[:i], s[i:]
+    n = int(digits, 10) + 1
+    return f"{prefix}{n:0{len(digits)}d}"
+
+
+def net_days_from_payment_terms(terms: str) -> int:
+    """Days until due from a terms label. Empty / due-on-receipt / unknown → 0."""
+    s = (terms or "").strip().lower()
+    if not s:
+        return 0
+    if "receipt" in s or s in ("cod", "c.o.d.", "due on receipt", "upon receipt"):
+        return 0
+    m = _NET_DAYS_RE.search(s)
+    if m:
+        return int(m.group(1), 10)
+    return 0
+
+
+def add_days_to_iso_date(iso_date: str, days: int) -> str:
+    """Return ``iso_date`` plus *days* (ISO ``yyyy-mm-dd``). Invalid input is returned stripped."""
+    raw = (iso_date or "").strip()[:10]
+    try:
+        d = date.fromisoformat(raw)
+    except ValueError:
+        return raw
+    try:
+        n = int(days)
+    except (TypeError, ValueError):
+        n = 0
+    return (d + timedelta(days=n)).isoformat()
+
+
+def due_date_iso_from_terms(invoice_date_iso: str, terms: str) -> str:
+    """QB Pro: due date is invoice date plus terms days (Due on receipt → same day)."""
+    return add_days_to_iso_date(invoice_date_iso, net_days_from_payment_terms(terms))
+
+
+def default_invoice_terms(conn: sqlite3.Connection | None) -> str:
+    """Terms for a new invoice: company ``payment_terms`` when it matches a known choice."""
+    fallback = INVOICE_TERMS_CHOICES[0]
+    if conn is None:
+        return fallback
+    raw = (get_setting(conn, "payment_terms", "") or "").strip()
+    if not raw:
+        return fallback
+    for t in INVOICE_TERMS_CHOICES:
+        if t.lower() == raw.lower():
+            return t
+    days = net_days_from_payment_terms(raw)
+    labeled = f"Net {days}"
+    if days and labeled in INVOICE_TERMS_CHOICES:
+        return labeled
+    return fallback
+
 
 def next_default_invoice_number(conn: sqlite3.Connection | None) -> str:
     """Suggested next *invoice_number* for a new invoice (desktop Manual Invoice).
 
-    Uses the maximum existing *invoice_number* whose trimmed value is all digits,
-    plus one. Non-digit strings are ignored for sequencing (user may use ``INV-1``,
-    etc.). If no all-digit numbers exist yet, returns ``1``. With *conn* ``None``
-    (no company file), returns ``1`` so the empty UI matches a fresh company.
+    QuickBooks Pro Desktop offers the next number after the last saved invoice
+    (highest ``id``), incrementing the trailing digits (``INV-009`` → ``INV-010``).
+    The suggestion stays editable; uniqueness is enforced on save. If the last
+    number has no trailing digits, falls back to max all-digit number plus one,
+    or ``1`` on an empty company file / no connection.
     """
     if conn is None:
         return _DEFAULT_FIRST_INVOICE_NUMBER
     try:
+        last = conn.execute(
+            "SELECT invoice_number FROM invoices ORDER BY id DESC LIMIT 1"
+        ).fetchone()
         rows = conn.execute("SELECT invoice_number FROM invoices").fetchall()
     except sqlite3.Error:
         return _DEFAULT_FIRST_INVOICE_NUMBER
-    best: int | None = None
-    for r in rows:
-        s = (r["invoice_number"] or "").strip()
-        if s.isdigit():
-            v = int(s)
-            if best is None or v > best:
-                best = v
-    if best is None:
-        return _DEFAULT_FIRST_INVOICE_NUMBER
-    return str(best + 1)
+    used = {(r["invoice_number"] or "").strip() for r in rows}
+    used.discard("")
+    candidate: str | None = None
+    if last is not None:
+        candidate = increment_document_number((last["invoice_number"] or "").strip())
+    if candidate is None:
+        best: int | None = None
+        for r in rows:
+            s = (r["invoice_number"] or "").strip()
+            if s.isdigit():
+                v = int(s)
+                if best is None or v > best:
+                    best = v
+        candidate = str(best + 1) if best is not None else _DEFAULT_FIRST_INVOICE_NUMBER
+    guard = 0
+    while candidate in used and guard < 10_000:
+        nxt = increment_document_number(candidate)
+        if nxt is None:
+            break
+        candidate = nxt
+        guard += 1
+    if not candidate or candidate in used:
+        best_n = 0
+        for s in used:
+            if s.isdigit():
+                best_n = max(best_n, int(s))
+        candidate = str(best_n + 1)
+        while candidate in used:
+            candidate = str(int(candidate) + 1)
+    return candidate
 
 
 def write_invoices_csv(
@@ -753,6 +875,8 @@ def write_invoices_csv(
                 "invoice_number",
                 "invoice_date",
                 "due_date",
+                "terms",
+                "ship_to",
                 "memo",
                 "subtotal",
                 "tax_total",
@@ -772,6 +896,8 @@ def write_invoices_csv(
                     d.get("invoice_number") or "",
                     d.get("invoice_date") or "",
                     d.get("due_date") or "",
+                    d.get("terms") or "",
+                    d.get("ship_to") or "",
                     d.get("memo") or "",
                     f"{float(d.get('subtotal') or 0):.2f}",
                     f"{float(d.get('tax_total') or 0):.2f}",

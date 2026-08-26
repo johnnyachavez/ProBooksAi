@@ -7,7 +7,7 @@ This module does not open dialogs.
 Layout (top → bottom)
 ----------------------
 1. Header row: logo (top-left, no border) | "Invoice" title (right)
-2. Body row:   BILL TO (left 50%) | four stacked label+value cells (right 48%):
+2. Body row:   BILL TO + SHIP TO (left) | four stacked label+value cells (right 48%):
                DATE / INVOICE # / PO-CONTRACT# / NAME-JOB#
 3. Line-items grid (7 columns)
 4. Balance Due footer row
@@ -144,6 +144,7 @@ def build_invoice_print_html(
     invoice_date: str = "",
     invoice_number: str = "",
     bill_to_plain: str = "",
+    ship_to_plain: str = "",
     po_contract: str = "",
     name_job: str = "",
     footer_plain: str = "",
@@ -225,7 +226,7 @@ def build_invoice_print_html(
         "</tr>",
         "</table>",
 
-        # ── Row 2: BILL TO (left) + 4 stacked meta-fields (right) ────────────
+        # ── Row 2: BILL TO + SHIP TO (left) + 4 stacked meta-fields (right) ──
         '<table width="100%" cellspacing="0" cellpadding="0" '
         'style="border:none; margin-top:12px;">',
         "<tr>",
@@ -233,7 +234,7 @@ def build_invoice_print_html(
         # Left: BILL TO — height="216" matches the 4×(th+td) stack on the right;
         # Qt's QTextDocument ignores height:100% on nested tables so we use the
         # HTML height attribute instead.
-        '<td width="50%" valign="top" style="border:none; padding:0;">',
+        '<td width="24%" valign="top" style="border:none; padding:0;">',
         '<table width="100%" cellspacing="0" cellpadding="0" height="216" '
         'style="border:1px solid #000; border-collapse:collapse;">',
         '<tr><th style="text-align:left; padding:5px 8px; font-weight:bold; '
@@ -241,6 +242,21 @@ def build_invoice_print_html(
         'text-transform:uppercase;">BILL TO</th></tr>',
         '<tr><td valign="top" style="padding:8px; height:190px; line-height:1.35;">'
         f"{_bill_to_html(bill_to_plain)}</td></tr>",
+        "</table>",
+        "</td>",
+
+        # Gap
+        '<td width="2%" style="border:none;">&#160;</td>',
+
+        # Ship To (QB Pro Create Invoices always shows both address blocks)
+        '<td width="24%" valign="top" style="border:none; padding:0;">',
+        '<table width="100%" cellspacing="0" cellpadding="0" height="216" '
+        'style="border:1px solid #000; border-collapse:collapse;">',
+        '<tr><th style="text-align:left; padding:5px 8px; font-weight:bold; '
+        'border-bottom:1px solid #000; background:#f0f0f0; font-size:8pt; '
+        'text-transform:uppercase;">SHIP TO</th></tr>',
+        '<tr><td valign="top" style="padding:8px; height:190px; line-height:1.35;">'
+        f"{_bill_to_html(ship_to_plain)}</td></tr>",
         "</table>",
         "</td>",
 
