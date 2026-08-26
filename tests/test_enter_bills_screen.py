@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
     QDoubleSpinBox,
+    QFrame,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -107,6 +108,25 @@ def test_enter_bills_screen_header_and_line_grid(qapp: QApplication) -> None:
     assert lines is not None
     assert lines.tabText(0).startswith("Expenses")
     assert lines.tabText(1).startswith("Items")
+    assert t.rowCount() >= 18
+
+
+def test_enter_bills_grid_dominates_window_height(qapp: QApplication) -> None:
+    """QB Pro proportions: header stays in the top third; Expenses grid fills the rest."""
+    w = EnterBillsScreen()
+    w.resize(1280, 860)
+    w.show()
+    qapp.processEvents()
+    header = w.findChild(QFrame, "enterBillsHeaderBand")
+    ribbon = w.findChild(QTabWidget, "enterBillsRibbonTabs")
+    footer = w.findChild(QFrame, "enterBillsActionsBar")
+    assert header is not None and ribbon is not None and footer is not None
+    assert w._line_tabs.height() >= int(w.height() * 0.50)
+    assert header.height() <= int(w.height() / 3)
+    top_chrome = ribbon.height() + header.height()
+    assert top_chrome <= int(w.height() / 3) + 36  # type-row + small gaps
+    assert w._table.rowCount() >= 18
+    w.close()
 
 
 def test_enter_bills_clear_resets_rows(qapp: QApplication) -> None:

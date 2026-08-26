@@ -40,6 +40,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QRadioButton,
+    QSizePolicy,
     QTabWidget,
     QTableWidget,
     QVBoxLayout,
@@ -74,13 +75,16 @@ WORKFLOW_CONTROL_FACE = "#F7F8FA"
 WORKFLOW_CONTROL_HOVER = "#E4EEF7"
 WORKFLOW_CONTROL_PRESSED = "#C9D8EC"
 _STRIP_BTN_OUTLINE = "#B4BCC6"
-_TOP_STRIP_RADIUS_PX = 6
-_TOP_STRIP_CAPTION_FONT_PX = 11
+_TOP_STRIP_RADIUS_PX = 4
+_TOP_STRIP_CAPTION_FONT_PX = 10
 _TOP_STRIP_BODY_FONT_PX = 12
-_FIELD_HEIGHT_PX = 26
-_TITLE_FONT_PX = 28
-_N_EXPENSE_ROWS = 12
-_N_ITEM_ROWS = 8
+_FIELD_HEIGHT_PX = 22
+_TITLE_FONT_PX = 22
+_N_EXPENSE_ROWS = 20
+_N_ITEM_ROWS = 20
+_LINE_ROW_HEIGHT_PX = 22
+_RIBBON_BTN_HEIGHT_PX = 24
+_SIDE_CAPTION_W = 86
 _ACCOUNT_PLACEHOLDER = "(select account)"
 _ITEM_PLACEHOLDER = "(select item)"
 
@@ -268,7 +272,7 @@ class EnterBillsScreen(QWidget):
         except sqlite3.Error:
             return []
 
-    def _style_button(self, b: QPushButton, *, primary: bool = False, height: int = 32) -> None:
+    def _style_button(self, b: QPushButton, *, primary: bool = False, height: int = _RIBBON_BTN_HEIGHT_PX) -> None:
         b.setStyleSheet(_action_button_qss(primary=primary))
         b.setFixedHeight(height)
         b.setAutoDefault(False)
@@ -282,40 +286,22 @@ class EnterBillsScreen(QWidget):
         )
         return cap
 
-    def _field_box(self, caption: str, editor: QWidget) -> QFrame:
-        fr = QFrame()
-        fr.setStyleSheet(
-            f"QFrame {{ background-color: {WORKFLOW_INPUT_BG}; border: 1px solid {_BILL_GRID}; "
-            f"border-radius: {_TOP_STRIP_RADIUS_PX}px; }}"
-        )
-        lay = QVBoxLayout(fr)
-        lay.setContentsMargins(8, 4, 8, 4)
-        lay.setSpacing(2)
-        lay.addWidget(self._caption(caption))
+    def _hfield(self, caption: str, editor: QWidget, *, cap_w: int = _SIDE_CAPTION_W) -> QWidget:
+        """QB-style: caption to the left of the control (compact, not stacked)."""
+        wrap = QWidget()
+        wrap.setStyleSheet("background: transparent;")
+        lay = QHBoxLayout(wrap)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+        cap = self._caption(caption)
+        cap.setFixedWidth(cap_w)
+        cap.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         if isinstance(editor, (QLineEdit, QDateEdit, QComboBox, QDoubleSpinBox)):
             editor.setFixedHeight(_FIELD_HEIGHT_PX)
-        if isinstance(editor, QLineEdit):
-            editor.setStyleSheet(
-                f"QLineEdit {{ background: transparent; border: none; color: {_BILL_TEXT}; "
-                f"font-size: {_TOP_STRIP_BODY_FONT_PX}px; padding: 1px 4px; }}"
-            )
-        elif isinstance(editor, QDateEdit):
-            editor.setStyleSheet(
-                f"QDateEdit {{ background: transparent; border: none; color: {_BILL_TEXT}; "
-                f"font-size: {_TOP_STRIP_BODY_FONT_PX}px; padding: 1px 4px; }}"
-            )
-        elif isinstance(editor, QComboBox):
-            editor.setStyleSheet(
-                f"QComboBox {{ background: transparent; border: none; color: {_BILL_TEXT}; "
-                f"font-size: {_TOP_STRIP_BODY_FONT_PX}px; padding: 1px 4px; }}"
-            )
-        elif isinstance(editor, QDoubleSpinBox):
-            editor.setStyleSheet(
-                f"QDoubleSpinBox {{ background: transparent; border: none; color: {_BILL_TEXT}; "
-                f"font-size: {_TOP_STRIP_BODY_FONT_PX}px; padding: 1px 4px; }}"
-            )
-        lay.addWidget(editor)
-        return fr
+            editor.setStyleSheet(_input_qss(editor.metaObject().className()))
+        lay.addWidget(cap)
+        lay.addWidget(editor, 1)
+        return wrap
 
     def _make_account_combo(self) -> QComboBox:
         cb = QComboBox()
@@ -355,7 +341,7 @@ class EnterBillsScreen(QWidget):
             f"QHeaderView::section {{"
             f" background-color: {_BILL_HEADER};"
             f" color: {_BILL_CAPTION};"
-            f" padding: 6px; border: 1px solid {_BILL_GRID};"
+            f" padding: 4px; border: 1px solid {_BILL_GRID};"
             " font-weight: 700; font-size: 11px;"
             " }}"
         )
@@ -363,35 +349,30 @@ class EnterBillsScreen(QWidget):
     def _build_ui(self) -> None:
         self.setStyleSheet(f"EnterBillsScreen {{ background: {_BILL_CANVAS}; }}")
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(8, 6, 8, 8)
-        outer.setSpacing(8)
+        outer.setContentsMargins(6, 4, 6, 4)
+        outer.setSpacing(4)
 
-        play = QVBoxLayout()
-        play.setContentsMargins(0, 0, 0, 0)
-        play.setSpacing(8)
-
-        self._build_ribbon(play)
-        self._build_type_row(play)
-        self._build_header_form(play)
-        self._build_line_tabs(play)
-        self._build_footer_actions(play)
-
-        outer.addLayout(play, 1)
+        self._build_ribbon(outer)
+        self._build_type_row(outer)
+        self._build_header_form(outer)
+        self._build_line_tabs(outer)
+        self._build_footer_actions(outer)
 
     def _build_ribbon(self, play: QVBoxLayout) -> None:
         self._bill_ribbon = QTabWidget()
         self._bill_ribbon.setObjectName("enterBillsRibbonTabs")
         self._bill_ribbon.setDocumentMode(True)
+        self._bill_ribbon.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         self._bill_ribbon.setStyleSheet(
             f"QTabWidget#enterBillsRibbonTabs::pane {{ border: 1px solid {_BILL_GRID}; "
-            f"background: {_BILL_PANEL}; border-radius: 6px; }}"
-            f"QTabWidget#enterBillsRibbonTabs QTabBar::tab {{ padding: 4px 12px; min-height: 18px; }}"
+            f"background: {_BILL_PANEL}; top: -1px; }}"
+            f"QTabWidget#enterBillsRibbonTabs QTabBar::tab {{ padding: 2px 10px; min-height: 16px; }}"
         )
 
         main_rib = QWidget()
         main_lay = QHBoxLayout(main_rib)
-        main_lay.setContentsMargins(8, 6, 8, 6)
-        main_lay.setSpacing(6)
+        main_lay.setContentsMargins(4, 2, 4, 2)
+        main_lay.setSpacing(4)
 
         self._btn_find = QPushButton("Find")
         self._btn_find.setToolTip("Open the previous saved bill (QuickBooks Find / Previous on this form).")
@@ -418,9 +399,6 @@ class EnterBillsScreen(QWidget):
         self._btn_recalc.setToolTip("Set Amount Due from Expenses + Items.")
         self._btn_pay_bill = QPushButton("Pay Bill")
         self._btn_pay_bill.setToolTip("Open the Pay Bills tab.")
-        self._btn_schedule_pay = QPushButton("Schedule Online Payment")
-        self._btn_schedule_pay.setToolTip("Online bill pay is not wired yet.")
-        self._btn_schedule_pay.setEnabled(False)
 
         for b in (
             self._btn_find,
@@ -432,18 +410,17 @@ class EnterBillsScreen(QWidget):
             self._btn_clear_splits,
             self._btn_recalc,
             self._btn_pay_bill,
-            self._btn_schedule_pay,
         ):
-            self._style_button(b, height=30)
+            self._style_button(b)
             main_lay.addWidget(b)
         main_lay.addStretch(1)
         self._bill_ribbon.addTab(main_rib, "Main")
 
         later = QWidget()
         later_lay = QHBoxLayout(later)
-        later_lay.setContentsMargins(10, 8, 10, 8)
+        later_lay.setContentsMargins(8, 4, 8, 4)
         later_lbl = QLabel("Bill reports follow later QuickBooks screens.")
-        later_lbl.setStyleSheet(f"color: {_BILL_CAPTION}; font-size: 12px; background: transparent;")
+        later_lbl.setStyleSheet(f"color: {_BILL_CAPTION}; font-size: 11px; background: transparent;")
         later_lay.addWidget(later_lbl)
         self._bill_ribbon.addTab(later, "Reports")
         play.addWidget(self._bill_ribbon)
@@ -461,7 +438,8 @@ class EnterBillsScreen(QWidget):
 
     def _build_type_row(self, play: QVBoxLayout) -> None:
         row = QHBoxLayout()
-        row.setSpacing(16)
+        row.setContentsMargins(2, 0, 2, 0)
+        row.setSpacing(12)
         self._radio_bill = QRadioButton("Bill")
         self._radio_credit = QRadioButton("Credit")
         self._radio_bill.setObjectName("enterBillsTypeBill")
@@ -472,7 +450,7 @@ class EnterBillsScreen(QWidget):
         self._type_group.addButton(self._radio_credit, 1)
         radio_qss = (
             f"QRadioButton {{ color: {_BILL_TEXT}; background: transparent; "
-            f"font-size: 13px; }}"
+            f"font-size: 12px; }}"
         )
         self._radio_bill.setStyleSheet(radio_qss)
         self._radio_credit.setStyleSheet(radio_qss)
@@ -484,12 +462,12 @@ class EnterBillsScreen(QWidget):
         self._chk_received.setObjectName("enterBillsReceived")
         self._chk_received.setChecked(True)
         self._chk_received.setStyleSheet(
-            f"QCheckBox {{ color: {_BILL_TEXT}; background: transparent; font-size: 13px; }}"
+            f"QCheckBox {{ color: {_BILL_TEXT}; background: transparent; font-size: 12px; }}"
         )
         self._chk_received.setToolTip("QuickBooks Bill Received — the vendor invoice is in hand.")
         row.addWidget(self._radio_bill)
         row.addWidget(self._radio_credit)
-        row.addSpacing(12)
+        row.addSpacing(8)
         row.addWidget(self._chk_received)
         row.addStretch(1)
         play.addLayout(row)
@@ -498,14 +476,14 @@ class EnterBillsScreen(QWidget):
     def _build_header_form(self, play: QVBoxLayout) -> None:
         form = QFrame()
         form.setObjectName("enterBillsHeaderBand")
+        form.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         form.setStyleSheet(
             f"QFrame#enterBillsHeaderBand {{ background-color: {_BILL_PAPER}; "
-            f"border: 1px solid #B7C9DE; border-radius: 8px; }}"
+            f"border: 1px solid #B7C9DE; border-radius: 6px; }}"
         )
-        hb = QGridLayout(form)
-        hb.setContentsMargins(14, 12, 14, 12)
-        hb.setHorizontalSpacing(14)
-        hb.setVerticalSpacing(8)
+        hb = QVBoxLayout(form)
+        hb.setContentsMargins(10, 6, 10, 8)
+        hb.setSpacing(4)
 
         self._title = QLabel("Bill")
         self._title.setObjectName("enterBillsTitle")
@@ -513,31 +491,23 @@ class EnterBillsScreen(QWidget):
             f"font-size: {_TITLE_FONT_PX}px; font-weight: 700; color: {_BILL_TITLE}; "
             "background: transparent;"
         )
-        hb.addWidget(self._title, 0, 0, 1, 2, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
 
         self._vendor = QComboBox()
         self._vendor.setObjectName("enterBillsVendor")
         self._vendor.setEditable(False)
-        self._vendor.setMinimumWidth(260)
+        self._vendor.setMinimumWidth(220)
         self._vendor.setStyleSheet(_input_qss("QComboBox"))
-        hb.addWidget(self._field_box("VENDOR", self._vendor), 1, 0, 1, 2)
 
         self._address = QPlainTextEdit()
         self._address.setObjectName("enterBillsAddress")
         self._address.setPlaceholderText("Address")
-        self._address.setFixedHeight(88)
+        self._address.setMaximumHeight(78)
+        self._address.setMinimumHeight(56)
+        self._address.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         self._address.setStyleSheet(
             f"QPlainTextEdit {{ background: {WORKFLOW_INPUT_BG}; color: {_BILL_TEXT}; "
-            f"border: 1px solid {_BILL_GRID}; border-radius: 4px; padding: 4px; }}"
+            f"border: 1px solid {_BILL_GRID}; border-radius: 3px; padding: 2px 4px; }}"
         )
-        addr_box = QFrame()
-        addr_box.setStyleSheet("QFrame { background: transparent; border: none; }")
-        addr_lay = QVBoxLayout(addr_box)
-        addr_lay.setContentsMargins(0, 0, 0, 0)
-        addr_lay.setSpacing(2)
-        addr_lay.addWidget(self._caption("ADDRESS"))
-        addr_lay.addWidget(self._address)
-        hb.addWidget(addr_box, 2, 0, 3, 2)
 
         self._bill_date = QDateEdit()
         configure_qdate_edit_us(self._bill_date)
@@ -546,20 +516,17 @@ class EnterBillsScreen(QWidget):
         self._bill_date.setToolTip(
             "Bill date: type flexibly (e.g. 5/21/26, 05.21.26, 052126); stored as YYYY-MM-DD."
         )
-        hb.addWidget(self._field_box("DATE", self._bill_date), 1, 2)
 
         self._vendor_inv = QLineEdit()
         self._vendor_inv.setObjectName("enterBillsRefNo")
         self._vendor_inv.setPlaceholderText("Ref. No.")
         self._vendor_inv.setToolTip("Vendor invoice / reference number.")
-        hb.addWidget(self._field_box("REF. NO.", self._vendor_inv), 2, 2)
 
         self._amount_due = _money_spin()
         self._amount_due.setObjectName("enterBillsAmountDue")
         self._amount_due.setToolTip(
             "Amount due. Recalculate fills this from Expenses + Items; Save uses the line total."
         )
-        hb.addWidget(self._field_box("AMOUNT DUE", self._amount_due), 3, 2)
 
         self._due_date = QDateEdit()
         configure_qdate_edit_us(self._due_date)
@@ -568,23 +535,52 @@ class EnterBillsScreen(QWidget):
         self._due_date.setToolTip(
             "Bill due date. Filled from Terms when you change Date or Terms; you can still edit it."
         )
-        hb.addWidget(self._field_box("BILL DUE", self._due_date), 4, 2)
 
         self._terms = QComboBox()
         self._terms.setObjectName("enterBillsTerms")
         self._terms.setEditable(False)
         self._terms.addItems(list(business.INVOICE_TERMS_CHOICES))
         self._terms.setToolTip("Payment terms. Changing terms (or the bill date) fills Bill Due.")
-        hb.addWidget(self._field_box("TERMS", self._terms), 5, 0)
 
         self._header_memo = QLineEdit()
         self._header_memo.setObjectName("enterBillsMemo")
         self._header_memo.setPlaceholderText("Memo")
-        hb.addWidget(self._field_box("MEMO", self._header_memo), 5, 1, 1, 2)
 
-        hb.setColumnStretch(0, 2)
-        hb.setColumnStretch(1, 3)
-        hb.setColumnStretch(2, 2)
+        body = QHBoxLayout()
+        body.setSpacing(12)
+        left = QVBoxLayout()
+        left.setSpacing(4)
+        left.addWidget(self._title)
+        left.addWidget(self._hfield("VENDOR", self._vendor))
+        addr_row = QHBoxLayout()
+        addr_row.setSpacing(6)
+        addr_cap = self._caption("ADDRESS")
+        addr_cap.setFixedWidth(_SIDE_CAPTION_W)
+        addr_cap.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
+        addr_row.addWidget(addr_cap)
+        addr_row.addWidget(self._address, 1)
+        left.addLayout(addr_row, 1)
+
+        right = QVBoxLayout()
+        right.setSpacing(4)
+        right.addWidget(self._hfield("DATE", self._bill_date, cap_w=92))
+        right.addWidget(self._hfield("REF. NO.", self._vendor_inv, cap_w=92))
+        right.addWidget(self._hfield("AMOUNT DUE", self._amount_due, cap_w=92))
+        right.addWidget(self._hfield("BILL DUE", self._due_date, cap_w=92))
+        right.addStretch(1)
+
+        body.addLayout(left, 3)
+        body.addLayout(right, 2)
+        hb.addLayout(body)
+
+        bottom = QHBoxLayout()
+        bottom.setSpacing(8)
+        terms_wrap = self._hfield("TERMS", self._terms)
+        terms_wrap.setMaximumWidth(280)
+        bottom.addWidget(terms_wrap, 0)
+        bottom.addWidget(self._hfield("MEMO", self._header_memo), 1)
+        hb.addLayout(bottom)
+
         play.addWidget(form)
 
         self._vendor.currentIndexChanged.connect(self._on_vendor_changed)
@@ -594,11 +590,12 @@ class EnterBillsScreen(QWidget):
     def _build_line_tabs(self, play: QVBoxLayout) -> None:
         self._line_tabs = QTabWidget()
         self._line_tabs.setObjectName("enterBillsLineTabs")
+        self._line_tabs.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._line_tabs.setStyleSheet(
             f"QTabWidget#enterBillsLineTabs::pane {{ border: 1px solid {_BILL_GRID}; "
             f"background: {WORKFLOW_INPUT_BG}; }}"
             f"QTabWidget#enterBillsLineTabs QTabBar::tab {{ background: {_BILL_HEADER}; color: {_BILL_CAPTION}; "
-            "padding: 6px 16px; border: 1px solid #C8C8C8; border-bottom: none; margin-right: 2px; }"
+            "padding: 4px 14px; border: 1px solid #C8C8C8; border-bottom: none; margin-right: 2px; }"
             f"QTabWidget#enterBillsLineTabs QTabBar::tab:selected {{ background: {WORKFLOW_INPUT_BG}; "
             f"color: #1A5276; font-weight: 700; border-bottom: 2px solid {_BILL_ACCENT}; }}"
         )
@@ -621,6 +618,9 @@ class EnterBillsScreen(QWidget):
 
     def _configure_grid(self, table: QTableWidget) -> None:
         table.verticalHeader().setVisible(True)
+        table.verticalHeader().setDefaultSectionSize(_LINE_ROW_HEIGHT_PX)
+        table.verticalHeader().setMinimumSectionSize(18)
+        table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
         table.setAlternatingRowColors(True)
         table.setShowGrid(True)
         table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
@@ -639,6 +639,8 @@ class EnterBillsScreen(QWidget):
                 hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
             else:
                 hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.Stretch)
+        for r in range(table.rowCount()):
+            table.setRowHeight(r, _LINE_ROW_HEIGHT_PX)
 
     def _fill_expense_rows(self) -> None:
         self._amount_spins = []
@@ -694,18 +696,16 @@ class EnterBillsScreen(QWidget):
     def _build_footer_actions(self, play: QVBoxLayout) -> None:
         actions = QFrame()
         actions.setObjectName("enterBillsActionsBar")
+        actions.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         actions.setStyleSheet(
             f"QFrame#enterBillsActionsBar {{ background-color: {_BILL_PANEL}; "
-            f"border: 1px solid {_BILL_GRID}; border-radius: 6px; }}"
+            f"border: 1px solid {_BILL_GRID}; border-radius: 4px; }}"
         )
         bot = QHBoxLayout(actions)
-        bot.setContentsMargins(12, 8, 12, 8)
+        bot.setContentsMargins(8, 4, 8, 4)
         self._lbl_bill_total = QLabel("Total: $0.00")
         self._lbl_bill_total.setObjectName("enterBillsTotalLabel")
-        self._lbl_bill_total.setStyleSheet(
-            f"color: {_BILL_TEXT}; font-size: 13px; font-weight: 600; background: transparent;"
-        )
-        bot.addWidget(self._lbl_bill_total)
+        self._lbl_bill_total.hide()
         bot.addStretch(1)
         self._btn_save_close = QPushButton("Save && Close")
         self._btn_save_new = QPushButton("Save && New")
@@ -718,9 +718,9 @@ class EnterBillsScreen(QWidget):
             "Save this bill to the company file, then clear the form for a new bill."
         )
         self._btn_clear.setToolTip("Clear the form without saving (new draft).")
-        self._style_button(self._btn_save_close, height=32)
-        self._style_button(self._btn_save_new, primary=True, height=32)
-        self._style_button(self._btn_clear, height=32)
+        self._style_button(self._btn_save_close, height=28)
+        self._style_button(self._btn_save_new, primary=True, height=28)
+        self._style_button(self._btn_clear, height=28)
         bot.addWidget(self._btn_save_close)
         bot.addWidget(self._btn_save_new)
         bot.addWidget(self._btn_clear)
