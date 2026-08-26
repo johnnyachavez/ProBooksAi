@@ -1,4 +1,4 @@
-"""Enter Bills screen — structure, vendor autofill, and A/P bill persistence."""
+"""Enter Bills screen — QB Pro layout, vendor autofill, and A/P bill persistence."""
 
 from __future__ import annotations
 
@@ -7,13 +7,18 @@ from unittest.mock import patch
 
 import pytest
 from PySide6.QtTest import QTest
-from PySide6.QtCore import Qt, QSettings
+from PySide6.QtCore import Qt, QDate, QSettings
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
+    QComboBox,
+    QDateEdit,
     QDoubleSpinBox,
     QLabel,
     QLineEdit,
     QPushButton,
+    QRadioButton,
+    QTabWidget,
     QTableWidget,
 )
 
@@ -31,99 +36,143 @@ def qapp() -> QApplication:
     return app
 
 
+def _fill_first_expense(w: EnterBillsScreen, *, account: str, amount: float, memo: str, job: str) -> None:
+    acct = w._table.cellWidget(0, 0)
+    assert isinstance(acct, QComboBox)
+    acct.setEditText(account)
+    amt = w._table.cellWidget(0, 1)
+    assert isinstance(amt, QDoubleSpinBox)
+    amt.setValue(amount)
+    memo_w = w._table.cellWidget(0, 2)
+    assert isinstance(memo_w, QLineEdit)
+    memo_w.setText(memo)
+    job_w = w._table.cellWidget(0, 3)
+    assert isinstance(job_w, QLineEdit)
+    job_w.setText(job)
+
+
 def test_enter_bills_screen_header_and_line_grid(qapp: QApplication) -> None:
     w = EnterBillsScreen()
-    t = w.findChild(QTableWidget)
+    t = w.findChild(QTableWidget, "enterBillsExpensesTable")
     assert t is not None
-    assert t.objectName() == "enterBillsExpensesTable"
     assert t.columnCount() == 5
     assert t.rowCount() == EnterBillsScreen._N_EXPENSE_ROWS
-    assert t.horizontalHeaderItem(0).text() == "Date"
-    assert t.horizontalHeaderItem(1).text() == "Ticket Number"
-    assert t.horizontalHeaderItem(2).text() == "Dollar Amount"
-    assert t.horizontalHeaderItem(3).text() == "Memo"
-    assert t.horizontalHeaderItem(4).text() == "Customer:Job"
-    assert isinstance(t.cellWidget(0, 0), QLineEdit)
-    assert isinstance(t.cellWidget(0, 1), QLineEdit)
-    assert isinstance(t.cellWidget(0, 2), QDoubleSpinBox)
-    assert isinstance(t.cellWidget(0, 4), QLineEdit)
+    assert t.horizontalHeaderItem(0).text() == "ACCOUNT"
+    assert t.horizontalHeaderItem(1).text() == "AMOUNT"
+    assert t.horizontalHeaderItem(2).text() == "MEMO"
+    assert t.horizontalHeaderItem(3).text() == "CUSTOMER:JOB"
+    assert t.horizontalHeaderItem(4).text() == "BILLABLE?"
+    assert isinstance(t.cellWidget(0, 0), QComboBox)
+    assert isinstance(t.cellWidget(0, 1), QDoubleSpinBox)
+    assert isinstance(t.cellWidget(0, 2), QLineEdit)
+    assert isinstance(t.cellWidget(0, 3), QLineEdit)
+    assert isinstance(t.cellWidget(0, 4), QCheckBox)
+
+    items = w.findChild(QTableWidget, "enterBillsItemsTable")
+    assert items is not None
+    assert items.horizontalHeaderItem(0).text() == "ITEM"
+    assert items.horizontalHeaderItem(6).text() == "BILLABLE?"
 
     labels = [lb.text() for lb in w.findChildren(QLabel)]
-    assert "Enter Bills" in labels
-    assert "Vendor" in labels
-    assert "Vendor Address" in labels
-    assert "Bill date" in labels
-    assert "Vendor invoice #" in labels
-    assert "Expenses" not in labels
+    assert "Bill" in labels
+    assert "VENDOR" in labels
+    assert "ADDRESS" in labels
+    assert "DATE" in labels
+    assert "REF. NO." in labels
+    assert "AMOUNT DUE" in labels
+    assert "BILL DUE" in labels
+    assert "TERMS" in labels
+    assert "MEMO" in labels
+
+    radios = [r.text() for r in w.findChildren(QRadioButton)]
+    assert "Bill" in radios
+    assert "Credit" in radios
+    assert w._radio_bill.isChecked()
+    assert w._chk_received.isChecked()
 
     btns = [b.text() for b in w.findChildren(QPushButton)]
     assert any("Save" in b and "Close" in b for b in btns)
     assert any("Save" in b and "New" in b for b in btns)
     assert "Clear" in btns
     assert "Export PDF…" in btns
-    assert "Print…" in btns
+    assert "Print" in btns
+    assert "Find" in btns
+    assert "New" in btns
+    assert "Pay Bill" in btns
+
+    ribbon = w.findChild(QTabWidget, "enterBillsRibbonTabs")
+    assert ribbon is not None
+    assert [ribbon.tabText(i) for i in range(ribbon.count())] == ["Main", "Reports"]
+    lines = w.findChild(QTabWidget, "enterBillsLineTabs")
+    assert lines is not None
+    assert lines.tabText(0).startswith("Expenses")
+    assert lines.tabText(1).startswith("Items")
 
 
 def test_enter_bills_clear_resets_rows(qapp: QApplication) -> None:
     w = EnterBillsScreen()
-    t = w.findChild(QTableWidget)
-    assert t is not None
-    memo = t.item(0, 3)
-    assert memo is not None
-    memo.setText("x")
-    dt = t.cellWidget(0, 0)
-    assert isinstance(dt, QLineEdit)
-    dt.setText("1/1/26")
-    ticket = t.cellWidget(0, 1)
-    assert isinstance(ticket, QLineEdit)
-    ticket.setText("T-9")
-    amt = t.cellWidget(0, 2)
-    assert isinstance(amt, QDoubleSpinBox)
-    amt.setValue(9.99)
-    job = t.cellWidget(0, 4)
-    assert isinstance(job, QLineEdit)
-    job.setText("C:J")
+    _fill_first_expense(w, account="6100 Fuel", amount=9.99, memo="x", job="C:J")
+    w._expense_billable[0].setChecked(True)
+    w._radio_credit.setChecked(True)
     w._on_clear()
-    assert memo.text() == ""
-    assert dt.text() == ""
-    assert ticket.text() == ""
+    acct = w._table.cellWidget(0, 0)
+    assert isinstance(acct, QComboBox)
+    assert (acct.currentText() or "").strip() in ("", "(select account)")
+    amt = w._table.cellWidget(0, 1)
+    assert isinstance(amt, QDoubleSpinBox)
     assert amt.value() == 0.0
+    memo = w._table.cellWidget(0, 2)
+    assert isinstance(memo, QLineEdit)
+    assert memo.text() == ""
+    job = w._table.cellWidget(0, 3)
+    assert isinstance(job, QLineEdit)
     assert job.text() == ""
+    assert w._expense_billable[0].isChecked() is False
+    assert w._radio_bill.isChecked()
+    assert w._title.text() == "Bill"
 
 
-def test_enter_bills_header_and_line_dates_normalize_flexible_input(qapp: QApplication) -> None:
-    """Bill date, due date, and the line-item Date column accept the Invoice-screen flexible formats."""
+def test_enter_bills_header_dates_normalize_flexible_input(qapp: QApplication) -> None:
+    """Bill date and due date accept the same flexible formats as Create Invoices."""
     w = EnterBillsScreen()
+    assert isinstance(w._bill_date, QDateEdit)
+    le = w._bill_date.lineEdit()
+    assert le is not None
+    le.setText("5/21/26")
+    le.editingFinished.emit()
+    assert w._bill_date.date() == QDate(2026, 5, 21)
 
-    w._bill_date.setText("5/21/26")
-    w._bill_date.editingFinished.emit()
-    assert w._bill_date.text() == "05/21/2026"
+    le.setText("05.21.26")
+    le.editingFinished.emit()
+    assert w._bill_date.date() == QDate(2026, 5, 21)
 
-    w._bill_date.setText("05.21.26")
-    w._bill_date.editingFinished.emit()
-    assert w._bill_date.text() == "05/21/2026"
+    le.setText("052126")
+    le.editingFinished.emit()
+    assert w._bill_date.date() == QDate(2026, 5, 21)
 
-    w._bill_date.setText("052126")
-    w._bill_date.editingFinished.emit()
-    assert w._bill_date.text() == "05/21/2026"
+    due_le = w._due_date.lineEdit()
+    assert due_le is not None
+    due_le.setText("12/3/27")
+    due_le.editingFinished.emit()
+    assert w._due_date.date() == QDate(2027, 12, 3)
 
-    w._due_date.setText("12/3/27")
-    w._due_date.editingFinished.emit()
-    assert w._due_date.text() == "12/03/2027"
 
-    t = w._table
-    dt = t.cellWidget(0, 0)
-    assert isinstance(dt, QLineEdit)
-    assert dt.placeholderText() == "MM/DD/YYYY"
-    for typed, expected in (
-        ("5/21/26", "05/21/2026"),
-        ("05.21.26", "05/21/2026"),
-        ("052126", "05/21/2026"),
-        ("12/3/2027", "12/03/2027"),
-    ):
-        dt.setText(typed)
-        dt.editingFinished.emit()
-        assert dt.text() == expected, f"line date {typed!r} → {dt.text()!r}"
+def test_enter_bills_terms_fill_bill_due(qapp: QApplication) -> None:
+    w = EnterBillsScreen()
+    w._bill_date.setDate(QDate(2026, 8, 26))
+    idx = w._terms.findText("Net 30")
+    assert idx >= 0
+    w._terms.setCurrentIndex(idx)
+    assert w._due_date.date() == QDate(2026, 9, 25)
+
+
+def test_enter_bills_credit_radio_retitles_form(qapp: QApplication) -> None:
+    w = EnterBillsScreen()
+    assert w._title.text() == "Bill"
+    w._radio_credit.setChecked(True)
+    assert w._title.text() == "Credit"
+    w._radio_bill.setChecked(True)
+    assert w._title.text() == "Bill"
 
 
 def test_enter_bills_vendor_selection_fills_address(qapp: QApplication, tmp_path) -> None:
@@ -160,25 +209,11 @@ def test_enter_bills_save_persists_bill_and_expense_lines(
     QSettings("ProBooks+ai", "ProBooks+ai").setValue(
         "bill_prefs/output_folder", str(pdf_dir)
     )
-    vid = business.add_vendor(db._conn, "SuppCo")
+    business.add_vendor(db._conn, "SuppCo")
     w = EnterBillsScreen(ap_conn=db._conn)
     w._vendor.setCurrentIndex(1)
     w._vendor_inv.setText("INV-900")
-    dt = w._table.cellWidget(0, 0)
-    assert isinstance(dt, QLineEdit)
-    dt.setText("01/15/2025")
-    tk = w._table.cellWidget(0, 1)
-    assert isinstance(tk, QLineEdit)
-    tk.setText("TK-1")
-    amt = w._table.cellWidget(0, 2)
-    assert isinstance(amt, QDoubleSpinBox)
-    amt.setValue(42.5)
-    memo = w._table.item(0, 3)
-    assert memo is not None
-    memo.setText("Fuel")
-    job = w._table.cellWidget(0, 4)
-    assert isinstance(job, QLineEdit)
-    job.setText("Job:A")
+    _fill_first_expense(w, account="6100 Fuel", amount=42.5, memo="Fuel", job="Job:A")
     QTest.mouseClick(w._btn_save_new, Qt.MouseButton.LeftButton)
     qapp.processEvents()
     rows = business.list_bills(db._conn)
@@ -190,6 +225,7 @@ def test_enter_bills_save_persists_bill_and_expense_lines(
     assert len(el) == 1
     assert abs(float(el[0]["amount"]) - 42.5) < 0.01
     assert "Fuel" in (el[0]["memo"] or "")
+    assert (el[0]["ticket_ref"] or "").strip() == "6100 Fuel"
     assert w._current_bill_id is None
     assert (pdf_dir / "Bill-INV-900.pdf").is_file()
     db.close()
@@ -224,8 +260,12 @@ def test_enter_bills_open_bill_by_id_loads_form(qapp: QApplication, tmp_path) ->
     assert w._current_bill_id == bid
     assert w._vendor_inv.text() == "B-REF"
     assert w._header_memo.text() == "hdr"
-    assert (w._table.cellWidget(0, 1).text() or "").strip() == "R1"
-    assert abs(w._table.cellWidget(0, 2).value() - 10.0) < 0.01
+    acct = w._table.cellWidget(0, 0)
+    assert isinstance(acct, QComboBox)
+    assert (acct.currentText() or "").strip() == "R1"
+    amt = w._table.cellWidget(0, 1)
+    assert isinstance(amt, QDoubleSpinBox)
+    assert abs(amt.value() - 10.0) < 0.01
     db.close()
 
 
@@ -361,7 +401,7 @@ def test_enter_bills_edit_resaves_same_bill(qapp: QApplication, tmp_path) -> Non
     )
     w = EnterBillsScreen(ap_conn=db._conn)
     assert w.open_bill_by_id(bid)
-    amt = w._table.cellWidget(0, 2)
+    amt = w._table.cellWidget(0, 1)
     assert isinstance(amt, QDoubleSpinBox)
     amt.setValue(99.0)
     QTest.mouseClick(w._btn_save_close, Qt.MouseButton.LeftButton)
@@ -374,4 +414,21 @@ def test_enter_bills_edit_resaves_same_bill(qapp: QApplication, tmp_path) -> Non
     assert len(el) == 1
     assert float(el[0]["amount"]) == 99.0
     assert (pdf_dir / "Bill-E-1.pdf").is_file()
+    assert w._current_bill_id == bid
     db.close()
+
+
+def test_enter_bills_no_hardcoded_live_vendor_or_ein(qapp: QApplication) -> None:
+    """Defaults stay generic — no live company / vendor / EIN baked into the form."""
+    from pathlib import Path
+
+    w = EnterBillsScreen()
+    assert w._vendor.currentData() is None
+    assert w._vendor.currentText() == ""
+    assert w._vendor_inv.text() == ""
+    assert w._address.toPlainText().strip() == ""
+    text = Path("desktop_app/enter_bills_screen.py").read_text(encoding="utf-8")
+    lowered = text.lower()
+    assert "chavan" not in lowered
+    assert "xx-xxxxxxx" not in lowered
+

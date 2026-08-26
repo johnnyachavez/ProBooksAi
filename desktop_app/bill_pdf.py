@@ -51,18 +51,12 @@ def bill_html_string(conn: sqlite3.Connection, bill_id: int) -> str:
     elif due_raw:
         due_date = due_raw
 
-    line_rows: list[tuple[str, str, str, str, str]] = []
+    line_rows: list[tuple[str, str, str, str]] = []
     for ln in lines:
         ld = dict(ln)
-        ldt = (ld.get("line_date") or "").strip()
-        if ldt and len(ldt) >= 10 and ldt[4] == "-":
-            ldt_disp = format_iso_to_us_display(ldt[:10])
-        else:
-            ldt_disp = ldt
         amt = float(ld.get("amount") or 0.0)
         line_rows.append(
             (
-                ldt_disp,
                 (ld.get("ticket_ref") or "").strip(),
                 f"${amt:,.2f}",
                 (ld.get("memo") or "").strip(),
@@ -71,7 +65,7 @@ def bill_html_string(conn: sqlite3.Connection, bill_id: int) -> str:
         )
     if not line_rows:
         amt0 = float(d.get("total") or 0.0)
-        line_rows.append(("", "", f"${amt0:,.2f}", "", ""))
+        line_rows.append(("", f"${amt0:,.2f}", "", ""))
 
     total = float(d.get("total") or 0)
     company_plain = company_identity_plain_block(conn)

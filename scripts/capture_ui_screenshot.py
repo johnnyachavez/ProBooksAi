@@ -6,6 +6,7 @@ Headless screenshot helper for ProBooks+ai CI.
 Usage (with a virtual display already active, e.g. via xvfb-run):
     python scripts/capture_ui_screenshot.py
     python scripts/capture_ui_screenshot.py --tab invoices --output artifacts/ui/create_invoices.png
+    python scripts/capture_ui_screenshot.py --tab bills --output artifacts/ui/enter_bills.png
 
 Saves: artifacts/ui/main_window.png (default)
 Exit code 0 on success, non-zero on failure.
@@ -29,7 +30,7 @@ def main() -> int:
     parser.add_argument(
         "--tab",
         default="main",
-        help="Which surface to capture: main (default) or invoices (Create Invoices).",
+        help="Which surface to capture: main (default), invoices, or bills (Enter Bills).",
     )
     parser.add_argument(
         "--output",
@@ -45,6 +46,7 @@ def main() -> int:
     from PySide6.QtWidgets import QApplication
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from desktop_app.enter_bills_screen import EnterBillsScreen  # noqa: E402
     from desktop_app.invoice_screen import InvoiceScreen  # noqa: E402
     from desktop_app.main import MainWindow  # noqa: E402
 
@@ -55,6 +57,8 @@ def main() -> int:
         output_path = Path(args.output)
     elif tab in ("invoices", "invoice", "create-invoices", "create_invoices"):
         output_path = Path("artifacts") / "ui" / "create_invoices.png"
+    elif tab in ("bills", "enter-bills", "enter_bills"):
+        output_path = Path("artifacts") / "ui" / "enter_bills.png"
     else:
         output_path = Path("artifacts") / "ui" / "main_window.png"
 
@@ -62,7 +66,7 @@ def main() -> int:
     window.resize(1400, 900)
     window.show()
 
-    invoice_widget: InvoiceScreen | None = None
+    grab_widget = None
     if tab in ("invoices", "invoice", "create-invoices", "create_invoices"):
         inv = getattr(window, "_invoice_screen", None)
         if inv is not None and hasattr(window, "_tabs"):
@@ -70,9 +74,19 @@ def main() -> int:
             if idx >= 0:
                 window._tabs.setCurrentIndex(idx)
         if isinstance(inv, InvoiceScreen):
-            invoice_widget = inv
-            invoice_widget.resize(1280, 860)
-            invoice_widget.show()
+            grab_widget = inv
+            grab_widget.resize(1280, 860)
+            grab_widget.show()
+    elif tab in ("bills", "enter-bills", "enter_bills"):
+        bills = getattr(window, "_enter_bills_screen", None)
+        if bills is not None and hasattr(window, "_tabs"):
+            idx = window._tabs.indexOf(bills)
+            if idx >= 0:
+                window._tabs.setCurrentIndex(idx)
+        if isinstance(bills, EnterBillsScreen):
+            grab_widget = bills
+            grab_widget.resize(1280, 860)
+            grab_widget.show()
 
     success = False
 
@@ -80,8 +94,8 @@ def main() -> int:
         nonlocal success
 
         pixmap = None
-        if invoice_widget is not None:
-            pixmap = invoice_widget.grab()
+        if grab_widget is not None:
+            pixmap = grab_widget.grab()
         if pixmap is None or pixmap.isNull():
             screen = app.primaryScreen()
             if screen is None:

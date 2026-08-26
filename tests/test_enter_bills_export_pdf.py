@@ -34,10 +34,7 @@ def test_enter_bills_export_pdf_saves_to_chosen_path(
     w = EnterBillsScreen(ap_conn=db._conn)
     w._vendor.setCurrentIndex(1)
     w._vendor_inv.setText("INV-EXP")
-    dt = w._table.cellWidget(0, 0)
-    assert dt is not None
-    dt.setText("01/20/2025")
-    amt = w._table.cellWidget(0, 2)
+    amt = w._table.cellWidget(0, 1)
     assert amt is not None
     amt.setValue(20.0)
     out = tmp_path / "MyBill.pdf"
