@@ -7,7 +7,7 @@ import sys
 from unittest.mock import patch
 
 import pytest
-from PySide6.QtCore import Qt, QSettings, QDate
+from PySide6.QtCore import Qt, QSettings, QDate, QEvent
 from PySide6.QtTest import QTest
 from PySide6.QtGui import QTextDocument
 from PySide6.QtWidgets import (
@@ -163,6 +163,24 @@ def test_invoice_screen_address_boxes_exist(qapp: QApplication) -> None:
     assert w._ship_to is not None
     assert isinstance(w._ship_to[1], QPlainTextEdit)
     assert w._ship_to[1].placeholderText() == "Ship To"
+
+
+def test_customer_job_combo_event_filter_survives_deleted_combo(
+    qapp: QApplication,
+) -> None:
+    """Customer:Job combo is reparented onto the header bar; filters must not crash on teardown."""
+    w = InvoiceScreen()
+    panel = w._bill_customer_panel
+    combo = panel.customer_combo()
+    assert combo.parent() is not panel
+    combo.deleteLater()
+    qapp.processEvents()
+    ev = QEvent(QEvent.Type.FocusIn)
+    assert panel.eventFilter(combo, ev) in (True, False)
+    panel._bill_to_show_popup_deferred()
+    w.close()
+    w.deleteLater()
+    qapp.processEvents()
 
 
 def test_invoice_screen_print_and_nav_buttons_exist(qapp: QApplication) -> None:

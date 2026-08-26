@@ -180,7 +180,13 @@ class CustomerBillToPanel(QFrame):
             self.reload_customers()
 
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:
-        le = self._combo.lineEdit()
+        combo = getattr(self, "_combo", None)
+        if combo is None:
+            return super().eventFilter(obj, event)
+        try:
+            le = combo.lineEdit()
+        except RuntimeError:
+            return super().eventFilter(obj, event)
         if le is not None and obj is le:
             et = event.type()
             if et == QEvent.Type.FocusIn:
@@ -214,12 +220,24 @@ class CustomerBillToPanel(QFrame):
         """Open customer list on first focus (after line edit receives focus)."""
         if self._filling_combo:
             return
-        le = self._combo.lineEdit()
+        combo = getattr(self, "_combo", None)
+        if combo is None:
+            return
+        try:
+            le = combo.lineEdit()
+            count = combo.count()
+        except RuntimeError:
+            # Combo was reparented onto Create Invoices Customer:Job bar; C++ object
+            # may already be gone during widget teardown / atexit.
+            return
         if le is None or not le.hasFocus():
             return
-        if self._conn is None or self._combo.count() < 1:
+        if self._conn is None or count < 1:
             return
-        self._combo.showPopup()
+        try:
+            combo.showPopup()
+        except RuntimeError:
+            return
 
     def bill_text_edit(self) -> QPlainTextEdit:
         return self._bill_te
