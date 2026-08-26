@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPlainTextEdit,
+    QTabWidget,
     QTableWidget,
 )
 
@@ -27,6 +28,8 @@ from desktop_app.invoice_intake_text_extract import extract_text_intake_fields
 from desktop_app import invoice_screen as invoice_screen_module
 from desktop_app.invoice_screen import (
     InvoiceScreen,
+    _DEFAULT_INVOICE_TEMPLATE,
+    _DEFAULT_AR_ACCOUNT,
     _INVOICE_LINE_ROW_MIN_HEIGHT_PX,
     _InvoiceCodeLineEdit,
     _invoice_line_table_qsettings,
@@ -66,6 +69,8 @@ def test_invoice_screen_footer_recalcs_from_rate_qty(qapp: QApplication, tmp_pat
     assert "200.00" in w._lbl_sub.text().replace(",", "")
     assert "20.00" in w._lbl_tax.text().replace(",", "")
     assert "220.00" in w._lbl_total.text().replace(",", "")
+    assert "0.00" in w._lbl_payments.text().replace(",", "")
+    assert "220.00" in w._lbl_balance.text().replace(",", "")
     tot = w._table.cellWidget(0, 6)
     assert isinstance(tot, QDoubleSpinBox)
     assert abs(tot.value() - 200.0) < 0.01
@@ -78,13 +83,14 @@ def test_invoice_screen_line_grid_and_headers(qapp: QApplication) -> None:
     assert isinstance(w._due_date, QDateEdit)
     assert isinstance(w._terms, QComboBox)
     assert isinstance(w._inv_number, QLineEdit)
-    assert w._inv_number.placeholderText() == "INVOICE #"
+    assert w._inv_number.placeholderText() == "Invoice #"
     assert w._inv_number.text() == "1"
     labels = [lb.text() for lb in w.findChildren(QLabel)]
     assert "Invoice Number" not in labels
-    assert "Invoice Date" in labels
-    assert "Due Date" in labels
-    assert "Terms" in labels
+    assert "DATE" in labels
+    assert "DUE DATE" in labels
+    assert "TERMS" in labels
+    assert "INVOICE #" in labels
     t = w.findChild(QTableWidget, "invoiceLinesTable")
     assert t is not None
     assert t.objectName() == "invoiceLinesTable"
@@ -101,10 +107,13 @@ def test_invoice_screen_line_grid_and_headers(qapp: QApplication) -> None:
         assert hh.sectionResizeMode(c) == QHeaderView.ResizeMode.Interactive
     assert t.columnCount() == 7
     assert t.rowCount() == InvoiceScreen._N_LINE_ROWS
-    assert t.horizontalHeaderItem(0).text() == "Date"
-    assert t.horizontalHeaderItem(2).text() == "Description"
+    assert t.horizontalHeaderItem(0).text() == "SERVICED ON"
+    assert t.horizontalHeaderItem(1).text() == "JL #"
+    assert t.horizontalHeaderItem(2).text() == "DESCRIPTION"
     assert t.horizontalHeaderItem(3).text() == "BOL#"
-    assert t.horizontalHeaderItem(6).text() == "Amount"
+    assert t.horizontalHeaderItem(4).text() == "RATE"
+    assert t.horizontalHeaderItem(5).text() == "QUANTITY"
+    assert t.horizontalHeaderItem(6).text() == "AMOUNT"
     assert isinstance(t.cellWidget(0, 0), QLineEdit)
     assert isinstance(t.cellWidget(0, 1), QLineEdit)
     assert isinstance(t.cellWidget(0, 2), QLineEdit)
@@ -158,13 +167,18 @@ def test_invoice_screen_address_boxes_exist(qapp: QApplication) -> None:
 
 def test_invoice_screen_print_and_nav_buttons_exist(qapp: QApplication) -> None:
     w = InvoiceScreen()
-    assert w._btn_clear_fields.text() == "Clear Fields"
-    assert w._btn_save.text() == "Save"
+    assert w._btn_clear_fields.text() == "Clear"
+    assert "Save" in w._btn_save.text() and "New" in w._btn_save.text()
+    assert "Save" in w._btn_save_close.text() and "Close" in w._btn_save_close.text()
     assert w._btn_export_pdf.text() == "Export PDF…"
-    assert w._btn_print.text() == "Print…"
+    assert w._btn_print.text() == "Print"
     assert w._btn_new_customer.text() == "New Customer"
-    assert w._btn_reverse.text() == "Reverse"
-    assert w._btn_forward.text() == "Forward"
+    assert w._btn_reverse.text() == "Previous"
+    assert w._btn_forward.text() == "Next"
+    assert w._btn_find.text() == "Find"
+    assert w._btn_new_invoice.text() == "New"
+    assert w._btn_email.text() == "Email"
+    assert not w._btn_email.isEnabled()
 
 
 def test_invoice_screen_export_pdf_saves_to_chosen_path(
@@ -530,6 +544,12 @@ def test_invoice_save_and_print_handlers_require_real_button_sender(
     qty.setValue(1.0)
     with patch.object(w, "_try_persist_invoice") as m_persist:
         w._on_save_invoice()
+        m_persist.assert_not_called()
+    with patch.object(w, "_try_persist_invoice") as m_persist:
+        w._on_save_close_invoice()
+        m_persist.assert_not_called()
+    with patch.object(w, "_try_persist_invoice") as m_persist:
+        w._on_ribbon_save_invoice()
         m_persist.assert_not_called()
     with patch.object(w, "_try_persist_invoice") as m_persist:
         w._on_export_pdf_as()
@@ -1145,4 +1165,97 @@ def test_invoice_screen_suggested_number_increments_prefix_from_last_saved(
     )
     w = InvoiceScreen(ap_conn=db._conn)
     assert w._inv_number.text() == "INV-101"
+    db.close()
+
+
+def test_create_invoices_qb_header_layout(qapp: QApplication) -> None:
+    """Create Invoices matches the QB Pro (Rightworks) field set and column order."""
+    w = InvoiceScreen()
+    assert w.windowTitle() == "Create Invoices"
+    labels = [lb.text() for lb in w.findChildren(QLabel)]
+    assert "Invoice" in labels
+    assert "CUSTOMER:JOB" in labels
+    assert "ACCOUNT" in labels
+    assert "TEMPLATE" in labels
+    assert "DATE" in labels
+    assert "INVOICE #" in labels
+    assert "PO/CONTRACT#" in labels
+    assert "NAME/JOB#" in labels
+    assert "CUSTOMER MESSAGE" in labels
+    assert "MEMO" in labels
+    assert "Bill To" in labels
+    assert "Ship To" in labels
+    assert w._ar_account.currentText() == _DEFAULT_AR_ACCOUNT
+    assert w._invoice_template.currentText() == _DEFAULT_INVOICE_TEMPLATE
+    tmpl_items = [w._invoice_template.itemText(i) for i in range(w._invoice_template.count())]
+    assert all("CHAVAN" not in t.upper() for t in tmpl_items)
+    ribbon = w.findChild(QTabWidget, "invoiceRibbonTabs")
+    assert ribbon is not None
+    ribbon_tabs = [ribbon.tabText(i) for i in range(ribbon.count())]
+    assert ribbon_tabs == ["Main", "Formatting", "Send/Ship", "Reports"]
+    assert w._invoice_tabs.tabText(0) == "Create Invoices"
+    t = w.findChild(QTableWidget, "invoiceLinesTable")
+    assert t is not None
+    assert [t.horizontalHeaderItem(i).text() for i in range(7)] == [
+        "SERVICED ON",
+        "JL #",
+        "DESCRIPTION",
+        "BOL#",
+        "RATE",
+        "QUANTITY",
+        "AMOUNT",
+    ]
+    assert "Total: $0.00" in w._lbl_total.text()
+    assert "Payments Applied: $0.00" in w._lbl_payments.text()
+    assert "Balance Due: $0.00" in w._lbl_balance.text()
+
+
+def test_create_invoices_save_close_stays_on_saved_invoice(
+    qapp: QApplication, tmp_path
+) -> None:
+    """Save & Close persists and keeps the saved invoice on the form (does not advance)."""
+    db_path = tmp_path / "inv_save_close.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "CloseCo")
+    w = InvoiceScreen(ap_conn=db._conn)
+    w._bill_customer_panel.select_customer_by_id(cid)
+    w._inv_number.setText("77001")
+    desc = w._table.cellWidget(0, 2)
+    assert isinstance(desc, QLineEdit)
+    desc.setText("Haul")
+    rate = w._table.cellWidget(0, 4)
+    qty = w._table.cellWidget(0, 5)
+    assert isinstance(rate, QDoubleSpinBox) and isinstance(qty, QDoubleSpinBox)
+    rate.setValue(10.0)
+    qty.setValue(1.0)
+    w._customer_message.setCurrentText("Thank you for your business.")
+    w._memo_edit.setText("Dock notes")
+    w.show()
+    qapp.processEvents()
+    with patch("desktop_app.invoice_screen.ensure_invoice_output_folder", return_value=None):
+        QTest.mouseClick(w._btn_save_close, Qt.MouseButton.LeftButton)
+        qapp.processEvents()
+    invs = business.list_invoices(db._conn)
+    assert any((r["invoice_number"] or "").strip() == "77001" for r in invs)
+    assert w._inv_number.text() == "77001"
+    assert w._current_invoice_id is not None
+    assert "Thank you for your business." in (w._customer_message.currentText() or "")
+    assert w._memo_edit.text() == "Dock notes"
+    db.close()
+
+
+def test_create_invoices_company_template_from_settings_not_hardcoded_chavan(
+    qapp: QApplication, tmp_path
+) -> None:
+    """Live company template names come from company_settings, never a hardcoded corp name."""
+    db_path = tmp_path / "inv_tmpl.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    business.set_setting(db._conn, "invoice_template_name", "Custom Truck Invoice")
+    w = InvoiceScreen(ap_conn=db._conn)
+    items = [w._invoice_template.itemText(i) for i in range(w._invoice_template.count())]
+    assert _DEFAULT_INVOICE_TEMPLATE in items
+    assert "Custom Truck Invoice" in items
+    assert all("CHAVAN" not in t.upper() for t in items)
     db.close()
