@@ -330,6 +330,8 @@ class InvoiceScreen(QWidget):
         self._suppress_invoice_line_recalc: bool = False
         # Block Ship To autofill / due-date recalc while hydrating a saved invoice.
         self._suppress_invoice_header_autofill: bool = False
+        # Last customer id that auto-filled Ship To (avoid overwrite on tab show/reload).
+        self._ship_to_autofill_customer_id: int | None = None
         # Memo text from DB when loading (no longer a visible header box after removing blank field).
         self._invoice_memo_notes: str = ""
         # Set True only inside Print click handler while QPrintDialog may run (blocks stray callers).
@@ -469,10 +471,18 @@ class InvoiceScreen(QWidget):
         """QB Pro: selecting a customer fills Ship To from that customer's shipping address.
 
         This company file does not store a separate customer ship-to yet, so Ship To
-        defaults to the Bill To block (same as QB when shipping is blank).
+        defaults to the Bill To block (same as QB when shipping is blank). Re-applying
+        the same customer (tab show / combo reload) must not clobber an edited Ship To.
         """
         if self._suppress_invoice_header_autofill:
             return
+        try:
+            new_id = int(_cid) if _cid is not None else None
+        except (TypeError, ValueError):
+            new_id = None
+        if new_id is not None and new_id == self._ship_to_autofill_customer_id:
+            return
+        self._ship_to_autofill_customer_id = new_id
         ship = getattr(self, "_ship_to", None)
         if ship is None:
             return
@@ -1718,6 +1728,7 @@ class InvoiceScreen(QWidget):
             self._hide_invoice_intake_handoff_banner()
             self._bill_customer_panel.clear_bill_to()
             self._set_ship_to_plain("")
+            self._ship_to_autofill_customer_id = None
             self._clear_line_grid()
             self._inv_number.clear()
             self._invoice_number_autofill_value = ""
@@ -1799,6 +1810,7 @@ class InvoiceScreen(QWidget):
             self._hide_invoice_intake_handoff_banner()
             self._bill_customer_panel.clear_bill_to()
             self._set_ship_to_plain("")
+            self._ship_to_autofill_customer_id = None
             self._clear_line_grid()
             self._inv_number.clear()
             self._invoice_number_autofill_value = ""
@@ -1864,6 +1876,10 @@ class InvoiceScreen(QWidget):
                 self._set_ship_to_plain(ship_saved)
             else:
                 self._set_ship_to_plain(self._bill_to[1].toPlainText())
+            try:
+                self._ship_to_autofill_customer_id = int(d["customer_id"])
+            except (KeyError, TypeError, ValueError):
+                self._ship_to_autofill_customer_id = None
         finally:
             self._suppress_invoice_header_autofill = False
         self._clear_line_grid()
