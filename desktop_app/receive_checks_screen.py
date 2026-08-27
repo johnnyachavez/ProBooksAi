@@ -749,6 +749,31 @@ class ReceiveChecksScreen(QWidget):
                 self._customer_filter.setCurrentIndex(i)
                 return
 
+    def select_invoice_for_payment(self, invoice_id: int) -> bool:
+        """Tiny Income Tracker hook: Received From + check *invoice_id*."""
+        self._load_invoices_from_db()
+        want = int(invoice_id)
+        cid = None
+        for r in self._cached_invoices:
+            d = dict(r)
+            iid = coerce_combo_int_id(d.get("invoice_id") if "invoice_id" in d else d.get("id"))
+            if iid == want:
+                cid = coerce_combo_int_id(d.get("customer_id"))
+                break
+        if cid is None:
+            return False
+        self.select_customer_by_id(cid)
+        self._rebuild_table()
+        for i, cb in enumerate(self._row_checks):
+            num_it = self._table.item(i, _COL_NUMBER)
+            if num_it is None:
+                continue
+            if coerce_combo_int_id(num_it.data(_ROLE_INVOICE_ID)) == want:
+                cb.setChecked(True)
+                self._table.selectRow(i)
+                return True
+        return True
+
     def _on_received_from_changed(self, _index: int = 0) -> None:
         self._rebuild_table()
         if self._btn_auto_apply.isChecked() and self._pay_amount.value() > 0.005:

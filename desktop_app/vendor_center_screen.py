@@ -239,6 +239,8 @@ class VendorCenterScreen(QWidget):
         Open Enter Bills (arg is vendor id, or 0 if none selected).
     payBillsRequested
         Open Pay Bills for the vendor (id or 0).
+    billTrackerRequested
+        Open Bill Tracker, optionally filtered to the selected vendor.
     writeChecksRequested
         Open Write Checks for the vendor (id or 0).
     openBillRequested
@@ -251,6 +253,7 @@ class VendorCenterScreen(QWidget):
 
     enterBillsRequested = Signal(int)
     payBillsRequested = Signal(int)
+    billTrackerRequested = Signal(int)
     writeChecksRequested = Signal(int)
     openBillRequested = Signal(int)
     openPaymentRequested = Signal(int)
@@ -409,8 +412,8 @@ class VendorCenterScreen(QWidget):
         self._btn_bill_tracker = QPushButton("Bill Tracker")
         self._btn_bill_tracker.setObjectName("vendorCenterBillTracker")
         self._style_push(self._btn_bill_tracker)
-        self._btn_bill_tracker.setToolTip("Open Pay Bills (Bill Tracker) for unpaid vendor bills.")
-        self._btn_bill_tracker.clicked.connect(self._on_new_pay_bills)
+        self._btn_bill_tracker.setToolTip("Open Bill Tracker for unpaid vendor bills.")
+        self._btn_bill_tracker.clicked.connect(self._on_bill_tracker)
         row.addWidget(self._btn_bill_tracker)
 
         row.addStretch(1)
@@ -1218,6 +1221,9 @@ QHeaderView::section {{
 
     def _on_new_pay_bills(self) -> None:
         self.payBillsRequested.emit(self._focused_id())
+
+    def _on_bill_tracker(self) -> None:
+        self.billTrackerRequested.emit(self._focused_id())
 
     def _on_new_write_checks(self) -> None:
         self.writeChecksRequested.emit(self._focused_id())

@@ -116,6 +116,7 @@ from desktop_app.invoice_screen import InvoiceScreen
 from desktop_app.pay_bills_screen import PayBillsScreen
 from desktop_app.receive_checks_screen import ReceiveChecksScreen
 from desktop_app.make_deposits_screen import MakeDepositsScreen
+from desktop_app.tracker_screens import BillTrackerScreen, IncomeTrackerScreen
 from desktop_app.create_company_file_dialog import CreateCompanyFileDialog
 from desktop_app.hover_messages import install_global_hover_message_suppression
 from desktop_app.theme import apply_dark_theme, STATUS_COLORS as THEME_STATUS_COLORS
@@ -1203,6 +1204,8 @@ class MainWindow(QMainWindow):
         """Fixed-order top-level strip + More hub (Reports, Journal, Business, Audit)."""
         conn = self._bank_db._conn
         self._invoice_screen = InvoiceScreen(ap_conn=conn)
+        self._income_tracker_screen = IncomeTrackerScreen(ap_conn=conn)
+        self._bill_tracker_screen = BillTrackerScreen(ap_conn=conn)
         self._invoice_codes_screen = InvoiceCodesScreen(ap_conn=conn, coa_db=self._coa_db)
         self._enter_bills_screen = EnterBillsScreen(ap_conn=conn)
         self._enter_bills_screen.payBillsRequested.connect(self._on_enter_bills_pay_bill)
@@ -1319,6 +1322,8 @@ class MainWindow(QMainWindow):
         self._more_hub.addTab(self._audit_tab, "Audit log")
 
         self._tabs.addTab(self._dashboard_tab, "Home")
+        self._tabs.addTab(self._income_tracker_screen, "Income Tracker")
+        self._tabs.addTab(self._bill_tracker_screen, "Bill Tracker")
         self._tabs.addTab(self._invoice_screen, "Invoices")
         self._tabs.addTab(self._invoice_codes_screen, "Codes")
         self._tabs.addTab(self._check_screen, "Write Checks")
@@ -1341,15 +1346,35 @@ class MainWindow(QMainWindow):
         self._pay_bills_screen.apPaymentPosted.connect(self._on_pay_bills_posted)
         self._vendors_tab.enterBillsRequested.connect(self._on_vendor_center_enter_bills)
         self._vendors_tab.payBillsRequested.connect(self._on_vendor_center_pay_bills)
+        self._vendors_tab.billTrackerRequested.connect(self._on_vendor_center_bill_tracker)
         self._vendors_tab.writeChecksRequested.connect(self._on_vendor_center_write_checks)
         self._vendors_tab.openBillRequested.connect(self._on_vendor_center_open_bill)
         self._vendors_tab.openPaymentRequested.connect(self._on_vendor_center_open_payment)
         self._vendors_tab.vendorRecordsChanged.connect(self._on_vendor_center_records_changed)
         self._customers_tab.createInvoicesRequested.connect(self._on_customer_center_create_invoices)
         self._customers_tab.receivePaymentsRequested.connect(self._on_customer_center_receive_payments)
+        self._customers_tab.incomeTrackerRequested.connect(self._on_customer_center_income_tracker)
         self._customers_tab.openInvoiceRequested.connect(self._on_customer_center_open_invoice)
         self._customers_tab.openPaymentRequested.connect(self._on_customer_center_open_payment)
         self._customers_tab.customerRecordsChanged.connect(self._on_customer_center_records_changed)
+        self._income_tracker_screen.openInvoiceRequested.connect(
+            self._on_customer_center_open_invoice
+        )
+        self._income_tracker_screen.receivePaymentRequested.connect(
+            self._on_income_tracker_receive_payment
+        )
+        self._income_tracker_screen.openArPaymentRequested.connect(
+            self._on_customer_center_open_payment
+        )
+        self._bill_tracker_screen.openBillRequested.connect(self._on_vendor_center_open_bill)
+        self._bill_tracker_screen.payBillRequested.connect(self._on_bill_tracker_pay_bill)
+        self._invoice_screen.openInvoicesChanged.connect(self._income_tracker_screen.reload)
+        self._receive_payments_screen.arPaymentPosted.connect(
+            lambda *_a: self._income_tracker_screen.reload()
+        )
+        self._pay_bills_screen.apPaymentPosted.connect(
+            lambda *_a: self._bill_tracker_screen.reload()
+        )
 
     def _on_main_tab_changing(self, new_index: int) -> None:
         """Guard switching away from a screen that has unsaved invoice changes."""
@@ -1406,7 +1431,17 @@ class MainWindow(QMainWindow):
         tips = [
             (
                 "Home: company overview with money-in / money-out shortcuts "
-                "(Create Invoices, Receive Payments, Enter Bills, Pay Bills, Write Checks, Make Deposits)."
+                "(Create Invoices, Receive Payments, Income Tracker, Enter Bills, Pay Bills, Bill Tracker, Write Checks, Make Deposits)."
+                + _main_tab_bar_db_hint
+            ),
+            (
+                "Income Tracker: unbilled time & expenses, open and overdue invoices, "
+                "and payments in the last 30 days. Double-click an invoice to open Create Invoices."
+                + _main_tab_bar_db_hint
+            ),
+            (
+                "Bill Tracker: open bills, overdue bills, and vendor payments in the last 30 days. "
+                "Double-click a bill to open Enter Bills; Pay Bill opens Pay Bills."
                 + _main_tab_bar_db_hint
             ),
             (
@@ -1514,7 +1549,7 @@ class MainWindow(QMainWindow):
         # Container: header banner + tab widget
         container = QWidget()
         container.setToolTip(
-            "Main workspace: fixed-order tabs (Invoices through More). "
+            "Main workspace: fixed-order tabs (Home, Income Tracker, Bill Tracker, Invoices through More). "
             "Bank Import and Register host statement reconciliation, AI line reconciliation, and Register Match overlay. "
             "All tabs share the open SQLite company file (File → Backup / Restore, probooks.backup)."
         )
@@ -1527,7 +1562,7 @@ class MainWindow(QMainWindow):
 
         self._tabs = QTabWidget()
         self._tabs.setToolTip(
-            "Main workspace: Home, Invoices, Codes, Write Checks, Enter Bills, Pay Bills, Receive Payments, "
+            "Main workspace: Home, Income Tracker, Bill Tracker, Invoices, Codes, Write Checks, Enter Bills, Pay Bills, Receive Payments, "
             "Make Deposits, Bank Register, Chart of Accounts, Customers, Vendors, Reconcile, and More "
             "(hover each tab). File → Backup / Restore applies to the whole company database "
             "(CLI: probooks backup / restore)."
@@ -1658,39 +1693,43 @@ class MainWindow(QMainWindow):
         _view_tab_tip_suffix = (
             " Same company SQLite file (File → Backup / Restore, probooks.backup)."
         )
-        # Tab indices: 0=Home, 1=Invoices, 2=Codes, 3=Write Checks,
-        #              4=Enter Bills, 5=Pay Bills, 6=Receive Payments,
-        #              7=Make Deposits, 8=Bank Register, 9=Chart of Accounts,
-        #              10=Customers, 11=Vendors, 12=Reconcile, 13=More
+        # Tab indices: 0=Home, 1=Income Tracker, 2=Bill Tracker, 3=Invoices, 4=Codes,
+        #              5=Write Checks, 6=Enter Bills, 7=Pay Bills, 8=Receive Payments,
+        #              9=Make Deposits, 10=Bank Register, 11=Chart of Accounts,
+        #              12=Customers, 13=Vendors, 14=Reconcile, 15=More
         _view_tab_tip_extra = {
-            1: " Invoice entry workflow.",
-            2: " Item List: service/discount/other charge items for invoice lines (double-click to Edit Item).",
-            3: " Write Checks: record and print checks against a bank account.",
-            4: " Enter Bills screen.",
-            5: " Pay Bills screen.",
-            6: " Receive Payments screen.",
-            7: " Make Deposits: undeposited payments into a bank account.",
-            8: " Bank Register: Match overlay (Bank Import can populate).",
-            9: " Chart of Accounts editor.",
-            10: " AR: customers, invoices, payments (primary route; Business hub is Rules/Payroll/Tax %).",
-            11: " AP: vendors, bills, payments (primary route; Business hub is Rules/Payroll/Tax %).",
-            12: " Reconcile: Bank statements + Documents (intake → review/match).",
-            13: " Reports, Journal, Business, Audit log.",
+            1: " Income Tracker: open/overdue invoices and recent payments.",
+            2: " Bill Tracker: open/overdue bills and recent vendor payments.",
+            3: " Invoice entry workflow.",
+            4: " Item List: service/discount/other charge items for invoice lines (double-click to Edit Item).",
+            5: " Write Checks: record and print checks against a bank account.",
+            6: " Enter Bills screen.",
+            7: " Pay Bills screen.",
+            8: " Receive Payments screen.",
+            9: " Make Deposits: undeposited payments into a bank account.",
+            10: " Bank Register: Match overlay (Bank Import can populate).",
+            11: " Chart of Accounts editor.",
+            12: " AR: customers, invoices, payments (primary route; Business hub is Rules/Payroll/Tax %).",
+            13: " AP: vendors, bills, payments (primary route; Business hub is Rules/Payroll/Tax %).",
+            14: " Reconcile: Bank statements + Documents (intake → review/match).",
+            15: " Reports, Journal, Business, Audit log.",
         }
         for tab_idx, (sc, label) in [
-            (1, ("Ctrl+1", "&Invoices")),
-            (2, ("Ctrl+2", "&Codes")),
-            (3, ("Ctrl+3", "&Write Checks")),
-            (4, ("Ctrl+4", "&Enter Bills")),
-            (5, ("Ctrl+5", "&Pay Bills")),
-            (6, ("Ctrl+6", "&Receive Payments")),
-            (7, ("Ctrl+Shift+D", "Make &Deposits")),
-            (8, ("Ctrl+7", "&Bank Register")),
-            (9, ("Ctrl+8", "Chart of &Accounts")),
-            (10, ("Ctrl+9", "&Customers")),
-            (11, ("Ctrl+0", "&Vendors")),
-            (12, ("Ctrl+Shift+R", "&Reconcile")),
-            (13, ("Ctrl+Shift+M", "&More")),
+            (3, ("Ctrl+1", "&Invoices")),
+            (4, ("Ctrl+2", "&Codes")),
+            (5, ("Ctrl+3", "&Write Checks")),
+            (6, ("Ctrl+4", "&Enter Bills")),
+            (7, ("Ctrl+5", "&Pay Bills")),
+            (8, ("Ctrl+6", "&Receive Payments")),
+            (9, ("Ctrl+Shift+D", "Make &Deposits")),
+            (10, ("Ctrl+7", "&Bank Register")),
+            (11, ("Ctrl+8", "Chart of &Accounts")),
+            (12, ("Ctrl+9", "&Customers")),
+            (13, ("Ctrl+0", "&Vendors")),
+            (14, ("Ctrl+Shift+R", "&Reconcile")),
+            (15, ("Ctrl+Shift+M", "&More")),
+            (1, ("Ctrl+Shift+T", "Income &Tracker")),
+            (2, ("Ctrl+Alt+B", "&Bill Tracker")),
         ]:
             act = QAction(label, self)
             act.setShortcut(sc)
@@ -2683,6 +2722,8 @@ class MainWindow(QMainWindow):
             return
         target_map = {
             "invoices": getattr(self, "_invoice_screen", None),
+            "income_tracker": getattr(self, "_income_tracker_screen", None),
+            "bill_tracker": getattr(self, "_bill_tracker_screen", None),
             "bills": getattr(self, "_enter_bills_screen", None),
             "pay_bills": getattr(self, "_pay_bills_screen", None),
             "payments": getattr(self, "_receive_payments_screen", None),
@@ -2727,6 +2768,26 @@ class MainWindow(QMainWindow):
         if idx >= 0:
             self._tabs.setCurrentIndex(idx)
 
+    def _on_vendor_center_bill_tracker(self, vendor_id: int) -> None:
+        if not hasattr(self, "_tabs") or not hasattr(self, "_bill_tracker_screen"):
+            return
+        self._bill_tracker_screen.reload()
+        if vendor_id:
+            self._bill_tracker_screen.filter_to_vendor(int(vendor_id))
+        idx = self._tabs.indexOf(self._bill_tracker_screen)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+
+    def _on_bill_tracker_pay_bill(self, bill_id: int) -> None:
+        if not hasattr(self, "_tabs") or not hasattr(self, "_pay_bills_screen"):
+            return
+        self._pay_bills_screen.reload()
+        if bill_id:
+            self._pay_bills_screen.select_bill_by_id(int(bill_id))
+        idx = self._tabs.indexOf(self._pay_bills_screen)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+
     def _on_vendor_center_write_checks(self, vendor_id: int) -> None:
         if not hasattr(self, "_tabs") or not hasattr(self, "_check_screen"):
             return
@@ -2765,6 +2826,11 @@ class MainWindow(QMainWindow):
                 self._pay_bills_screen.reload()
             except Exception:
                 pass
+        if hasattr(self, "_bill_tracker_screen"):
+            try:
+                self._bill_tracker_screen.reload()
+            except Exception:
+                pass
 
     def _on_customer_center_create_invoices(self, customer_id: int) -> None:
         if not hasattr(self, "_tabs") or not hasattr(self, "_invoice_screen"):
@@ -2784,6 +2850,28 @@ class MainWindow(QMainWindow):
             pass
         if customer_id:
             self._receive_payments_screen.select_customer_by_id(int(customer_id))
+        idx = self._tabs.indexOf(self._receive_payments_screen)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+
+    def _on_customer_center_income_tracker(self, customer_id: int) -> None:
+        if not hasattr(self, "_tabs") or not hasattr(self, "_income_tracker_screen"):
+            return
+        self._income_tracker_screen.reload()
+        if customer_id:
+            self._income_tracker_screen.filter_to_customer(int(customer_id))
+        idx = self._tabs.indexOf(self._income_tracker_screen)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+
+    def _on_income_tracker_receive_payment(self, invoice_id: int) -> None:
+        """Invoice ACTION Receive Payment → Receive Payments with that invoice checked."""
+        if not hasattr(self, "_tabs") or not hasattr(self, "_receive_payments_screen"):
+            return
+        try:
+            self._receive_payments_screen.select_invoice_for_payment(int(invoice_id))
+        except Exception:
+            pass
         idx = self._tabs.indexOf(self._receive_payments_screen)
         if idx >= 0:
             self._tabs.setCurrentIndex(idx)
@@ -2835,6 +2923,11 @@ class MainWindow(QMainWindow):
                 pay._load_invoices_from_db()
             except Exception:
                 pass
+        if hasattr(self, "_income_tracker_screen"):
+            try:
+                self._income_tracker_screen.reload()
+            except Exception:
+                pass
 
     def _on_pay_bills_posted(self) -> None:
         """Pay Bills posted: refresh Bank Register and Write Checks balances."""
@@ -2853,6 +2946,11 @@ class MainWindow(QMainWindow):
         if vt is not None:
             try:
                 vt._refresh()
+            except Exception:
+                pass
+        if hasattr(self, "_bill_tracker_screen"):
+            try:
+                self._bill_tracker_screen.reload()
             except Exception:
                 pass
 
