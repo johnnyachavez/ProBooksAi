@@ -499,6 +499,31 @@ def update_invoice(
 # COA / Journal-entry helpers (AR wiring)
 # ---------------------------------------------------------------------------
 
+UNDEPOSITED_FUNDS_LABEL = "Undeposited Funds"
+
+
+def _bank_gl_label(
+    conn: sqlite3.Connection, bank_account_id: Optional[int]
+) -> str:
+    """GL display label for a bank account, or Undeposited Funds when none is set."""
+    if bank_account_id is None:
+        return UNDEPOSITED_FUNDS_LABEL
+    try:
+        ba = conn.execute(
+            "SELECT gl_display_account, name FROM bank_accounts WHERE id = ?",
+            (int(bank_account_id),),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        ba = None
+    if ba is None:
+        return UNDEPOSITED_FUNDS_LABEL
+    gl = (ba["gl_display_account"] or "").strip()
+    if gl:
+        return gl
+    name = (ba["name"] or "").strip() or f"Account #{int(bank_account_id)}"
+    return f"1000 {name}"
+
+
 def _get_coa_account_label(conn: sqlite3.Connection, account_number: str) -> str:
     """Return 'NNNN Account Name' for the given account number string.
 
@@ -642,19 +667,7 @@ def _post_ar_payment_journal(
         conn.commit()
         return
 
-    # Determine cash/bank GL label. No bank yet → Undeposited Funds (Make Deposits later).
-    cash_label = "Undeposited Funds"
-    if bank_account_id is not None:
-        ba = conn.execute(
-            "SELECT gl_account, name FROM bank_accounts WHERE id = ?",
-            (bank_account_id,),
-        ).fetchone()
-        if ba:
-            gl = (ba["gl_account"] or "").strip()
-            if gl:
-                cash_label = gl
-            else:
-                cash_label = f"1000 {ba['name']}"
+    cash_label = _bank_gl_label(conn, bank_account_id)
 
     ar_label = _get_coa_account_label(conn, "1100")
     memo = f"AR payment {reference}" if reference else f"AR payment #{payment_id}"
@@ -1404,7 +1417,7 @@ def record_ar_payment(
 
 
 def list_undeposited_ar_payments(conn: sqlite3.Connection) -> list:
-    """Customer payments not yet deposited to a bank (Receive Payments → Make Deposits later)."""
+    """Customer payments not yet deposited to a bank (Receive Payments → Make Deposits)."""
     return conn.execute(
         """
         SELECT p.*, c.name AS customer_name
@@ -1414,6 +1427,208 @@ def list_undeposited_ar_payments(conn: sqlite3.Connection) -> list:
         ORDER BY p.payment_date, p.id
         """
     ).fetchall()
+
+
+def deposit_ar_payments(
+    conn: sqlite3.Connection,
+    payment_ids: list[int],
+    bank_account_id: int,
+    deposit_date: str,
+    *,
+    memo: str = "",
+    extra_lines: Optional[list[dict]] = None,
+    cash_back_account: str = "",
+    cash_back_amount: float = 0.0,
+    cash_back_memo: str = "",
+) -> dict:
+    """Move undeposited AR payments into *bank_account_id* (Make Deposits).
+
+    Extra lines are dicts with ``received_from``, ``from_account``, ``memo``,
+    ``chk_no``, ``pmt_meth``, and ``amount``. Cash back reduces the bank deposit
+    and debits *cash_back_account*.
+
+    Returns totals plus the optional journal entry id. The caller inserts the
+    matching bank-register deposit (positive amount).
+    """
+    ids = [int(x) for x in (payment_ids or [])]
+    extra = list(extra_lines or [])
+    cash_back = round(float(cash_back_amount or 0.0), 2)
+    if cash_back < -0.005:
+        raise ValueError("Cash back amount cannot be negative.")
+    if cash_back < 0:
+        cash_back = 0.0
+
+    ba = conn.execute(
+        "SELECT id, name, gl_display_account FROM bank_accounts WHERE id = ?",
+        (int(bank_account_id),),
+    ).fetchone()
+    if ba is None:
+        raise ValueError("Choose a Deposit To bank account.")
+
+    payments: list = []
+    for pid in ids:
+        row = conn.execute("SELECT * FROM ar_payments WHERE id = ?", (pid,)).fetchone()
+        if row is None:
+            raise ValueError(f"Payment #{pid} was not found.")
+        if row["bank_account_id"] is not None:
+            raise ValueError(f"Payment #{pid} is already deposited.")
+        payments.append(row)
+
+    payments_total = round(sum(float(p["amount"] or 0.0) for p in payments), 2)
+    cleaned_extra: list[dict] = []
+    extra_total = 0.0
+    for line in extra:
+        amt = round(float(line.get("amount") or 0.0), 2)
+        if amt <= 0.005:
+            continue
+        acct = (line.get("from_account") or "").strip()
+        if not acct:
+            raise ValueError("Each extra deposit line needs a From Account.")
+        extra_total = round(extra_total + amt, 2)
+        cleaned_extra.append(
+            {
+                "received_from": (line.get("received_from") or "").strip(),
+                "from_account": acct,
+                "memo": (line.get("memo") or "").strip(),
+                "chk_no": (line.get("chk_no") or "").strip(),
+                "pmt_meth": (line.get("pmt_meth") or "").strip(),
+                "amount": amt,
+            }
+        )
+
+    if not payments and not cleaned_extra:
+        raise ValueError("Select payments or enter deposit lines.")
+
+    gross = round(payments_total + extra_total, 2)
+    if cash_back > gross + 0.005:
+        raise ValueError("Cash back cannot exceed the deposit subtotal.")
+    cash_acct = (cash_back_account or "").strip()
+    if cash_back > 0.005 and not cash_acct:
+        raise ValueError("Choose an account for cash back.")
+    deposit_total = round(gross - cash_back, 2)
+    if deposit_total <= 0.005:
+        raise ValueError("Deposit total must be greater than zero.")
+
+    for p in payments:
+        conn.execute(
+            "UPDATE ar_payments SET bank_account_id = ? WHERE id = ?",
+            (int(bank_account_id), int(p["id"])),
+        )
+    conn.commit()
+
+    journal_id = _post_make_deposit_journal(
+        conn,
+        bank_account_id=int(bank_account_id),
+        deposit_date=deposit_date,
+        memo=memo,
+        payments_total=payments_total,
+        extra_lines=cleaned_extra,
+        cash_back_account=cash_acct,
+        cash_back_amount=cash_back,
+        cash_back_memo=cash_back_memo,
+        deposit_total=deposit_total,
+        payment_ids=[int(p["id"]) for p in payments],
+    )
+    return {
+        "payment_ids": [int(p["id"]) for p in payments],
+        "payments_total": payments_total,
+        "extra_total": extra_total,
+        "cash_back": cash_back,
+        "deposit_total": deposit_total,
+        "bank_account_id": int(bank_account_id),
+        "bank_name": (ba["name"] or "").strip(),
+        "journal_entry_id": journal_id,
+    }
+
+
+def _post_make_deposit_journal(
+    conn: sqlite3.Connection,
+    *,
+    bank_account_id: int,
+    deposit_date: str,
+    memo: str,
+    payments_total: float,
+    extra_lines: list[dict],
+    cash_back_account: str,
+    cash_back_amount: float,
+    cash_back_memo: str,
+    deposit_total: float,
+    payment_ids: list[int],
+) -> Optional[int]:
+    """DR bank (+ cash back) / CR Undeposited Funds (+ extra From Accounts)."""
+    ids_part = ",".join(str(i) for i in payment_ids) if payment_ids else "manual"
+    source_tag = f"make_deposit:{deposit_date}:{ids_part}"
+    try:
+        old = conn.execute(
+            "SELECT id FROM journal_entries WHERE source = ?", (source_tag,)
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    if old:
+        conn.execute("DELETE FROM journal_entry_lines WHERE entry_id = ?", (old["id"],))
+        conn.execute("DELETE FROM journal_entries WHERE id = ?", (old["id"],))
+
+    bank_label = _bank_gl_label(conn, bank_account_id)
+    je_memo = (memo or "").strip() or "Make Deposits"
+    cur = conn.execute(
+        """
+        INSERT INTO journal_entries (entry_date, memo, source, created_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        (deposit_date, je_memo, source_tag, _now()),
+    )
+    eid = cur.lastrowid
+    desc = je_memo
+    conn.execute(
+        """
+        INSERT INTO journal_entry_lines (entry_id, account, debit, credit, description)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (eid, bank_label, round(float(deposit_total), 2), 0.0, desc),
+    )
+    if round(float(cash_back_amount), 2) > 0.005:
+        cb_desc = (cash_back_memo or "").strip() or "Cash back"
+        conn.execute(
+            """
+            INSERT INTO journal_entry_lines (entry_id, account, debit, credit, description)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                eid,
+                cash_back_account,
+                round(float(cash_back_amount), 2),
+                0.0,
+                cb_desc,
+            ),
+        )
+    if round(float(payments_total), 2) > 0.005:
+        conn.execute(
+            """
+            INSERT INTO journal_entry_lines (entry_id, account, debit, credit, description)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                eid,
+                UNDEPOSITED_FUNDS_LABEL,
+                0.0,
+                round(float(payments_total), 2),
+                desc,
+            ),
+        )
+    for line in extra_lines:
+        amt = round(float(line["amount"]), 2)
+        if amt <= 0.005:
+            continue
+        line_desc = (line.get("memo") or "").strip() or desc
+        conn.execute(
+            """
+            INSERT INTO journal_entry_lines (entry_id, account, debit, credit, description)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (eid, line["from_account"], 0.0, amt, line_desc),
+        )
+    conn.commit()
+    return int(eid)
 
 
 def list_open_invoices_for_customer(

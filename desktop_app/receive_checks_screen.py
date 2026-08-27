@@ -4,7 +4,7 @@ Header, payment-method buttons, open-invoice grid, and footer follow Johnny's QB
 Receive Payments screenshot (slightly cleaner spacing/buttons than a gray Win32 photocopy).
 
 Payments post to **Undeposited Funds** (``ar_payments.bank_account_id`` stays empty). Make
-Deposits later picks those into a bank account; this screen does not write a register deposit.
+Deposits picks those into a bank account; this screen does not write a register deposit.
 """
 
 from __future__ import annotations
@@ -233,7 +233,7 @@ class ReceiveChecksScreen(QWidget):
         self.setMinimumSize(960, 640)
         self.setToolTip(
             "Receive Payments: record customer payments against open invoices. "
-            "Payments go to Undeposited Funds until Make Deposits (later). "
+            "Payments go to Undeposited Funds until Make Deposits. "
             "Same company .db (File → Backup / Restore, probooks.backup)."
         )
         self._build_ui()
@@ -773,7 +773,7 @@ class ReceiveChecksScreen(QWidget):
             self,
             "Where does this payment go?",
             "This payment is recorded to Undeposited Funds and applied to the invoices you select. "
-            "It does not go straight into a bank account. Make Deposits (later) picks undeposited "
+            "It does not go straight into a bank account. Make Deposits picks undeposited "
             "payments into the bank — for example your checking account.",
             ok_tip="Close; continue recording the customer payment.",
         )
@@ -1177,7 +1177,7 @@ class ReceiveChecksScreen(QWidget):
             self,
             "Receive Payments",
             f"Posted {posted} payment(s) to Undeposited Funds. "
-            "Open balances were updated. Use Make Deposits later to put them in the bank.",
+            "Open balances were updated. Use Make Deposits to put them in the bank.",
             ok_tip="Close; the invoices list refreshed.",
         )
         if reset:

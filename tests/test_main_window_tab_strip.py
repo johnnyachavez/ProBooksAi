@@ -30,7 +30,7 @@ def test_main_window_tab_count_and_fixed_top_level_order(qapp: QApplication, tmp
     w = MainWindow(db_path=str(db_path))
     try:
         tabs = w._tabs
-        assert tabs.count() == 13
+        assert tabs.count() == 14
         order = (
             (0, "Dashboard"),
             (1, "Invoices"),
@@ -39,17 +39,18 @@ def test_main_window_tab_count_and_fixed_top_level_order(qapp: QApplication, tmp
             (4, "Enter Bills"),
             (5, "Pay Bills"),
             (6, "Receive Payments"),
-            (7, "Bank Register"),
-            (8, "Chart of Accounts"),
-            (9, "Customers"),
-            (10, "Vendors"),
-            (11, "Reconcile"),
-            (12, "More"),
+            (7, "Make Deposits"),
+            (8, "Bank Register"),
+            (9, "Chart of Accounts"),
+            (10, "Customers"),
+            (11, "Vendors"),
+            (12, "Reconcile"),
+            (13, "More"),
         )
         for idx, needle in order:
             assert needle in tabs.tabText(idx)
         tb = tabs.tabBar()
-        for i in range(13):
+        for i in range(14):
             assert tb.isTabVisible(i)
             tabs.setCurrentIndex(i)
             assert tabs.currentIndex() == i
@@ -62,6 +63,7 @@ def test_accounting_landing_tabs_show_page_titles(qapp: QApplication, tmp_path: 
     from desktop_app.enter_bills_screen import EnterBillsScreen
     from desktop_app.invoice_screen import InvoiceScreen
     from desktop_app.main import MainWindow
+    from desktop_app.make_deposits_screen import MakeDepositsScreen
     from desktop_app.pay_bills_screen import PayBillsScreen
     from desktop_app.receive_checks_screen import ReceiveChecksScreen
 
@@ -76,6 +78,7 @@ def test_accounting_landing_tabs_show_page_titles(qapp: QApplication, tmp_path: 
             (4, EnterBillsScreen),
             (5, PayBillsScreen),
             (6, ReceiveChecksScreen),
+            (7, MakeDepositsScreen),
         )
         for idx, spec in expected:
             tabs.setCurrentIndex(idx)
@@ -105,6 +108,13 @@ def test_accounting_landing_tabs_show_page_titles(qapp: QApplication, tmp_path: 
             if spec is PayBillsScreen:
                 assert tbl.columnCount() == 7
                 assert "Pay Bills" in titles
+            elif spec is MakeDepositsScreen:
+                dep = cw.findChild(QTableWidget, "makeDepositsTable")
+                assert dep is not None
+                assert dep.columnCount() == 6
+                assert dep.horizontalHeaderItem(0).text() == "RECEIVED FROM"
+                assert "Make Deposits" in titles
+                assert "DEPOSIT TO" in titles
             else:
                 assert tbl.columnCount() == 6
                 assert "Customer Payment" in titles
@@ -142,10 +152,10 @@ def test_customers_and_vendors_tabs_use_live_ar_ap_workflows(
     w = MainWindow(db_path=str(db_path))
     try:
         tabs = w._tabs
-        assert isinstance(tabs.widget(9), ARTab)
-        assert isinstance(tabs.widget(10), APTab)
-        assert tabs.widget(9) is w._customers_tab
-        assert tabs.widget(10) is w._vendors_tab
+        assert isinstance(tabs.widget(10), ARTab)
+        assert isinstance(tabs.widget(11), APTab)
+        assert tabs.widget(10) is w._customers_tab
+        assert tabs.widget(11) is w._vendors_tab
         bh = w._business_hub._business_subtabs
         # Merged Business hub: Rules, Payroll, Tax %, Company (HEAD), AI (dev).
         # Top-level Customers/Vendors are still the primary AR/AP entry points.
