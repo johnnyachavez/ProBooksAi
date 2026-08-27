@@ -2265,8 +2265,9 @@ def list_customer_ar_summaries(conn: sqlite3.Connection) -> list[dict]:
     customers = list_customers(conn)
     out: list[dict] = []
     for c in customers:
-        cid = int(c["id"])
-        name = (c["name"] or "").strip()
+        d = dict(c)
+        cid = int(d["id"])
+        name = (d.get("name") or "").strip()
         inv_rows = conn.execute(
             "SELECT balance_due, due_date FROM invoices WHERE customer_id = ?",
             (cid,),
@@ -2305,10 +2306,13 @@ def list_customer_ar_summaries(conn: sqlite3.Connection) -> list[dict]:
             ar_status = "Overdue"
         else:
             ar_status = "Open"
+        pid = d.get("parent_customer_id")
+        parent_id = int(pid) if pid is not None else None
         out.append(
             {
                 "customer_id": cid,
                 "customer_name": name,
+                "parent_customer_id": parent_id,
                 "relationship": customer_relationship_label(conn, cid),
                 "open_balance": round(open_bal, 2),
                 "current_due": round(current_due, 2),
@@ -2319,6 +2323,100 @@ def list_customer_ar_summaries(conn: sqlite3.Connection) -> list[dict]:
             }
         )
     out.sort(key=lambda x: (x["customer_name"] or "").lower())
+    return out
+
+
+def list_customer_center_transactions(
+    conn: sqlite3.Connection,
+    customer_id: Optional[int] = None,
+) -> list[dict]:
+    """Invoices and AR payments for Customer Center (one customer/job or the whole list).
+
+    Newest date first. Does not seed or rename customers — callers supply live ids.
+    """
+    from datetime import date as date_cls
+
+    today = date_cls.today()
+    cust_sql = ""
+    params: list = []
+    if customer_id is not None:
+        cust_sql = "AND c.id = ?"
+        params.append(int(customer_id))
+
+    invoices = conn.execute(
+        f"""
+        SELECT i.id, i.customer_id, c.name AS customer_name,
+               i.invoice_number, i.invoice_date, i.due_date,
+               i.total, i.balance_due, i.status
+        FROM invoices i
+        JOIN customers c ON c.id = i.customer_id
+        WHERE 1=1 {cust_sql}
+        ORDER BY i.invoice_date DESC, i.id DESC
+        """,
+        params,
+    ).fetchall()
+    pays = conn.execute(
+        f"""
+        SELECT p.id, p.customer_id, c.name AS customer_name,
+               p.payment_date, p.amount, p.method, p.reference
+        FROM ar_payments p
+        JOIN customers c ON c.id = p.customer_id
+        WHERE 1=1 {cust_sql}
+        ORDER BY p.payment_date DESC, p.id DESC
+        """,
+        params,
+    ).fetchall()
+
+    out: list[dict] = []
+    for r in invoices:
+        d = dict(r)
+        due = (d.get("due_date") or "").strip()
+        bal = float(d.get("balance_due") or 0)
+        aging = ""
+        if bal > 0.005 and due:
+            try:
+                days = (today - date_cls.fromisoformat(due[:10])).days
+                if days > 0:
+                    aging = str(days)
+            except ValueError:
+                aging = ""
+        out.append(
+            {
+                "kind": "invoice",
+                "record_id": int(d["id"]),
+                "customer_id": int(d["customer_id"]),
+                "customer_name": d.get("customer_name") or "",
+                "type": "Invoice",
+                "num": (d.get("invoice_number") or "").strip(),
+                "date": (d.get("invoice_date") or "").strip(),
+                "due_date": due,
+                "aging": aging,
+                "amount": round(float(d.get("total") or 0), 2),
+                "open_balance": round(bal, 2),
+                "status": (d.get("status") or "").strip(),
+            }
+        )
+    for r in pays:
+        d = dict(r)
+        method = (d.get("method") or "").strip()
+        type_label = "Pmt -Check" if method.lower() == "check" else "Payment"
+        out.append(
+            {
+                "kind": "payment",
+                "record_id": int(d["id"]),
+                "customer_id": int(d["customer_id"]),
+                "customer_name": d.get("customer_name") or "",
+                "type": type_label,
+                "num": (d.get("reference") or "").strip(),
+                "date": (d.get("payment_date") or "").strip(),
+                "due_date": "",
+                "aging": "",
+                "amount": round(float(d.get("amount") or 0), 2),
+                "open_balance": 0.0,
+                "status": "Paid",
+            }
+        )
+    out.sort(key=lambda x: ((x.get("date") or ""), int(x.get("record_id") or 0)), reverse=True)
     return out
 
 

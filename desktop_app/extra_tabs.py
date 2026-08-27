@@ -40,7 +40,6 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QDoubleSpinBox,
     QFormLayout,
-    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -82,8 +81,7 @@ from desktop_app.qt_mnemonic import (
     tip_message_box_buttons,
     tip_qdialog_button_box,
 )
-from desktop_app.new_customer_dialog import run_new_customer_dialog
-from desktop_app.theme import ar_ap_master_tab_stylesheet
+from desktop_app.customer_center_screen import CustomerCenterScreen
 from desktop_app.vendor_center_screen import VendorCenterScreen
 from desktop_app.table_clipboard import (
     CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
@@ -244,7 +242,6 @@ _AP_PAYMENT_VENDOR_KEY = "business/ap_payment_vendor_id"
 _AR_INVOICE_GRID_FILTER_KEY = "business/ar_invoice_grid_filter"
 _AP_BILL_GRID_FILTER_KEY = "business/ap_bill_grid_filter"
 _AR_INVOICE_HEADER_STATE_KEY = "business/ar_invoice_table_header_state"
-_AR_CUSTOMER_HEADER_STATE_KEY = "business/ar_customer_table_header_state"
 _AP_BILL_HEADER_STATE_KEY = "business/ap_bill_table_header_state"
 _AP_VENDOR_HEADER_STATE_KEY = "business/ap_vendor_table_header_state"
 _RULES_TABLE_HEADER_STATE_KEY = "business/rules_table_header_state"
@@ -890,476 +887,192 @@ class RulesTab(QWidget):
         )
 
 
-class ARTab(QWidget):
-    def __init__(self, conn: sqlite3.Connection, parent=None):
-        super().__init__(parent)
-        self.setObjectName("arMasterTab")
-        self.setStyleSheet(ar_ap_master_tab_stylesheet())
-        self._conn = conn
-        self._customer_summary_by_id: dict[int, dict] = {}
-        self._focused_customer_id: int | None = None
-        self.setToolTip(
-            "Accounts receivable: customer master list, balances, and last activity; "
-            "F5 refreshes when Business has focus. "
-            "Toolbar export uses UTF-8 BOM for Excel. "
-            "(F5 refreshes when this tab has focus.)"
+class ARTab(CustomerCenterScreen):
+    """Accounts receivable: customer master list, balances, and last activity.
+
+    Customer Center (QB Pro layout) on the top-level Customers tab.
+    F5 refreshes when Business has focus. Toolbar export uses UTF-8 BOM for Excel.
+    (F5 refreshes when this tab has focus.)
+    CSV exports (toolbar) use UTF-8 BOM for Excel.
+    """
+
+
+def run_edit_customer_dialog(
+    parent: QWidget,
+    conn: sqlite3.Connection,
+    customer_id: int | None = None,
+) -> bool:
+    """Edit an existing customer or job. Returns True if saved."""
+    custs = business.list_customers(conn)
+    if not custs:
+        message_box_information_ok(
+            parent,
+            "Customers",
+            "No customers to edit.",
+            ok_tip="Close; use New Customer first.",
         )
-        lay = QVBoxLayout(self)
-        row = QHBoxLayout()
-        ar_new_cust = QPushButton("New Customer")
-        ar_new_cust.setToolTip("Create a new customer record.")
-        ar_new_cust.clicked.connect(self._new_cust)
-        row.addWidget(ar_new_cust)
-        ar_edit_cust = QPushButton("Edit Customer…")
-        ar_edit_cust.setToolTip("Choose a customer and edit name, contact, and notes.")
-        ar_edit_cust.clicked.connect(self._edit_cust)
-        row.addWidget(ar_edit_cust)
-        ar_export_cust = QPushButton("Export Customers CSV…")
-        ar_export_cust.setToolTip("Export all customers to CSV." + _CSV_EXCEL_ENCODING_TIP)
-        ar_export_cust.clicked.connect(self._export_customers)
-        row.addWidget(ar_export_cust)
-        row.addStretch()
-        lay.addLayout(row)
+        return False
+    d = QDialog(parent)
+    d.setWindowTitle("Edit customer")
+    d.setToolTip("Filter the list, pick a customer, then update name, contact fields, or notes.")
+    f = QFormLayout(d)
+    filt = QLineEdit()
+    filt.setPlaceholderText("Filter by name, email, phone, address, notes, or id…")
+    filt.setClearButtonEnabled(True)
+    filt.setToolTip("Narrow the customer list; clear the field to show all customers again.")
+    cb = QComboBox()
+    cb.setToolTip("Choose the customer to edit.")
+    ne = QLineEdit()
+    ne.setToolTip("Customer display name (required).")
+    em = QLineEdit()
+    em.setToolTip("Contact email (optional).")
+    ph = QLineEdit()
+    ph.setToolTip("Phone number (optional).")
+    ad = QPlainTextEdit()
+    ad.setFixedHeight(56)
+    ad.setToolTip("Mailing or service address (optional).")
+    no = QPlainTextEdit()
+    no.setFixedHeight(48)
+    no.setToolTip("Internal notes about this customer (optional).")
 
-        split = QSplitter(Qt.Orientation.Vertical)
-        split.setToolTip("Drag to resize selected-customer detail vs customer list.")
+    type_cb = QComboBox()
+    type_cb.setToolTip(
+        "Standalone: top-level customer (or mother ship with job accounts). "
+        "Job: link to a parent to roll up open invoices in Receive Payments."
+    )
+    type_cb.addItem("Standalone Customer", "standalone")
+    type_cb.addItem("Job under Existing Customer", "job")
+    parent_lbl = QLabel("Parent customer *")
+    parent_lbl.setToolTip("Mother ship customer for this job.")
+    parent_cb = QComboBox()
+    parent_cb.setToolTip("Clear by switching to Standalone, or pick another parent.")
 
-        detail_box = QGroupBox("Selected Customer")
-        detail_box.setToolTip(
-            "Contact fields from the customer master record; balances from open invoices and payments."
-        )
-        df = QFormLayout(detail_box)
-        self._d_name = QLabel("—")
-        self._d_address = QLabel("—")
-        self._d_address.setWordWrap(True)
-        self._d_phone = QLabel("—")
-        self._d_email = QLabel("—")
-        self._d_terms = QLabel("—")
-        self._d_terms.setToolTip(
-            "Payment terms are not stored separately yet; describe them in Notes if needed."
-        )
-        self._d_open_bal = QLabel("—")
-        self._d_cur_due = QLabel("—")
-        self._d_overdue = QLabel("—")
-        self._d_last_inv = QLabel("—")
-        self._d_last_pay = QLabel("—")
-        self._d_notes = QLabel("—")
-        self._d_notes.setWordWrap(True)
-        df.addRow("Customer Name", self._d_name)
-        self._d_relationship = QLabel("—")
-        self._d_relationship.setToolTip(
-            "Standalone: its own account. Parent: mother ship with job accounts below it. "
-            "Job: …: invoices roll up to the parent in Receive Payments when the parent is selected."
-        )
-        df.addRow("Relationship", self._d_relationship)
-        df.addRow("Address", self._d_address)
-        df.addRow("Phone", self._d_phone)
-        df.addRow("Email", self._d_email)
-        df.addRow("Terms", self._d_terms)
-        df.addRow("Open Balance", self._d_open_bal)
-        df.addRow("Current Due", self._d_cur_due)
-        df.addRow("Overdue", self._d_overdue)
-        df.addRow("Last Invoice Date", self._d_last_inv)
-        df.addRow("Last Payment Date", self._d_last_pay)
-        df.addRow("Notes", self._d_notes)
-        split.addWidget(detail_box)
+    def fill_parent_combo(exclude_id: int | None) -> None:
+        parent_cb.clear()
+        for r in business.list_parent_customer_choices(conn):
+            rid = int(r["id"])
+            if exclude_id is not None and rid == exclude_id:
+                continue
+            nm = (r["name"] or "").strip() or f"#{rid}"
+            parent_cb.addItem(nm, rid)
 
-        list_box = QGroupBox("Customers")
-        list_box.setToolTip("Click a row to show that customer in the detail card above.")
-        lb_lay = QVBoxLayout(list_box)
-        self._customer_tbl = QTableWidget()
-        self._customer_tbl.setColumnCount(8)
-        self._customer_tbl.setHorizontalHeaderLabels(
-            [
-                "Customer",
-                "Relationship",
-                "Open Balance",
-                "Current Due",
-                "Overdue",
-                "Last Invoice Date",
-                "Last Payment Date",
-                "Status",
-            ]
-        )
-        self._customer_tbl.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self._customer_tbl.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self._customer_tbl.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self._customer_tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self._customer_tbl.setSortingEnabled(True)
-        self._customer_tbl.cellClicked.connect(self._on_customer_row_clicked)
-        self._customer_tbl.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self._customer_tbl.customContextMenuRequested.connect(self._on_customer_context_menu)
-        self._customer_tbl.setToolTip(
-            "Customer master snapshot; click a row to update the detail card. F5 refreshes. "
-            "CSV exports (toolbar) use UTF-8 BOM for Excel."
-        )
-        lb_lay.addWidget(self._customer_tbl)
-        split.addWidget(list_box)
-        split.setStretchFactor(0, 1)
-        split.setStretchFactor(1, 2)
-        lay.addWidget(split, 1)
-        self._refresh()
+    def sync_parent_visibility() -> None:
+        is_job = type_cb.currentData() == "job"
+        parent_lbl.setVisible(is_job)
+        parent_cb.setVisible(is_job)
 
-    def persist_header_state(self) -> None:
-        QSettings().setValue(
-            _AR_CUSTOMER_HEADER_STATE_KEY,
-            self._customer_tbl.horizontalHeader().saveState(),
-        )
+    type_cb.currentIndexChanged.connect(lambda _i=None: sync_parent_visibility())
 
-    def showEvent(self, event: QShowEvent) -> None:
-        super().showEvent(event)
-        raw = QSettings().value(_AR_CUSTOMER_HEADER_STATE_KEY)
-        if raw:
-            self._customer_tbl.horizontalHeader().restoreState(raw)
-
-    def hideEvent(self, event: QHideEvent) -> None:
-        self.persist_header_state()
-        super().hideEvent(event)
-
-    def _on_customer_row_clicked(self, row: int, _col: int) -> None:
-        if row < 0:
-            return
-        it = self._customer_tbl.item(row, 0)
-        if it is None:
-            return
-        cid = coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole))
-        if cid is None:
-            return
-        self._focused_customer_id = cid
-        self._apply_detail_from_focus()
-
-    def _on_customer_context_menu(self, pos) -> None:
-        idx = self._customer_tbl.indexAt(pos)
-        m = QMenu(self)
-        act_keys = m.addAction(
-            "Keyboard shortcuts…",
-            lambda: show_business_keyboard_shortcuts_dialog(self),
-        )
-        act_keys.setToolTip(
-            "Same summary as Help → Business shortcuts… (F5, Customers grid). "
-            + VIEW_BANK_REGISTER_KEYS_TOOLTIP
-            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
-        )
-        if not idx.isValid():
-            m.exec(self._customer_tbl.viewport().mapToGlobal(pos))
-            return
-        row = idx.row()
-        it = self._customer_tbl.item(row, 0)
-        if it is None or coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole)) is None:
-            m.exec(self._customer_tbl.viewport().mapToGlobal(pos))
-            return
-        m.addSeparator()
-        act_copy = m.addAction(
-            "Copy row", lambda r=row: copy_table_row_as_tsv(self._customer_tbl, r)
-        )
-        act_copy.setToolTip(
-            "Copy this customer row as tab-separated text for pasting into a spreadsheet or editor. "
-            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
-        )
-        m.exec(self._customer_tbl.viewport().mapToGlobal(pos))
-
-    def _apply_detail_from_focus(self) -> None:
-        if self._focused_customer_id is None:
-            self._clear_detail_card()
-            return
-        v = business.get_customer(self._conn, self._focused_customer_id)
-        summ = self._customer_summary_by_id.get(self._focused_customer_id)
-        if v is None:
-            self._clear_detail_card()
-            return
-        d = dict(v)
-        self._d_name.setText(escape_ampersand_for_qt(d.get("name") or "—"))
-        addr = (d.get("address") or "").strip()
-        self._d_address.setText(escape_ampersand_for_qt(addr) if addr else "—")
-        self._d_phone.setText(escape_ampersand_for_qt(d.get("phone") or "") or "—")
-        self._d_email.setText(escape_ampersand_for_qt(d.get("email") or "") or "—")
-        self._d_terms.setText("—")
-        notes = (d.get("notes") or "").strip()
-        self._d_notes.setText(escape_ampersand_for_qt(notes) if notes else "—")
-        if summ is not None:
-            rel = summ.get("relationship") or ""
-        else:
-            rel = business.customer_relationship_label(
-                self._conn, self._focused_customer_id
-            )
-        self._d_relationship.setText(escape_ampersand_for_qt(rel) if rel else "—")
-        if summ is None:
-            self._d_open_bal.setText("—")
-            self._d_cur_due.setText("—")
-            self._d_overdue.setText("—")
-            self._d_last_inv.setText("—")
-            self._d_last_pay.setText("—")
-            return
-        self._d_open_bal.setText(f"{float(summ['open_balance']):,.2f}")
-        self._d_cur_due.setText(f"{float(summ['current_due']):,.2f}")
-        self._d_overdue.setText(f"{float(summ['overdue']):,.2f}")
-        self._d_last_inv.setText(summ.get("last_invoice_date") or "—")
-        self._d_last_pay.setText(summ.get("last_payment_date") or "—")
-
-    def _clear_detail_card(self) -> None:
-        for w in (
-            self._d_name,
-            self._d_relationship,
-            self._d_address,
-            self._d_phone,
-            self._d_email,
-            self._d_terms,
-            self._d_open_bal,
-            self._d_cur_due,
-            self._d_overdue,
-            self._d_last_inv,
-            self._d_last_pay,
-            self._d_notes,
-        ):
-            w.setText("—")
-
-    def _refresh(self) -> None:
-        rows = business.list_customer_ar_summaries(self._conn)
-        self._customer_summary_by_id = {int(r["customer_id"]): r for r in rows}
-        self._customer_tbl.setSortingEnabled(False)
-        self._customer_tbl.setRowCount(len(rows))
-        for i, r in enumerate(rows):
-            cid = int(r["customer_id"])
-            nm = r["customer_name"] or ""
-            it0 = QTableWidgetItem(escape_ampersand_for_qt(nm))
-            it0.setData(Qt.ItemDataRole.UserRole, cid)
-            self._customer_tbl.setItem(i, 0, it0)
-            self._customer_tbl.setItem(
-                i, 1, plain_display_table_item(r.get("relationship") or "")
-            )
-            ob = float(r["open_balance"] or 0)
-            cd = float(r["current_due"] or 0)
-            ov = float(r["overdue"] or 0)
-            self._customer_tbl.setItem(i, 2, _FloatSortTableItem(f"{ob:.2f}", ob))
-            self._customer_tbl.setItem(i, 3, _FloatSortTableItem(f"{cd:.2f}", cd))
-            self._customer_tbl.setItem(i, 4, _FloatSortTableItem(f"{ov:.2f}", ov))
-            self._customer_tbl.setItem(
-                i, 5, plain_display_table_item(r["last_invoice_date"] or "")
-            )
-            self._customer_tbl.setItem(
-                i, 6, plain_display_table_item(r["last_payment_date"] or "")
-            )
-            self._customer_tbl.setItem(
-                i, 7, plain_display_table_item(r.get("ar_status") or "")
-            )
-        self._customer_tbl.setSortingEnabled(True)
-        ids = {int(r["customer_id"]) for r in rows}
-        if self._focused_customer_id is not None and self._focused_customer_id not in ids:
-            self._focused_customer_id = None
-        if self._focused_customer_id is None and rows:
-            self._focused_customer_id = int(rows[0]["customer_id"])
-        if self._focused_customer_id is not None:
-            for row in range(self._customer_tbl.rowCount()):
-                it = self._customer_tbl.item(row, 0)
-                if it is None:
-                    continue
-                if coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole)) == self._focused_customer_id:
-                    self._customer_tbl.selectRow(row)
-                    break
-            self._apply_detail_from_focus()
-        else:
-            self._customer_tbl.clearSelection()
-            self._clear_detail_card()
-
-    def _new_cust(self):
-        nid = run_new_customer_dialog(self, self._conn, show_success_message=True)
-        if nid is None:
-            return
-        self._refresh()
-
-    def _edit_cust(self):
-        custs = business.list_customers(self._conn)
-        if not custs:
-            message_box_information_ok(
-                self,
-                "Customers",
-                "No customers to edit.",
-                ok_tip="Close; use New Customer first.",
-            )
-            return
-        d = QDialog(self)
-        d.setWindowTitle("Edit customer")
-        d.setToolTip("Filter the list, pick a customer, then update name, contact fields, or notes.")
-        f = QFormLayout(d)
-        filt = QLineEdit()
-        filt.setPlaceholderText("Filter by name, email, phone, address, notes, or id…")
-        filt.setClearButtonEnabled(True)
-        filt.setToolTip("Narrow the customer list; clear the field to show all customers again.")
-        cb = QComboBox()
-        cb.setToolTip("Choose the customer to edit.")
-        ne = QLineEdit()
-        ne.setToolTip("Customer display name (required).")
-        em = QLineEdit()
-        em.setToolTip("Contact email (optional).")
-        ph = QLineEdit()
-        ph.setToolTip("Phone number (optional).")
-        ad = QPlainTextEdit()
-        ad.setFixedHeight(56)
-        ad.setToolTip("Mailing or service address (optional).")
-        no = QPlainTextEdit()
-        no.setFixedHeight(48)
-        no.setToolTip("Internal notes about this customer (optional).")
-
-        type_cb = QComboBox()
-        type_cb.setToolTip(
-            "Standalone: top-level customer (or mother ship with job accounts). "
-            "Job: link to a parent to roll up open invoices in Receive Payments."
-        )
-        type_cb.addItem("Standalone Customer", "standalone")
-        type_cb.addItem("Job under Existing Customer", "job")
-        parent_lbl = QLabel("Parent customer *")
-        parent_lbl.setToolTip("Mother ship customer for this job.")
-        parent_cb = QComboBox()
-        parent_cb.setToolTip("Clear by switching to Standalone, or pick another parent.")
-
-        def fill_parent_combo(exclude_id: int | None) -> None:
-            parent_cb.clear()
-            for r in business.list_parent_customer_choices(self._conn):
-                rid = int(r["id"])
-                if exclude_id is not None and rid == exclude_id:
-                    continue
-                nm = (r["name"] or "").strip() or f"#{rid}"
-                parent_cb.addItem(nm, rid)
-
-        def sync_parent_visibility() -> None:
-            is_job = type_cb.currentData() == "job"
-            parent_lbl.setVisible(is_job)
-            parent_cb.setVisible(is_job)
-
-        type_cb.currentIndexChanged.connect(lambda _i=None: sync_parent_visibility())
-
-        def load_customer(_index: int | None = None) -> None:
-            cid = coerce_combo_int_id(cb.currentData())
-            if cid is None:
-                return
-            row = business.get_customer(self._conn, cid)
-            if row is None:
-                return
-            fill_parent_combo(cid)
-            ne.setText(row["name"] or "")
-            em.setText(row["email"] or "")
-            ph.setText(row["phone"] or "")
-            ad.setPlainText(row["address"] or "")
-            no.setPlainText(row["notes"] or "")
-            rd = dict(row)
-            pid = rd.get("parent_customer_id")
-            type_cb.blockSignals(True)
-            if pid is not None:
-                type_cb.setCurrentIndex(1)
-                ix = combo_index_for_int_user_data(parent_cb, int(pid))
-                if ix >= 0:
-                    parent_cb.setCurrentIndex(ix)
-            else:
-                type_cb.setCurrentIndex(0)
-            type_cb.blockSignals(False)
-            sync_parent_visibility()
-
-        def sync_customer_combo() -> None:
-            _sync_filtered_entity_combo(
-                custs,
-                filt.text(),
-                cb,
-                business_list_filter.CUSTOMER_ENTITY_KEYS,
-            )
-            load_customer()
-
-        cb.currentIndexChanged.connect(load_customer)
-        filt.textChanged.connect(sync_customer_combo)
-        f.addRow("Filter list", filt)
-        f.addRow("Customer", cb)
-        sync_customer_combo()
-        f.addRow("Customer type", type_cb)
-        f.addRow(parent_lbl, parent_cb)
-        f.addRow("Name *", ne)
-        f.addRow("Email", em)
-        f.addRow("Phone", ph)
-        f.addRow("Address", ad)
-        f.addRow("Notes", no)
-        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        _tip_dialog_ok_cancel(bb, "Save changes to the selected customer.")
-        bb.accepted.connect(d.accept)
-        bb.rejected.connect(d.reject)
-        f.addRow(bb)
-        if d.exec() != QDialog.DialogCode.Accepted:
-            return
-        if not ne.text().strip():
-            return
+    def load_customer(_index: int | None = None) -> None:
         cid = coerce_combo_int_id(cb.currentData())
         if cid is None:
-            message_box_warning_ok(
-                self,
-                "Customer",
-                "No customer selected (try clearing the filter).",
-                ok_tip="Close; pick a customer in the list or clear the filter.",
-            )
             return
-        mode = type_cb.currentData()
-        parent_id = None
-        if mode == "job":
-            if parent_cb.count() == 0:
-                message_box_warning_ok(
-                    self,
-                    "Customer",
-                    "No eligible parent customer exists. Add a standalone customer first.",
-                    ok_tip="Close; create a top-level customer, then set this one as a job under it.",
-                )
-                return
-            parent_id = coerce_combo_int_id(parent_cb.currentData())
-            if parent_id is None:
-                message_box_warning_ok(
-                    self,
-                    "Customer",
-                    "Choose a parent customer for a job account.",
-                    ok_tip="Close; pick Parent customer or switch to Standalone.",
-                )
-                return
-        try:
-            business.update_customer(
-                self._conn,
-                cid,
-                ne.text().strip(),
-                email=em.text().strip(),
-                phone=ph.text().strip(),
-                address=ad.toPlainText().strip(),
-                notes=no.toPlainText().strip(),
-                parent_customer_id=parent_id,
-            )
-        except ValueError as exc:
-            message_box_warning_ok(
-                self,
-                "Customer",
-                escape_ampersand_for_qt(str(exc)),
-                ok_tip="Close; fix the validation issue and try again.",
-            )
+        row = business.get_customer(conn, cid)
+        if row is None:
             return
-        self._refresh()
+        fill_parent_combo(cid)
+        ne.setText(row["name"] or "")
+        em.setText(row["email"] or "")
+        ph.setText(row["phone"] or "")
+        ad.setPlainText(row["address"] or "")
+        no.setPlainText(row["notes"] or "")
+        rd = dict(row)
+        pid = rd.get("parent_customer_id")
+        type_cb.blockSignals(True)
+        if pid is not None:
+            type_cb.setCurrentIndex(1)
+            ix = combo_index_for_int_user_data(parent_cb, int(pid))
+            if ix is not None and ix >= 0:
+                parent_cb.setCurrentIndex(ix)
+        else:
+            type_cb.setCurrentIndex(0)
+        type_cb.blockSignals(False)
+        sync_parent_visibility()
 
-    def _export_customers(self):
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Export customers", "customers.csv", "CSV (*.csv)"
+    def sync_customer_combo() -> None:
+        _sync_filtered_entity_combo(
+            custs,
+            filt.text(),
+            cb,
+            business_list_filter.CUSTOMER_ENTITY_KEYS,
         )
-        if not path:
-            return
-        if not path.lower().endswith(".csv"):
-            path += ".csv"
-        try:
-            n = business.write_customers_csv(self._conn, path)
-        except OSError as exc:
-            message_box_critical_ok(
-                self,
-                "Export failed",
-                escape_ampersand_for_qt(str(exc)),
-                ok_tip="Close; check path, permissions, and disk space.",
-            )
-            return
-        message_box_information_ok(
-            self,
-            "Export",
-            f"Exported {n} customer(s) to {escape_ampersand_for_qt(path)}",
-            ok_tip="Close; open the CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
+        load_customer()
+
+    cb.currentIndexChanged.connect(load_customer)
+    filt.textChanged.connect(sync_customer_combo)
+    f.addRow("Filter list", filt)
+    f.addRow("Customer", cb)
+    sync_customer_combo()
+    if customer_id is not None:
+        ix = combo_index_for_int_user_data(cb, int(customer_id))
+        if ix is not None:
+            cb.setCurrentIndex(ix)
+            load_customer()
+    f.addRow("Customer type", type_cb)
+    f.addRow(parent_lbl, parent_cb)
+    f.addRow("Name *", ne)
+    f.addRow("Email", em)
+    f.addRow("Phone", ph)
+    f.addRow("Address", ad)
+    f.addRow("Notes", no)
+    bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+    _tip_dialog_ok_cancel(bb, "Save changes to the selected customer.")
+    bb.accepted.connect(d.accept)
+    bb.rejected.connect(d.reject)
+    f.addRow(bb)
+    if d.exec() != QDialog.DialogCode.Accepted:
+        return False
+    if not ne.text().strip():
+        return False
+    cid = coerce_combo_int_id(cb.currentData())
+    if cid is None:
+        message_box_warning_ok(
+            parent,
+            "Customer",
+            "No customer selected (try clearing the filter).",
+            ok_tip="Close; pick a customer in the list or clear the filter.",
         )
-
-
+        return False
+    mode = type_cb.currentData()
+    parent_id = None
+    if mode == "job":
+        if parent_cb.count() == 0:
+            message_box_warning_ok(
+                parent,
+                "Customer",
+                "No eligible parent customer exists. Add a standalone customer first.",
+                ok_tip="Close; create a top-level customer, then set this one as a job under it.",
+            )
+            return False
+        parent_id = coerce_combo_int_id(parent_cb.currentData())
+        if parent_id is None:
+            message_box_warning_ok(
+                parent,
+                "Customer",
+                "Choose a parent customer for a job account.",
+                ok_tip="Close; pick Parent customer or switch to Standalone.",
+            )
+            return False
+    try:
+        business.update_customer(
+            conn,
+            cid,
+            ne.text().strip(),
+            email=em.text().strip(),
+            phone=ph.text().strip(),
+            address=ad.toPlainText().strip(),
+            notes=no.toPlainText().strip(),
+            parent_customer_id=parent_id,
+        )
+    except ValueError as exc:
+        message_box_warning_ok(
+            parent,
+            "Customer",
+            escape_ampersand_for_qt(str(exc)),
+            ok_tip="Close; fix the validation issue and try again.",
+        )
+        return False
+    return True
 
 
 def run_new_vendor_dialog(parent: QWidget, conn: sqlite3.Connection) -> int | None:

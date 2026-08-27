@@ -12,6 +12,7 @@ Usage (with a virtual display already active, e.g. via xvfb-run):
     python scripts/capture_ui_screenshot.py --tab deposits --output artifacts/ui/make_deposits.png
     python scripts/capture_ui_screenshot.py --tab checks --output artifacts/ui/write_checks.png
     python scripts/capture_ui_screenshot.py --tab vendors --output artifacts/ui/vendor_center.png
+    python scripts/capture_ui_screenshot.py --tab customers --output artifacts/ui/customer_center.png
 
 Saves: artifacts/ui/main_window.png (default)
 Exit code 0 on success, non-zero on failure.
@@ -36,7 +37,7 @@ def main() -> int:
     parser.add_argument(
         "--tab",
         default="main",
-        help="Which surface to capture: main (default), home, invoices, bills (Enter Bills), pay-bills, payments, deposits, checks, or vendors.",
+        help="Which surface to capture: main (default), home, invoices, bills (Enter Bills), pay-bills, payments, deposits, checks, vendors, or customers.",
     )
     parser.add_argument(
         "--output",
@@ -60,6 +61,7 @@ def main() -> int:
     from desktop_app.make_deposits_screen import MakeDepositsScreen  # noqa: E402
     from desktop_app.pay_bills_screen import PayBillsScreen  # noqa: E402
     from desktop_app.receive_checks_screen import ReceiveChecksScreen  # noqa: E402
+    from desktop_app.customer_center_screen import CustomerCenterScreen  # noqa: E402
     from desktop_app.vendor_center_screen import VendorCenterScreen  # noqa: E402
 
     app = QApplication(sys.argv)
@@ -81,6 +83,8 @@ def main() -> int:
         output_path = Path("artifacts") / "ui" / "write_checks.png"
     elif tab in ("vendors", "vendor-center", "vendor_center"):
         output_path = Path("artifacts") / "ui" / "vendor_center.png"
+    elif tab in ("customers", "customer-center", "customer_center"):
+        output_path = Path("artifacts") / "ui" / "customer_center.png"
     elif tab in ("home", "dashboard"):
         output_path = Path("artifacts") / "ui" / "home.png"
     else:
@@ -94,6 +98,9 @@ def main() -> int:
         "vendors",
         "vendor-center",
         "vendor_center",
+        "customers",
+        "customer-center",
+        "customer_center",
     ):
         shot_dir = Path(tempfile.mkdtemp(prefix="probooks-ui-shot-"))
         extra_kw["db_path"] = str(shot_dir / "shot.db")
@@ -262,6 +269,74 @@ def main() -> int:
                 window._tabs.setCurrentIndex(idx)
         if isinstance(vendors, VendorCenterScreen):
             grab_widget = vendors
+            grab_widget.resize(1400, 860)
+            grab_widget.setMinimumSize(1400, 860)
+            grab_widget.show()
+    elif tab in ("customers", "customer-center", "customer_center"):
+        from probooksai import business
+
+        customers = getattr(window, "_customers_tab", None)
+        conn = getattr(getattr(window, "_bank_db", None), "_conn", None)
+        if conn is not None:
+            c1 = business.add_customer(
+                conn,
+                "Harbor Logistics",
+                address="200 Harbor Way\nAustin, TX 78701",
+                notes="Weekly dispatch — terms Net 30.",
+            )
+            business.create_invoice(
+                conn,
+                c1,
+                "INV-2101",
+                "2026-08-01",
+                due_date="2026-08-31",
+                lines=[{"description": "Haul", "qty": 1, "rate": 450.00}],
+            )
+            job = business.add_customer(conn, "Site A", parent_customer_id=c1)
+            business.create_invoice(
+                conn,
+                job,
+                "JOB-12",
+                "2026-08-05",
+                due_date="2026-09-04",
+                lines=[{"description": "Site work", "qty": 1, "rate": 200.00}],
+            )
+            c2 = business.add_customer(conn, "Westside Hauling")
+            iid = business.create_invoice(
+                conn,
+                c2,
+                "WH-88",
+                "2026-07-15",
+                due_date="2026-08-14",
+                lines=[{"description": "Haul", "qty": 1, "rate": 1280.50}],
+            )
+            business.record_ar_payment(
+                conn,
+                c2,
+                "2026-08-10",
+                500.00,
+                [(iid, 500.00)],
+                method="Check",
+                reference="1008",
+            )
+            c3 = business.add_customer(conn, "Metro Freight")
+            business.create_invoice(
+                conn,
+                c3,
+                "MF-40",
+                "2026-06-20",
+                due_date="2026-07-20",
+                lines=[{"description": "Haul", "qty": 1, "rate": 96.40}],
+            )
+            if isinstance(customers, CustomerCenterScreen):
+                customers._focused_customer_id = c1
+                customers._refresh()
+        if customers is not None and hasattr(window, "_tabs"):
+            idx = window._tabs.indexOf(customers)
+            if idx >= 0:
+                window._tabs.setCurrentIndex(idx)
+        if isinstance(customers, CustomerCenterScreen):
+            grab_widget = customers
             grab_widget.resize(1400, 860)
             grab_widget.setMinimumSize(1400, 860)
             grab_widget.show()

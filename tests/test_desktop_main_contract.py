@@ -4896,7 +4896,7 @@ def test_extra_tabs_business_csv_export_tooltips_append_excel_bom_hint() -> None
     """Business CSV exports and the filtered export scope dialog share one UTF-8 BOM suffix string."""
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
     assert '_CSV_EXCEL_ENCODING_TIP = " UTF-8 with BOM for Excel."' in et
-    assert et.count("_CSV_EXCEL_ENCODING_TIP") == 8
+    assert et.count("_CSV_EXCEL_ENCODING_TIP") == 7
 
 
 def test_extra_tabs_business_main_grids_mention_csv_utf8_bom_for_excel() -> None:
@@ -4936,20 +4936,18 @@ def test_rules_tab_toolbar_buttons_have_tooltips() -> None:
 
 
 def test_ar_tab_toolbar_buttons_have_tooltips() -> None:
-    et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
-    start = et.index("class ARTab")
-    end = et.index("\n\nclass APTab", start)
-    chunk = et[start:end]
+    """Customer Center (ARTab) chrome lives in customer_center_screen.py."""
+    cc = (_DESKTOP_APP_DIR / "customer_center_screen.py").read_text(encoding="utf-8")
     for needle in (
-        "ar_new_cust.setToolTip",
-        "ar_edit_cust.setToolTip",
-        "ar_export_cust.setToolTip",
-        "detail_box.setToolTip",
-        "split.setToolTip",
-        "self._customer_tbl.setToolTip",
-        "self._d_terms.setToolTip",
+        'self._btn_new_customer.setToolTip("Create a new customer or a job under a customer.")',
+        "self._btn_new_txn.setToolTip(",
+        "self._btn_excel.setToolTip(",
+        'split.setToolTip("Drag to resize the customer list versus Customer Information.")',
+        "self._customer_tbl.setToolTip(",
+        "CSV exports (toolbar) use UTF-8 BOM for Excel",
+        'box.setToolTip("Contact fields from the customer master; balances from open invoices and payments.")',
     ):
-        assert needle in chunk, f"AR tab UI should set tooltip on {needle!r}"
+        assert needle in cc, f"Customer Center UI should set tooltip on {needle!r}"
 
 
 def test_ap_tab_toolbar_buttons_have_tooltips() -> None:
@@ -5025,9 +5023,9 @@ def test_extra_tabs_business_qdialog_windows_have_hover_tooltips() -> None:
     """Modal tooltips: Business hub dialogs in ``extra_tabs``; AR invoice/payment dialogs in ``ar_customer_actions``."""
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
     ar = _AR_CUSTOMER_ACTIONS.read_text(encoding="utf-8")
+    nc = (_DESKTOP_APP_DIR / "new_customer_dialog.py").read_text(encoding="utf-8")
     for needle in (
         "higher priority rules are considered first",
-        "Create a new customer record.",
         "Create a vendor record used for AP bills",
         "Review company payroll tax codes",
         "Map wage expense, cash/bank, and withholdings liability",
@@ -5035,6 +5033,7 @@ def test_extra_tabs_business_qdialog_windows_have_hover_tooltips() -> None:
         "Choose invoice dates from/to",
     ):
         assert needle in et, f"extra_tabs.py should document modal window tooltips: {needle!r}"
+    assert "Create a customer or job record used for AR invoices" in nc
     for needle in (
         "Edit invoice header, customer, line items",
         "Enter payment details and allocate amounts to open invoices",
@@ -5212,7 +5211,7 @@ def test_main_window_banner_tabs_status_bar_and_worker_counts() -> None:
     chunk = text[start:end]
     assert chunk.count("self._header.") == 2
     assert chunk.count("self._status_bar.showMessage(") == 15
-    assert chunk.count("self._tabs.") == 71
+    assert chunk.count("self._tabs.") == 79
     assert chunk.count("self._worker") == 17
 
 
@@ -5442,8 +5441,12 @@ def test_extra_tabs_exposes_business_shortcuts_dialog_for_help_menu() -> None:
     assert "when the bank link is complete" in bus_help
     assert "Ctrl+Shift+I" in bus_help and "Invoice…" in bus_help
     assert (
-        et.count("lambda: show_business_keyboard_shortcuts_dialog(self)") == 3
-    ), "Rules, AR, Payroll grids should open Business shortcuts from context menu"
+        et.count("lambda: show_business_keyboard_shortcuts_dialog(self)") == 2
+    ), "Rules and Payroll grids should open Business shortcuts from context menu"
+    cc = (_DESKTOP_APP_DIR / "customer_center_screen.py").read_text(encoding="utf-8")
+    assert (
+        cc.count("lambda: show_business_keyboard_shortcuts_dialog(self)") == 1
+    ), "Customer Center grid should open Business shortcuts from context menu"
     assert (
         "show_business_keyboard_shortcuts_dialog(menu_parent)"
         in et[et.index("def _attach_table_copy_row_menu") : et.index("def _wire_find_focuses_line_edit")]
@@ -6070,17 +6073,18 @@ def test_grids_context_menus_use_qaction_hover_tooltips() -> None:
     assert coa[cs:ce].count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
 
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
-    assert et.count("+ VIEW_BANK_REGISTER_KEYS_TOOLTIP") >= 5
+    assert et.count("+ VIEW_BANK_REGISTER_KEYS_TOOLTIP") >= 4
     acs = et.index("def _attach_table_copy_row_menu")
     ace = et.index("def _wire_find_focuses_line_edit", acs)
     assert "act_copy.setToolTip" in et[acs:ace]
     rs2 = et.index("def _on_rules_context_menu")
     assert "act_edit.setToolTip" in et[rs2 : rs2 + 900]
-    cust_s = et.index("def _on_customer_context_menu")
-    cust_e = et.index("def _apply_detail_from_focus", cust_s)
-    cust_chunk = et[cust_s:cust_e]
+    cc = (_DESKTOP_APP_DIR / "customer_center_screen.py").read_text(encoding="utf-8")
+    cust_s = cc.index("def _on_customer_context_menu")
+    cust_e = cc.index("def _on_txn_context_menu", cust_s)
+    cust_chunk = cc[cust_s:cust_e]
     assert "act_keys.setToolTip" in cust_chunk
-    assert "act_copy.setToolTip" in cust_chunk
+    assert "+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX" in cust_chunk
     assert cust_chunk.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 2
 
 
@@ -6107,8 +6111,8 @@ def test_extra_tabs_business_main_grids_have_hover_tooltips() -> None:
 
 def test_extra_tabs_business_copy_row_tooltips_mention_backup_safety() -> None:
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
-    # Customer master grid (plus rules, payroll run); vendor master grid is Vendor Center.
-    assert et.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 8
+    # Rules / payroll / copy-row helper; customer and vendor master grids live on Center screens.
+    assert et.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 6
 
 
 def test_register_tab_persists_header_state_via_qsettings() -> None:
