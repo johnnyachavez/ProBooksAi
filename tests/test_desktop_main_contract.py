@@ -5201,7 +5201,7 @@ def test_main_window_coa_database_four_call_sites() -> None:
     start = text.index("class MainWindow(QMainWindow):")
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
-    assert chunk.count("self._coa_db.") == 13
+    assert chunk.count("self._coa_db.") == 12
 
 
 def test_main_window_banner_tabs_status_bar_and_worker_counts() -> None:

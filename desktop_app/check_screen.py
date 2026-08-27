@@ -440,12 +440,14 @@ class CheckScreen(QWidget):
     def _check_caption_field(self, caption: str, editor: QWidget, *, cap_w: int = 0) -> QWidget:
         wrap = QWidget()
         wrap.setObjectName("writeChecksCaptionField")
-        wrap.setStyleSheet(
-            "QWidget#writeChecksCaptionField { background-color: transparent; border: none; }"
-        )
+        wrap.setAutoFillBackground(True)
         pal = wrap.palette()
         pal.setColor(QPalette.ColorRole.Window, QColor(_CHK_PAPER))
+        pal.setColor(QPalette.ColorRole.WindowText, QColor(_CHK_CAPTION))
         wrap.setPalette(pal)
+        wrap.setStyleSheet(
+            f"QWidget#writeChecksCaptionField {{ background-color: {_CHK_PAPER}; border: none; }}"
+        )
         lay = QHBoxLayout(wrap)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(6)
@@ -604,7 +606,7 @@ class CheckScreen(QWidget):
         _uc = Qt.ConnectionType.UniqueConnection
         self._btn_find.clicked.connect(self._on_prev, _uc)
         self._btn_new.clicked.connect(self._on_new, _uc)
-        self._btn_save.clicked.connect(lambda: self._persist_check(reset=False), _uc)
+        self._btn_save.clicked.connect(self._on_ribbon_save, _uc)
         self._btn_delete.clicked.connect(self._on_delete, _uc)
         self._btn_copy.clicked.connect(self._on_create_copy, _uc)
         self._btn_print.clicked.connect(self._on_print, _uc)
@@ -879,8 +881,8 @@ class CheckScreen(QWidget):
         play.addWidget(actions)
 
         _uc = Qt.ConnectionType.UniqueConnection
-        self._btn_save_close.clicked.connect(lambda: self._persist_check(reset=False), _uc)
-        self._btn_save_new.clicked.connect(lambda: self._persist_check(reset=True), _uc)
+        self._btn_save_close.clicked.connect(self._on_save_close, _uc)
+        self._btn_save_new.clicked.connect(self._on_save_new, _uc)
         self._btn_clear.clicked.connect(self._on_clear, _uc)
 
     def _update_save_enabled(self) -> None:
@@ -1007,6 +1009,15 @@ class CheckScreen(QWidget):
     def _on_new(self) -> None:
         self._browse_index = None
         self._load_current()
+
+    def _on_ribbon_save(self) -> None:
+        self._persist_check(reset=False)
+
+    def _on_save_close(self) -> None:
+        self._persist_check(reset=False)
+
+    def _on_save_new(self) -> None:
+        self._persist_check(reset=True)
 
     def _on_clear(self) -> None:
         self._browse_index = None

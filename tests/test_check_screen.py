@@ -206,18 +206,31 @@ def test_write_checks_meta_captions_stay_light_under_app_dark_theme(
         w.show()
         qapp.processEvents()
         navy = BG_PRIMARY.lower()
-        for editor in (w._acct_combo, w._fld_payee, w._fld_memo):
-            wrap = editor.parentWidget()
-            assert wrap is not None
-            fill = wrap.palette().color(QPalette.ColorRole.Window).name().lower()
-            assert fill != navy
-            assert fill in ("#ffffff", "#f4f7fa", "#e3f2e9")
-            cap = wrap.findChild(QLabel)
+        wrap = w._acct_combo.parentWidget()
+        assert wrap is not None
+        assert wrap.objectName() == "writeChecksMetaField"
+        fill = wrap.palette().color(QPalette.ColorRole.Window).name().lower()
+        assert fill != navy
+        assert fill in ("#ffffff", "#f4f7fa")
+        cap = wrap.findChild(QLabel)
+        assert cap is not None
+        cap_ss = cap.styleSheet().lower()
+        assert "transparent" in cap_ss
+        assert navy not in cap_ss
+        assert "#1a1a2e" not in cap_ss
+        for editor in (w._fld_payee, w._fld_memo, w._fld_number, w._date_edit):
+            parent = editor.parentWidget()
+            assert parent is not None
+            assert parent.objectName() == "writeChecksCaptionField"
+            cap = parent.findChild(QLabel)
             assert cap is not None
             cap_ss = cap.styleSheet().lower()
             assert "transparent" in cap_ss
             assert navy not in cap_ss
             assert "#1a1a2e" not in cap_ss
+            parent_ss = parent.styleSheet().lower()
+            assert navy not in parent_ss
+            assert "#1a1a2e" not in parent_ss
         paper = w.findChild(QFrame, "writeChecksPaper")
         assert paper is not None
         assert navy not in paper.styleSheet().lower()
