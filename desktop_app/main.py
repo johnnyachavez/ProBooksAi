@@ -1336,6 +1336,7 @@ class MainWindow(QMainWindow):
         self._receive_payments_screen.arPaymentPosted.connect(
             self._on_ar_payment_posted_for_deposits
         )
+        self._pay_bills_screen.apPaymentPosted.connect(self._on_pay_bills_posted)
 
     def _on_main_tab_changing(self, new_index: int) -> None:
         """Guard switching away from a screen that has unsaved invoice changes."""
@@ -1410,7 +1411,7 @@ class MainWindow(QMainWindow):
                 + _main_tab_bar_db_hint
             ),
             (
-                "Pay Bills: payables grid (visual foundation; full A/P posting pending)."
+                "Pay Bills: unpaid vendor bills, Pay From account, Pay Selected Bills (BILLPMT register)."
                 + _main_tab_bar_db_hint
             ),
             (
@@ -2681,9 +2682,24 @@ class MainWindow(QMainWindow):
         """Enter Bills ribbon **Pay Bill** → Pay Bills tab."""
         if not hasattr(self, "_tabs") or not hasattr(self, "_pay_bills_screen"):
             return
+        self._pay_bills_screen.reload()
         idx = self._tabs.indexOf(self._pay_bills_screen)
         if idx >= 0:
             self._tabs.setCurrentIndex(idx)
+
+    def _on_pay_bills_posted(self) -> None:
+        """Pay Bills posted: refresh Bank Register and Write Checks balances."""
+        if hasattr(self, "_register_tab"):
+            try:
+                self._register_tab._reload_current()
+            except Exception:
+                pass
+        chk = getattr(self, "_check_screen", None)
+        if chk is not None:
+            try:
+                chk.reload()
+            except Exception:
+                pass
 
     def _on_ar_payment_posted_for_deposits(self, _invoice_ids=None) -> None:
         """Receive Payments posted: refresh Make Deposits bank list / undeposited picker."""
