@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 from PySide6.QtCore import Qt, QSettings, QDate, QEvent
 from PySide6.QtTest import QTest
-from PySide6.QtGui import QTextDocument
+from PySide6.QtGui import QPalette, QTextDocument
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -1258,6 +1258,46 @@ def test_create_invoices_qb_header_layout(qapp: QApplication) -> None:
     assert "#1e4a78" not in title_ss
     assert "transparent" in title_ss or "#ffffff" in title_ss
     assert "#3d4a54" in title_ss
+    for editor in (w._po, w._job, w._inv_number, w._date, w._terms, w._due_date):
+        wrap = editor.parentWidget()
+        assert wrap is not None
+        assert wrap.objectName() == "invoiceCompactMetaField"
+        fill = wrap.palette().color(QPalette.ColorRole.Window).name().lower()
+        assert fill in ("#ffffff", "#f4f7fa")
+        assert "#1a1a2e" not in wrap.styleSheet().lower()
+        assert "#ffffff" in wrap.styleSheet().lower()
+
+
+def test_create_invoices_meta_captions_stay_light_under_app_dark_theme(
+    qapp: QApplication,
+) -> None:
+    """App dark theme must not paint navy redaction bars behind PO / DATE / TERMS captions."""
+    from desktop_app.theme import BG_PRIMARY, apply_dark_theme
+
+    old_ss = qapp.styleSheet()
+    old_pal = QPalette(qapp.palette())
+    try:
+        apply_dark_theme(qapp)
+        w = InvoiceScreen()
+        w.show()
+        qapp.processEvents()
+        navy = BG_PRIMARY.lower()
+        for editor in (w._po, w._job, w._inv_number, w._date, w._terms, w._due_date):
+            wrap = editor.parentWidget()
+            assert wrap is not None
+            assert wrap.objectName() == "invoiceCompactMetaField"
+            fill = wrap.palette().color(QPalette.ColorRole.Window).name().lower()
+            assert fill != navy
+            assert fill in ("#ffffff", "#f4f7fa")
+            cap = wrap.findChild(QLabel)
+            assert cap is not None
+            cap_ss = cap.styleSheet().lower()
+            assert "transparent" in cap_ss
+            assert "#4a5560" in cap_ss or "#1a1a1a" in cap_ss
+        w.close()
+    finally:
+        qapp.setStyleSheet(old_ss)
+        qapp.setPalette(old_pal)
 
 
 def test_create_invoices_empty_line_cells_are_blank(qapp: QApplication) -> None:

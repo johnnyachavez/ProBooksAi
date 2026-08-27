@@ -8,6 +8,7 @@ from unittest.mock import patch
 import pytest
 from PySide6.QtTest import QTest
 from PySide6.QtCore import Qt, QDate, QSettings
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -111,6 +112,11 @@ def test_enter_bills_screen_header_and_line_grid(qapp: QApplication) -> None:
     assert "BILL DUE" in labels
     assert "TERMS" in labels
     assert "MEMO" in labels
+    vendor_wrap = w._vendor.parentWidget()
+    assert vendor_wrap is not None
+    assert vendor_wrap.objectName() == "enterBillsCaptionField"
+    assert "transparent" in vendor_wrap.styleSheet().lower()
+    assert "#1a1a2e" not in vendor_wrap.styleSheet().lower()
 
     radios = [r.text() for r in w.findChildren(QRadioButton)]
     assert "Bill" in radios
@@ -171,6 +177,8 @@ def test_enter_bills_empty_line_cells_are_blank(qapp: QApplication) -> None:
     for spin in (qty, cost, item_amt):
         raw = (spin.lineEdit().text() if spin.lineEdit() is not None else spin.text()) or ""
         assert raw.strip() == ""
+    fill = w.palette().color(QPalette.ColorRole.Window).name().lower()
+    assert fill != "#1a1a2e"
     w.close()
 
 

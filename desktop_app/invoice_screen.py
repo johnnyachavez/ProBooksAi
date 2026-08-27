@@ -45,7 +45,7 @@ from functools import partial
 from typing import Optional
 
 from PySide6.QtCore import QDate, QEvent, QObject, QStringListModel, QSettings, Qt, QTimer, Signal
-from PySide6.QtGui import QFont, QFontMetrics, QHideEvent, QShowEvent, QTextDocument
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QHideEvent, QPalette, QShowEvent, QTextDocument
 from PySide6.QtPrintSupport import QPrinter
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -229,6 +229,24 @@ _INVOICE_LINE_COL_MIN_OTHER_PX = 24
 
 # QSettings value: comma-separated column widths (scoped by company file path).
 _INVOICE_LINE_TABLE_WIDTHS_KEY_PREFIX = "invoice_workflow/line_table_column_widths_v1"
+
+
+def _light_form_palette() -> QPalette:
+    """Light QB-style palette so unnamed QWidget wraps are not navy slabs from the app theme."""
+    pal = QPalette()
+    pal.setColor(QPalette.ColorRole.Window, QColor(_INV_BG))
+    pal.setColor(QPalette.ColorRole.WindowText, QColor(_INV_TEXT))
+    pal.setColor(QPalette.ColorRole.Base, QColor(WORKFLOW_INPUT_BG))
+    pal.setColor(QPalette.ColorRole.AlternateBase, QColor(_INV_STRIPE))
+    pal.setColor(QPalette.ColorRole.Text, QColor(_INV_TEXT))
+    pal.setColor(QPalette.ColorRole.Button, QColor(WORKFLOW_CONTROL_FACE))
+    pal.setColor(QPalette.ColorRole.ButtonText, QColor(_INV_TEXT))
+    pal.setColor(QPalette.ColorRole.Highlight, QColor(_INV_ACCENT))
+    pal.setColor(QPalette.ColorRole.HighlightedText, QColor("#FFFFFF"))
+    pal.setColor(QPalette.ColorRole.PlaceholderText, QColor(_INV_CAPTION))
+    pal.setColor(QPalette.ColorRole.ToolTipBase, QColor(_INV_PANEL))
+    pal.setColor(QPalette.ColorRole.ToolTipText, QColor(_INV_TEXT))
+    return pal
 
 
 def _invoice_line_table_qsettings() -> QSettings:
@@ -664,7 +682,7 @@ class InvoiceScreen(QWidget):
         cap = QLabel(text)
         cap.setStyleSheet(
             f"color: {_INV_CAPTION}; font-size: 10px; font-weight: 700; "
-            "letter-spacing: 0.04em; background: transparent;"
+            "letter-spacing: 0.04em; background: transparent; border: none;"
         )
         return cap
 
@@ -676,14 +694,28 @@ class InvoiceScreen(QWidget):
         b.setDefault(False)
 
     def _compact_meta_field(self, caption: str, editor: QWidget) -> QWidget:
-        """Caption + 22px editor — tight DATE / INVOICE # / TERMS / DUE DATE stack."""
+        """Caption + 22px editor — tight DATE / INVOICE # / TERMS / DUE DATE stack.
+
+        Wrapper is explicit white: the app dark theme paints unnamed QWidget navy, which
+        reads as a redaction bar behind PO/CONTRACT#, DATE, and the other stacked labels.
+        """
         w = QWidget()
+        w.setObjectName("invoiceCompactMetaField")
+        w.setAutoFillBackground(True)
+        pal = w.palette()
+        pal.setColor(QPalette.ColorRole.Window, QColor(_INV_BG))
+        pal.setColor(QPalette.ColorRole.WindowText, QColor(_INV_CAPTION))
+        w.setPalette(pal)
+        w.setStyleSheet(
+            f"QWidget#invoiceCompactMetaField {{ background-color: {_INV_BG}; border: none; }}"
+        )
         lay = QVBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(1)
         cap = QLabel(caption)
         cap.setStyleSheet(
-            f"color: {_INV_CAPTION}; font-size: 9px; font-weight: 700; background: transparent;"
+            f"color: {_INV_CAPTION}; font-size: 9px; font-weight: 700; "
+            "background: transparent; border: none;"
         )
         lay.addWidget(cap)
         editor.setFixedHeight(22)
@@ -973,6 +1005,10 @@ class InvoiceScreen(QWidget):
         title_row.addWidget(self._invoice_status_badge, 0, Qt.AlignmentFlag.AlignVCenter)
         title_row.addStretch(1)
         title_wrap = QWidget()
+        title_wrap.setObjectName("invoiceLightWrap")
+        title_wrap.setStyleSheet(
+            f"QWidget#invoiceLightWrap {{ background: transparent; border: none; }}"
+        )
         title_wrap.setLayout(title_row)
         title_wrap.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         hb.addWidget(title_wrap, 0, 0, 2, 1, Qt.AlignmentFlag.AlignTop)
@@ -987,6 +1023,10 @@ class InvoiceScreen(QWidget):
         po_job.addWidget(self._compact_meta_field("NAME/JOB#", self._job), 1)
         bill_col.addLayout(po_job)
         bill_wrap = QWidget()
+        bill_wrap.setObjectName("invoiceLightWrap")
+        bill_wrap.setStyleSheet(
+            f"QWidget#invoiceLightWrap {{ background: transparent; border: none; }}"
+        )
         bill_wrap.setLayout(bill_col)
         bill_wrap.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         hb.addWidget(bill_wrap, 0, 1, 2, 1)
@@ -1002,6 +1042,10 @@ class InvoiceScreen(QWidget):
         meta.addWidget(self._compact_meta_field("TERMS", self._terms), 1, 0)
         meta.addWidget(self._compact_meta_field("DUE DATE", self._due_date), 1, 1)
         meta_w = QWidget()
+        meta_w.setObjectName("invoiceLightWrap")
+        meta_w.setStyleSheet(
+            f"QWidget#invoiceLightWrap {{ background: transparent; border: none; }}"
+        )
         meta_w.setLayout(meta)
         meta_w.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         hb.addWidget(meta_w, 0, 3, 2, 1, Qt.AlignmentFlag.AlignTop)
@@ -1055,7 +1099,11 @@ class InvoiceScreen(QWidget):
         tabs.setCurrentIndex(1)
 
     def _build_ui(self) -> None:
-        self.setStyleSheet(f"InvoiceScreen {{ background: {_INV_CANVAS}; }}")
+        self.setPalette(_light_form_palette())
+        self.setAutoFillBackground(True)
+        self.setStyleSheet(
+            f"InvoiceScreen {{ background-color: {_INV_CANVAS}; color: {_INV_TEXT}; }}"
+        )
         outer = QVBoxLayout(self)
         outer.setContentsMargins(4, 2, 4, 4)
         outer.setSpacing(0)

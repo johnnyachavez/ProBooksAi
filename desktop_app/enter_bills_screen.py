@@ -19,7 +19,7 @@ import sqlite3
 from typing import Optional
 
 from PySide6.QtCore import QDate, Qt, Signal
-from PySide6.QtGui import QShowEvent, QTextDocument
+from PySide6.QtGui import QColor, QPalette, QShowEvent, QTextDocument
 from PySide6.QtPrintSupport import QPrinter
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -186,6 +186,24 @@ def _qty_spin(*, row: int = 0) -> QDoubleSpinBox:
     return _blank_zero_spin(s)
 
 
+def _light_form_palette() -> QPalette:
+    """Light QB-style palette so unnamed QWidget wraps are not navy slabs from the app theme."""
+    pal = QPalette()
+    pal.setColor(QPalette.ColorRole.Window, QColor(_BILL_PAPER))
+    pal.setColor(QPalette.ColorRole.WindowText, QColor(_BILL_TEXT))
+    pal.setColor(QPalette.ColorRole.Base, QColor(WORKFLOW_INPUT_BG))
+    pal.setColor(QPalette.ColorRole.AlternateBase, QColor(_BILL_STRIPE))
+    pal.setColor(QPalette.ColorRole.Text, QColor(_BILL_TEXT))
+    pal.setColor(QPalette.ColorRole.Button, QColor(WORKFLOW_CONTROL_FACE))
+    pal.setColor(QPalette.ColorRole.ButtonText, QColor(_BILL_TEXT))
+    pal.setColor(QPalette.ColorRole.Highlight, QColor(_BILL_ACCENT))
+    pal.setColor(QPalette.ColorRole.HighlightedText, QColor("#FFFFFF"))
+    pal.setColor(QPalette.ColorRole.PlaceholderText, QColor(_BILL_CAPTION))
+    pal.setColor(QPalette.ColorRole.ToolTipBase, QColor(_BILL_PANEL))
+    pal.setColor(QPalette.ColorRole.ToolTipText, QColor(_BILL_TEXT))
+    return pal
+
+
 def _cell_line(*, row: int = 0) -> QLineEdit:
     le = QLineEdit()
     le.setStyleSheet(_zebra_cell_qss("QLineEdit", row))
@@ -303,14 +321,17 @@ class EnterBillsScreen(QWidget):
         cap = QLabel(text)
         cap.setStyleSheet(
             f"color: {_BILL_CAPTION}; font-size: {_TOP_STRIP_CAPTION_FONT_PX}px; "
-            "font-weight: bold; letter-spacing: 0.04em; background: transparent;"
+            "font-weight: bold; letter-spacing: 0.04em; background: transparent; border: none;"
         )
         return cap
 
     def _hfield(self, caption: str, editor: QWidget, *, cap_w: int = _SIDE_CAPTION_W) -> QWidget:
         """QB-style: caption to the left of the control (compact, not stacked)."""
         wrap = QWidget()
-        wrap.setStyleSheet("background: transparent;")
+        wrap.setObjectName("enterBillsCaptionField")
+        wrap.setStyleSheet(
+            f"QWidget#enterBillsCaptionField {{ background-color: transparent; border: none; }}"
+        )
         lay = QHBoxLayout(wrap)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(6)
@@ -371,7 +392,11 @@ class EnterBillsScreen(QWidget):
         )
 
     def _build_ui(self) -> None:
-        self.setStyleSheet(f"EnterBillsScreen {{ background: {_BILL_CANVAS}; }}")
+        self.setPalette(_light_form_palette())
+        self.setAutoFillBackground(True)
+        self.setStyleSheet(
+            f"EnterBillsScreen {{ background-color: {_BILL_CANVAS}; color: {_BILL_TEXT}; }}"
+        )
         outer = QVBoxLayout(self)
         outer.setContentsMargins(6, 4, 6, 4)
         outer.setSpacing(4)
