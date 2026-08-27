@@ -160,7 +160,8 @@ class InvoiceIntakePanel(QWidget):
         flow = QLabel(
             "Flow: stage a PDF, image, pasted text, or dispatch CSV → review → "
             "Send to Manual Invoice (Create Invoices) or Send to Enter Bills. "
-            "Dispatch CSV is the offline v1 path for the 1 CHAVAN DISPATCH sheet."
+            "Dispatch CSV is the offline v1 path for the 1 CHAVAN DISPATCH sheet "
+            "(live loads = current-year tab, not a live Google token)."
         )
         flow.setWordWrap(True)
         flow.setStyleSheet(f"color: {_INV_CAPTION}; font-size: 11px; background: transparent;")
@@ -183,14 +184,18 @@ class InvoiceIntakePanel(QWidget):
         self._btn_paste.clicked.connect(self._on_paste_text)
         self._btn_csv = QPushButton("Import dispatch CSV…")
         self._btn_csv.setToolTip(
-            "Load a CSV export of the dispatch loads table (DATE, INVOICE, DISPATCH, DRIVER, "
-            "INVOICE RATE, PAY RATE, PO / LOAD#, BOL#, QB Inv No.). Tax ID / SSN / EIN / bank "
-            "columns are ignored. Blank invoice rates stay in the queue as needs rate."
+            "Load a CSV export of the 1 CHAVAN DISPATCH live loads table "
+            "(the tab named for the current calendar year: DATE, INVOICE, DISPATCH, "
+            "DRIVER, INVOICE RATE, PAY RATE, PO / LOAD#, BOL # or TICKET #, QB Inv No.). "
+            "Tax ID / SSN / EIN / DIR / bank columns are ignored. "
+            "Blank invoice rates stay in the queue as needs rate. "
+            "Live Google pull is not used; export the year tab as CSV."
         )
         self._btn_csv.clicked.connect(self._on_import_dispatch_csv)
         self._btn_google = QPushButton("Load Google Sheet…")
         self._btn_google.setToolTip(
-            "Live Google pull is stubbed in v1 (no API token). Export 1 CHAVAN DISPATCH as CSV instead."
+            "Live Google pull is stubbed in v1 (no API token). "
+            "Export 1 CHAVAN DISPATCH current-year loads tab as CSV instead."
         )
         self._btn_google.clicked.connect(self._on_load_google_sheet)
         self._btn_remove = QPushButton("Remove selected")
@@ -750,7 +755,7 @@ class InvoiceIntakePanel(QWidget):
                 self,
                 "Invoice Intake",
                 str(exc),
-                ok_tip="Close; export the sheet as CSV, then use Import dispatch CSV.",
+                ok_tip="Close; export the current-year tab as CSV, then use Import dispatch CSV.",
             )
 
     def _on_selection_changed(self) -> None:

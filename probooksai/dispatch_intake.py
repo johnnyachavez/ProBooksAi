@@ -1,11 +1,16 @@
 """Dispatch sheet intake — CSV v1 for Invoice Intake → Create Invoices / Enter Bills.
 
-Parses the Chavan dispatch loads table (headers: DATE, INVOICE, DISPATCH, DRIVER,
-INVOICE RATE, PAY RATE, PO / LOAD#, BOL#, QB Inv No.) into staged rows, then groups
-invoice-ready loads and pay-ready loads for the desktop forms.
+Parses the live **1 CHAVAN DISPATCH** loads table (headers: DATE, INVOICE,
+DISPATCH, DRIVER, INVOICE RATE, PAY RATE, PO / LOAD#, BOL #, QB Inv No.) into
+staged rows, then groups invoice-ready loads and pay-ready loads for the
+desktop forms. Older year tabs may use TICKET # / INV PRICE / PAY PRICE.
 
-v1 is **offline CSV**. Live Google Sheet pull is stubbed (no API token in-repo).
-Tax IDs, SSNs, EINs, DIR numbers, and bank account numbers are never imported.
+v1 is **offline CSV** matching those columns (not a live Google token in the
+app). Live loads live on the workbook tab named for the **current calendar
+year** (``2026``, ``2027``, … — never only one hardcoded year); older year
+tabs are history. Live Google Sheet pull is stubbed (no API token in-repo).
+Tax IDs, SSNs, EINs, DIR numbers, Trucker IDs, CA#, and bank numbers are
+never imported.
 """
 
 from __future__ import annotations
@@ -18,10 +23,19 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional, Sequence, TextIO, Union
 
+from datetime import date, datetime
+
 from probooksai.bank_import import parse_amount, parse_date, strip_csv_cell_paste_noise
 
-# Display name of Johnny's live workbook (CSV export). Not an API credential.
+# Live workbook (read-only mapping source). Public spreadsheet id — not an API token.
+# v1 never calls Google; export the current-year loads tab as CSV.
 GOOGLE_DISPATCH_SHEET_TITLE = "1 CHAVAN DISPATCH"
+GOOGLE_DISPATCH_SHEET_ID = "112pHWAkiTIk5N31mAUzUuydsSdUh9fVoBSADnZHzlXQ"
+GOOGLE_DISPATCH_SHEET_URL = (
+    "https://docs.google.com/spreadsheets/d/"
+    f"{GOOGLE_DISPATCH_SHEET_ID}/edit?usp=sharing"
+)
+_YEAR_TAB_NAME = re.compile(r"^(\d{4})$")
 
 # Env var a future live pull may read; never commit a value. v1 ignores any token.
 GOOGLE_DISPATCH_TOKEN_ENV = "PROBOOKS_GOOGLE_SHEETS_TOKEN"
@@ -43,6 +57,9 @@ LOAD_FIELD_ALIASES: dict[str, str] = {
     "po": "po_load",
     "load": "po_load",
     "bol": "bol",
+    "ticket": "bol",
+    "inv price": "invoice_rate",
+    "pay price": "pay_rate",
     "qb inv no": "qb_inv_no",
     "qb inv": "qb_inv_no",
     "qb invoice": "qb_inv_no",
@@ -60,12 +77,16 @@ LOOKUP_FIELD_ALIASES: dict[str, str] = {
     "trucker": "name",
     "vendor": "name",
     "driver": "name",
+    "company name": "name",
     "email": "email",
     "pay email": "email",
     "ap email": "email",
+    "a p": "email",
+    "a c payable": "email",
     "how to bill": "how_to_bill",
     "billing": "how_to_bill",
     "billing notes": "how_to_bill",
+    "jobs": "job_name",
 }
 
 # Sample job → customer billing hints (fictional). Not copied from live sheet PII.
@@ -83,7 +104,12 @@ SAMPLE_JOB_BILLING_RULES: tuple[dict[str, str], ...] = (
     {
         "job_code": "T1",
         "customer_name": "Sample Plant T1",
-        "how_to_bill": "Invoice each load.",
+        "how_to_bill": "Invoice off the ticket to the customer AP email.",
+    },
+    {
+        "job_code": "3250",
+        "customer_name": "Sample Materials Co",
+        "how_to_bill": "Invoice off the ticket to the customer AP email.",
     },
 )
 
@@ -97,7 +123,10 @@ _X_QTY_RATE = re.compile(
     r"^\s*\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)\s*[xX×]\s*"
     r"(\d+(?:\.\d+)?)\s*$"
 )
-_MISSING_RATE = re.compile(r"^(?:n/?a|none|null|-|—|–|\.)?$", re.IGNORECASE)
+# Blank, placeholder, or sheet tokens that are not a dollar amount (e.g. SCALE, X).
+_MISSING_RATE = re.compile(
+    r"^(?:n/?a|none|null|scale|x|-|—|–|\.)?$", re.IGNORECASE
+)
 
 # Header fragments that must never be stored from a dispatch CSV.
 _SENSITIVE_HEADER_NEEDLES = (
@@ -112,6 +141,7 @@ _SENSITIVE_HEADER_NEEDLES = (
     "dir no",
     "dir number",
     "dir #",
+    "trucker id",
     "bank account",
     "account number",
     "routing",
@@ -284,13 +314,14 @@ def is_sensitive_dispatch_header(raw: str) -> bool:
     if not n:
         return False
     compact = n.replace(" ", "")
-    if n in {"ssn", "ein", "fein", "itin", "tin", "dir"} or compact in {
+    if n in {"ssn", "ein", "fein", "itin", "tin", "dir", "ca"} or compact in {
         "ssn",
         "ein",
         "fein",
         "itin",
         "taxid",
         "dir",
+        "ca",
     }:
         return True
     padded = f" {n} "
@@ -333,7 +364,43 @@ def parse_pay_rate_cell(raw: str) -> tuple[Optional[float], bool]:
     return round(float(rate) * float(qty or 0.0), 2), False
 
 
+def expected_live_dispatch_year_tab(*, as_of: Optional[date] = None) -> str:
+    """Four-digit calendar-year name of the live loads tab (not hardcoded to one year)."""
+    return str((as_of or date.today()).year)
+
+
+def select_live_dispatch_year_tab(
+    tab_names: Sequence[str],
+    *,
+    as_of: Optional[date] = None,
+) -> Optional[str]:
+    """Pick the live loads tab: current calendar year, else the highest 4-digit year tab.
+
+    Johnny's dispatch workbook adds a new year tab each year. Live intake is the
+    tab named for the current calendar year. Older year tabs are history. Non-year
+    tabs (trucker pay, job lists, …) are ignored for this selection.
+    """
+    years: dict[int, str] = {}
+    for raw in tab_names:
+        label = (raw or "").strip()
+        m = _YEAR_TAB_NAME.fullmatch(label)
+        if m:
+            years[int(m.group(1))] = label
+    if not years:
+        return None
+    current = int(expected_live_dispatch_year_tab(as_of=as_of))
+    if current in years:
+        return years[current]
+    return years[max(years)]
+
+
 def parse_dispatch_date(raw: str) -> Optional[str]:
+    """Parse a loads-table DATE cell to ISO ``YYYY-MM-DD``.
+
+    The live 1 CHAVAN DISPATCH sheet uses dotted US dates (``1.5.2026``,
+    ``01.19.2026``) in addition to slash/ISO forms from a CSV export.
+    Day-only values like ``1.13`` (no year) are left unparsed.
+    """
     s = strip_csv_cell_paste_noise(raw)
     if not s:
         return None
@@ -342,7 +409,16 @@ def parse_dispatch_date(raw: str) -> Optional[str]:
         return iso
     if " " in s or "T" in s:
         head = re.split(r"[ T]", s, maxsplit=1)[0]
-        return parse_date(head)
+        iso = parse_date(head)
+        if iso:
+            return iso
+        s = head
+    dotted = s.strip().rstrip(".")
+    for fmt in ("%m.%d.%Y", "%m.%d.%y"):
+        try:
+            return datetime.strptime(dotted, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
     return None
 
 
@@ -696,10 +772,15 @@ def fetch_google_dispatch_rows(
     not enable a live pull in this version.
     """
     _ = api_token or credentials or os.environ.get(GOOGLE_DISPATCH_TOKEN_ENV)
+    year_tab = expected_live_dispatch_year_tab()
     raise DispatchGoogleNotConfigured(
-        f"Live Google pull is not configured in v1. Export {GOOGLE_DISPATCH_SHEET_TITLE!r} "
-        "as CSV (File → Download) and use Import dispatch CSV on Invoice Intake. "
-        "Do not paste API tokens into the app."
+        f"Live Google pull is not configured in v1. Export the live loads tab "
+        f"of {GOOGLE_DISPATCH_SHEET_TITLE!r} as CSV (File → Download) and use "
+        "Import dispatch CSV on Invoice Intake. "
+        f"Live loads are the tab named for the current calendar year ({year_tab}); "
+        "if that tab is missing, use the highest 4-digit year tab. Older year "
+        "tabs are history, not the live intake source. "
+        "Column mapping follows that workbook; do not paste API tokens into the app."
     )
 
 

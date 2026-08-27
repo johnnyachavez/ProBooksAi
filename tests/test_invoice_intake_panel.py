@@ -97,6 +97,7 @@ def test_invoice_intake_shows_title_and_flow(qapp: QApplication) -> None:
     labels = [lb.text() for lb in w.findChildren(QLabel)]
     assert any("Invoice Intake" in x for x in labels)
     assert any("Send to Manual Invoice" in x for x in labels)
+    assert any("current-year tab" in x for x in labels)
 
 
 def test_invoice_intake_pdf_review_uses_extracted_text_for_fields(
@@ -233,6 +234,7 @@ def test_dispatch_google_stub_does_not_require_token(qapp: QApplication) -> None
     args = m.call_args[0]
     assert "1 CHAVAN DISPATCH" in args[2]
     assert "CSV" in args[2]
+    assert "current calendar year" in args[2]
 
 
 def test_dispatch_intake_screenshot_after_csv_load(qapp: QApplication, tmp_path) -> None:
