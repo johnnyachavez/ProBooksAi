@@ -352,6 +352,26 @@ def _home_icon_pixmap(kind: str, size: int = _ICON_PX) -> QPixmap:
         p.drawRect(QRectF(box.left() + 22, box.top() + 16, 10, 10))
         p.setBrush(QColor("#5B8DB8"))
         p.drawRect(QRectF(box.left() + 12, box.bottom() - 16, 22, 6))
+    elif kind == "my_company":
+        p.setPen(QPen(QColor("#2563A8"), 1.3))
+        p.setBrush(QColor("#E8F1FA"))
+        p.drawRoundedRect(box.adjusted(8, 10, -8, -4), 2, 2)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor("#2563A8"))
+        p.drawRect(QRectF(box.left() + 10, box.top() + 18, box.width() - 20, 6))
+        p.setBrush(QColor("#E8F1FA"))
+        p.setPen(QPen(QColor("#2563A8"), 1.1))
+        p.drawRect(QRectF(box.center().x() - 5, box.bottom() - 14, 10, 10))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor("#43A047"))
+        roof = QPolygonF(
+            [
+                QPointF(box.center().x(), box.top() + 4),
+                QPointF(box.left() + 6, box.top() + 16),
+                QPointF(box.right() - 6, box.top() + 16),
+            ]
+        )
+        p.drawPolygon(roof)
     else:  # items / codes
         p.setPen(QPen(QColor("#6A4C9A"), 1.4))
         p.setBrush(QColor("#EDE4F5"))
@@ -549,7 +569,7 @@ class DashboardTab(QWidget):
         self.setStyleSheet(f"QWidget#qbHomePage {{ background: {_HOME_CANVAS}; }}")
         self.setToolTip(
             "Home: company overview with Create Invoices, Receive Payments, Income Tracker, "
-            "Enter Bills, Pay Bills, Bill Tracker, Calendar, Write Checks, and Make Deposits. Same company .db as other tabs "
+            "Enter Bills, Pay Bills, Bill Tracker, Calendar, My Company, Write Checks, and Make Deposits. Same company .db as other tabs "
             "(File → Backup / Restore, probooks.backup)."
         )
         self._build_ui()
@@ -655,6 +675,12 @@ class DashboardTab(QWidget):
         c_row = QHBoxLayout()
         c_row.setSpacing(8)
         c_row.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self._btn_my_company = self._shortcut(
+            "my_company",
+            "My Company",
+            "my_company",
+            "Open My Company (contact, legal, and product information).",
+        )
         self._btn_coa = self._shortcut(
             "coa",
             "Chart of\nAccounts",
@@ -679,6 +705,7 @@ class DashboardTab(QWidget):
             "snapshot",
             "Open Company Snapshot (income, expenses, who owes money).",
         )
+        c_row.addWidget(self._btn_my_company)
         c_row.addWidget(self._btn_coa)
         c_row.addWidget(self._btn_codes)
         c_row.addWidget(self._btn_calendar)
