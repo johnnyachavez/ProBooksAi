@@ -20,6 +20,7 @@ Usage (with a virtual display already active, e.g. via xvfb-run):
     python scripts/capture_ui_screenshot.py --tab edit-item --output artifacts/ui/edit_item.png
     python scripts/capture_ui_screenshot.py --tab income-tracker --output artifacts/ui/income_tracker.png
     python scripts/capture_ui_screenshot.py --tab bill-tracker --output artifacts/ui/bill_tracker.png
+    python scripts/capture_ui_screenshot.py --tab calendar --output artifacts/ui/calendar.png
 
 Saves: artifacts/ui/main_window.png (default)
 Exit code 0 on success, non-zero on failure.
@@ -109,7 +110,7 @@ def main() -> int:
     parser.add_argument(
         "--tab",
         default="main",
-        help="Which surface to capture: main (default), home, invoices, bills (Enter Bills), pay-bills, payments, deposits, checks, vendors, customers, coa, register, use-register, items, edit-item, income-tracker, or bill-tracker.",
+        help="Which surface to capture: main (default), home, invoices, bills (Enter Bills), pay-bills, payments, deposits, checks, vendors, customers, coa, register, use-register, items, edit-item, income-tracker, bill-tracker, or calendar.",
     )
     parser.add_argument(
         "--output",
@@ -139,6 +140,7 @@ def main() -> int:
     from desktop_app.register_tab import RegisterTab  # noqa: E402
     from desktop_app.use_register_dialog import UseRegisterDialog  # noqa: E402
     from desktop_app.tracker_screens import BillTrackerScreen, IncomeTrackerScreen  # noqa: E402
+    from desktop_app.calendar_screen import CalendarScreen  # noqa: E402
     from desktop_app.vendor_center_screen import VendorCenterScreen  # noqa: E402
 
     app = QApplication(sys.argv)
@@ -178,6 +180,8 @@ def main() -> int:
         output_path = Path("artifacts") / "ui" / "income_tracker.png"
     elif tab in ("bill-tracker", "bill_tracker"):
         output_path = Path("artifacts") / "ui" / "bill_tracker.png"
+    elif tab in ("calendar",):
+        output_path = Path("artifacts") / "ui" / "calendar.png"
     else:
         output_path = Path("artifacts") / "ui" / "main_window.png"
 
@@ -210,6 +214,7 @@ def main() -> int:
         "income_tracker",
         "bill-tracker",
         "bill_tracker",
+        "calendar",
     ):
         shot_dir = Path(tempfile.mkdtemp(prefix="probooks-ui-shot-"))
         extra_kw["db_path"] = str(shot_dir / "shot.db")
@@ -670,6 +675,74 @@ def main() -> int:
         if grab_widget is not None:
             grab_widget.resize(1280, 860)
             grab_widget.setMinimumSize(1280, 860)
+            grab_widget.show()
+    elif tab in ("calendar",):
+        from datetime import date as _date
+
+        from probooksai import business
+        from probooksai import qb_calendar as cal
+
+        conn = getattr(getattr(window, "_bank_db", None), "_conn", None)
+        if conn is not None:
+            c1 = business.add_customer(conn, "Harbor Logistics")
+            business.create_invoice(
+                conn,
+                c1,
+                "INV-2101",
+                "2026-08-10",
+                due_date="2026-09-15",
+                lines=[{"description": "Haul", "qty": 1, "rate": 450.00}],
+            )
+            business.create_invoice(
+                conn,
+                c1,
+                "INV-0888",
+                "2026-07-01",
+                due_date="2026-08-16",
+                lines=[{"description": "Haul", "qty": 1, "rate": 180.00}],
+            )
+            business.create_invoice(
+                conn,
+                c1,
+                "INV-0400",
+                "2026-06-01",
+                due_date="2026-07-15",
+                lines=[{"description": "Haul", "qty": 1, "rate": 90.00}],
+            )
+            v1 = business.add_vendor(conn, "Office Supplies Co")
+            v2 = business.add_vendor(conn, "Warehouse Supply")
+            v3 = business.add_vendor(conn, "Fuel Vendor")
+            v4 = business.add_vendor(conn, "Shop Parts LLC")
+            business.create_bill(
+                conn, v1, "2026-08-10", 450.00, vendor_invoice_number="OS-1042", due_date="2026-08-30"
+            )
+            business.create_bill(
+                conn, v2, "2026-06-20", 210.00, vendor_invoice_number="WS-12", due_date="2026-07-20"
+            )
+            business.create_bill(
+                conn, v3, "2026-06-22", 88.50, vendor_invoice_number="FV-19", due_date="2026-07-21"
+            )
+            business.create_bill(
+                conn, v4, "2026-06-25", 125.00, vendor_invoice_number="SP-4", due_date="2026-07-22"
+            )
+            business.create_bill(
+                conn, v1, "2026-07-01", 64.00, vendor_invoice_number="OS-77", due_date="2026-07-31"
+            )
+            cal.add_todo(conn, title="Call broker", due_date="2026-08-28", notes="")
+        screen = getattr(window, "_calendar_screen", None)
+        if isinstance(screen, CalendarScreen):
+            screen._today = _date(2026, 8, 27)
+            screen._month = _date(2026, 8, 1)
+            screen._selected = _date(2026, 8, 26)
+            screen.reload()
+        if screen is not None and hasattr(window, "_tabs"):
+            idx = window._tabs.indexOf(screen)
+            if idx >= 0:
+                window._tabs.setCurrentIndex(idx)
+        grab_widget = screen
+        if grab_widget is not None:
+            grab_widget.resize(1400, 900)
+            grab_widget.setMinimumSize(1400, 900)
             grab_widget.show()
 
     success = False

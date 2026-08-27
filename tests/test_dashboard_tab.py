@@ -9,6 +9,7 @@ import pytest
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QApplication, QLabel, QToolButton
 
+from desktop_app.calendar_screen import CalendarScreen
 from desktop_app.check_screen import CheckScreen
 from desktop_app.coa_tab import COATab
 from desktop_app.dashboard_tab import DashboardTab
@@ -78,6 +79,7 @@ def test_home_layout_has_qb_boxes_and_daily_loop_captions(
         assert btns[name] == caption
     assert btns["homeShortcut_income_tracker"] == "Income Tracker"
     assert btns["homeShortcut_bill_tracker"] == "Bill Tracker"
+    assert btns["homeShortcut_calendar"] == "Calendar"
     codes = w.findChild(QToolButton, "homeShortcut_codes")
     assert codes is not None
     assert "&&" in codes.text()
@@ -152,6 +154,7 @@ def test_home_shortcuts_emit_navigation_keys(qapp: QApplication, db: BankDatabas
         "homeShortcut_codes": "codes",
         "homeShortcut_income_tracker": "income_tracker",
         "homeShortcut_bill_tracker": "bill_tracker",
+        "homeShortcut_calendar": "calendar",
     }
     for name, key in expected.items():
         btn = w.findChild(QToolButton, name)
@@ -184,6 +187,7 @@ def test_home_opens_existing_daily_loop_screens(qapp: QApplication, tmp_path: Pa
             ("homeShortcut_codes", w._invoice_codes_screen, InvoiceCodesScreen),
             ("homeShortcut_income_tracker", w._income_tracker_screen, IncomeTrackerScreen),
             ("homeShortcut_bill_tracker", w._bill_tracker_screen, BillTrackerScreen),
+            ("homeShortcut_calendar", w._calendar_screen, CalendarScreen),
         )
         for name, screen, spec in mapping:
             tabs.setCurrentIndex(0)
