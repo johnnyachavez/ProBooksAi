@@ -13,7 +13,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
-EXTENSION_SCHEMA_VERSION = 9
+EXTENSION_SCHEMA_VERSION = 10
 
 _DDL_VERSION = """
 CREATE TABLE IF NOT EXISTS extension_schema_version (
@@ -285,6 +285,14 @@ ALTER TABLE invoices ADD COLUMN ship_to TEXT NOT NULL DEFAULT '';
 ALTER TABLE invoices ADD COLUMN terms TEXT NOT NULL DEFAULT '';
 """
 
+# v10 — Item List (QB Pro): subitem parent, inactive, assemblies/subcontractor, notes.
+_MIGRATION_V10 = """
+ALTER TABLE invoice_item_codes ADD COLUMN parent_id INTEGER;
+ALTER TABLE invoice_item_codes ADD COLUMN is_inactive INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE invoice_item_codes ADD COLUMN used_in_assemblies INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE invoice_item_codes ADD COLUMN notes TEXT NOT NULL DEFAULT '';
+"""
+
 
 def _seed_payroll_tax_items(conn: sqlite3.Connection) -> None:
     """Default federal/state placeholder codes (amounts entered manually per run)."""
@@ -390,6 +398,13 @@ def apply_extensions(conn: sqlite3.Connection) -> None:
             if s:
                 conn.execute(s)
         current = 9
+
+    if current < 10:
+        for stmt in _MIGRATION_V10.strip().split(";"):
+            s = stmt.strip()
+            if s:
+                conn.execute(s)
+        current = 10
 
     conn.execute(
         "UPDATE extension_schema_version SET version = ? WHERE id = 1",

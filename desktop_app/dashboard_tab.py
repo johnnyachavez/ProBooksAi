@@ -608,7 +608,7 @@ class DashboardTab(QWidget):
             "codes",
             "Items &\nServices",
             "items",
-            "Open Codes (invoice items and services).",
+            "Open Item List (invoice items and services).",
         )
         c_row.addWidget(self._btn_coa)
         c_row.addWidget(self._btn_codes)

@@ -2025,7 +2025,7 @@ class InvoiceScreen(QWidget):
         self.refresh_invoice_item_codes()
 
     def refresh_invoice_item_codes(self) -> None:
-        """Reload code list from DB (after **Codes** tab Save or company file open)."""
+        """Reload code list from DB (after Item List save or company file open)."""
         codes: list[str] = []
         if self._ap_conn is not None:
             try:

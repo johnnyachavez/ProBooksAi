@@ -1414,7 +1414,8 @@ class MainWindow(QMainWindow):
                 + _main_tab_bar_db_hint
             ),
             (
-                "Codes: service items, discounts, and default rates / income accounts for invoice line Codes."
+                "Codes: Item List of services, discounts, other charges, and subtotals. "
+                "Double-click a row to Edit Item. Saved items fill Create Invoices line Codes."
                 + _main_tab_bar_db_hint
             ),
             (
@@ -1663,7 +1664,7 @@ class MainWindow(QMainWindow):
         #              10=Customers, 11=Vendors, 12=Reconcile, 13=More
         _view_tab_tip_extra = {
             1: " Invoice entry workflow.",
-            2: " Codes: service/discount items for invoice lines (default rates and COA labels).",
+            2: " Item List: service/discount/other charge items for invoice lines (double-click to Edit Item).",
             3: " Write Checks: record and print checks against a bank account.",
             4: " Enter Bills screen.",
             5: " Pay Bills screen.",

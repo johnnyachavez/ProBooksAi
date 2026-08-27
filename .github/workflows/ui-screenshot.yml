@@ -60,6 +60,10 @@ jobs:
             python scripts/capture_ui_screenshot.py --tab register
           xvfb-run --auto-servernum --server-args="-screen 0 1280x800x24" \
             python scripts/capture_ui_screenshot.py --tab use-register
+          xvfb-run --auto-servernum --server-args="-screen 0 1280x800x24" \
+            python scripts/capture_ui_screenshot.py --tab items
+          xvfb-run --auto-servernum --server-args="-screen 0 1280x800x24" \
+            python scripts/capture_ui_screenshot.py --tab edit-item
         env:
           QT_QPA_PLATFORM: xcb
           # Leave OPENAI_API_KEY unset; the screenshot only needs the UI shell

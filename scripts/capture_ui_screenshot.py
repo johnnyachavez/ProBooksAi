@@ -16,6 +16,8 @@ Usage (with a virtual display already active, e.g. via xvfb-run):
     python scripts/capture_ui_screenshot.py --tab coa --output artifacts/ui/chart_of_accounts.png
     python scripts/capture_ui_screenshot.py --tab register --output artifacts/ui/bank_register.png
     python scripts/capture_ui_screenshot.py --tab use-register --output artifacts/ui/use_register.png
+    python scripts/capture_ui_screenshot.py --tab items --output artifacts/ui/item_list.png
+    python scripts/capture_ui_screenshot.py --tab edit-item --output artifacts/ui/edit_item.png
 
 Saves: artifacts/ui/main_window.png (default)
 Exit code 0 on success, non-zero on failure.
@@ -35,12 +37,77 @@ def _save_pixmap(pixmap, output_path: Path) -> bool:
     return bool(pixmap.save(str(output_path), "PNG"))
 
 
+def _seed_generic_item_list(conn) -> None:
+    """Placeholder catalog for screenshots — not Johnny's live QuickBooks names."""
+    from probooksai import business
+
+    business.replace_invoice_item_codes(
+        conn,
+        [
+            {
+                "code": "Hourly Labor",
+                "description": "Standard hourly service",
+                "item_type": "Service",
+                "coa_account": "4000 – Sales Revenue",
+                "rate_value": 85.0,
+                "rate_kind": "amount",
+                "sort_order": 0,
+            },
+            {
+                "code": "Mileage",
+                "description": "Per-mile travel",
+                "item_type": "Service",
+                "coa_account": "4000 – Sales Revenue",
+                "rate_value": 0.7,
+                "rate_kind": "amount",
+                "sort_order": 1,
+            },
+            {
+                "code": "Fuel Surcharge",
+                "description": "Fuel surcharge on the invoice subtotal",
+                "item_type": "Other Charge",
+                "coa_account": "4000 – Sales Revenue",
+                "rate_value": 3.0,
+                "rate_kind": "percent",
+                "sort_order": 2,
+            },
+            {
+                "code": "Early Pay Discount",
+                "description": "Discount for prompt payment",
+                "item_type": "Discount",
+                "coa_account": "4000 – Sales Revenue",
+                "rate_value": -10.0,
+                "rate_kind": "percent",
+                "sort_order": 3,
+            },
+            {
+                "code": "Line Subtotal",
+                "description": "Subtotal of items above this line",
+                "item_type": "Subtotal",
+                "coa_account": "",
+                "rate_value": 0.0,
+                "rate_kind": "amount",
+                "sort_order": 4,
+            },
+            {
+                "code": "Rush Fee",
+                "description": "Expedite fee",
+                "item_type": "Other Charge",
+                "coa_account": "4000 – Sales Revenue",
+                "rate_value": 45.0,
+                "rate_kind": "amount",
+                "sort_order": 5,
+            },
+        ],
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Headless ProBooks+ai UI screenshot helper.")
     parser.add_argument(
         "--tab",
         default="main",
-        help="Which surface to capture: main (default), home, invoices, bills (Enter Bills), pay-bills, payments, deposits, checks, vendors, customers, coa, register, or use-register.",
+        help="Which surface to capture: main (default), home, invoices, bills (Enter Bills), pay-bills, payments, deposits, checks, vendors, customers, coa, register, use-register, items, or edit-item.",
     )
     parser.add_argument(
         "--output",
@@ -60,6 +127,7 @@ def main() -> int:
     from desktop_app.coa_tab import COATab  # noqa: E402
     from desktop_app.dashboard_tab import DashboardTab  # noqa: E402
     from desktop_app.enter_bills_screen import EnterBillsScreen  # noqa: E402
+    from desktop_app.invoice_codes_screen import EditItemDialog, InvoiceCodesScreen  # noqa: E402
     from desktop_app.invoice_screen import InvoiceScreen  # noqa: E402
     from desktop_app.main import MainWindow  # noqa: E402
     from desktop_app.make_deposits_screen import MakeDepositsScreen  # noqa: E402
@@ -99,6 +167,10 @@ def main() -> int:
         output_path = Path("artifacts") / "ui" / "bank_register.png"
     elif tab in ("use-register", "use_register"):
         output_path = Path("artifacts") / "ui" / "use_register.png"
+    elif tab in ("items", "item-list", "item_list", "codes"):
+        output_path = Path("artifacts") / "ui" / "item_list.png"
+    elif tab in ("edit-item", "edit_item"):
+        output_path = Path("artifacts") / "ui" / "edit_item.png"
     else:
         output_path = Path("artifacts") / "ui" / "main_window.png"
 
@@ -121,6 +193,12 @@ def main() -> int:
         "bank_register",
         "use-register",
         "use_register",
+        "items",
+        "item-list",
+        "item_list",
+        "codes",
+        "edit-item",
+        "edit_item",
     ):
         shot_dir = Path(tempfile.mkdtemp(prefix="probooks-ui-shot-"))
         extra_kw["db_path"] = str(shot_dir / "shot.db")
@@ -462,6 +540,54 @@ def main() -> int:
                 if idx >= 0:
                     window._tabs.setCurrentIndex(idx)
             grab_widget = register
+            if grab_widget is not None:
+                grab_widget.resize(1280, 860)
+                grab_widget.setMinimumSize(1280, 860)
+                grab_widget.show()
+    elif tab in (
+        "items",
+        "item-list",
+        "item_list",
+        "codes",
+        "edit-item",
+        "edit_item",
+    ):
+        from probooksai import business
+
+        codes = getattr(window, "_invoice_codes_screen", None)
+        conn = getattr(getattr(window, "_bank_db", None), "_conn", None)
+        labor_id = None
+        if conn is not None:
+            _seed_generic_item_list(conn)
+            row = business.get_invoice_item_code_by_code(conn, "Hourly Labor")
+            if row is not None:
+                labor_id = int(row["id"])
+        if isinstance(codes, InvoiceCodesScreen):
+            codes._load_from_db()
+            if codes._table.rowCount() > 0:
+                codes._table.selectRow(0)
+        if tab in ("edit-item", "edit_item"):
+            dlg = None
+            if isinstance(codes, InvoiceCodesScreen):
+                dlg = codes._make_edit_dialog(labor_id)
+            if dlg is None and conn is not None:
+                dlg = EditItemDialog(
+                    conn,
+                    item_id=labor_id,
+                    coa_db=getattr(window, "_coa_db", None),
+                    parent=window,
+                )
+            if dlg is not None:
+                dlg.show()
+                grab_widget = dlg
+                grab_widget.resize(640, 360)
+                grab_widget.show()
+        else:
+            if codes is not None and hasattr(window, "_tabs"):
+                idx = window._tabs.indexOf(codes)
+                if idx >= 0:
+                    window._tabs.setCurrentIndex(idx)
+            grab_widget = codes
             if grab_widget is not None:
                 grab_widget.resize(1280, 860)
                 grab_widget.setMinimumSize(1280, 860)

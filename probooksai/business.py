@@ -278,24 +278,64 @@ def write_customers_csv(conn: sqlite3.Connection, path: str) -> int:
 # Invoice item / service codes (Manual Invoice → Code column)
 # ---------------------------------------------------------------------------
 
-_INVOICE_ITEM_TYPES = ("Service", "Discount", "Other Charge")
+INVOICE_ITEM_TYPES = ("Service", "Discount", "Other Charge", "Subtotal")
+_INVOICE_ITEM_TYPES = INVOICE_ITEM_TYPES
+
+INCOME_EXPENSE_COA_TYPES = frozenset({"income", "operating_revenue", "expense"})
 
 
-def list_invoice_item_codes(conn: sqlite3.Connection) -> list:
-    """All rows for the **Codes** tab and invoice line lookups; ordered by sort_order, code."""
-    return conn.execute(
-        """
-        SELECT id, code, description, item_type, coa_account, rate_value, rate_kind, sort_order
+def _normalize_item_type(raw: object) -> str:
+    it = str(raw or "Service").strip()
+    return it if it in INVOICE_ITEM_TYPES else "Service"
+
+
+def _normalize_rate_kind(raw: object) -> str:
+    rk = str(raw or "amount").strip().lower()
+    return rk if rk in ("amount", "percent") else "amount"
+
+
+def _normalize_rate_value(raw: object) -> float:
+    try:
+        return float(raw or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _optional_parent_id(raw: object) -> Optional[int]:
+    if raw is None or raw == "":
+        return None
+    try:
+        pid = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return pid if pid > 0 else None
+
+
+def list_invoice_item_codes(
+    conn: sqlite3.Connection,
+    *,
+    include_inactive: bool = True,
+) -> list:
+    """All rows for the **Item List** and invoice line lookups; ordered by sort_order, code."""
+    sql = """
+        SELECT id, code, description, item_type, coa_account, rate_value, rate_kind,
+               sort_order, parent_id, is_inactive, used_in_assemblies, notes
         FROM invoice_item_codes
-        ORDER BY sort_order, code COLLATE NOCASE
-        """
-    ).fetchall()
+    """
+    if not include_inactive:
+        sql += " WHERE COALESCE(is_inactive, 0) = 0"
+    sql += " ORDER BY sort_order, code COLLATE NOCASE"
+    return conn.execute(sql).fetchall()
 
 
 def list_invoice_item_code_strings(conn: sqlite3.Connection) -> list[str]:
-    """Distinct code strings for invoice line QCompleter."""
+    """Active code strings for invoice line QCompleter (inactive items are omitted)."""
     rows = conn.execute(
-        "SELECT code FROM invoice_item_codes ORDER BY sort_order, code COLLATE NOCASE"
+        """
+        SELECT code FROM invoice_item_codes
+        WHERE COALESCE(is_inactive, 0) = 0
+        ORDER BY sort_order, code COLLATE NOCASE
+        """
     ).fetchall()
     return [str(r["code"]).strip() for r in rows if (r["code"] or "").strip()]
 
@@ -311,33 +351,136 @@ def get_invoice_item_code_by_code(conn: sqlite3.Connection, code: str) -> Option
     ).fetchone()
 
 
+def get_invoice_item_code(conn: sqlite3.Connection, item_id: int) -> Optional[sqlite3.Row]:
+    """Fetch one Item List row by id."""
+    try:
+        iid = int(item_id)
+    except (TypeError, ValueError):
+        return None
+    return conn.execute(
+        "SELECT * FROM invoice_item_codes WHERE id = ?",
+        (iid,),
+    ).fetchone()
+
+
+def upsert_invoice_item_code(conn: sqlite3.Connection, data: dict) -> int:
+    """Insert or update one Item List row. Returns the row id."""
+    code = (data.get("code") or "").strip()
+    if not code:
+        raise ValueError("Item name/number is required.")
+    it = _normalize_item_type(data.get("item_type"))
+    rk = _normalize_rate_kind(data.get("rate_kind"))
+    rv = _normalize_rate_value(data.get("rate_value", 0.0))
+    parent_id = _optional_parent_id(data.get("parent_id"))
+    item_id = _optional_parent_id(data.get("id"))
+    if parent_id is not None and item_id is not None and parent_id == item_id:
+        parent_id = None
+    is_inactive = 1 if data.get("is_inactive") else 0
+    used_in_assemblies = 1 if data.get("used_in_assemblies") else 0
+    notes = (data.get("notes") or "").strip()
+    description = (data.get("description") or "").strip()
+    coa_account = (data.get("coa_account") or "").strip()
+    try:
+        sort_order = int(data.get("sort_order", 0) or 0)
+    except (TypeError, ValueError):
+        sort_order = 0
+
+    if item_id is not None:
+        existing = get_invoice_item_code(conn, item_id)
+        if existing is None:
+            item_id = None
+
+    if item_id is not None:
+        conn.execute(
+            """
+            UPDATE invoice_item_codes SET
+                code = ?, description = ?, item_type = ?, coa_account = ?,
+                rate_value = ?, rate_kind = ?, sort_order = ?,
+                parent_id = ?, is_inactive = ?, used_in_assemblies = ?, notes = ?
+            WHERE id = ?
+            """,
+            (
+                code,
+                description,
+                it,
+                coa_account,
+                rv,
+                rk,
+                sort_order,
+                parent_id,
+                is_inactive,
+                used_in_assemblies,
+                notes,
+                item_id,
+            ),
+        )
+        conn.commit()
+        return int(item_id)
+
+    now = _now()
+    cur = conn.execute(
+        """
+        INSERT INTO invoice_item_codes (
+            code, description, item_type, coa_account,
+            rate_value, rate_kind, sort_order, created_at,
+            parent_id, is_inactive, used_in_assemblies, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            code,
+            description,
+            it,
+            coa_account,
+            rv,
+            rk,
+            sort_order,
+            now,
+            parent_id,
+            is_inactive,
+            used_in_assemblies,
+            notes,
+        ),
+    )
+    conn.commit()
+    return int(cur.lastrowid)
+
+
+def set_invoice_item_inactive(
+    conn: sqlite3.Connection,
+    item_id: int,
+    *,
+    inactive: bool = True,
+) -> None:
+    """Mark an Item List row inactive (hidden from invoice line pickers)."""
+    iid = int(item_id)
+    conn.execute(
+        "UPDATE invoice_item_codes SET is_inactive = ? WHERE id = ?",
+        (1 if inactive else 0, iid),
+    )
+    conn.commit()
+
+
 def replace_invoice_item_codes(
     conn: sqlite3.Connection,
     rows: list[dict],
 ) -> None:
-    """Replace the entire code list (desktop **Codes** tab Save). *rows* omit ``id``."""
+    """Replace the entire Item List. *rows* may omit ``id``."""
     conn.execute("DELETE FROM invoice_item_codes")
     now = _now()
     for i, r in enumerate(rows):
         code = (r.get("code") or "").strip()
         if not code:
             continue
-        it = (r.get("item_type") or "Service").strip()
-        if it not in _INVOICE_ITEM_TYPES:
-            it = "Service"
-        rk = (r.get("rate_kind") or "amount").strip().lower()
-        if rk not in ("amount", "percent"):
-            rk = "amount"
-        try:
-            rv = float(r.get("rate_value", 0.0))
-        except (TypeError, ValueError):
-            rv = 0.0
+        it = _normalize_item_type(r.get("item_type"))
+        rk = _normalize_rate_kind(r.get("rate_kind"))
+        rv = _normalize_rate_value(r.get("rate_value", 0.0))
         conn.execute(
             """
             INSERT INTO invoice_item_codes (
                 code, description, item_type, coa_account,
-                rate_value, rate_kind, sort_order, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                rate_value, rate_kind, sort_order, created_at,
+                parent_id, is_inactive, used_in_assemblies, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 code,
@@ -348,6 +491,10 @@ def replace_invoice_item_codes(
                 rk,
                 int(r.get("sort_order", i)),
                 now,
+                _optional_parent_id(r.get("parent_id")),
+                1 if r.get("is_inactive") else 0,
+                1 if r.get("used_in_assemblies") else 0,
+                (r.get("notes") or "").strip(),
             ),
         )
     conn.commit()
