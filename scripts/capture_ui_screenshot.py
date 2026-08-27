@@ -118,7 +118,13 @@ def main() -> int:
 
         pay_bills = getattr(window, "_pay_bills_screen", None)
         conn = getattr(getattr(window, "_bank_db", None), "_conn", None)
+        bank_db = getattr(window, "_bank_db", None)
         if conn is not None:
+            if bank_db is not None:
+                try:
+                    bank_db.add_bank_account("Checking")
+                except (ValueError, TypeError):
+                    pass
             v1 = business.add_vendor(conn, "Office Supplies Co")
             business.create_bill(
                 conn,
