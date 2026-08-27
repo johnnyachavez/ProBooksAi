@@ -89,7 +89,8 @@ from desktop_app.bank_import_tab import (
 )
 from desktop_app.bank_statement_intake_panel import BankStatementIntakePanel
 from probooksai.bank_statement_intake_ai_provider import build_default_ai_provider
-from desktop_app.coa_tab import COATab
+from desktop_app.coa_tab import COATab, is_bank_like_coa
+from desktop_app.use_register_dialog import UseRegisterDialog
 from desktop_app.flexible_date import (
     attach_line_edit_us_date_normalization,
     format_iso_to_us_display,
@@ -1232,6 +1233,7 @@ class MainWindow(QMainWindow):
         )
         self._coa_tab = COATab(self._coa_db, gl_db=self._gl_db)
         self._coa_tab.coaChanged.connect(self._on_coa_changed)
+        self._coa_tab.openRegisterRequested.connect(self._on_coa_open_register)
 
         # AR/AP primary UI: top-level Customers / Vendors (Business hub keeps Rules, Payroll, Tax %).
         self._customers_tab = ARTab(conn)
@@ -2312,7 +2314,7 @@ class MainWindow(QMainWindow):
              explicitly by the user via Manage Accounts.  Auto-creating entries for
              every COA asset (Equipment, Receivables, etc.) pollutes the dropdown.
 
-        This means renaming "1000 Cash – Checking" to "CHASE BANK" updates the single
+        This means renaming "1000 Cash – Checking" to "Operating Checking" updates the single
         existing bank_accounts row rather than creating an empty duplicate.
         """
         try:
@@ -2674,6 +2676,9 @@ class MainWindow(QMainWindow):
     def _on_dashboard_navigate(self, target: str) -> None:
         """Home workflow shortcuts → jump to the requested existing screen."""
         if not hasattr(self, "_tabs"):
+            return
+        if target == "register":
+            self._open_use_register_dialog()
             return
         target_map = {
             "invoices": getattr(self, "_invoice_screen", None),
@@ -3116,6 +3121,14 @@ class MainWindow(QMainWindow):
             self._register_tab.openInCheckScreenRequested.connect(
                 self._open_txn_in_check_screen
             )
+        self._register_tab.openInDepositScreenRequested.connect(
+            self._open_txn_in_deposit_screen
+        )
+        self._register_tab.openBankFeedsRequested.connect(self._open_bank_feeds_from_register)
+        if hasattr(self, "_coa_tab"):
+            self._register_tab.openCoaEditorRequested.connect(
+                self._open_coa_from_register_category
+            )
 
     def _open_txn_in_check_screen(self, txn_id: int) -> None:
         """Switch to Write Checks tab and navigate to *txn_id*."""
@@ -3125,6 +3138,96 @@ class MainWindow(QMainWindow):
         idx = self._tabs.indexOf(self._check_screen)
         if idx >= 0:
             self._tabs.setCurrentIndex(idx)
+
+    def _open_txn_in_deposit_screen(self, txn_id: int) -> None:
+        """Switch to Make Deposits when a register DEP line is opened."""
+        if not hasattr(self, "_make_deposits_screen") or not hasattr(self, "_tabs"):
+            return
+        idx = self._tabs.indexOf(self._make_deposits_screen)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+
+    def _open_bank_feeds_from_register(self) -> None:
+        if not hasattr(self, "_reconcile_root") or not hasattr(self, "_tabs"):
+            return
+        idx = self._tabs.indexOf(self._reconcile_root)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+
+    def _open_coa_from_register_category(self, coa_line: str) -> None:
+        if not hasattr(self, "_coa_tab") or not hasattr(self, "_tabs"):
+            return
+        aid = None
+        if self._coa_db is not None:
+            aid = self._coa_db.find_account_id_by_display_line(coa_line)
+        idx = self._tabs.indexOf(self._coa_tab)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+        if aid is not None:
+            self._coa_tab.navigate_to_account_id(int(aid))
+
+    def _bank_account_id_for_coa(self, coa_id: int) -> int | None:
+        row = self._coa_db.get_account(int(coa_id)) if self._coa_db is not None else None
+        if row is None:
+            return None
+        num = str(row["account_number"] or "").strip()
+        name = str(row["account_name"] or "").strip()
+        display = f"{num} {name}".strip()
+        dash = f"{num} – {name}".strip()
+        for ba in self._bank_db.list_bank_accounts(include_inactive=True):
+            aid = int(ba["id"])
+            if num and str(ba["account_number"] or "").strip() == num:
+                return aid
+            gl = str(ba["gl_display_account"] or "").strip()
+            if gl in {display, dash, name}:
+                return aid
+            if str(ba["name"] or "").strip() == name:
+                return aid
+        if is_bank_like_coa(row):
+            try:
+                return int(
+                    self._bank_db.add_bank_account(
+                        name or "Checking",
+                        account_number=num,
+                        gl_display_account=display,
+                    )
+                )
+            except (ValueError, TypeError):
+                return None
+        return None
+
+    def _focus_register_for_bank_account(self, bank_account_id: int) -> None:
+        if not hasattr(self, "_register_tab") or not hasattr(self, "_tabs"):
+            return
+        self._register_tab.select_bank_account(int(bank_account_id))
+        idx = self._tabs.indexOf(self._register_tab)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+
+    def _open_use_register_dialog(self, *, initial_account_id: int | None = None) -> None:
+        if not self._bank_db.list_bank_accounts():
+            try:
+                self._bank_db.add_bank_account("Checking")
+            except (ValueError, TypeError):
+                pass
+            if hasattr(self, "_register_tab"):
+                self._register_tab.refresh_bank_accounts()
+        dlg = UseRegisterDialog(
+            self._bank_db, initial_account_id=initial_account_id, parent=self
+        )
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        aid = dlg.selected_bank_account_id()
+        if aid is None:
+            return
+        self._focus_register_for_bank_account(aid)
+
+    def _on_coa_open_register(self, coa_id: int) -> None:
+        bank_id = self._bank_account_id_for_coa(int(coa_id))
+        if bank_id is not None:
+            self._focus_register_for_bank_account(bank_id)
+            return
+        self._open_use_register_dialog()
 
     def _sync_window_title(self) -> None:
         ver = application_version()

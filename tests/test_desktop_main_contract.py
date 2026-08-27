@@ -5200,7 +5200,7 @@ def test_main_window_coa_database_four_call_sites() -> None:
     start = text.index("class MainWindow(QMainWindow):")
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
-    assert chunk.count("self._coa_db.") == 12
+    assert chunk.count("self._coa_db.") == 14
 
 
 def test_main_window_banner_tabs_status_bar_and_worker_counts() -> None:
@@ -5211,7 +5211,7 @@ def test_main_window_banner_tabs_status_bar_and_worker_counts() -> None:
     chunk = text[start:end]
     assert chunk.count("self._header.") == 2
     assert chunk.count("self._status_bar.showMessage(") == 15
-    assert chunk.count("self._tabs.") == 79
+    assert chunk.count("self._tabs.") == 87
     assert chunk.count("self._worker") == 17
 
 
@@ -6171,7 +6171,7 @@ def test_register_tab_min_visible_rows_and_reconciliation_mode() -> None:
     assert "Reconciliation Mode Active" in text
     assert "_COL_SPACER" in text
     assert "n_vis = max(n_data, _REGISTER_MIN_VISIBLE_ROWS)" in text
-    assert "def _fill_pad_row(self, row: int)" in text
+    assert "def _fill_pad_row(self, row: int," in text
     assert "def _on_reconciliation_mode_toggled(self" in text
     assert "setSectionHidden" in text
     for needle in (

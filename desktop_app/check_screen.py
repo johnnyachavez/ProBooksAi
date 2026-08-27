@@ -4,7 +4,7 @@ Toolbar, mint check face, Expenses/Items grid, and footer follow Johnny's QB Pro
 Write Checks screenshot (slightly cleaner spacing/buttons than a gray Win32 photocopy).
 
 Saving writes a bank payment (negative ``bank_transactions`` amount) from the selected
-bank account — for example CHASE BANK — with optional expense splits.
+bank account — for example Checking — with optional expense splits.
 """
 
 from __future__ import annotations
@@ -1301,7 +1301,7 @@ class CheckScreen(QWidget):
         qd = self._date_edit.date()
         txn_date = f"{qd.year():04d}-{qd.month():02d}-{qd.day():02d}"
         ref = self._fld_number.text().strip()
-        memo = self._fld_memo.text().strip()
+        memo = self._fld_memo.text().strip() or "CHK"
         amount = -raw_amt
         coa = splits[0][1] if splits else ""
         is_draft = self._browse_index is None

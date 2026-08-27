@@ -13,6 +13,9 @@ Usage (with a virtual display already active, e.g. via xvfb-run):
     python scripts/capture_ui_screenshot.py --tab checks --output artifacts/ui/write_checks.png
     python scripts/capture_ui_screenshot.py --tab vendors --output artifacts/ui/vendor_center.png
     python scripts/capture_ui_screenshot.py --tab customers --output artifacts/ui/customer_center.png
+    python scripts/capture_ui_screenshot.py --tab coa --output artifacts/ui/chart_of_accounts.png
+    python scripts/capture_ui_screenshot.py --tab register --output artifacts/ui/bank_register.png
+    python scripts/capture_ui_screenshot.py --tab use-register --output artifacts/ui/use_register.png
 
 Saves: artifacts/ui/main_window.png (default)
 Exit code 0 on success, non-zero on failure.
@@ -37,7 +40,7 @@ def main() -> int:
     parser.add_argument(
         "--tab",
         default="main",
-        help="Which surface to capture: main (default), home, invoices, bills (Enter Bills), pay-bills, payments, deposits, checks, vendors, or customers.",
+        help="Which surface to capture: main (default), home, invoices, bills (Enter Bills), pay-bills, payments, deposits, checks, vendors, customers, coa, register, or use-register.",
     )
     parser.add_argument(
         "--output",
@@ -54,6 +57,7 @@ def main() -> int:
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from desktop_app.check_screen import CheckScreen  # noqa: E402
+    from desktop_app.coa_tab import COATab  # noqa: E402
     from desktop_app.dashboard_tab import DashboardTab  # noqa: E402
     from desktop_app.enter_bills_screen import EnterBillsScreen  # noqa: E402
     from desktop_app.invoice_screen import InvoiceScreen  # noqa: E402
@@ -62,6 +66,8 @@ def main() -> int:
     from desktop_app.pay_bills_screen import PayBillsScreen  # noqa: E402
     from desktop_app.receive_checks_screen import ReceiveChecksScreen  # noqa: E402
     from desktop_app.customer_center_screen import CustomerCenterScreen  # noqa: E402
+    from desktop_app.register_tab import RegisterTab  # noqa: E402
+    from desktop_app.use_register_dialog import UseRegisterDialog  # noqa: E402
     from desktop_app.vendor_center_screen import VendorCenterScreen  # noqa: E402
 
     app = QApplication(sys.argv)
@@ -87,6 +93,12 @@ def main() -> int:
         output_path = Path("artifacts") / "ui" / "customer_center.png"
     elif tab in ("home", "dashboard"):
         output_path = Path("artifacts") / "ui" / "home.png"
+    elif tab in ("coa", "chart-of-accounts", "chart_of_accounts"):
+        output_path = Path("artifacts") / "ui" / "chart_of_accounts.png"
+    elif tab in ("register", "bank-register", "bank_register"):
+        output_path = Path("artifacts") / "ui" / "bank_register.png"
+    elif tab in ("use-register", "use_register"):
+        output_path = Path("artifacts") / "ui" / "use_register.png"
     else:
         output_path = Path("artifacts") / "ui" / "main_window.png"
 
@@ -101,6 +113,14 @@ def main() -> int:
         "customers",
         "customer-center",
         "customer_center",
+        "coa",
+        "chart-of-accounts",
+        "chart_of_accounts",
+        "register",
+        "bank-register",
+        "bank_register",
+        "use-register",
+        "use_register",
     ):
         shot_dir = Path(tempfile.mkdtemp(prefix="probooks-ui-shot-"))
         extra_kw["db_path"] = str(shot_dir / "shot.db")
@@ -351,6 +371,101 @@ def main() -> int:
             grab_widget.resize(1400, 860)
             grab_widget.setMinimumSize(1400, 860)
             grab_widget.show()
+    elif tab in ("coa", "chart-of-accounts", "chart_of_accounts"):
+        coa_tab = getattr(window, "_coa_tab", None)
+        coa_db = getattr(window, "_coa_db", None)
+        if coa_db is not None:
+            vehicles_id = None
+            for row in coa_db.list_accounts(include_inactive=True):
+                if str(row["account_name"] or "") == "Vehicles":
+                    vehicles_id = int(row["id"])
+                    break
+            if vehicles_id is not None:
+                try:
+                    coa_db.add_account(
+                        "1701",
+                        "Trailer unit",
+                        "fixed_asset",
+                        sub_type="Fixed Asset",
+                        parent_id=vehicles_id,
+                    )
+                except (ValueError, TypeError):
+                    pass
+        if isinstance(coa_tab, COATab):
+            coa_tab._refresh()
+            if coa_tab._table.rowCount() > 0:
+                coa_tab._table.selectRow(0)
+        if coa_tab is not None and hasattr(window, "_tabs"):
+            idx = window._tabs.indexOf(coa_tab)
+            if idx >= 0:
+                window._tabs.setCurrentIndex(idx)
+        grab_widget = coa_tab
+        if grab_widget is not None:
+            grab_widget.resize(1280, 860)
+            grab_widget.setMinimumSize(1280, 860)
+            grab_widget.show()
+    elif tab in ("register", "bank-register", "bank_register", "use-register", "use_register"):
+        bank_db = getattr(window, "_bank_db", None)
+        register = getattr(window, "_register_tab", None)
+        aid = None
+        if bank_db is not None:
+            existing = list(bank_db.list_bank_accounts())
+            if existing:
+                aid = int(existing[0]["id"])
+            else:
+                aid = bank_db.add_bank_account(
+                    "Checking",
+                    account_number="1000",
+                    gl_display_account="1000 Cash – Checking",
+                )
+            bank_db.insert_manual_transaction(
+                aid,
+                "2026-08-05",
+                -790.00,
+                description="Office Supplies Co",
+                ref_number="1001",
+                memo="BILLPMT",
+                coa_account="2000 Accounts Payable",
+            )
+            bank_db.insert_manual_transaction(
+                aid,
+                "2026-08-06",
+                391.50,
+                description="Deposit",
+                ref_number="DEP",
+                memo="DEP",
+            )
+            bank_db.insert_manual_transaction(
+                aid,
+                "2026-08-07",
+                -125.00,
+                description="Fuel Vendor",
+                ref_number="1002",
+                memo="CHK",
+                coa_account="6310 Vehicle Expense",
+            )
+        if isinstance(register, RegisterTab) and aid is not None:
+            register.select_bank_account(aid)
+            if register._table.rowCount() > 0:
+                register._table.selectRow(0)
+        if tab in ("use-register", "use_register"):
+            dlg = UseRegisterDialog(
+                bank_db, initial_account_id=aid, parent=window
+            )
+            dlg.show()
+            grab_widget = dlg
+            grab_widget.resize(380, 140)
+            grab_widget.show()
+        else:
+            if register is not None and hasattr(window, "_tabs"):
+                idx = window._tabs.indexOf(register)
+                if idx >= 0:
+                    window._tabs.setCurrentIndex(idx)
+            grab_widget = register
+            if grab_widget is not None:
+                grab_widget.resize(1280, 860)
+                grab_widget.setMinimumSize(1280, 860)
+                grab_widget.show()
 
     success = False
 

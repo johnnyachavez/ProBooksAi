@@ -28,6 +28,11 @@ from desktop_app.table_clipboard import QTABLE_PLAIN_TEXT_ROLE
 from probooksai.statement_line_match import STATUS_EXTRA, STATUS_MATCHED, STATUS_MISSING
 
 from desktop_app.theme import (
+    CHECKBOOK_GRID_LINE,
+    CHECKBOOK_SECONDARY,
+    CHECKBOOK_SELECT_BG,
+    CHECKBOOK_SELECT_FG,
+    CHECKBOOK_TEXT,
     DISABLED_FG,
     FG_PRIMARY,
     FG_SECONDARY,
@@ -67,6 +72,7 @@ class RegisterBandDelegate(QStyledItemDelegate):
         link_col: int | None = None,
         center_col: int | None = 6,
         right_aligned_cols: frozenset[int] | None = None,
+        light_theme: bool = False,
     ):
         super().__init__(parent)
         self._simple = simple_band_rows
@@ -75,6 +81,7 @@ class RegisterBandDelegate(QStyledItemDelegate):
         self._payee_col = payee_col
         self._link_col = link_col
         self._center_col = center_col
+        self._light = light_theme
         self._right_cols = (
             right_aligned_cols
             if right_aligned_cols is not None
@@ -144,15 +151,23 @@ class RegisterBandDelegate(QStyledItemDelegate):
 
         sel = bool(option.state & QStyle.StateFlag.State_Selected)
         top_r, bot_r = self._split_rect(option.rect)
+        sel_bg = CHECKBOOK_SELECT_BG if self._light else SELECTION_BG
+        sel_fg = CHECKBOOK_SELECT_FG if self._light else SELECTION_FG
+        text_fg = CHECKBOOK_TEXT if self._light else FG_PRIMARY
+        text_sec = CHECKBOOK_SECONDARY if self._light else FG_SECONDARY
+        grid = CHECKBOOK_GRID_LINE if self._light else REGISTER_GRID_LINE
+        divider = "#C5D0D8" if self._light else REGISTER_BAND_DIVIDER
 
         if sel:
-            painter.fillRect(option.rect, QColor(SELECTION_BG))
+            painter.fillRect(option.rect, QColor(sel_bg))
         else:
             row = index.row()
-            uh, lh = register_row_band_colors_hex(row % 2 == 1, self._row_missing_coa(index))
+            uh, lh = register_row_band_colors_hex(
+                row % 2 == 1, self._row_missing_coa(index), light=self._light
+            )
             painter.fillRect(top_r, QColor(uh))
             painter.fillRect(bot_r, QColor(lh))
-            painter.setPen(QPen(QColor(REGISTER_BAND_DIVIDER), 1))
+            painter.setPen(QPen(QColor(divider), 1))
             y = top_r.bottom()
             painter.drawLine(option.rect.left(), y, option.rect.right(), y)
 
@@ -160,7 +175,7 @@ class RegisterBandDelegate(QStyledItemDelegate):
         self.initStyleOption(opt, index)
         enabled = bool(opt.state & QStyle.StateFlag.State_Enabled)
         if sel:
-            opt.palette.setColor(QPalette.ColorRole.Text, QColor(SELECTION_FG))
+            opt.palette.setColor(QPalette.ColorRole.Text, QColor(sel_fg))
         else:
             br = index.data(Qt.ItemDataRole.ForegroundRole)
             if isinstance(br, QBrush):
@@ -175,9 +190,9 @@ class RegisterBandDelegate(QStyledItemDelegate):
             if not enabled:
                 painter.setPen(QColor(DISABLED_FG))
             elif sel:
-                painter.setPen(QColor(SELECTION_FG))
+                painter.setPen(QColor(sel_fg))
             else:
-                painter.setPen(QColor(FG_PRIMARY))
+                painter.setPen(QColor(text_fg))
             t1 = fm.elidedText(line1, Qt.TextElideMode.ElideRight, top.width() - 10)
             painter.drawText(
                 top.adjusted(6, 3, -6, 0),
@@ -187,9 +202,9 @@ class RegisterBandDelegate(QStyledItemDelegate):
             if not enabled:
                 painter.setPen(QColor(DISABLED_FG))
             elif sel:
-                painter.setPen(QColor(SELECTION_FG))
+                painter.setPen(QColor(sel_fg))
             else:
-                painter.setPen(QColor(FG_SECONDARY))
+                painter.setPen(QColor(text_sec))
             t2 = fm.elidedText(line2, Qt.TextElideMode.ElideRight, bot.width() - 10)
             painter.drawText(
                 bot.adjusted(6, 2, -6, 0),
@@ -217,17 +232,7 @@ class RegisterBandDelegate(QStyledItemDelegate):
             if not isinstance(l2, str):
                 parts = (opt.text or "").split("\n", 1)
                 l2 = parts[1] if len(parts) > 1 else ""
-            painter.setFont(font)
-            if not enabled:
-                pen = QColor(DISABLED_FG)
-            else:
-                pen = QColor(SELECTION_FG if sel else opt.palette.color(QPalette.ColorRole.Text))
-            painter.setPen(pen)
-            combined = f"{l1} · {l2}" if (l2 or "").strip() else l1
-            elide_w = top_r.width() - 12
-            t = fm.elidedText(combined.strip(), Qt.TextElideMode.ElideRight, elide_w)
-            flags = int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
-            painter.drawText(top_r.adjusted(6, 0, -6, 0), flags, t)
+            draw_payee_two_bands(top_r, bot_r, l1, l2)
         elif not self._simple and self._link_col is not None and col == self._link_col:
             l1 = index.data(REGISTER_LINK_UPPER_PLAIN)
             l2 = index.data(REGISTER_LINK_LOWER_PLAIN)
@@ -243,7 +248,7 @@ class RegisterBandDelegate(QStyledItemDelegate):
                     pen = QColor(DISABLED_FG)
                 else:
                     pen = QColor(
-                        SELECTION_FG if sel else opt.palette.color(QPalette.ColorRole.Text)
+                        sel_fg if sel else opt.palette.color(QPalette.ColorRole.Text)
                     )
                 painter.setPen(pen)
                 full_r = option.rect
@@ -258,9 +263,9 @@ class RegisterBandDelegate(QStyledItemDelegate):
                 if not enabled:
                     painter.setPen(QColor(DISABLED_FG))
                 elif sel:
-                    painter.setPen(QColor(SELECTION_FG))
+                    painter.setPen(QColor(sel_fg))
                 else:
-                    painter.setPen(QColor(FG_PRIMARY))
+                    painter.setPen(QColor(text_fg))
                 t1 = fm.elidedText(l1, Qt.TextElideMode.ElideRight, top_r.width() - 10)
                 painter.drawText(
                     top_r.adjusted(6, 3, -6, 0),
@@ -270,7 +275,7 @@ class RegisterBandDelegate(QStyledItemDelegate):
                 if not enabled:
                     painter.setPen(QColor(DISABLED_FG))
                 elif sel:
-                    painter.setPen(QColor(SELECTION_FG))
+                    painter.setPen(QColor(sel_fg))
                 elif l2s == STATUS_MATCHED:
                     painter.setPen(QColor("#6ecf8a"))
                 elif l2s == STATUS_MISSING:
@@ -278,7 +283,7 @@ class RegisterBandDelegate(QStyledItemDelegate):
                 elif l2s == STATUS_EXTRA:
                     painter.setPen(QColor("#7eb3e8"))
                 else:
-                    painter.setPen(QColor(FG_SECONDARY))
+                    painter.setPen(QColor(text_sec))
                 t2 = fm.elidedText(l2, Qt.TextElideMode.ElideRight, bot_r.width() - 10)
                 painter.drawText(
                     bot_r.adjusted(6, 2, -6, 0),
@@ -290,7 +295,7 @@ class RegisterBandDelegate(QStyledItemDelegate):
             if not enabled:
                 pen = QColor(DISABLED_FG)
             else:
-                pen = QColor(SELECTION_FG if sel else opt.palette.color(QPalette.ColorRole.Text))
+                pen = QColor(sel_fg if sel else opt.palette.color(QPalette.ColorRole.Text))
             painter.setPen(pen)
             text = (opt.text or "").replace("\n", " ").strip()
             align_right = col in self._right_cols
@@ -311,14 +316,14 @@ class RegisterBandDelegate(QStyledItemDelegate):
             painter.drawText(top_r.adjusted(6, 0, -6, 0), flags, t)
 
         if enabled and (opt.state & QStyle.StateFlag.State_HasFocus):
-            ring = QPen(QColor(SELECTION_FG), 2)
+            ring = QPen(QColor(sel_fg), 2)
             ring.setCosmetic(True)
             painter.setPen(ring)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(option.rect.adjusted(2, 2, -3, -3))
 
         # Classic register grid (horizontal + vertical rules); custom paint bypasses QSS ::item borders.
-        grid_pen = QPen(QColor(REGISTER_GRID_LINE), 1)
+        grid_pen = QPen(QColor(grid), 1)
         grid_pen.setCosmetic(True)
         painter.setPen(grid_pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)

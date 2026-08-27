@@ -771,7 +771,10 @@ def test_register_number_two_line_plain_type_tags() -> None:
 
     assert _register_number_two_line_plain(
         {"ref_number": "1087", "amount": -50.0, "transfer_to_bank_account_id": None}
-    ) == "1087\nPMT"
+    ) == "1087\nCHK"
+    assert _register_number_two_line_plain(
+        {"ref_number": "ACH", "amount": -50.0, "transfer_to_bank_account_id": None}
+    ) == "ACH\nPMT"
     assert _register_number_two_line_plain(
         {
             "ref_number": "4412",
