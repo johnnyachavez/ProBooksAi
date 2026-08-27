@@ -8,6 +8,7 @@ from unittest.mock import patch
 import pytest
 from PySide6.QtTest import QTest
 from PySide6.QtCore import Qt, QDate, QSettings
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -68,11 +69,38 @@ def test_enter_bills_screen_header_and_line_grid(qapp: QApplication) -> None:
     assert isinstance(t.cellWidget(0, 2), QLineEdit)
     assert isinstance(t.cellWidget(0, 3), QLineEdit)
     assert isinstance(t.cellWidget(0, 4), QCheckBox)
+    memo = t.cellWidget(0, 2)
+    job = t.cellWidget(0, 3)
+    assert isinstance(memo, QLineEdit) and isinstance(job, QLineEdit)
+    assert (memo.placeholderText() or "").strip() == ""
+    assert (job.placeholderText() or "").strip() == ""
+    amt = t.cellWidget(0, 1)
+    assert isinstance(amt, QDoubleSpinBox)
+    assert amt.value() == 0.0
+    assert (amt.specialValueText() or "").strip() == ""
+    acct = t.cellWidget(0, 0)
+    assert isinstance(acct, QComboBox)
+    assert (acct.currentText() or "").strip() == ""
+    assert "(select" not in (acct.itemText(0) or "").lower()
 
     items = w.findChild(QTableWidget, "enterBillsItemsTable")
     assert items is not None
     assert items.horizontalHeaderItem(0).text() == "ITEM"
     assert items.horizontalHeaderItem(6).text() == "BILLABLE?"
+    item_desc = items.cellWidget(0, 1)
+    item_job = items.cellWidget(0, 5)
+    assert isinstance(item_desc, QLineEdit) and isinstance(item_job, QLineEdit)
+    assert (item_desc.placeholderText() or "").strip() == ""
+    assert (item_job.placeholderText() or "").strip() == ""
+    item_cb = items.cellWidget(0, 0)
+    assert isinstance(item_cb, QComboBox)
+    assert (item_cb.currentText() or "").strip() == ""
+    assert "(select" not in (item_cb.itemText(0) or "").lower()
+    for col in (2, 3, 4):
+        spin = items.cellWidget(0, col)
+        assert isinstance(spin, QDoubleSpinBox)
+        assert spin.value() == 0.0
+        assert (spin.specialValueText() or "").strip() == ""
 
     labels = [lb.text() for lb in w.findChildren(QLabel)]
     assert "Bill" in labels
@@ -84,6 +112,11 @@ def test_enter_bills_screen_header_and_line_grid(qapp: QApplication) -> None:
     assert "BILL DUE" in labels
     assert "TERMS" in labels
     assert "MEMO" in labels
+    vendor_wrap = w._vendor.parentWidget()
+    assert vendor_wrap is not None
+    assert vendor_wrap.objectName() == "enterBillsCaptionField"
+    assert "transparent" in vendor_wrap.styleSheet().lower()
+    assert "#1a1a2e" not in vendor_wrap.styleSheet().lower()
 
     radios = [r.text() for r in w.findChildren(QRadioButton)]
     assert "Bill" in radios
@@ -109,6 +142,44 @@ def test_enter_bills_screen_header_and_line_grid(qapp: QApplication) -> None:
     assert lines.tabText(0).startswith("Expenses")
     assert lines.tabText(1).startswith("Items")
     assert t.rowCount() >= 18
+
+
+def test_enter_bills_empty_line_cells_are_blank(qapp: QApplication) -> None:
+    """Expenses/Items headers name the columns; empty cells have no hint text and no $0.00 filler."""
+    w = EnterBillsScreen()
+    w.show()
+    qapp.processEvents()
+    title = w.findChild(QLabel, "enterBillsTitle")
+    assert title is not None
+    assert "#1e4a78" not in title.styleSheet().lower()
+    header = w.findChild(QFrame, "enterBillsHeaderBand")
+    assert header is not None
+    assert "#1e4a78" not in header.styleSheet().lower()
+    t = w.findChild(QTableWidget, "enterBillsExpensesTable")
+    assert t is not None
+    amt = t.cellWidget(0, 1)
+    assert isinstance(amt, QDoubleSpinBox)
+    shown = (amt.lineEdit().text() if amt.lineEdit() is not None else amt.text()) or ""
+    assert shown.strip() == ""
+    assert "0.00" not in shown
+    amt.setValue(9.5)
+    qapp.processEvents()
+    filled = (amt.lineEdit().text() if amt.lineEdit() is not None else amt.text()) or ""
+    assert "9.50" in filled.replace(",", "")
+    items = w.findChild(QTableWidget, "enterBillsItemsTable")
+    assert items is not None
+    qty = items.cellWidget(0, 2)
+    cost = items.cellWidget(0, 3)
+    item_amt = items.cellWidget(0, 4)
+    assert isinstance(qty, QDoubleSpinBox)
+    assert isinstance(cost, QDoubleSpinBox)
+    assert isinstance(item_amt, QDoubleSpinBox)
+    for spin in (qty, cost, item_amt):
+        raw = (spin.lineEdit().text() if spin.lineEdit() is not None else spin.text()) or ""
+        assert raw.strip() == ""
+    fill = w.palette().color(QPalette.ColorRole.Window).name().lower()
+    assert fill != "#1a1a2e"
+    w.close()
 
 
 def test_enter_bills_grid_dominates_window_height(qapp: QApplication) -> None:
@@ -142,7 +213,7 @@ def test_enter_bills_clear_resets_rows(qapp: QApplication) -> None:
     w._on_clear()
     acct = w._table.cellWidget(0, 0)
     assert isinstance(acct, QComboBox)
-    assert (acct.currentText() or "").strip() in ("", "(select account)")
+    assert (acct.currentText() or "").strip() == ""
     amt = w._table.cellWidget(0, 1)
     assert isinstance(amt, QDoubleSpinBox)
     assert amt.value() == 0.0

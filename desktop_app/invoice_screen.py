@@ -45,7 +45,7 @@ from functools import partial
 from typing import Optional
 
 from PySide6.QtCore import QDate, QEvent, QObject, QStringListModel, QSettings, Qt, QTimer, Signal
-from PySide6.QtGui import QFont, QFontMetrics, QHideEvent, QShowEvent, QTextDocument
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QHideEvent, QPalette, QShowEvent, QTextDocument
 from PySide6.QtPrintSupport import QPrinter
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -109,10 +109,8 @@ from desktop_app.theme import DISABLED_FG
 _INV_CANVAS   = "#E8ECF1"   # gray surround behind the form
 _INV_BG       = "#FFFFFF"   # invoice paper
 _INV_PANEL    = "#F4F7FA"   # header band
-_INV_BAR      = "#1E4A78"   # CUSTOMER:JOB / ACCOUNT / TEMPLATE (QB dark-blue bar)
-_INV_BAR_FG   = "#F3F6FA"   # captions on the dark bar
 _INV_STRIPE   = "#D0E6F4"   # QB light-blue alternating rows
-_INV_CAPTION  = "#4A5560"   # muted field captions
+_INV_CAPTION  = "#4A5560"   # muted field captions (dark text on white — not a redaction bar)
 _INV_GRID     = "#C0C8D0"   # hairlines / borders
 _INV_HEADER   = "#D8DEE6"   # table header fill
 _INV_TEXT     = "#1A1A1A"   # primary text on light
@@ -233,6 +231,24 @@ _INVOICE_LINE_COL_MIN_OTHER_PX = 24
 _INVOICE_LINE_TABLE_WIDTHS_KEY_PREFIX = "invoice_workflow/line_table_column_widths_v1"
 
 
+def _light_form_palette() -> QPalette:
+    """Light QB-style palette so unnamed QWidget wraps are not navy slabs from the app theme."""
+    pal = QPalette()
+    pal.setColor(QPalette.ColorRole.Window, QColor(_INV_BG))
+    pal.setColor(QPalette.ColorRole.WindowText, QColor(_INV_TEXT))
+    pal.setColor(QPalette.ColorRole.Base, QColor(WORKFLOW_INPUT_BG))
+    pal.setColor(QPalette.ColorRole.AlternateBase, QColor(_INV_STRIPE))
+    pal.setColor(QPalette.ColorRole.Text, QColor(_INV_TEXT))
+    pal.setColor(QPalette.ColorRole.Button, QColor(WORKFLOW_CONTROL_FACE))
+    pal.setColor(QPalette.ColorRole.ButtonText, QColor(_INV_TEXT))
+    pal.setColor(QPalette.ColorRole.Highlight, QColor(_INV_ACCENT))
+    pal.setColor(QPalette.ColorRole.HighlightedText, QColor("#FFFFFF"))
+    pal.setColor(QPalette.ColorRole.PlaceholderText, QColor(_INV_CAPTION))
+    pal.setColor(QPalette.ColorRole.ToolTipBase, QColor(_INV_PANEL))
+    pal.setColor(QPalette.ColorRole.ToolTipText, QColor(_INV_TEXT))
+    return pal
+
+
 def _invoice_line_table_qsettings() -> QSettings:
     """Scoped like ``desktop_app.main`` ``main()`` (``setOrganizationName`` / ``setApplicationName``)."""
     return QSettings("ProBooks+ai", "ProBooks+ai")
@@ -300,6 +316,12 @@ def _cell_line_date() -> QLineEdit:
     return le
 
 
+def _blank_zero_spin(s: QDoubleSpinBox) -> QDoubleSpinBox:
+    """Empty line cells stay blank at 0. Qt ignores an empty specialValueText, so a space stands in."""
+    s.setSpecialValueText(" ")
+    return s
+
+
 def _qty_spin() -> QDoubleSpinBox:
     s = QDoubleSpinBox()
     s.setRange(0.0, 999_999.99)
@@ -309,7 +331,7 @@ def _qty_spin() -> QDoubleSpinBox:
         f"QDoubleSpinBox {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_INV_GRID}; "
         f"padding: 1px 4px; color: {_INV_TEXT}; }}"
     )
-    return s
+    return _blank_zero_spin(s)
 
 
 def _money_spin() -> QDoubleSpinBox:
@@ -322,7 +344,7 @@ def _money_spin() -> QDoubleSpinBox:
         f"QDoubleSpinBox {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_INV_GRID}; "
         f"padding: 1px 4px; color: {_INV_TEXT}; }}"
     )
-    return s
+    return _blank_zero_spin(s)
 
 
 def _line_total_spin() -> QDoubleSpinBox:
@@ -660,7 +682,7 @@ class InvoiceScreen(QWidget):
         cap = QLabel(text)
         cap.setStyleSheet(
             f"color: {_INV_CAPTION}; font-size: 10px; font-weight: 700; "
-            "letter-spacing: 0.04em; background: transparent;"
+            "letter-spacing: 0.04em; background: transparent; border: none;"
         )
         return cap
 
@@ -671,23 +693,29 @@ class InvoiceScreen(QWidget):
         b.setAutoDefault(False)
         b.setDefault(False)
 
-    def _bar_caption_on_dark(self, text: str) -> QLabel:
-        cap = QLabel(text)
-        cap.setStyleSheet(
-            f"color: {_INV_BAR_FG}; font-size: 10px; font-weight: 700; "
-            "letter-spacing: 0.04em; background: transparent;"
-        )
-        return cap
-
     def _compact_meta_field(self, caption: str, editor: QWidget) -> QWidget:
-        """Caption + 22px editor — tight DATE / INVOICE # / TERMS / DUE DATE stack."""
+        """Caption + 22px editor — tight DATE / INVOICE # / TERMS / DUE DATE stack.
+
+        Wrapper is explicit white: the app dark theme paints unnamed QWidget navy, which
+        reads as a redaction bar behind PO/CONTRACT#, DATE, and the other stacked labels.
+        """
         w = QWidget()
+        w.setObjectName("invoiceCompactMetaField")
+        w.setAutoFillBackground(True)
+        pal = w.palette()
+        pal.setColor(QPalette.ColorRole.Window, QColor(_INV_BG))
+        pal.setColor(QPalette.ColorRole.WindowText, QColor(_INV_CAPTION))
+        w.setPalette(pal)
+        w.setStyleSheet(
+            f"QWidget#invoiceCompactMetaField {{ background-color: {_INV_BG}; border: none; }}"
+        )
         lay = QVBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(1)
         cap = QLabel(caption)
         cap.setStyleSheet(
-            f"color: {_INV_CAPTION}; font-size: 9px; font-weight: 700; background: transparent;"
+            f"color: {_INV_CAPTION}; font-size: 9px; font-weight: 700; "
+            "background: transparent; border: none;"
         )
         lay.addWidget(cap)
         editor.setFixedHeight(22)
@@ -869,17 +897,18 @@ class InvoiceScreen(QWidget):
             self._on_bill_to_customer_changed
         )
 
-        # ── Customer:Job / Account / Template — one short dark-blue row ──
+        # ── Customer:Job / Account / Template — white strip, dark captions (not a redaction bar) ──
         job_bar = QFrame()
         job_bar.setObjectName("invoiceCustomerJobBar")
         job_bar.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         job_bar.setStyleSheet(
-            f"QFrame#invoiceCustomerJobBar {{ background-color: {_INV_BAR}; border: none; }}"
+            f"QFrame#invoiceCustomerJobBar {{ background-color: {_INV_BG}; "
+            f"border: 1px solid {_INV_GRID}; border-radius: 4px; }}"
         )
         jb = QHBoxLayout(job_bar)
         jb.setContentsMargins(8, 4, 8, 4)
         jb.setSpacing(8)
-        cj_cap = self._bar_caption_on_dark("CUSTOMER:JOB")
+        cj_cap = self._bar_caption("CUSTOMER:JOB")
         cj_cap.setObjectName("invoiceCustomerJobCaption")
         jb.addWidget(cj_cap)
         combo = self._bill_customer_panel.customer_combo()
@@ -887,7 +916,7 @@ class InvoiceScreen(QWidget):
         combo.setMaximumHeight(22)
         combo.setStyleSheet(_bar_combo_qss)
         jb.addWidget(combo, 3)
-        jb.addWidget(self._bar_caption_on_dark("ACCOUNT"))
+        jb.addWidget(self._bar_caption("ACCOUNT"))
         self._ar_account = QComboBox()
         self._ar_account.setObjectName("invoiceArAccount")
         self._ar_account.setEditable(False)
@@ -896,7 +925,7 @@ class InvoiceScreen(QWidget):
         self._ar_account.setMaximumHeight(22)
         self._ar_account.setStyleSheet(_bar_combo_qss)
         jb.addWidget(self._ar_account, 2)
-        jb.addWidget(self._bar_caption_on_dark("TEMPLATE"))
+        jb.addWidget(self._bar_caption("TEMPLATE"))
         self._invoice_template = QComboBox()
         self._invoice_template.setObjectName("invoiceTemplateCombo")
         self._invoice_template.setEditable(False)
@@ -976,6 +1005,10 @@ class InvoiceScreen(QWidget):
         title_row.addWidget(self._invoice_status_badge, 0, Qt.AlignmentFlag.AlignVCenter)
         title_row.addStretch(1)
         title_wrap = QWidget()
+        title_wrap.setObjectName("invoiceLightWrap")
+        title_wrap.setStyleSheet(
+            f"QWidget#invoiceLightWrap {{ background: transparent; border: none; }}"
+        )
         title_wrap.setLayout(title_row)
         title_wrap.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         hb.addWidget(title_wrap, 0, 0, 2, 1, Qt.AlignmentFlag.AlignTop)
@@ -990,6 +1023,10 @@ class InvoiceScreen(QWidget):
         po_job.addWidget(self._compact_meta_field("NAME/JOB#", self._job), 1)
         bill_col.addLayout(po_job)
         bill_wrap = QWidget()
+        bill_wrap.setObjectName("invoiceLightWrap")
+        bill_wrap.setStyleSheet(
+            f"QWidget#invoiceLightWrap {{ background: transparent; border: none; }}"
+        )
         bill_wrap.setLayout(bill_col)
         bill_wrap.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         hb.addWidget(bill_wrap, 0, 1, 2, 1)
@@ -1005,6 +1042,10 @@ class InvoiceScreen(QWidget):
         meta.addWidget(self._compact_meta_field("TERMS", self._terms), 1, 0)
         meta.addWidget(self._compact_meta_field("DUE DATE", self._due_date), 1, 1)
         meta_w = QWidget()
+        meta_w.setObjectName("invoiceLightWrap")
+        meta_w.setStyleSheet(
+            f"QWidget#invoiceLightWrap {{ background: transparent; border: none; }}"
+        )
         meta_w.setLayout(meta)
         meta_w.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         hb.addWidget(meta_w, 0, 3, 2, 1, Qt.AlignmentFlag.AlignTop)
@@ -1058,7 +1099,11 @@ class InvoiceScreen(QWidget):
         tabs.setCurrentIndex(1)
 
     def _build_ui(self) -> None:
-        self.setStyleSheet(f"InvoiceScreen {{ background: {_INV_CANVAS}; }}")
+        self.setPalette(_light_form_palette())
+        self.setAutoFillBackground(True)
+        self.setStyleSheet(
+            f"InvoiceScreen {{ background-color: {_INV_CANVAS}; color: {_INV_TEXT}; }}"
+        )
         outer = QVBoxLayout(self)
         outer.setContentsMargins(4, 2, 4, 4)
         outer.setSpacing(0)
@@ -1195,11 +1240,9 @@ class InvoiceScreen(QWidget):
 
         for row in range(self._N_LINE_ROWS):
             dt = _cell_line_date()
-            dt.setPlaceholderText("Serviced On")
             self._table.setCellWidget(row, 0, dt)
 
             code = _cell_line_invoice_code()
-            code.setPlaceholderText("JL # (click for list)")
             code.setToolTip(
                 "Pick an invoice code from the saved Codes list, or type to filter. "
                 "Click or focus to open the dropdown; typing narrows choices live. "
@@ -1209,11 +1252,9 @@ class InvoiceScreen(QWidget):
             self._table.setCellWidget(row, 1, code)
 
             desc = _cell_line()
-            desc.setPlaceholderText("Description")
             self._table.setCellWidget(row, 2, desc)
 
             bol = _cell_line()
-            bol.setPlaceholderText("BOL#")
             self._table.setCellWidget(row, 3, bol)
 
             rate = _money_spin()
