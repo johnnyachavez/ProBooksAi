@@ -1510,6 +1510,7 @@ def test_main_window_assemble_main_tabs_instantiates_core_widgets() -> None:
     assert chunk.count("PayBillsScreen(") == 1
     assert chunk.count("ReceiveChecksScreen(") == 1
     assert chunk.count("MakeDepositsScreen(") == 1
+    assert chunk.count("CheckScreen(") == 1
     assert chunk.count("BankImportTab(") == 1
     assert chunk.count("RegisterTab(self._bank_db,") == 1
     assert chunk.count("COATab(") == 1

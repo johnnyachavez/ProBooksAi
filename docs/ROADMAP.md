@@ -356,6 +356,7 @@ Record payments against open vendor bills.
 - Select vendor and apply payment across one or many bills.
 - Update bill balance and status (`Unpaid` / `Partially Paid` / `Paid`).
 - Choose bank account (paid-from) for later bank matching/posting.
+- **Write Checks** (desktop) pays a vendor/payee from a bank account (for example CHASE BANK) with expense lines; it writes a register payment (negative amount) and optional splits.
 
 **Related issues:** [#60](https://github.com/johnnyachavez/ProBooksAi/issues/60) / [#70](https://github.com/johnnyachavez/ProBooksAi/issues/70) (Pay Bills AP — #70 is canonical)
 

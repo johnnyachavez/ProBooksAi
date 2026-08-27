@@ -9,6 +9,7 @@ Usage (with a virtual display already active, e.g. via xvfb-run):
     python scripts/capture_ui_screenshot.py --tab bills --output artifacts/ui/enter_bills.png
     python scripts/capture_ui_screenshot.py --tab payments --output artifacts/ui/receive_payments.png
     python scripts/capture_ui_screenshot.py --tab deposits --output artifacts/ui/make_deposits.png
+    python scripts/capture_ui_screenshot.py --tab checks --output artifacts/ui/write_checks.png
 
 Saves: artifacts/ui/main_window.png (default)
 Exit code 0 on success, non-zero on failure.
@@ -32,7 +33,7 @@ def main() -> int:
     parser.add_argument(
         "--tab",
         default="main",
-        help="Which surface to capture: main (default), invoices, bills (Enter Bills), payments, or deposits.",
+        help="Which surface to capture: main (default), invoices, bills (Enter Bills), payments, deposits, or checks.",
     )
     parser.add_argument(
         "--output",
@@ -48,6 +49,7 @@ def main() -> int:
     from PySide6.QtWidgets import QApplication
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from desktop_app.check_screen import CheckScreen  # noqa: E402
     from desktop_app.enter_bills_screen import EnterBillsScreen  # noqa: E402
     from desktop_app.invoice_screen import InvoiceScreen  # noqa: E402
     from desktop_app.main import MainWindow  # noqa: E402
@@ -67,6 +69,8 @@ def main() -> int:
         output_path = Path("artifacts") / "ui" / "receive_payments.png"
     elif tab in ("deposits", "make-deposits", "make_deposits"):
         output_path = Path("artifacts") / "ui" / "make_deposits.png"
+    elif tab in ("checks", "write-checks", "write_checks"):
+        output_path = Path("artifacts") / "ui" / "write_checks.png"
     else:
         output_path = Path("artifacts") / "ui" / "main_window.png"
 
@@ -114,6 +118,17 @@ def main() -> int:
                 window._tabs.setCurrentIndex(idx)
         if isinstance(dep, MakeDepositsScreen):
             grab_widget = dep
+            grab_widget.resize(1280, 860)
+            grab_widget.setMinimumSize(1280, 860)
+            grab_widget.show()
+    elif tab in ("checks", "write-checks", "write_checks"):
+        chk = getattr(window, "_check_screen", None)
+        if chk is not None and hasattr(window, "_tabs"):
+            idx = window._tabs.indexOf(chk)
+            if idx >= 0:
+                window._tabs.setCurrentIndex(idx)
+        if isinstance(chk, CheckScreen):
+            grab_widget = chk
             grab_widget.resize(1280, 860)
             grab_widget.setMinimumSize(1280, 860)
             grab_widget.show()

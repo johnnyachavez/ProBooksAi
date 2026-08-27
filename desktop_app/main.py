@@ -1217,7 +1217,8 @@ class MainWindow(QMainWindow):
         )
         self._check_screen = CheckScreen(
             bank_db=self._bank_db,
-            coa_list=[r["account_name"] for r in (self._coa_db.list_accounts() or [])],
+            coa_list=self._coa_db.display_list() if self._coa_db is not None else [],
+            ap_conn=conn,
         )
         self._check_screen.transactionSaved.connect(self._on_check_screen_saved)
 
@@ -2635,8 +2636,8 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_asset_register_tab"):
             self._asset_register_tab.update_coa_list(coa_display)
         if hasattr(self, "_check_screen"):
-            coa_names = [r["account_name"] for r in (self._coa_db.list_accounts() or [])]
-            self._check_screen.refresh_coa(coa_names)
+            self._check_screen.refresh_coa(coa_display)
+            self._check_screen.refresh_payees()
         if hasattr(self, "_journal_tab"):
             self._journal_tab.refresh_coa(self._coa_db.display_list())
         if hasattr(self, "_invoice_codes_screen"):
