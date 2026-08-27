@@ -7,11 +7,11 @@ pay-ready loads for the desktop forms. ``BOL #`` is the same column; older
 year tabs may use TICKET # / INV PRICE / PAY PRICE.
 
 v1 is **offline CSV** matching those columns (not a live Google token in the
-app). Live loads live on the workbook tab named for the **current calendar
-year** (``2026``, ``2027``, … — never only one hardcoded year); older year
-tabs are history. Live Google Sheet pull is stubbed (no API token in-repo).
-Tax IDs, SSNs, EINs, DIR numbers, Trucker IDs, CA#, and bank numbers are
-never imported.
+app). Only **new unbilled** loads are queued: live year tab (current calendar
+year, else the highest 4-digit year tab) and a **blank QB Inv No.** Already
+invoiced rows and history year tabs (2024, 2025, …) are skipped. Live Google
+Sheet pull is stubbed (no API token in-repo). Tax IDs, SSNs, EINs, DIR numbers,
+Trucker IDs, CA#, and bank numbers are never imported.
 """
 
 from __future__ import annotations
@@ -297,6 +297,9 @@ class DispatchImportResult:
     rows: list[DispatchLoadRow]
     skipped_sensitive_headers: tuple[str, ...] = ()
     ignored_headers: tuple[str, ...] = ()
+    skipped_already_invoiced: tuple[DispatchLoadRow, ...] = ()
+    skipped_history_year: tuple[DispatchLoadRow, ...] = ()
+    live_year: Optional[int] = None
     source_ref: str = ""
     source_type: str = SOURCE_TYPE_CSV
 
@@ -458,11 +461,81 @@ def job_billing_rule(job_code: str) -> Optional[dict[str, str]]:
     return None
 
 
+def live_dispatch_year(
+    *,
+    as_of: Optional[date] = None,
+    tab_names: Sequence[str] = (),
+) -> int:
+    """Year of the live loads tab.
+
+    Prefer the current calendar year when that tab exists (or when no workbook
+    tabs were supplied). If the current-year tab is missing from *tab_names*,
+    use the highest 4-digit year tab. History years are never live unless they
+    are that fallback tab.
+    """
+    chosen = select_live_dispatch_year_tab(tab_names, as_of=as_of) if tab_names else None
+    if chosen:
+        return int(chosen)
+    return int(expected_live_dispatch_year_tab(as_of=as_of))
+
+
+def row_is_already_invoiced(row: DispatchLoadRow) -> bool:
+    """True when QB Inv No. is filled — already billed in QuickBooks; do not stage."""
+    return bool((row.qb_inv_no or "").strip())
+
+
+def row_load_year(row: DispatchLoadRow) -> Optional[int]:
+    iso = (row.date_iso or "").strip()
+    if len(iso) >= 4 and iso[:4].isdigit():
+        y = int(iso[:4])
+        if 1990 <= y <= 2100:
+            return y
+    return None
+
+
+def is_history_dispatch_year(
+    year: int,
+    *,
+    as_of: Optional[date] = None,
+    tab_names: Sequence[str] = (),
+) -> bool:
+    return int(year) != live_dispatch_year(as_of=as_of, tab_names=tab_names)
+
+
+def filter_new_unbilled_loads(
+    rows: Sequence[DispatchLoadRow],
+    *,
+    as_of: Optional[date] = None,
+    tab_names: Sequence[str] = (),
+    source_tab: Optional[str] = None,
+) -> tuple[list[DispatchLoadRow], list[DispatchLoadRow], list[DispatchLoadRow]]:
+    """Keep blank-QB-Inv-No. loads on the live year tab.
+
+    Returns ``(keep, already_invoiced, history_year)``.
+    """
+    src = (source_tab or "").strip()
+    live = live_dispatch_year(as_of=as_of, tab_names=tab_names)
+    if src and _YEAR_TAB_NAME.fullmatch(src) and int(src) != live:
+        return [], [], list(rows)
+    keep: list[DispatchLoadRow] = []
+    invoiced: list[DispatchLoadRow] = []
+    history: list[DispatchLoadRow] = []
+    for row in rows:
+        year = row_load_year(row)
+        if year is None or year != live:
+            history.append(row)
+            continue
+        if row_is_already_invoiced(row):
+            invoiced.append(row)
+            continue
+        keep.append(row)
+    return keep, invoiced, history
+
+
 def invoice_group_key(row: DispatchLoadRow) -> Optional[tuple]:
-    """Same QB Inv No. if present; else same INVOICE customer/job + DATE."""
-    qb = (row.qb_inv_no or "").strip()
-    if qb:
-        return ("qb", qb.lower())
+    """Group new loads by INVOICE customer/job + DATE (not QB Inv No.)."""
+    if row_is_already_invoiced(row):
+        return None
     code = (row.invoice_code or "").strip()
     if code and row.date_iso:
         return ("job_date", code.lower(), row.date_iso)
@@ -514,8 +587,15 @@ def parse_dispatch_csv(
     source: PathOrText,
     *,
     source_ref: str = "",
+    as_of: Optional[date] = None,
+    tab_names: Sequence[str] = (),
+    source_tab: Optional[str] = None,
 ) -> DispatchImportResult:
-    """Parse a dispatch loads CSV. Sensitive columns are dropped, not stored."""
+    """Parse a dispatch loads CSV. Sensitive columns are dropped, not stored.
+
+    Only **new unbilled** live-year-tab rows are returned in ``rows``. Rows with a
+    QB Inv No. or a history-year date are recorded on the result but not queued.
+    """
     close = False
     name = source_ref
     if isinstance(source, (str, Path)):
@@ -573,10 +653,19 @@ def parse_dispatch_csv(
                     source_ref=name,
                 )
             )
+        keep, invoiced, history = filter_new_unbilled_loads(
+            rows,
+            as_of=as_of,
+            tab_names=tab_names,
+            source_tab=source_tab,
+        )
         return DispatchImportResult(
-            rows=rows,
+            rows=keep,
             skipped_sensitive_headers=tuple(skipped),
             ignored_headers=tuple(ignored),
+            skipped_already_invoiced=tuple(invoiced),
+            skipped_history_year=tuple(history),
+            live_year=live_dispatch_year(as_of=as_of, tab_names=tab_names),
             source_ref=name,
             source_type=SOURCE_TYPE_CSV,
         )
@@ -585,8 +674,21 @@ def parse_dispatch_csv(
             fh.close()
 
 
-def parse_dispatch_csv_text(text: str, *, source_ref: str = "pasted.csv") -> DispatchImportResult:
-    return parse_dispatch_csv(io.StringIO(text), source_ref=source_ref)
+def parse_dispatch_csv_text(
+    text: str,
+    *,
+    source_ref: str = "pasted.csv",
+    as_of: Optional[date] = None,
+    tab_names: Sequence[str] = (),
+    source_tab: Optional[str] = None,
+) -> DispatchImportResult:
+    return parse_dispatch_csv(
+        io.StringIO(text),
+        source_ref=source_ref,
+        as_of=as_of,
+        tab_names=tab_names,
+        source_tab=source_tab,
+    )
 
 
 def _invoice_draft_from_rows(key: tuple, group: list[DispatchLoadRow]) -> DispatchInvoiceDraft:
@@ -613,10 +715,6 @@ def _invoice_draft_from_rows(key: tuple, group: list[DispatchLoadRow]) -> Dispat
             )
         )
     qb = ""
-    for r in group:
-        if (r.qb_inv_no or "").strip():
-            qb = r.qb_inv_no.strip()
-            break
     return DispatchInvoiceDraft(
         group_key=key,
         invoice_code=(first.invoice_code or "").strip(),
@@ -631,11 +729,16 @@ def _invoice_draft_from_rows(key: tuple, group: list[DispatchLoadRow]) -> Dispat
 def group_invoice_drafts(
     rows: Iterable[DispatchLoadRow],
 ) -> tuple[list[DispatchInvoiceDraft], list[DispatchLoadRow]]:
-    """Group invoice-ready rows; skip blank INVOICE RATE (needs rate)."""
+    """Group invoice-ready rows by job + DATE; skip blank INVOICE RATE (needs rate).
+
+    Rows with a QB Inv No. are ignored (already invoiced).
+    """
     skipped: list[DispatchLoadRow] = []
     buckets: dict[tuple, list[DispatchLoadRow]] = {}
     order: list[tuple] = []
     for row in rows:
+        if row_is_already_invoiced(row):
+            continue
         if row.invoice_rate_missing or row.invoice_rate is None:
             skipped.append(row)
             continue
@@ -692,12 +795,15 @@ def group_bill_drafts(
 ) -> tuple[list[DispatchBillDraft], list[DispatchLoadRow]]:
     """Group pay-ready rows by DRIVER + DATE. Blank PAY RATE is skipped (needs pay).
 
-    ``PAY RATE`` of ``0`` is included (owner-operator JC).
+    ``PAY RATE`` of ``0`` is included (owner-operator JC). Rows with a QB Inv No.
+    are ignored (already invoiced).
     """
     skipped: list[DispatchLoadRow] = []
     buckets: dict[tuple, list[DispatchLoadRow]] = {}
     order: list[tuple] = []
     for row in rows:
+        if row_is_already_invoiced(row):
+            continue
         if row.pay_rate_missing or row.pay_rate is None:
             skipped.append(row)
             continue
@@ -718,6 +824,8 @@ def drafts_for_invoice_row(
     target: DispatchLoadRow,
 ) -> Optional[DispatchInvoiceDraft]:
     """Invoice draft containing *target* if that load has a rate and a group key."""
+    if row_is_already_invoiced(target):
+        return None
     if target.invoice_rate_missing or target.invoice_rate is None:
         return None
     key = invoice_group_key(target)
@@ -726,7 +834,8 @@ def drafts_for_invoice_row(
     members = [
         r
         for r in rows
-        if not r.invoice_rate_missing
+        if not row_is_already_invoiced(r)
+        and not r.invoice_rate_missing
         and r.invoice_rate is not None
         and invoice_group_key(r) == key
     ]
@@ -739,6 +848,8 @@ def drafts_for_bill_row(
     rows: Sequence[DispatchLoadRow],
     target: DispatchLoadRow,
 ) -> Optional[DispatchBillDraft]:
+    if row_is_already_invoiced(target):
+        return None
     if target.pay_rate_missing or target.pay_rate is None:
         return None
     key = bill_group_key(target)
@@ -747,7 +858,8 @@ def drafts_for_bill_row(
     members = [
         r
         for r in rows
-        if not r.pay_rate_missing
+        if not row_is_already_invoiced(r)
+        and not r.pay_rate_missing
         and r.pay_rate is not None
         and bill_group_key(r) == key
     ]
@@ -780,7 +892,8 @@ def fetch_google_dispatch_rows(
         "Import dispatch CSV on Invoice Intake. "
         f"Live loads are the tab named for the current calendar year ({year_tab}); "
         "if that tab is missing, use the highest 4-digit year tab. Older year "
-        "tabs are history, not the live intake source. "
+        "tabs are history — do not import them. Only rows with a blank QB Inv No. "
+        "are new unbilled loads; skip any row that already has a QB Inv No. "
         "Year-tab columns: DATE | INVOICE | DISPATCH | DRIVER | INVOICE RATE | "
         "PAY RATE | PO / LOAD# | BOL# | QB Inv No. "
         "Column mapping follows that workbook; do not paste API tokens into the app."

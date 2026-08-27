@@ -161,7 +161,7 @@ class InvoiceIntakePanel(QWidget):
             "Flow: stage a PDF, image, pasted text, or dispatch CSV → review → "
             "Send to Manual Invoice (Create Invoices) or Send to Enter Bills. "
             "Dispatch CSV is the offline v1 path for the 1 CHAVAN DISPATCH sheet "
-            "(live loads = current-year tab, not a live Google token)."
+            "(current-year tab only; blank QB Inv No.; not a live Google token)."
         )
         flow.setWordWrap(True)
         flow.setStyleSheet(f"color: {_INV_CAPTION}; font-size: 11px; background: transparent;")
@@ -184,9 +184,12 @@ class InvoiceIntakePanel(QWidget):
         self._btn_paste.clicked.connect(self._on_paste_text)
         self._btn_csv = QPushButton("Import dispatch CSV…")
         self._btn_csv.setToolTip(
-            "Load a CSV export of the 1 CHAVAN DISPATCH live loads table "
-            "(the tab named for the current calendar year: DATE | INVOICE | DISPATCH | "
-            "DRIVER | INVOICE RATE | PAY RATE | PO / LOAD# | BOL# | QB Inv No.). "
+            "Load a CSV export of the 1 CHAVAN DISPATCH live year tab "
+            "(DATE | INVOICE | DISPATCH | DRIVER | INVOICE RATE | PAY RATE | "
+            "PO / LOAD# | BOL# | QB Inv No.). "
+            "Only blank QB Inv No. rows on the current-year tab are queued. "
+            "Rows that already have a QB Inv No. are skipped (already invoiced). "
+            "History year tabs are not imported. "
             "Tax ID / SSN / EIN / DIR / bank columns are ignored. "
             "Blank invoice rates stay in the queue as needs rate. "
             "Live Google pull is not used; export the year tab as CSV."
@@ -701,10 +704,10 @@ class InvoiceIntakePanel(QWidget):
             return
         self.load_dispatch_csv_path(path)
 
-    def load_dispatch_csv_path(self, path: str, *, notify: bool = True) -> int:
+    def load_dispatch_csv_path(self, path: str, *, notify: bool = True, as_of=None) -> int:
         """Load a dispatch CSV into the queue. Returns the number of rows added."""
         try:
-            result = parse_dispatch_csv(path)
+            result = parse_dispatch_csv(path, as_of=as_of)
         except (OSError, UnicodeDecodeError, ValueError) as exc:
             message_box_information_ok(
                 self,
@@ -715,17 +718,28 @@ class InvoiceIntakePanel(QWidget):
             return 0
         for load in result.rows:
             self._append_dispatch_row(load)
-        extra = ""
-        if result.skipped_sensitive_headers:
-            extra = (
-                f" Skipped tax/ID columns: {', '.join(result.skipped_sensitive_headers)}."
+        extra_bits: list[str] = []
+        n_inv = len(result.skipped_already_invoiced)
+        if n_inv:
+            extra_bits.append(
+                f"Skipped {n_inv} already invoiced (QB Inv No. filled)."
             )
+        n_hist = len(result.skipped_history_year)
+        if n_hist:
+            extra_bits.append(
+                f"Skipped {n_hist} history-year load{'s' if n_hist != 1 else ''}."
+            )
+        if result.skipped_sensitive_headers:
+            extra_bits.append(
+                f"Skipped tax/ID columns: {', '.join(result.skipped_sensitive_headers)}."
+            )
+        extra = (" " + " ".join(extra_bits)) if extra_bits else ""
         n = len(result.rows)
         if notify:
             message_box_information_ok(
                 self,
                 "Invoice Intake",
-                f"Loaded {n} dispatch load{'s' if n != 1 else ''} from {os.path.basename(path)}."
+                f"Loaded {n} new unbilled load{'s' if n != 1 else ''} from {os.path.basename(path)}."
                 f"{extra}",
                 ok_tip="Close; review needs rate / needs pay, then Send to Manual Invoice or Enter Bills.",
             )

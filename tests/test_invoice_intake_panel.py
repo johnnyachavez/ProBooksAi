@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
@@ -25,6 +26,7 @@ from probooksai.bank_import import BankDatabase
 from probooksai.extensions_schema import apply_extensions
 
 SAMPLE_DISPATCH_CSV = Path(__file__).resolve().parent / "fixtures" / "dispatch_intake_sample.csv"
+_AS_OF = date(2026, 8, 27)
 
 
 @pytest.fixture
@@ -144,7 +146,7 @@ def test_dispatch_csv_three_3235_loads_one_invoice_skips_blank_rate(
     bills = EnterBillsScreen(ap_conn=db._conn)
     screen.set_enter_bills_screen(bills)
     intake = screen._invoice_intake
-    n = intake.load_dispatch_csv_path(str(SAMPLE_DISPATCH_CSV), notify=False)
+    n = intake.load_dispatch_csv_path(str(SAMPLE_DISPATCH_CSV), notify=False, as_of=_AS_OF)
     assert n == 5
     statuses = [intake._table.item(r, 3).text() for r in range(intake._table.rowCount())]
     assert statuses[0] == "Staged"
@@ -206,7 +208,7 @@ def test_dispatch_csv_send_to_enter_bills_zero_pay_allowed(
     bills = EnterBillsScreen(ap_conn=db._conn)
     screen.set_enter_bills_screen(bills)
     intake = screen._invoice_intake
-    intake.load_dispatch_csv_path(str(SAMPLE_DISPATCH_CSV), notify=False)
+    intake.load_dispatch_csv_path(str(SAMPLE_DISPATCH_CSV), notify=False, as_of=_AS_OF)
     # Last sample row: BST / Sample Hauling LLC / PAY RATE 0
     last = intake._table.rowCount() - 1
     intake._table.selectRow(last)
@@ -236,6 +238,29 @@ def test_dispatch_google_stub_does_not_require_token(qapp: QApplication) -> None
     assert "CSV" in args[2]
     assert "current calendar year" in args[2]
     assert "BOL#" in args[2]
+    assert "blank QB Inv No" in args[2]
+
+
+def test_dispatch_csv_skips_row_with_qb_inv_no(qapp: QApplication, tmp_path) -> None:
+    csv_path = tmp_path / "mixed.csv"
+    csv_path.write_text(
+        "DATE,INVOICE,DISPATCH,DRIVER,INVOICE RATE,PAY RATE,PO / LOAD#,BOL#,QB Inv No.\n"
+        "8.25.2026,3235,Already billed,AR,160,100,PO-A,B1,12332\n"
+        "8.25.2026,3235,New load,RAYA,160,100,PO-A,B2,\n",
+        encoding="utf-8",
+    )
+    db_path = tmp_path / "skip_qb.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    screen = InvoiceScreen(ap_conn=db._conn)
+    intake = screen._invoice_intake
+    n = intake.load_dispatch_csv_path(str(csv_path), notify=False, as_of=_AS_OF)
+    assert n == 1
+    assert intake._table.rowCount() == 1
+    review = intake._txt_extracted.toPlainText()
+    assert "12332" not in review
+    assert "B2" in review or "New load" in review
+    db.close()
 
 
 def test_dispatch_intake_screenshot_after_csv_load(qapp: QApplication, tmp_path) -> None:
@@ -244,7 +269,7 @@ def test_dispatch_intake_screenshot_after_csv_load(qapp: QApplication, tmp_path)
     apply_extensions(db._conn)
     screen = InvoiceScreen(ap_conn=db._conn)
     intake = screen._invoice_intake
-    intake.load_dispatch_csv_path(str(SAMPLE_DISPATCH_CSV), notify=False)
+    intake.load_dispatch_csv_path(str(SAMPLE_DISPATCH_CSV), notify=False, as_of=_AS_OF)
     screen._invoice_tabs.setCurrentWidget(intake)
     screen.resize(1200, 800)
     screen.show()

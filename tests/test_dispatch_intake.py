@@ -31,6 +31,18 @@ from probooksai.dispatch_intake import (
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 SAMPLE_CSV = FIXTURES / "dispatch_intake_sample.csv"
+# Sample + synthetic live-tab dates are 2026; pin so tests stay valid in later years.
+_AS_OF = date(2026, 8, 27)
+
+
+def _parse_text(text: str, **kwargs) -> object:
+    kwargs.setdefault("as_of", _AS_OF)
+    return parse_dispatch_csv_text(text, **kwargs)
+
+
+def _parse_file(path: Path, **kwargs):
+    kwargs.setdefault("as_of", _AS_OF)
+    return parse_dispatch_csv(path, **kwargs)
 
 
 def test_parse_qty_rate_160x7_splits_rate_and_quantity() -> None:
@@ -73,7 +85,7 @@ def test_parse_pay_rate_zero_allowed_for_owner_operator() -> None:
 
 
 def test_parse_sample_csv_three_3235_loads_and_blank_rate() -> None:
-    result = parse_dispatch_csv(SAMPLE_CSV)
+    result = _parse_file(SAMPLE_CSV)
     assert result.skipped_sensitive_headers == ()
     jobs = [r.invoice_code for r in result.rows]
     assert jobs.count("3235") == 4
@@ -99,22 +111,38 @@ def test_parse_sample_csv_three_3235_loads_and_blank_rate() -> None:
     assert skipped_3235[0].queue_status() == "needs rate"
 
 
-def test_group_invoice_by_qb_inv_no_overrides_job_date() -> None:
+def test_rows_with_qb_inv_no_are_skipped_not_drafted() -> None:
+    """Already invoiced loads (QB Inv No. filled) are not queued or drafted."""
     text = (
         "DATE,INVOICE,DISPATCH,DRIVER,INVOICE RATE,PAY RATE,PO / LOAD#,BOL#,QB Inv No.\n"
-        "2026-08-01,3235,Load A,Alex,10,1,PO-1,B1,QB-9\n"
-        "2026-08-02,3235,Load B,Alex,20,1,PO-1,B2,QB-9\n"
-        "2026-08-01,3235,Load C,Alex,30,1,PO-1,B3,\n"
+        "8.25.2026,3235,Load A,AR,160,100,PO-1,B1,12332\n"
+        "8.25.2026,3235,Load B,RAYA,160,100,PO-1,B2,\n"
+        "2025-08-01,3235,Old history,AR,160,100,PO-1,B3,\n"
     )
-    result = parse_dispatch_csv_text(text)
-    drafts, skipped = group_invoice_drafts(result.rows)
-    assert skipped == []
-    by_qb = [d for d in drafts if d.qb_inv_no == "QB-9"]
-    assert len(by_qb) == 1
-    assert len(by_qb[0].lines) == 2
-    same_day = [d for d in drafts if not d.qb_inv_no]
-    assert len(same_day) == 1
-    assert len(same_day[0].lines) == 1
+    result = _parse_text(text)
+    assert [r.bol for r in result.rows] == ["B2"]
+    assert result.rows[0].qb_inv_no == ""
+    assert result.rows[0].driver == "RAYA"
+    assert len(result.skipped_already_invoiced) == 1
+    assert result.skipped_already_invoiced[0].bol == "B1"
+    assert result.skipped_already_invoiced[0].qb_inv_no == "12332"
+    assert len(result.skipped_history_year) == 1
+    assert result.skipped_history_year[0].bol == "B3"
+    inv_drafts, inv_skipped = group_invoice_drafts(result.rows)
+    assert inv_skipped == []
+    assert len(inv_drafts) == 1
+    assert len(inv_drafts[0].lines) == 1
+    assert inv_drafts[0].lines[0].bol == "B2"
+    assert inv_drafts[0].qb_inv_no == ""
+    bill_drafts, bill_skipped = group_bill_drafts(result.rows)
+    assert bill_skipped == []
+    assert len(bill_drafts) == 1
+    assert bill_drafts[0].vendor_name == "RAYA"
+    # Grouping helpers must not revive the already-invoiced row.
+    assert drafts_for_invoice_row(
+        list(result.rows) + list(result.skipped_already_invoiced),
+        result.skipped_already_invoiced[0],
+    ) is None
 
 
 def test_skip_missing_invoice_rate_does_not_build_draft() -> None:
@@ -122,7 +150,7 @@ def test_skip_missing_invoice_rate_does_not_build_draft() -> None:
         "DATE,INVOICE,DISPATCH,DRIVER,INVOICE RATE,PAY RATE,PO / LOAD#,BOL#,QB Inv No.\n"
         "2026-08-01,3235,Only this,Alex,,50,PO-1,B1,\n"
     )
-    result = parse_dispatch_csv_text(text)
+    result = _parse_text(text)
     drafts, skipped = group_invoice_drafts(result.rows)
     assert drafts == []
     assert len(skipped) == 1
@@ -140,7 +168,7 @@ def test_sensitive_tax_id_columns_are_not_imported(tmp_path: Path) -> None:
         "MUST-NOT-IMPORT,MUST-NOT-IMPORT\n",
         encoding="utf-8",
     )
-    result = parse_dispatch_csv(csv_path)
+    result = _parse_file(csv_path)
     sensitive = {h.lower() for h in result.skipped_sensitive_headers}
     assert "ssn" in sensitive
     assert "ein" in sensitive
@@ -152,7 +180,7 @@ def test_sensitive_tax_id_columns_are_not_imported(tmp_path: Path) -> None:
     assert "must-not-import" not in blob
     assert "ssn" not in blob
     assert "ein" not in blob
-    dumped = parse_dispatch_csv_text(csv_path.read_text(encoding="utf-8"))
+    dumped = _parse_text(csv_path.read_text(encoding="utf-8"))
     assert "MUST-NOT-IMPORT" not in dumped.rows[0].review_text()
 
 
@@ -183,7 +211,7 @@ def test_dispatch_and_driver_headers_are_not_sensitive() -> None:
 
 
 def test_bill_group_includes_zero_pay_rate_skips_blank() -> None:
-    result = parse_dispatch_csv(SAMPLE_CSV)
+    result = _parse_file(SAMPLE_CSV)
     drafts, skipped = group_bill_drafts(result.rows)
     # Four 3235 rows have pay rates (100, 100, 100, 90); BST has 0.
     alex = [d for d in drafts if d.vendor_name == "Alex Rivera"]
@@ -235,6 +263,7 @@ def test_google_live_pull_is_stubbed_without_using_a_token() -> None:
     assert "current calendar year" in msg
     assert expected_live_dispatch_year_tab() in msg
     assert "DATE | INVOICE | DISPATCH | DRIVER | INVOICE RATE | PAY RATE | PO / LOAD# | BOL# | QB Inv No." in msg
+    assert "blank QB Inv No" in msg
     assert "not-a-real-token" not in msg
     assert GOOGLE_DISPATCH_SHEET_ID == "112pHWAkiTIk5N31mAUzUuydsSdUh9fVoBSADnZHzlXQ"
     assert "token" not in GOOGLE_DISPATCH_SHEET_ID.lower()
@@ -242,30 +271,57 @@ def test_google_live_pull_is_stubbed_without_using_a_token() -> None:
 
 
 def test_live_sheet_dotted_dates_and_bol_hash_header() -> None:
-    """CSV shape from 1 CHAVAN DISPATCH loads tab (synthetic rows, no PII)."""
+    """CSV shape from 1 CHAVAN DISPATCH loads tab (synthetic unbilled rows, no PII)."""
     text = (
         "DATE,INVOICE,DISPATCH,DRIVER,INVOICE RATE,PAY RATE,PO / LOAD#,BOL #,QB Inv No.\n"
-        "1.5.2026,3235,Plant A onsite,RAYA,160,100,PO-A,30609,12332\n"
-        "01.19.2026,3235,Plant A haul,AR,160X7,100,PO-A,31288,12333\n"
-        "1.8.2026,3235,Super 10,SS,160,X,PO-B,3195919,12338\n"
-        "1.6.2026,3235,Super 10 scale,SS,160,SCALE,PO-B,3195917,12334\n"
+        "1.5.2026,3235,Plant A onsite,RAYA,160,100,PO-A,30609,\n"
+        "01.19.2026,3235,Plant A haul,AR,160X7,100,PO-A,31288,\n"
+        "1.8.2026,3235,Super 10,SS,160,X,PO-B,3195919,\n"
+        "1.6.2026,3235,Super 10 scale,SS,160,SCALE,PO-B,3195917,\n"
+        "8.25.2026,3235,Plant A,AR,160,100,PO-A,40001,\n"
     )
-    result = parse_dispatch_csv_text(text, source_ref="chavan-loads.csv")
+    result = _parse_text(text, source_ref="chavan-loads.csv")
     assert [r.date_iso for r in result.rows] == [
         "2026-01-05",
         "2026-01-19",
         "2026-01-08",
         "2026-01-06",
+        "2026-08-25",
     ]
+    assert result.skipped_already_invoiced == ()
     assert result.rows[0].bol == "30609"
     assert result.rows[1].invoice_qty == 7.0
     assert result.rows[1].invoice_rate == 160.0
     assert result.rows[2].pay_rate_missing is True
     assert result.rows[3].pay_rate_missing is True
     drafts, skipped = group_invoice_drafts(result.rows)
-    assert len(skipped) == 0
-    # Same job+date groups; 1.5 vs 1.19 vs 1.8 vs 1.6 are four invoices unless QB Inv differs
-    assert len(drafts) == 4
+    assert skipped == []
+    assert len(drafts) == 5
+
+
+def test_multiple_drivers_same_job_date_stay_separate_lines() -> None:
+    text = (
+        "DATE,INVOICE,DISPATCH,DRIVER,INVOICE RATE,PAY RATE,PO / LOAD#,BOL#,QB Inv No.\n"
+        "8.25.2026,3235,Plant A,AR,160,100,PO-A,40001,\n"
+        "8.25.2026,3235,Plant A,RAYA,160,100,PO-A,40002,\n"
+    )
+    result = _parse_text(text)
+    drafts, skipped = group_invoice_drafts(result.rows)
+    assert skipped == []
+    assert len(drafts) == 1
+    assert [ln.bol for ln in drafts[0].lines] == ["40001", "40002"]
+    bills, _ = group_bill_drafts(result.rows)
+    assert {d.vendor_name for d in bills} == {"AR", "RAYA"}
+
+
+def test_history_year_tab_export_is_not_imported() -> None:
+    text = (
+        "DATE,INVOICE,DISPATCH,DRIVER,INVOICE RATE,PAY RATE,PO / LOAD#,BOL#,QB Inv No.\n"
+        "8.25.2026,3235,Would look live,AR,160,100,PO-A,1,\n"
+    )
+    result = _parse_text(text, source_tab="2025")
+    assert result.rows == []
+    assert len(result.skipped_history_year) == 1
 
 
 def test_ticket_hash_header_aliases_to_bol() -> None:
@@ -273,7 +329,7 @@ def test_ticket_hash_header_aliases_to_bol() -> None:
         "DATE,INVOICE,DISPATCH,DRIVER,INVOICE RATE,PAY RATE,PO / LOAD#,TICKET #,QB Inv No.\n"
         "2026-08-01,BST,Yard to mill,AR,85,0,LOAD-1,24570,\n"
     )
-    result = parse_dispatch_csv_text(text)
+    result = _parse_text(text)
     assert len(result.rows) == 1
     assert result.rows[0].bol == "24570"
     assert result.rows[0].pay_rate == 0.0
@@ -283,6 +339,7 @@ def test_ticket_hash_header_aliases_to_bol() -> None:
 def test_parse_dispatch_date_dotted_us_and_incomplete() -> None:
     assert parse_dispatch_date("1.5.2026") == "2026-01-05"
     assert parse_dispatch_date("02.04.2026") == "2026-02-04"
+    assert parse_dispatch_date("8.25.2026") == "2026-08-25"
     assert parse_dispatch_date("1.13") is None
 
 
