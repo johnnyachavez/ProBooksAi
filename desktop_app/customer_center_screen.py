@@ -243,6 +243,8 @@ class CustomerCenterScreen(QWidget):
         Open Create Invoices (arg is customer id, or 0 if none selected).
     receivePaymentsRequested
         Open Receive Payments for the customer (id or 0).
+    incomeTrackerRequested
+        Open Income Tracker, optionally filtered to the selected customer.
     openInvoiceRequested
         Double-click an Invoice row → Create Invoices for that invoice id.
     openPaymentRequested
@@ -253,6 +255,7 @@ class CustomerCenterScreen(QWidget):
 
     createInvoicesRequested = Signal(int)
     receivePaymentsRequested = Signal(int)
+    incomeTrackerRequested = Signal(int)
     openInvoiceRequested = Signal(int)
     openPaymentRequested = Signal(int)
     customerRecordsChanged = Signal()
@@ -410,8 +413,8 @@ class CustomerCenterScreen(QWidget):
         self._btn_income_tracker = QPushButton("Income Tracker")
         self._btn_income_tracker.setObjectName("customerCenterIncomeTracker")
         self._style_push(self._btn_income_tracker)
-        self._btn_income_tracker.setToolTip("Open Create Invoices (Income Tracker) for this customer.")
-        self._btn_income_tracker.clicked.connect(self._on_new_create_invoices)
+        self._btn_income_tracker.setToolTip("Open Income Tracker for this customer.")
+        self._btn_income_tracker.clicked.connect(self._on_income_tracker)
         row.addWidget(self._btn_income_tracker)
 
         row.addStretch(1)
@@ -1287,6 +1290,9 @@ QHeaderView::section {{
 
     def _on_new_create_invoices(self) -> None:
         self.createInvoicesRequested.emit(self._focused_id())
+
+    def _on_income_tracker(self) -> None:
+        self.incomeTrackerRequested.emit(self._focused_id())
 
     def _on_new_receive_payments(self) -> None:
         self.receivePaymentsRequested.emit(self._focused_id())

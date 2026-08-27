@@ -230,6 +230,24 @@ def _home_icon_pixmap(kind: str, size: int = _ICON_PX) -> QPixmap:
         p.setPen(QPen(QColor("#8A6A10"), 1.2))
         y = box.center().y()
         p.drawLine(QPointF(box.left() + 10, y), QPointF(box.right() - 16, y))
+    elif kind == "income_tracker":
+        _doc("#E8F1FA", "#1E4E8C")
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor("#E08A1E"))
+        p.drawRect(QRectF(box.left() + 10, box.bottom() - 16, 8, 10))
+        p.setBrush(QColor("#B42318"))
+        p.drawRect(QRectF(box.left() + 20, box.bottom() - 20, 8, 14))
+        p.setBrush(QColor("#7CB342"))
+        p.drawRect(QRectF(box.left() + 30, box.bottom() - 14, 8, 8))
+    elif kind == "bill_tracker":
+        p.setPen(QPen(QColor("#C49214"), 1.4))
+        p.setBrush(QColor("#F6E7A8"))
+        p.drawRoundedRect(box.adjusted(8, 4, -8, -4), 3, 3)
+        p.setBrush(QColor("#E8B931"))
+        p.drawRoundedRect(box.adjusted(4, 10, -12, -2), 3, 3)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor("#B42318"))
+        p.drawEllipse(QRectF(box.right() - 18, box.bottom() - 18, 14, 14))
     elif kind == "pay_bills":
         p.setPen(QPen(QColor("#2E7D32"), 1.4))
         p.setBrush(QColor("#C8E6C9"))
@@ -499,8 +517,8 @@ class DashboardTab(QWidget):
         self.setPalette(_light_home_palette())
         self.setStyleSheet(f"QWidget#qbHomePage {{ background: {_HOME_CANVAS}; }}")
         self.setToolTip(
-            "Home: company overview with Create Invoices, Receive Payments, Enter Bills, "
-            "Pay Bills, Write Checks, and Make Deposits. Same company .db as other tabs "
+            "Home: company overview with Create Invoices, Receive Payments, Income Tracker, "
+            "Enter Bills, Pay Bills, Bill Tracker, Write Checks, and Make Deposits. Same company .db as other tabs "
             "(File → Backup / Restore, probooks.backup)."
         )
         self._build_ui()
@@ -581,9 +599,17 @@ class DashboardTab(QWidget):
             "pay_bills",
             "Open Pay Bills to pay open vendor bills.",
         )
+        self._btn_bill_tracker = self._shortcut(
+            "bill_tracker",
+            "Bill Tracker",
+            "bill_tracker",
+            "Open Bill Tracker (open, overdue, and paid vendor bills).",
+        )
         v_row.addWidget(self._btn_bills)
         v_row.addWidget(_FlowArrow("right"))
         v_row.addWidget(self._btn_pay_bills)
+        v_row.addWidget(_FlowArrow("right"))
+        v_row.addWidget(self._btn_bill_tracker)
         v_row.addStretch(1)
         vendors.body.addLayout(v_row)
         down_wrap = QHBoxLayout()
@@ -633,9 +659,17 @@ class DashboardTab(QWidget):
             "payments",
             "Open Receive Payments (Customer Payment).",
         )
+        self._btn_income_tracker = self._shortcut(
+            "income_tracker",
+            "Income\nTracker",
+            "income_tracker",
+            "Open Income Tracker (unbilled, open invoices, overdue, paid).",
+        )
         cust_row.addWidget(self._btn_invoices)
         cust_row.addWidget(_FlowArrow("right"))
         cust_row.addWidget(self._btn_payments)
+        cust_row.addWidget(_FlowArrow("right"))
+        cust_row.addWidget(self._btn_income_tracker)
         cust_row.addWidget(_FlowArrow("right"))
         cust_row.addStretch(1)
         customers.body.addLayout(cust_row)

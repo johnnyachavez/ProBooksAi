@@ -18,6 +18,8 @@ Usage (with a virtual display already active, e.g. via xvfb-run):
     python scripts/capture_ui_screenshot.py --tab use-register --output artifacts/ui/use_register.png
     python scripts/capture_ui_screenshot.py --tab items --output artifacts/ui/item_list.png
     python scripts/capture_ui_screenshot.py --tab edit-item --output artifacts/ui/edit_item.png
+    python scripts/capture_ui_screenshot.py --tab income-tracker --output artifacts/ui/income_tracker.png
+    python scripts/capture_ui_screenshot.py --tab bill-tracker --output artifacts/ui/bill_tracker.png
 
 Saves: artifacts/ui/main_window.png (default)
 Exit code 0 on success, non-zero on failure.
@@ -107,7 +109,7 @@ def main() -> int:
     parser.add_argument(
         "--tab",
         default="main",
-        help="Which surface to capture: main (default), home, invoices, bills (Enter Bills), pay-bills, payments, deposits, checks, vendors, customers, coa, register, use-register, items, or edit-item.",
+        help="Which surface to capture: main (default), home, invoices, bills (Enter Bills), pay-bills, payments, deposits, checks, vendors, customers, coa, register, use-register, items, edit-item, income-tracker, or bill-tracker.",
     )
     parser.add_argument(
         "--output",
@@ -136,6 +138,7 @@ def main() -> int:
     from desktop_app.customer_center_screen import CustomerCenterScreen  # noqa: E402
     from desktop_app.register_tab import RegisterTab  # noqa: E402
     from desktop_app.use_register_dialog import UseRegisterDialog  # noqa: E402
+    from desktop_app.tracker_screens import BillTrackerScreen, IncomeTrackerScreen  # noqa: E402
     from desktop_app.vendor_center_screen import VendorCenterScreen  # noqa: E402
 
     app = QApplication(sys.argv)
@@ -171,6 +174,10 @@ def main() -> int:
         output_path = Path("artifacts") / "ui" / "item_list.png"
     elif tab in ("edit-item", "edit_item"):
         output_path = Path("artifacts") / "ui" / "edit_item.png"
+    elif tab in ("income-tracker", "income_tracker"):
+        output_path = Path("artifacts") / "ui" / "income_tracker.png"
+    elif tab in ("bill-tracker", "bill_tracker"):
+        output_path = Path("artifacts") / "ui" / "bill_tracker.png"
     else:
         output_path = Path("artifacts") / "ui" / "main_window.png"
 
@@ -199,6 +206,10 @@ def main() -> int:
         "codes",
         "edit-item",
         "edit_item",
+        "income-tracker",
+        "income_tracker",
+        "bill-tracker",
+        "bill_tracker",
     ):
         shot_dir = Path(tempfile.mkdtemp(prefix="probooks-ui-shot-"))
         extra_kw["db_path"] = str(shot_dir / "shot.db")
@@ -590,8 +601,76 @@ def main() -> int:
             grab_widget = codes
             if grab_widget is not None:
                 grab_widget.resize(1280, 860)
-                grab_widget.setMinimumSize(1280, 860)
-                grab_widget.show()
+            grab_widget.setMinimumSize(1280, 860)
+            grab_widget.show()
+    elif tab in ("income-tracker", "income_tracker", "bill-tracker", "bill_tracker"):
+        from probooksai import business
+
+        conn = getattr(getattr(window, "_bank_db", None), "_conn", None)
+        if conn is not None:
+            c1 = business.add_customer(conn, "Harbor Logistics")
+            business.create_invoice(
+                conn,
+                c1,
+                "INV-2101",
+                "2026-08-01",
+                due_date="2026-09-15",
+                lines=[{"description": "Haul", "qty": 1, "rate": 450.00}],
+            )
+            business.create_invoice(
+                conn,
+                c1,
+                "INV-0888",
+                "2026-06-01",
+                due_date="2026-07-01",
+                lines=[{"description": "Haul", "qty": 1, "rate": 180.00}],
+            )
+            paid = business.create_invoice(
+                conn,
+                c1,
+                "INV-1990",
+                "2026-08-05",
+                due_date="2026-08-20",
+                lines=[{"description": "Haul", "qty": 1, "rate": 75.00}],
+            )
+            business.record_ar_payment(
+                conn, c1, "2026-08-18", 75.00, [(paid, 75.00)], method="Check", reference="1008"
+            )
+            v1 = business.add_vendor(conn, "Office Supplies Co")
+            v2 = business.add_vendor(conn, "Warehouse Supply")
+            business.create_bill(
+                conn, v1, "2026-08-01", 450.00, vendor_invoice_number="OS-1042", due_date="2026-09-01"
+            )
+            business.create_bill(
+                conn, v2, "2026-06-20", 96.40, vendor_invoice_number="WS-12", due_date="2026-07-20"
+            )
+            paid_bill = business.create_bill(
+                conn, v1, "2026-08-08", 50.00, vendor_invoice_number="OS-88", due_date="2026-08-22"
+            )
+            business.record_ap_payment(
+                conn, v1, "2026-08-19", 50.00, [(paid_bill, 50.00)], method="Check", reference="1001"
+            )
+        if tab in ("income-tracker", "income_tracker"):
+            screen = getattr(window, "_income_tracker_screen", None)
+            if isinstance(screen, IncomeTrackerScreen):
+                screen.reload()
+                if screen._table.rowCount() > 0:
+                    screen._table.selectRow(0)
+        else:
+            screen = getattr(window, "_bill_tracker_screen", None)
+            if isinstance(screen, BillTrackerScreen):
+                screen.reload()
+                if screen._table.rowCount() > 0:
+                    screen._table.selectRow(0)
+        if screen is not None and hasattr(window, "_tabs"):
+            idx = window._tabs.indexOf(screen)
+            if idx >= 0:
+                window._tabs.setCurrentIndex(idx)
+        grab_widget = screen
+        if grab_widget is not None:
+            grab_widget.resize(1280, 860)
+            grab_widget.setMinimumSize(1280, 860)
+            grab_widget.show()
 
     success = False
 

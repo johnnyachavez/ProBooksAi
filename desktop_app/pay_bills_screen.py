@@ -300,6 +300,20 @@ class PayBillsScreen(QWidget):
                 self._vendor_filter.setCurrentIndex(i)
                 return
 
+    def select_bill_by_id(self, bill_id: int) -> bool:
+        """Tiny Bill Tracker hook: check *bill_id* and fill Amt. To Pay."""
+        self.reload()
+        want = int(bill_id)
+        for i, cb in enumerate(self._row_checks):
+            it = self._table.item(i, _COL_DATE) or self._table.item(i, _COL_VENDOR)
+            if it is None:
+                continue
+            if coerce_combo_int_id(it.data(_ROLE_BILL_ID)) == want:
+                cb.setChecked(True)
+                self._table.selectRow(i)
+                return True
+        return False
+
     def _style_button(self, b: QPushButton, *, primary: bool = False, height: int = _RIBBON_BTN_HEIGHT_PX) -> None:
         b.setStyleSheet(_action_button_qss(primary=primary))
         b.setFixedHeight(height)
