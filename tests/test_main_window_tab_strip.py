@@ -59,7 +59,8 @@ def test_main_window_tab_count_and_fixed_top_level_order(qapp: QApplication, tmp
 
 
 def test_accounting_landing_tabs_show_page_titles(qapp: QApplication, tmp_path: Path) -> None:
-    """Tabs 1–4: Invoice, Enter Bills, Pay Bills, Receive Payments use structured screens (tab 0 is Dashboard)."""
+    """Invoice / Write Checks / Enter Bills / Pay Bills / Receive Payments / Make Deposits landing screens."""
+    from desktop_app.check_screen import CheckScreen
     from desktop_app.enter_bills_screen import EnterBillsScreen
     from desktop_app.invoice_screen import InvoiceScreen
     from desktop_app.main import MainWindow
@@ -75,6 +76,7 @@ def test_accounting_landing_tabs_show_page_titles(qapp: QApplication, tmp_path: 
         tabs = w._tabs
         expected = (
             (1, InvoiceScreen),
+            (3, CheckScreen),
             (4, EnterBillsScreen),
             (5, PayBillsScreen),
             (6, ReceiveChecksScreen),
@@ -92,6 +94,14 @@ def test_accounting_landing_tabs_show_page_titles(qapp: QApplication, tmp_path: 
                 assert tbl.objectName() == "invoiceLinesTable"
                 assert "Invoice" in titles
                 assert any("Subtotal" in t for t in titles)
+                continue
+            if spec is CheckScreen:
+                tbl = cw.findChild(QTableWidget, "writeChecksExpensesTable")
+                assert tbl is not None
+                assert tbl.columnCount() == 5
+                assert tbl.horizontalHeaderItem(0).text() == "ACCOUNT"
+                assert "BANK ACCOUNT" in titles
+                assert "PAY TO THE ORDER OF" in titles
                 continue
             if spec is EnterBillsScreen:
                 tbl = cw.findChild(QTableWidget, "enterBillsExpensesTable")
