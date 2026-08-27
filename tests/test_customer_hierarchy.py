@@ -81,7 +81,7 @@ def test_receive_payments_parent_filter_shows_child_invoices(
         lines=[{"description": "Work", "qty": 1, "rate": 100.0}],
     )
     w = ReceiveChecksScreen(ap_conn=db._conn, bank_db=db)
-    cb = w.findChild(QComboBox)
+    cb = w.findChild(QComboBox, "receivePaymentsReceivedFrom")
     assert cb is not None
     idx = next(
         (
@@ -96,7 +96,7 @@ def test_receive_payments_parent_filter_shows_child_invoices(
     t = w.findChild(QTableWidget, "receiveChecksTable")
     assert t is not None
     assert t.rowCount() == 1
-    assert "INV-J1" in (t.item(0, 4).text() or "")
+    assert "INV-J1" in (t.item(0, 2).text() or "")
 
 
 def test_list_open_invoices_for_ar_payment_customer_parent_includes_jobs(

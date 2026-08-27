@@ -1392,7 +1392,7 @@ class MainWindow(QMainWindow):
                 + _main_tab_bar_db_hint
             ),
             (
-                "Receive Payments: customer payments against open invoices (visual foundation)."
+                "Receive Payments: customer payments against open invoices (Undeposited Funds)."
                 + _main_tab_bar_db_hint
             ),
             (

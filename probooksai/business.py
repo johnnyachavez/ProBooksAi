@@ -622,7 +622,7 @@ def _post_ar_payment_journal(
     """Post (or re-post) the cash receipt journal entry for one AR payment.
 
     Entry:
-        DR  bank/cash account (from bank_accounts.gl_account or fallback '1000 Cash')
+        DR  Undeposited Funds (or the bank GL when *bank_account_id* is set)
         CR  1100 Accounts Receivable   amount
 
     Keyed by ``source = 'ar_payment:<id>'`` so re-posting is idempotent.
@@ -642,8 +642,8 @@ def _post_ar_payment_journal(
         conn.commit()
         return
 
-    # Determine cash/bank GL label
-    cash_label = "1000 Cash"
+    # Determine cash/bank GL label. No bank yet → Undeposited Funds (Make Deposits later).
+    cash_label = "Undeposited Funds"
     if bank_account_id is not None:
         ba = conn.execute(
             "SELECT gl_account, name FROM bank_accounts WHERE id = ?",
@@ -1401,6 +1401,19 @@ def record_ar_payment(
     conn.commit()
     _post_ar_payment_journal(conn, pid, bank_account_id, payment_date, amount, reference)
     return pid
+
+
+def list_undeposited_ar_payments(conn: sqlite3.Connection) -> list:
+    """Customer payments not yet deposited to a bank (Receive Payments → Make Deposits later)."""
+    return conn.execute(
+        """
+        SELECT p.*, c.name AS customer_name
+        FROM ar_payments p
+        JOIN customers c ON c.id = p.customer_id
+        WHERE p.bank_account_id IS NULL
+        ORDER BY p.payment_date, p.id
+        """
+    ).fetchall()
 
 
 def list_open_invoices_for_customer(

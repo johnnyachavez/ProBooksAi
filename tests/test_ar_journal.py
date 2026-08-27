@@ -172,5 +172,6 @@ def test_ar_payment_posts_journal(db):
     dr_line = next(l for l in lines if l["debit"] > 0)
     cr_line = next(l for l in lines if l["credit"] > 0)
     assert dr_line["debit"] == pytest.approx(400.0)
+    assert "Undeposited Funds" in (dr_line["account"] or "")
     assert "1100" in cr_line["account"]
     assert cr_line["credit"] == pytest.approx(400.0)
