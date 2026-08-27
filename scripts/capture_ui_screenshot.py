@@ -7,6 +7,7 @@ Usage (with a virtual display already active, e.g. via xvfb-run):
     python scripts/capture_ui_screenshot.py
     python scripts/capture_ui_screenshot.py --tab invoices --output artifacts/ui/create_invoices.png
     python scripts/capture_ui_screenshot.py --tab bills --output artifacts/ui/enter_bills.png
+    python scripts/capture_ui_screenshot.py --tab pay-bills --output artifacts/ui/pay_bills.png
     python scripts/capture_ui_screenshot.py --tab payments --output artifacts/ui/receive_payments.png
     python scripts/capture_ui_screenshot.py --tab deposits --output artifacts/ui/make_deposits.png
     python scripts/capture_ui_screenshot.py --tab checks --output artifacts/ui/write_checks.png
@@ -21,6 +22,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -34,7 +36,7 @@ def main() -> int:
     parser.add_argument(
         "--tab",
         default="main",
-        help="Which surface to capture: main (default), home, invoices, bills (Enter Bills), payments, deposits, or checks.",
+        help="Which surface to capture: main (default), home, invoices, bills (Enter Bills), pay-bills, payments, deposits, or checks.",
     )
     parser.add_argument(
         "--output",
@@ -56,6 +58,7 @@ def main() -> int:
     from desktop_app.invoice_screen import InvoiceScreen  # noqa: E402
     from desktop_app.main import MainWindow  # noqa: E402
     from desktop_app.make_deposits_screen import MakeDepositsScreen  # noqa: E402
+    from desktop_app.pay_bills_screen import PayBillsScreen  # noqa: E402
     from desktop_app.receive_checks_screen import ReceiveChecksScreen  # noqa: E402
 
     app = QApplication(sys.argv)
@@ -67,6 +70,8 @@ def main() -> int:
         output_path = Path("artifacts") / "ui" / "create_invoices.png"
     elif tab in ("bills", "enter-bills", "enter_bills"):
         output_path = Path("artifacts") / "ui" / "enter_bills.png"
+    elif tab in ("pay-bills", "pay_bills", "paybills"):
+        output_path = Path("artifacts") / "ui" / "pay_bills.png"
     elif tab in ("payments", "receive-payments", "receive_payments"):
         output_path = Path("artifacts") / "ui" / "receive_payments.png"
     elif tab in ("deposits", "make-deposits", "make_deposits"):
@@ -78,7 +83,12 @@ def main() -> int:
     else:
         output_path = Path("artifacts") / "ui" / "main_window.png"
 
-    window = MainWindow()
+    extra_kw: dict = {}
+    if tab in ("pay-bills", "pay_bills", "paybills"):
+        shot_dir = Path(tempfile.mkdtemp(prefix="probooks-pay-bills-"))
+        extra_kw["db_path"] = str(shot_dir / "shot.db")
+
+    window = MainWindow(**extra_kw)
     window.resize(1400, 900)
     window.show()
 
@@ -102,6 +112,50 @@ def main() -> int:
         if isinstance(bills, EnterBillsScreen):
             grab_widget = bills
             grab_widget.resize(1280, 860)
+            grab_widget.show()
+    elif tab in ("pay-bills", "pay_bills", "paybills"):
+        from probooksai import business
+
+        pay_bills = getattr(window, "_pay_bills_screen", None)
+        conn = getattr(getattr(window, "_bank_db", None), "_conn", None)
+        if conn is not None:
+            v1 = business.add_vendor(conn, "Office Supplies Co")
+            business.create_bill(
+                conn,
+                v1,
+                "2026-08-01",
+                450.00,
+                vendor_invoice_number="INV-1042",
+                due_date="2026-08-31",
+            )
+            v2 = business.add_vendor(conn, "Warehouse Supply")
+            business.create_bill(
+                conn,
+                v2,
+                "2026-07-15",
+                1280.50,
+                vendor_invoice_number="WS-88",
+                due_date="2026-08-14",
+            )
+            v3 = business.add_vendor(conn, "Fuel Vendor")
+            business.create_bill(
+                conn,
+                v3,
+                "2026-06-20",
+                96.40,
+                vendor_invoice_number="FV-12",
+                due_date="2026-07-20",
+            )
+            if isinstance(pay_bills, PayBillsScreen):
+                pay_bills.reload()
+        if pay_bills is not None and hasattr(window, "_tabs"):
+            idx = window._tabs.indexOf(pay_bills)
+            if idx >= 0:
+                window._tabs.setCurrentIndex(idx)
+        if isinstance(pay_bills, PayBillsScreen):
+            grab_widget = pay_bills
+            grab_widget.resize(1280, 860)
+            grab_widget.setMinimumSize(1280, 860)
             grab_widget.show()
     elif tab in ("payments", "receive-payments", "receive_payments"):
         pay = getattr(window, "_receive_payments_screen", None)

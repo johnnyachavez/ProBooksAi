@@ -773,6 +773,14 @@ def test_register_number_two_line_plain_type_tags() -> None:
         {"ref_number": "1087", "amount": -50.0, "transfer_to_bank_account_id": None}
     ) == "1087\nPMT"
     assert _register_number_two_line_plain(
+        {
+            "ref_number": "4412",
+            "amount": -80.0,
+            "memo": "BILLPMT",
+            "transfer_to_bank_account_id": None,
+        }
+    ) == "4412\nBILLPMT"
+    assert _register_number_two_line_plain(
         {"ref_number": "", "amount": 100.0, "transfer_to_bank_account_id": None}
     ) == "—\nDEP"
     assert _register_number_two_line_plain(

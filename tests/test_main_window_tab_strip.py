@@ -116,8 +116,13 @@ def test_accounting_landing_tabs_show_page_titles(qapp: QApplication, tmp_path: 
             tbl = cw.findChild(QTableWidget)
             assert tbl is not None
             if spec is PayBillsScreen:
-                assert tbl.columnCount() == 7
+                assert tbl.columnCount() == 8
+                assert tbl.horizontalHeaderItem(3).text() == "VENDOR"
+                assert tbl.horizontalHeaderItem(7).text() == "AMT. TO PAY"
                 assert "Pay Bills" in titles
+                assert "SELECT BILLS TO BE PAID" in titles
+                assert "PAY FROM" in titles
+                assert "CHECK NO." in titles
             elif spec is MakeDepositsScreen:
                 dep = cw.findChild(QTableWidget, "makeDepositsTable")
                 assert dep is not None

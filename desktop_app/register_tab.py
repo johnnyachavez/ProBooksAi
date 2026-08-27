@@ -22,7 +22,7 @@ Payee column uses a two-band row: description on the lighter upper panel, COA ac
 **Memo** is not shown as a grid column (edit via row context menu). Hover **tooltips** on Payee, Number, Date, Debit/Credit, Balance, and Match show full values or helpful detail when the grid elides text.
 **Match** (reconciliation mode): double-click **Match** or use row context **Open linked Business record…** (when the menu shows it) to open **Customers** / **Vendors** for AR/AP invoice or bill links, **More → Business → Payroll** for payroll, when the **complete bank link** allows; otherwise the same **Business link** message as **Ctrl+Shift+B** (invoice/bill editor, payroll tax lines, or AR/AP payment summary).
 The **COA Account** combo tooltip states the saved category and whether the row is posted (read-only).
-Number column keeps reference plus type tag (DEP / PMT / XFER / TXN) in the cell data for copy/edit;
+Number column keeps reference plus type tag (DEP / PMT / BILLPMT / XFER / TXN) in the cell data for copy/edit;
 on screen they appear on one line in the upper band. **Clr** shows **C** when the row is marked cleared on the register, else **R** when the
 CSV import batch is marked reconciled in Bank Import. Rows without a COA category use a warmer two-band tint.
 The filter choice, last selected bank account, and register table **column header widths**
@@ -276,6 +276,9 @@ def _register_number_type_tag(txn: dict) -> str:
     has_xfer = xfer_id is not None and xfer_id > 0
     if has_xfer:
         return "XFER"
+    memo = (txn.get("memo") or "").strip().upper().replace(" ", "").replace("-", "")
+    if memo in {"BILLPMT", "PAYBILLS"}:
+        return "BILLPMT"
     try:
         amt = float(txn.get("amount") or 0.0)
     except (TypeError, ValueError):
@@ -297,7 +300,7 @@ def _register_num_lower_plain(txn: dict) -> str:
 
 
 def _register_number_two_line_plain(txn: dict) -> str:
-    """Number cell: line 1 = ref #; line 2 = DEP / PMT / XFER / TXN."""
+    """Number cell: line 1 = ref #; line 2 = DEP / PMT / BILLPMT / XFER / TXN."""
     return f"{_register_num_upper_plain(txn)}\n{_register_num_lower_plain(txn)}"
 
 
