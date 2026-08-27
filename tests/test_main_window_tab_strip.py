@@ -32,7 +32,7 @@ def test_main_window_tab_count_and_fixed_top_level_order(qapp: QApplication, tmp
         tabs = w._tabs
         assert tabs.count() == 14
         order = (
-            (0, "Dashboard"),
+            (0, "Home"),
             (1, "Invoices"),
             (2, "Codes"),
             (3, "Write Checks"),
