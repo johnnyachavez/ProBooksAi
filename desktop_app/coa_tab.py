@@ -636,7 +636,7 @@ class COATab(QWidget):
             "Company SQLite: File → Backup / Restore (probooks.backup, CLI probooks backup/restore)."
         )
         tip.setWordWrap(True)
-        tip.setStyleSheet("color: #A0A0B0; font-size: 11px;")
+        tip.setStyleSheet("color: #4A5560; font-size: 11px;")
         tip.setToolTip(
             "F5 refreshes this grid; double-click a row to open its register; "
             "right-click for shortcuts, Use Register…, Edit Account…, and change history. "
@@ -730,22 +730,20 @@ class COATab(QWidget):
             acct_num  = str(row["account_number"] or "").strip()
             acct_name = str(row["account_name"] or "").strip()
             display_key = f"{acct_num} {acct_name}".strip() if acct_num else acct_name
-            bal_text = ""
+            bal_text = "0.00"
             if display_key in gl_balances:
                 td, tc = gl_balances[display_key]  # type: ignore[misc]
                 normal = (row["normal_balance"] or "debit").lower()
                 balance = round(td - tc, 2) if normal == "debit" else round(tc - td, 2)
                 bal_text = f"{balance:,.2f}"
-            elif self._gl_db is None:
-                bal_text = "0.00"
             bal_item = plain_display_table_item(bal_text)
             bal_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self._table.setItem(r, _COL_BAL, bal_item)
 
-            clip = "📎" if (row["description"] or "").strip() else ""
+            clip = ""
             att = plain_display_table_item(clip)
             att.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            att.setToolTip("Notes on this account" if clip else "")
+            att.setToolTip("Attachments on this account (none yet).")
             self._table.setItem(r, _COL_ATTACH, att)
 
         count = len(packed)
