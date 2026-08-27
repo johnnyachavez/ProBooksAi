@@ -22,6 +22,7 @@ Usage (with a virtual display already active, e.g. via xvfb-run):
     python scripts/capture_ui_screenshot.py --tab bill-tracker --output artifacts/ui/bill_tracker.png
     python scripts/capture_ui_screenshot.py --tab calendar --output artifacts/ui/calendar.png
     python scripts/capture_ui_screenshot.py --tab snapshot --output artifacts/ui/company_snapshot.png
+    python scripts/capture_ui_screenshot.py --tab my-company --output artifacts/ui/my_company.png
 
 Saves: artifacts/ui/main_window.png (default)
 Exit code 0 on success, non-zero on failure.
@@ -111,7 +112,7 @@ def main() -> int:
     parser.add_argument(
         "--tab",
         default="main",
-        help="Which surface to capture: main (default), home, invoices, bills (Enter Bills), pay-bills, payments, deposits, checks, vendors, customers, coa, register, use-register, items, edit-item, income-tracker, bill-tracker, calendar, or snapshot.",
+        help="Which surface to capture: main (default), home, invoices, bills (Enter Bills), pay-bills, payments, deposits, checks, vendors, customers, coa, register, use-register, items, edit-item, income-tracker, bill-tracker, calendar, snapshot, or my-company.",
     )
     parser.add_argument(
         "--output",
@@ -143,6 +144,7 @@ def main() -> int:
     from desktop_app.tracker_screens import BillTrackerScreen, IncomeTrackerScreen  # noqa: E402
     from desktop_app.calendar_screen import CalendarScreen  # noqa: E402
     from desktop_app.company_snapshot_screen import CompanySnapshotScreen  # noqa: E402
+    from desktop_app.my_company_screen import MyCompanyScreen  # noqa: E402
     from desktop_app.vendor_center_screen import VendorCenterScreen  # noqa: E402
 
     app = QApplication(sys.argv)
@@ -186,6 +188,8 @@ def main() -> int:
         output_path = Path("artifacts") / "ui" / "calendar.png"
     elif tab in ("snapshot", "company-snapshot", "company_snapshot"):
         output_path = Path("artifacts") / "ui" / "company_snapshot.png"
+    elif tab in ("my-company", "my_company"):
+        output_path = Path("artifacts") / "ui" / "my_company.png"
     else:
         output_path = Path("artifacts") / "ui" / "main_window.png"
 
@@ -222,6 +226,8 @@ def main() -> int:
         "snapshot",
         "company-snapshot",
         "company_snapshot",
+        "my-company",
+        "my_company",
     ):
         shot_dir = Path(tempfile.mkdtemp(prefix="probooks-ui-shot-"))
         extra_kw["db_path"] = str(shot_dir / "shot.db")
@@ -852,6 +858,19 @@ def main() -> int:
             idx = window._tabs.indexOf(screen)
             if idx >= 0:
                 window._tabs.setCurrentIndex(idx)
+        grab_widget = screen
+        if grab_widget is not None:
+            grab_widget.resize(1400, 900)
+            grab_widget.setMinimumSize(1400, 900)
+            grab_widget.show()
+    elif tab in ("my-company", "my_company"):
+        screen = getattr(window, "_my_company_screen", None)
+        if screen is not None and hasattr(window, "_tabs"):
+            idx = window._tabs.indexOf(screen)
+            if idx >= 0:
+                window._tabs.setCurrentIndex(idx)
+        if isinstance(screen, MyCompanyScreen):
+            screen.reload()
         grab_widget = screen
         if grab_widget is not None:
             grab_widget.resize(1400, 900)

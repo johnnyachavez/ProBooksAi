@@ -468,13 +468,13 @@ def test_edit_menu_preferences_disabled_stub() -> None:
 def test_view_menu_tab_actions_use_menu_action_tip_only() -> None:
     """**View** menu tab shortcuts use ``_menu_action_tip(act, …)`` only (no direct tip methods).
 
-    The loop body is written once in source; the list enumerates seventeen shortcut tuples.
+    The loop body is written once in source; the list enumerates eighteen shortcut tuples.
     """
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("# View menu")
     end = text.index("# Edit menu", start)
     chunk = text[start:end]
-    assert chunk.count('("Ctrl+') == 17
+    assert chunk.count('("Ctrl+') == 18
     assert chunk.count("act = QAction(") == 1
     assert chunk.count("_menu_action_tip(") == 3
     assert "view_menu.addAction(act)" in chunk
@@ -633,9 +633,9 @@ def test_main_window_tab_bar_has_tab_tooltips() -> None:
     assert "_apply_main_tab_bar_tooltips" in text
     tips = text.index("tips = [")
     assert "Home:" in text[tips : tips + 1200]
-    assert "Invoices:" in text[tips : tips + 2000]
-    assert "Write Checks:" in text[tips : tips + 2000]
-    assert "More:" in text[tips : tips + 4500]
+    assert "Invoices:" in text[tips : tips + 2800]
+    assert "Write Checks:" in text[tips : tips + 2800]
+    assert "More:" in text[tips : tips + 5200]
     assert "for i, tip in enumerate(tips):" in text
     assert text.count("_main_tab_bar_db_hint") >= 11
     assert "self._tabs.setToolTip(" in text
@@ -891,7 +891,7 @@ def test_main_window_build_ui_has_no_toolbar() -> None:
 
 
 def test_main_window_build_ui_sets_central_status_and_assemble_adds_ten_main_tabs() -> None:
-    """``_build_ui`` attaches one central widget, one status bar; ``_assemble_main_tabs`` adds eighteen ``addTab`` calls."""
+    """``_build_ui`` attaches one central widget, one status bar; ``_assemble_main_tabs`` adds nineteen ``addTab`` calls."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("def _build_ui(self):")
     end = text.index("def _build_menu_bar", start)
@@ -902,23 +902,24 @@ def test_main_window_build_ui_sets_central_status_and_assemble_adds_ten_main_tab
     start_a = text.index("def _assemble_main_tabs(self) -> None:")
     end_a = text.index("def _apply_main_tab_bar_tooltips(self) -> None:", start_a)
     chunk_a = text[start_a:end_a]
-    assert chunk_a.count("self._tabs.addTab(") == 18
+    assert chunk_a.count("self._tabs.addTab(") == 19
 
 
 def test_main_window_assemble_tab_strip_titles_fixed_order() -> None:
-    """Eighteen ``addTab`` lines: Home first, More last, with Income/Bill Tracker, Calendar, and Company Snapshot after Home."""
+    """Nineteen ``addTab`` lines: Home first, More last, with Income/Bill Tracker, Calendar, Company Snapshot, and My Company after Home."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("def _assemble_main_tabs(self) -> None:")
     end = text.index("def _apply_main_tab_bar_tooltips(self) -> None:", start)
     chunk = text[start:end]
     lines = [ln.strip() for ln in chunk.splitlines() if "self._tabs.addTab(" in ln]
-    assert len(lines) == 18
+    assert len(lines) == 19
     want = (
         "Home",
         "Income Tracker",
         "Bill Tracker",
         "Calendar",
         "Company Snapshot",
+        "My Company",
         "Invoices",
         "Codes",
         "Write Checks",
@@ -1514,6 +1515,7 @@ def test_main_window_assemble_main_tabs_instantiates_core_widgets() -> None:
     assert chunk.count("DashboardTab(") == 1
     assert chunk.count("IncomeTrackerScreen(") == 1
     assert chunk.count("BillTrackerScreen(") == 1
+    assert chunk.count("MyCompanyScreen(") == 1
     assert chunk.count("InvoiceScreen(") == 1
     assert chunk.count("EnterBillsScreen(") == 1
     assert chunk.count("PayBillsScreen(") == 1
@@ -2999,7 +3001,7 @@ def test_main_help_menu_wires_document_intake_shortcuts_dialog() -> None:
 
 
 def test_main_window_view_menu_enumerates_ctrl_one_through_zero() -> None:
-    """View menu builds tab actions: Ctrl+1..Ctrl+9, Ctrl+0, Ctrl+Shift+D/R/M/T, Ctrl+Alt+B/C/S."""
+    """View menu builds tab actions: Ctrl+1..Ctrl+9, Ctrl+0, Ctrl+Shift+D/R/M/T, Ctrl+Alt+B/C/S/Y."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("# View menu — tab shortcuts")
     end = text.index("# Edit menu", start)
@@ -3014,6 +3016,7 @@ def test_main_window_view_menu_enumerates_ctrl_one_through_zero() -> None:
     assert '("Ctrl+Alt+B"' in chunk
     assert '("Ctrl+Alt+C"' in chunk
     assert '("Ctrl+Alt+S"' in chunk
+    assert '("Ctrl+Alt+Y"' in chunk
     tuples = (
         '("Ctrl+1", "&Invoices")',
         '("Ctrl+2", "&Codes")',
@@ -3032,6 +3035,7 @@ def test_main_window_view_menu_enumerates_ctrl_one_through_zero() -> None:
         '("Ctrl+Alt+B", "&Bill Tracker")',
         '("Ctrl+Alt+C", "&Calendar")',
         '("Ctrl+Alt+S", "Company &Snapshot")',
+        '("Ctrl+Alt+Y", "My Compan&y")',
     )
     for line in tuples:
         assert line in chunk
@@ -5225,7 +5229,7 @@ def test_main_window_banner_tabs_status_bar_and_worker_counts() -> None:
     chunk = text[start:end]
     assert chunk.count("self._header.") == 2
     assert chunk.count("self._status_bar.showMessage(") == 15
-    assert chunk.count("self._tabs.") == 101
+    assert chunk.count("self._tabs.") == 102
     assert chunk.count("self._worker") == 17
 
 

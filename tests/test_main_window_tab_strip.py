@@ -30,31 +30,32 @@ def test_main_window_tab_count_and_fixed_top_level_order(qapp: QApplication, tmp
     w = MainWindow(db_path=str(db_path))
     try:
         tabs = w._tabs
-        assert tabs.count() == 18
+        assert tabs.count() == 19
         order = (
             (0, "Home"),
             (1, "Income Tracker"),
             (2, "Bill Tracker"),
             (3, "Calendar"),
             (4, "Company Snapshot"),
-            (5, "Invoices"),
-            (6, "Codes"),
-            (7, "Write Checks"),
-            (8, "Enter Bills"),
-            (9, "Pay Bills"),
-            (10, "Receive Payments"),
-            (11, "Make Deposits"),
-            (12, "Bank Register"),
-            (13, "Chart of Accounts"),
-            (14, "Customers"),
-            (15, "Vendors"),
-            (16, "Reconcile"),
-            (17, "More"),
+            (5, "My Company"),
+            (6, "Invoices"),
+            (7, "Codes"),
+            (8, "Write Checks"),
+            (9, "Enter Bills"),
+            (10, "Pay Bills"),
+            (11, "Receive Payments"),
+            (12, "Make Deposits"),
+            (13, "Bank Register"),
+            (14, "Chart of Accounts"),
+            (15, "Customers"),
+            (16, "Vendors"),
+            (17, "Reconcile"),
+            (18, "More"),
         )
         for idx, needle in order:
             assert needle in tabs.tabText(idx)
         tb = tabs.tabBar()
-        for i in range(18):
+        for i in range(19):
             assert tb.isTabVisible(i)
             tabs.setCurrentIndex(i)
             assert tabs.currentIndex() == i
@@ -71,6 +72,7 @@ def test_accounting_landing_tabs_show_page_titles(qapp: QApplication, tmp_path: 
     from desktop_app.invoice_screen import InvoiceScreen
     from desktop_app.main import MainWindow
     from desktop_app.make_deposits_screen import MakeDepositsScreen
+    from desktop_app.my_company_screen import MyCompanyScreen
     from desktop_app.pay_bills_screen import PayBillsScreen
     from desktop_app.receive_checks_screen import ReceiveChecksScreen
     from desktop_app.tracker_screens import BillTrackerScreen, IncomeTrackerScreen
@@ -86,12 +88,13 @@ def test_accounting_landing_tabs_show_page_titles(qapp: QApplication, tmp_path: 
             (2, BillTrackerScreen),
             (3, CalendarScreen),
             (4, CompanySnapshotScreen),
-            (5, InvoiceScreen),
-            (7, CheckScreen),
-            (8, EnterBillsScreen),
-            (9, PayBillsScreen),
-            (10, ReceiveChecksScreen),
-            (11, MakeDepositsScreen),
+            (5, MyCompanyScreen),
+            (6, InvoiceScreen),
+            (8, CheckScreen),
+            (9, EnterBillsScreen),
+            (10, PayBillsScreen),
+            (11, ReceiveChecksScreen),
+            (12, MakeDepositsScreen),
         )
         for idx, spec in expected:
             tabs.setCurrentIndex(idx)
@@ -124,6 +127,12 @@ def test_accounting_landing_tabs_show_page_titles(qapp: QApplication, tmp_path: 
                 assert "Income and Expense Trend" in titles
                 assert "Customers Who Owe Money" in titles
                 assert "Account Balances" in titles
+                continue
+            if spec is MyCompanyScreen:
+                assert "COMPANY NAME" in titles
+                assert "COMPANY INFORMATION" in titles
+                assert "Product Information" in titles
+                assert "MANAGE YOUR APPS, SERVICES & SUBSCRIPTIONS" in titles
                 continue
             if spec is InvoiceScreen:
                 tbl = cw.findChild(QTableWidget, "invoiceLinesTable")
@@ -205,10 +214,10 @@ def test_customers_and_vendors_tabs_use_live_ar_ap_workflows(
     w = MainWindow(db_path=str(db_path))
     try:
         tabs = w._tabs
-        assert isinstance(tabs.widget(14), ARTab)
-        assert isinstance(tabs.widget(15), APTab)
-        assert tabs.widget(14) is w._customers_tab
-        assert tabs.widget(15) is w._vendors_tab
+        assert isinstance(tabs.widget(15), ARTab)
+        assert isinstance(tabs.widget(16), APTab)
+        assert tabs.widget(15) is w._customers_tab
+        assert tabs.widget(16) is w._vendors_tab
         bh = w._business_hub._business_subtabs
         # Merged Business hub: Rules, Payroll, Tax %, Company (HEAD), AI (dev).
         # Top-level Customers/Vendors are still the primary AR/AP entry points.
