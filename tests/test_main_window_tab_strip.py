@@ -112,9 +112,9 @@ def test_accounting_landing_tabs_show_page_titles(qapp: QApplication, tmp_path: 
                 dep = cw.findChild(QTableWidget, "makeDepositsTable")
                 assert dep is not None
                 assert dep.columnCount() == 6
+                assert dep.horizontalHeaderItem(0).text() == "RECEIVED FROM"
                 assert "Make Deposits" in titles
                 assert "DEPOSIT TO" in titles
-                assert "RECEIVED FROM" in titles
             else:
                 assert tbl.columnCount() == 6
                 assert "Customer Payment" in titles

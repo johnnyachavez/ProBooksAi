@@ -5211,7 +5211,7 @@ def test_main_window_banner_tabs_status_bar_and_worker_counts() -> None:
     chunk = text[start:end]
     assert chunk.count("self._header.") == 2
     assert chunk.count("self._status_bar.showMessage(") == 15
-    assert chunk.count("self._tabs.") == 61
+    assert chunk.count("self._tabs.") == 63
     assert chunk.count("self._worker") == 17
 
 
