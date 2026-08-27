@@ -1337,6 +1337,12 @@ class MainWindow(QMainWindow):
             self._on_ar_payment_posted_for_deposits
         )
         self._pay_bills_screen.apPaymentPosted.connect(self._on_pay_bills_posted)
+        self._vendors_tab.enterBillsRequested.connect(self._on_vendor_center_enter_bills)
+        self._vendors_tab.payBillsRequested.connect(self._on_vendor_center_pay_bills)
+        self._vendors_tab.writeChecksRequested.connect(self._on_vendor_center_write_checks)
+        self._vendors_tab.openBillRequested.connect(self._on_vendor_center_open_bill)
+        self._vendors_tab.openPaymentRequested.connect(self._on_vendor_center_open_payment)
+        self._vendors_tab.vendorRecordsChanged.connect(self._on_vendor_center_records_changed)
 
     def _on_main_tab_changing(self, new_index: int) -> None:
         """Guard switching away from a screen that has unsaved invoice changes."""
@@ -1441,7 +1447,8 @@ class MainWindow(QMainWindow):
                 + _main_tab_bar_db_hint
             ),
             (
-                "Vendors: vendor master (detail + list), balances and activity; export vendors CSV (F5). "
+                "Vendors: Vendor Center — list, Vendor Information, bills and payments (F5). "
+                "New Vendor, New Transactions (Enter Bills / Pay Bills / Write Checks), Excel CSV. "
                 "Bills and payments use Enter Bills, Pay Bills, and Reports (Business hub holds Rules, Payroll, Tax % only)."
                 + _tab_bar_csv_excel_hint
                 + _main_tab_bar_db_hint
@@ -2687,6 +2694,64 @@ class MainWindow(QMainWindow):
         if idx >= 0:
             self._tabs.setCurrentIndex(idx)
 
+    def _on_vendor_center_enter_bills(self, vendor_id: int) -> None:
+        if not hasattr(self, "_tabs") or not hasattr(self, "_enter_bills_screen"):
+            return
+        if vendor_id:
+            self._enter_bills_screen.prepare_new_bill_for_vendor(int(vendor_id))
+        idx = self._tabs.indexOf(self._enter_bills_screen)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+
+    def _on_vendor_center_pay_bills(self, vendor_id: int) -> None:
+        if not hasattr(self, "_tabs") or not hasattr(self, "_pay_bills_screen"):
+            return
+        self._pay_bills_screen.reload()
+        if vendor_id:
+            self._pay_bills_screen.filter_to_vendor(int(vendor_id))
+        idx = self._tabs.indexOf(self._pay_bills_screen)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+
+    def _on_vendor_center_write_checks(self, vendor_id: int) -> None:
+        if not hasattr(self, "_tabs") or not hasattr(self, "_check_screen"):
+            return
+        if vendor_id:
+            self._check_screen.select_payee_vendor(int(vendor_id))
+        idx = self._tabs.indexOf(self._check_screen)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+
+    def _on_vendor_center_open_bill(self, bill_id: int) -> None:
+        if not hasattr(self, "_tabs") or not hasattr(self, "_enter_bills_screen"):
+            return
+        idx = self._tabs.indexOf(self._enter_bills_screen)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+        self._enter_bills_screen.open_bill_by_id(int(bill_id))
+
+    def _on_vendor_center_open_payment(self, payment_id: int) -> None:
+        """BILLPMT row → same AP payment summary hook as the bank register Match link."""
+        self._navigate_register_bank_match_link("ap_payment", int(payment_id))
+
+    def _on_vendor_center_records_changed(self) -> None:
+        if hasattr(self, "_enter_bills_screen"):
+            try:
+                self._enter_bills_screen.refresh_vendors()
+            except Exception:
+                pass
+        chk = getattr(self, "_check_screen", None)
+        if chk is not None:
+            try:
+                chk.refresh_payees()
+            except Exception:
+                pass
+        if hasattr(self, "_pay_bills_screen"):
+            try:
+                self._pay_bills_screen.reload()
+            except Exception:
+                pass
+
     def _on_pay_bills_posted(self) -> None:
         """Pay Bills posted: refresh Bank Register and Write Checks balances."""
         if hasattr(self, "_register_tab"):
@@ -2698,6 +2763,12 @@ class MainWindow(QMainWindow):
         if chk is not None:
             try:
                 chk.reload()
+            except Exception:
+                pass
+        vt = getattr(self, "_vendors_tab", None)
+        if vt is not None:
+            try:
+                vt._refresh()
             except Exception:
                 pass
 

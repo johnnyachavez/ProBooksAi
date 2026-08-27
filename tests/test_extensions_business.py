@@ -1534,3 +1534,30 @@ def test_list_vendor_ap_summaries_open_current_overdue_and_last_dates(db):
     business.record_ap_payment(db._conn, v1, "2025-01-15", 1.0, [])
     by_id2 = {r["vendor_id"]: r for r in business.list_vendor_ap_summaries(db._conn)}
     assert by_id2[v1]["last_payment_date"] == "2025-01-15"
+
+
+def test_list_vendor_center_transactions_bills_and_payments(db):
+    v1 = business.add_vendor(db._conn, "Office Supplies Co")
+    bid = business.create_bill(
+        db._conn,
+        v1,
+        "2024-06-01",
+        100.0,
+        vendor_invoice_number="INV-9",
+        due_date="2024-07-01",
+    )
+    business.record_ap_payment(
+        db._conn, v1, "2024-06-15", 40.0, [(bid, 40.0)], method="Check", reference="1001"
+    )
+    rows = business.list_vendor_center_transactions(db._conn, v1)
+    kinds = {r["kind"] for r in rows}
+    assert kinds == {"bill", "billpmt"}
+    bill = next(r for r in rows if r["kind"] == "bill")
+    pay = next(r for r in rows if r["kind"] == "billpmt")
+    assert bill["num"] == "INV-9"
+    assert bill["open_balance"] == pytest.approx(60.0)
+    assert pay["type"] == "Bill Pmt -Check"
+    assert pay["num"] == "1001"
+    assert pay["amount"] == pytest.approx(40.0)
+    all_rows = business.list_vendor_center_transactions(db._conn, None)
+    assert len(all_rows) >= 2

@@ -515,3 +515,15 @@ def test_enter_bills_no_hardcoded_live_vendor_or_ein(qapp: QApplication) -> None
     assert "chavan" not in lowered
     assert "xx-xxxxxxx" not in lowered
 
+
+def test_enter_bills_prepare_new_bill_for_vendor(qapp: QApplication, tmp_path) -> None:
+    db_path = tmp_path / "enter_bills_prep.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    vid = business.add_vendor(db._conn, "Prep Vendor")
+    w = EnterBillsScreen(ap_conn=db._conn)
+    w.prepare_new_bill_for_vendor(vid)
+    assert w._current_bill_id is None
+    assert w._selected_vendor_id() == vid
+    db.close()
+
