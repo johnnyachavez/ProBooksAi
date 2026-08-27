@@ -92,17 +92,12 @@ class UseRegisterDialog(QDialog):
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
         btns.setObjectName("useRegisterButtons")
-        ok_btn = btns.button(QDialogButtonBox.StandardButton.Ok)
-        if ok_btn is not None:
-            ok_btn.setText("OK")
-            ok_btn.setDefault(True)
-            ok_btn.setStyleSheet(
-                f"QPushButton {{ background-color: {_UR_ACCENT}; border: 1px solid {_UR_ACCENT}; "
-                f"border-radius: 4px; color: #FFFFFF; padding: 4px 18px; font-weight: 600; }}"
-            )
-        cancel_btn = btns.button(QDialogButtonBox.StandardButton.Cancel)
-        if cancel_btn is not None:
-            cancel_btn.setText("Cancel")
+        btns.setStyleSheet(
+            f"QPushButton {{ background: #F7F8FA; border: 1px solid {_UR_GRID}; "
+            f"border-radius: 4px; color: {_UR_TEXT}; padding: 4px 18px; }}"
+            f"QPushButton:default {{ background-color: {_UR_ACCENT}; color: #FFFFFF; "
+            f"border: 1px solid {_UR_ACCENT}; font-weight: 600; }}"
+        )
         tip_qdialog_button_box(
             btns,
             ok="Open the two-line register for the selected account.",
