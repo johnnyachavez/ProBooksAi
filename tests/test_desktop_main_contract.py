@@ -632,8 +632,10 @@ def test_main_window_tab_bar_has_tab_tooltips() -> None:
     assert "main_tab_bar.setTabToolTip" in text
     assert "_apply_main_tab_bar_tooltips" in text
     tips = text.index("tips = [")
+    assert "Home:" in text[tips : tips + 1200]
     assert "Invoices:" in text[tips : tips + 1200]
-    assert "More:" in text[tips : tips + 3500]
+    assert "Write Checks:" in text[tips : tips + 2000]
+    assert "More:" in text[tips : tips + 4500]
     assert "for i, tip in enumerate(tips):" in text
     assert text.count("_main_tab_bar_db_hint") >= 11
     assert "self._tabs.setToolTip(" in text
@@ -904,7 +906,7 @@ def test_main_window_build_ui_sets_central_status_and_assemble_adds_ten_main_tab
 
 
 def test_main_window_assemble_tab_strip_titles_fixed_order() -> None:
-    """Fourteen ``addTab`` lines: Dashboard first, More last, with stable user-visible titles."""
+    """Fourteen ``addTab`` lines: Home first, More last, with stable user-visible titles."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("def _assemble_main_tabs(self) -> None:")
     end = text.index("def _apply_main_tab_bar_tooltips(self) -> None:", start)
@@ -912,7 +914,7 @@ def test_main_window_assemble_tab_strip_titles_fixed_order() -> None:
     lines = [ln.strip() for ln in chunk.splitlines() if "self._tabs.addTab(" in ln]
     assert len(lines) == 14
     want = (
-        "Dashboard",
+        "Home",
         "Invoices",
         "Codes",
         "Write Checks",
@@ -1505,6 +1507,7 @@ def test_main_window_assemble_main_tabs_instantiates_core_widgets() -> None:
     start = text.index("    def _assemble_main_tabs(self) -> None:")
     end = text.index("    def _apply_main_tab_bar_tooltips(self) -> None:", start)
     chunk = text[start:end]
+    assert chunk.count("DashboardTab(") == 1
     assert chunk.count("InvoiceScreen(") == 1
     assert chunk.count("EnterBillsScreen(") == 1
     assert chunk.count("PayBillsScreen(") == 1

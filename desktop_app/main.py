@@ -1316,7 +1316,7 @@ class MainWindow(QMainWindow):
         self._more_hub.addTab(self._asset_register_tab, "Assets")
         self._more_hub.addTab(self._audit_tab, "Audit log")
 
-        self._tabs.addTab(self._dashboard_tab, "Dashboard")
+        self._tabs.addTab(self._dashboard_tab, "Home")
         self._tabs.addTab(self._invoice_screen, "Invoices")
         self._tabs.addTab(self._invoice_codes_screen, "Codes")
         self._tabs.addTab(self._check_screen, "Write Checks")
@@ -1389,11 +1389,20 @@ class MainWindow(QMainWindow):
         _tab_bar_csv_excel_hint = " CSV: UTF-8 with BOM for Excel."
         tips = [
             (
+                "Home: company overview with money-in / money-out shortcuts "
+                "(Create Invoices, Receive Payments, Enter Bills, Pay Bills, Write Checks, Make Deposits)."
+                + _main_tab_bar_db_hint
+            ),
+            (
                 "Invoices: invoice entry workflow (line items, Bill To, print/PDF when connected). "
                 + _main_tab_bar_db_hint
             ),
             (
                 "Codes: service items, discounts, and default rates / income accounts for invoice line Codes."
+                + _main_tab_bar_db_hint
+            ),
+            (
+                "Write Checks: record and print checks against a bank account."
                 + _main_tab_bar_db_hint
             ),
             (
@@ -1499,9 +1508,10 @@ class MainWindow(QMainWindow):
 
         self._tabs = QTabWidget()
         self._tabs.setToolTip(
-            "Main workspace: Invoices, Codes, Enter Bills, Pay Bills, Receive Payments, Make Deposits, Bank Register, "
-            "Chart of Accounts, Customers, Vendors, Reconcile, and More (hover each tab). "
-            "File → Backup / Restore applies to the whole company database (CLI: probooks backup / restore)."
+            "Main workspace: Home, Invoices, Codes, Write Checks, Enter Bills, Pay Bills, Receive Payments, "
+            "Make Deposits, Bank Register, Chart of Accounts, Customers, Vendors, Reconcile, and More "
+            "(hover each tab). File → Backup / Restore applies to the whole company database "
+            "(CLI: probooks backup / restore)."
         )
 
         self._build_document_intake_widget()
@@ -1629,7 +1639,7 @@ class MainWindow(QMainWindow):
         _view_tab_tip_suffix = (
             " Same company SQLite file (File → Backup / Restore, probooks.backup)."
         )
-        # Tab indices: 0=Dashboard, 1=Invoices, 2=Codes, 3=Write Checks,
+        # Tab indices: 0=Home, 1=Invoices, 2=Codes, 3=Write Checks,
         #              4=Enter Bills, 5=Pay Bills, 6=Receive Payments,
         #              7=Make Deposits, 8=Bank Register, 9=Chart of Accounts,
         #              10=Customers, 11=Vendors, 12=Reconcile, 13=More
@@ -2646,13 +2656,20 @@ class MainWindow(QMainWindow):
             self._enter_bills_screen.refresh_lookups()
 
     def _on_dashboard_navigate(self, target: str) -> None:
-        """Dashboard quick-action buttons → jump to the requested tab."""
+        """Home workflow shortcuts → jump to the requested existing screen."""
         if not hasattr(self, "_tabs"):
             return
         target_map = {
             "invoices": getattr(self, "_invoice_screen", None),
             "bills": getattr(self, "_enter_bills_screen", None),
+            "pay_bills": getattr(self, "_pay_bills_screen", None),
+            "payments": getattr(self, "_receive_payments_screen", None),
+            "deposits": getattr(self, "_make_deposits_screen", None),
+            "checks": getattr(self, "_check_screen", None),
             "register": getattr(self, "_register_tab", None),
+            "reconcile": getattr(self, "_reconcile_root", None),
+            "coa": getattr(self, "_coa_tab", None),
+            "codes": getattr(self, "_invoice_codes_screen", None),
         }
         widget = target_map.get(target)
         if widget is not None:
