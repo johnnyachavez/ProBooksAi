@@ -11,7 +11,7 @@ Usage (with a virtual display already active, e.g. via xvfb-run):
     python scripts/capture_ui_screenshot.py --tab payments --output artifacts/ui/receive_payments.png
     python scripts/capture_ui_screenshot.py --tab deposits --output artifacts/ui/make_deposits.png
     python scripts/capture_ui_screenshot.py --tab checks --output artifacts/ui/write_checks.png
-    python scripts/capture_ui_screenshot.py --tab home --output artifacts/ui/home.png
+    python scripts/capture_ui_screenshot.py --tab vendors --output artifacts/ui/vendor_center.png
 
 Saves: artifacts/ui/main_window.png (default)
 Exit code 0 on success, non-zero on failure.
@@ -36,7 +36,7 @@ def main() -> int:
     parser.add_argument(
         "--tab",
         default="main",
-        help="Which surface to capture: main (default), home, invoices, bills (Enter Bills), pay-bills, payments, deposits, or checks.",
+        help="Which surface to capture: main (default), home, invoices, bills (Enter Bills), pay-bills, payments, deposits, checks, or vendors.",
     )
     parser.add_argument(
         "--output",
@@ -60,6 +60,7 @@ def main() -> int:
     from desktop_app.make_deposits_screen import MakeDepositsScreen  # noqa: E402
     from desktop_app.pay_bills_screen import PayBillsScreen  # noqa: E402
     from desktop_app.receive_checks_screen import ReceiveChecksScreen  # noqa: E402
+    from desktop_app.vendor_center_screen import VendorCenterScreen  # noqa: E402
 
     app = QApplication(sys.argv)
 
@@ -78,14 +79,23 @@ def main() -> int:
         output_path = Path("artifacts") / "ui" / "make_deposits.png"
     elif tab in ("checks", "write-checks", "write_checks"):
         output_path = Path("artifacts") / "ui" / "write_checks.png"
+    elif tab in ("vendors", "vendor-center", "vendor_center"):
+        output_path = Path("artifacts") / "ui" / "vendor_center.png"
     elif tab in ("home", "dashboard"):
         output_path = Path("artifacts") / "ui" / "home.png"
     else:
         output_path = Path("artifacts") / "ui" / "main_window.png"
 
     extra_kw: dict = {}
-    if tab in ("pay-bills", "pay_bills", "paybills"):
-        shot_dir = Path(tempfile.mkdtemp(prefix="probooks-pay-bills-"))
+    if tab in (
+        "pay-bills",
+        "pay_bills",
+        "paybills",
+        "vendors",
+        "vendor-center",
+        "vendor_center",
+    ):
+        shot_dir = Path(tempfile.mkdtemp(prefix="probooks-ui-shot-"))
         extra_kw["db_path"] = str(shot_dir / "shot.db")
 
     window = MainWindow(**extra_kw)
@@ -195,6 +205,65 @@ def main() -> int:
             grab_widget = chk
             grab_widget.resize(1280, 860)
             grab_widget.setMinimumSize(1280, 860)
+            grab_widget.show()
+    elif tab in ("vendors", "vendor-center", "vendor_center"):
+        from probooksai import business
+
+        vendors = getattr(window, "_vendors_tab", None)
+        conn = getattr(getattr(window, "_bank_db", None), "_conn", None)
+        if conn is not None:
+            v1 = business.add_vendor(
+                conn,
+                "Office Supplies Co",
+                address="100 Supply Lane\nAustin, TX 78701",
+                notes="Office stock — weekly delivery.",
+            )
+            business.create_bill(
+                conn,
+                v1,
+                "2026-08-01",
+                450.00,
+                vendor_invoice_number="INV-1042",
+                due_date="2026-08-31",
+            )
+            v2 = business.add_vendor(conn, "Warehouse Supply")
+            bid = business.create_bill(
+                conn,
+                v2,
+                "2026-07-15",
+                1280.50,
+                vendor_invoice_number="WS-88",
+                due_date="2026-08-14",
+            )
+            business.record_ap_payment(
+                conn,
+                v2,
+                "2026-08-10",
+                500.00,
+                [(bid, 500.00)],
+                method="Check",
+                reference="1008",
+            )
+            v3 = business.add_vendor(conn, "Fuel Vendor")
+            business.create_bill(
+                conn,
+                v3,
+                "2026-06-20",
+                96.40,
+                vendor_invoice_number="FV-12",
+                due_date="2026-07-20",
+            )
+            if isinstance(vendors, VendorCenterScreen):
+                vendors._focused_vendor_id = v1
+                vendors._refresh()
+        if vendors is not None and hasattr(window, "_tabs"):
+            idx = window._tabs.indexOf(vendors)
+            if idx >= 0:
+                window._tabs.setCurrentIndex(idx)
+        if isinstance(vendors, VendorCenterScreen):
+            grab_widget = vendors
+            grab_widget.resize(1400, 860)
+            grab_widget.setMinimumSize(1400, 860)
             grab_widget.show()
     elif tab in ("home", "dashboard"):
         home = getattr(window, "_dashboard_tab", None)

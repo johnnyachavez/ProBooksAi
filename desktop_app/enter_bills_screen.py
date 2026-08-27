@@ -979,6 +979,12 @@ class EnterBillsScreen(QWidget):
             _set_combo_text(w, current_accts[r])
             w.blockSignals(False)
 
+    def prepare_new_bill_for_vendor(self, vendor_id: int) -> None:
+        """Tiny Vendor Center hook: new bill draft with *vendor_id* selected."""
+        self.refresh_vendors()
+        self._reset_form_new_draft()
+        self._select_vendor_id(int(vendor_id))
+
     def open_bill_by_id(self, bill_id: int) -> bool:
         """Load a bill into this tab (bank register / in-app navigation)."""
         if self._ap_conn is None:

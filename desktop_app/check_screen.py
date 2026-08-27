@@ -922,6 +922,15 @@ class CheckScreen(QWidget):
         """Reload vendor names after Business / Vendors edits."""
         self._populate_payee_combo()
 
+    def select_payee_vendor(self, vendor_id: int) -> None:
+        """Tiny Vendor Center hook: Pay to the Order of *vendor_id*."""
+        self.refresh_payees()
+        vid = int(vendor_id)
+        for i in range(self._fld_payee.count()):
+            if coerce_combo_int_id(self._fld_payee.itemData(i)) == vid:
+                self._fld_payee.setCurrentIndex(i)
+                return
+
     def _on_payee_changed(self, _index: int = 0) -> None:
         if self._loading:
             return

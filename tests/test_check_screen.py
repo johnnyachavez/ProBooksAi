@@ -349,3 +349,10 @@ def test_amount_to_words_check_english() -> None:
     assert amount_to_words(0) == "Zero and 00/100"
     assert "One Thousand Two Hundred Thirty-Four" in amount_to_words(1234.56)
     assert amount_to_words(1234.56).endswith("56/100")
+
+
+def test_check_screen_select_payee_vendor(qapp: QApplication, db: BankDatabase) -> None:
+    vid = business.add_vendor(db._conn, "Office Supplies Co")
+    w = CheckScreen(bank_db=db, ap_conn=db._conn)
+    w.select_payee_vendor(vid)
+    assert coerce_combo_int_id(w._fld_payee.currentData()) == vid

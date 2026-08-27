@@ -291,6 +291,15 @@ class PayBillsScreen(QWidget):
         self._sync_check_number_field()
         self._update_ending_balance()
 
+    def filter_to_vendor(self, vendor_id: int) -> None:
+        """Tiny Vendor Center hook: show unpaid bills for *vendor_id* when listed."""
+        self.reload()
+        vid = int(vendor_id)
+        for i in range(self._vendor_filter.count()):
+            if coerce_combo_int_id(self._vendor_filter.itemData(i)) == vid:
+                self._vendor_filter.setCurrentIndex(i)
+                return
+
     def _style_button(self, b: QPushButton, *, primary: bool = False, height: int = _RIBBON_BTN_HEIGHT_PX) -> None:
         b.setStyleSheet(_action_button_qss(primary=primary))
         b.setFixedHeight(height)

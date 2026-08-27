@@ -4896,7 +4896,7 @@ def test_extra_tabs_business_csv_export_tooltips_append_excel_bom_hint() -> None
     """Business CSV exports and the filtered export scope dialog share one UTF-8 BOM suffix string."""
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
     assert '_CSV_EXCEL_ENCODING_TIP = " UTF-8 with BOM for Excel."' in et
-    assert et.count("_CSV_EXCEL_ENCODING_TIP") == 9
+    assert et.count("_CSV_EXCEL_ENCODING_TIP") == 8
 
 
 def test_extra_tabs_business_main_grids_mention_csv_utf8_bom_for_excel() -> None:
@@ -4953,21 +4953,18 @@ def test_ar_tab_toolbar_buttons_have_tooltips() -> None:
 
 
 def test_ap_tab_toolbar_buttons_have_tooltips() -> None:
-    et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
-    start = et.index("class APTab")
-    end = et.index("\n\nclass PayrollTaxTab", start)
-    chunk = et[start:end]
+    """Vendor Center (APTab) chrome lives in vendor_center_screen.py."""
+    vc = (_DESKTOP_APP_DIR / "vendor_center_screen.py").read_text(encoding="utf-8")
     for needle in (
-        "ap_new_v.setToolTip",
-        "ap_edit_v.setToolTip",
-        "ap_export_vendors.setToolTip",
-        "detail_box.setToolTip",
-        "split.setToolTip",
-        "self._vendor_tbl.setToolTip",
-        "self._d_tax_id.setToolTip",
-        "self._d_terms.setToolTip",
+        'self._btn_new_vendor.setToolTip("Create a new vendor.")',
+        "self._btn_new_txn.setToolTip(",
+        "self._btn_excel.setToolTip(",
+        'split.setToolTip("Drag to resize the vendor list versus Vendor Information.")',
+        "self._vendor_tbl.setToolTip(",
+        "CSV exports (toolbar) use UTF-8 BOM for Excel",
+        'box.setToolTip("Contact fields from the vendor master; balances from open bills and payments.")',
     ):
-        assert needle in chunk, f"AP tab UI should set tooltip on {needle!r}"
+        assert needle in vc, f"Vendor Center UI should set tooltip on {needle!r}"
 
 
 def test_ap_bill_new_and_edit_attachment_browse_buttons_have_tooltips() -> None:
@@ -5215,7 +5212,7 @@ def test_main_window_banner_tabs_status_bar_and_worker_counts() -> None:
     chunk = text[start:end]
     assert chunk.count("self._header.") == 2
     assert chunk.count("self._status_bar.showMessage(") == 15
-    assert chunk.count("self._tabs.") == 63
+    assert chunk.count("self._tabs.") == 71
     assert chunk.count("self._worker") == 17
 
 
@@ -5445,8 +5442,8 @@ def test_extra_tabs_exposes_business_shortcuts_dialog_for_help_menu() -> None:
     assert "when the bank link is complete" in bus_help
     assert "Ctrl+Shift+I" in bus_help and "Invoice…" in bus_help
     assert (
-        et.count("lambda: show_business_keyboard_shortcuts_dialog(self)") == 4
-    ), "Rules, AR, AP, Payroll grids should open Business shortcuts from context menu"
+        et.count("lambda: show_business_keyboard_shortcuts_dialog(self)") == 3
+    ), "Rules, AR, Payroll grids should open Business shortcuts from context menu"
     assert (
         "show_business_keyboard_shortcuts_dialog(menu_parent)"
         in et[et.index("def _attach_table_copy_row_menu") : et.index("def _wire_find_focuses_line_edit")]
@@ -6110,8 +6107,8 @@ def test_extra_tabs_business_main_grids_have_hover_tooltips() -> None:
 
 def test_extra_tabs_business_copy_row_tooltips_mention_backup_safety() -> None:
     et = (_DESKTOP_APP_DIR / "extra_tabs.py").read_text(encoding="utf-8")
-    # Customer/vendor master grids (plus rules, payroll run); AR invoice list grid moved off Business hub.
-    assert et.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 10
+    # Customer master grid (plus rules, payroll run); vendor master grid is Vendor Center.
+    assert et.count("+ CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX") >= 8
 
 
 def test_register_tab_persists_header_state_via_qsettings() -> None:

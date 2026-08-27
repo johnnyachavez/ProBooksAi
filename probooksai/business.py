@@ -2158,6 +2158,102 @@ def list_vendor_ap_summaries(conn: sqlite3.Connection) -> list[dict]:
     return out
 
 
+def list_vendor_center_transactions(
+    conn: sqlite3.Connection,
+    vendor_id: Optional[int] = None,
+) -> list[dict]:
+    """Bills and AP payments for Vendor Center (one vendor or the whole list).
+
+    Newest date first. Does not seed or rename vendors — callers supply live ids.
+    """
+    from datetime import date as date_cls
+
+    today = date_cls.today()
+    vend_sql = ""
+    params: list = []
+    if vendor_id is not None:
+        vend_sql = "AND v.id = ?"
+        params.append(int(vendor_id))
+
+    bills = conn.execute(
+        f"""
+        SELECT b.id, b.vendor_id, v.name AS vendor_name,
+               b.vendor_invoice_number, b.bill_date, b.due_date,
+               b.total, b.balance_due, b.status, b.attachment_path
+        FROM bills b
+        JOIN vendors v ON v.id = b.vendor_id
+        WHERE 1=1 {vend_sql}
+        ORDER BY b.bill_date DESC, b.id DESC
+        """,
+        params,
+    ).fetchall()
+    pays = conn.execute(
+        f"""
+        SELECT p.id, p.vendor_id, v.name AS vendor_name,
+               p.payment_date, p.amount, p.method, p.reference
+        FROM ap_payments p
+        JOIN vendors v ON v.id = p.vendor_id
+        WHERE 1=1 {vend_sql}
+        ORDER BY p.payment_date DESC, p.id DESC
+        """,
+        params,
+    ).fetchall()
+
+    out: list[dict] = []
+    for r in bills:
+        d = dict(r)
+        due = (d.get("due_date") or "").strip()
+        bal = float(d.get("balance_due") or 0)
+        aging = ""
+        if bal > 0.005 and due:
+            try:
+                days = (today - date_cls.fromisoformat(due[:10])).days
+                if days > 0:
+                    aging = str(days)
+            except ValueError:
+                aging = ""
+        out.append(
+            {
+                "kind": "bill",
+                "record_id": int(d["id"]),
+                "vendor_id": int(d["vendor_id"]),
+                "vendor_name": d.get("vendor_name") or "",
+                "type": "Bill",
+                "num": (d.get("vendor_invoice_number") or "").strip(),
+                "date": (d.get("bill_date") or "").strip(),
+                "due_date": due,
+                "aging": aging,
+                "amount": round(float(d.get("total") or 0), 2),
+                "open_balance": round(bal, 2),
+                "status": (d.get("status") or "").strip(),
+                "attachment_path": (d.get("attachment_path") or "").strip(),
+            }
+        )
+    for r in pays:
+        d = dict(r)
+        method = (d.get("method") or "").strip()
+        type_label = "Bill Pmt -Check" if method.lower() == "check" else "BILLPMT"
+        out.append(
+            {
+                "kind": "billpmt",
+                "record_id": int(d["id"]),
+                "vendor_id": int(d["vendor_id"]),
+                "vendor_name": d.get("vendor_name") or "",
+                "type": type_label,
+                "num": (d.get("reference") or "").strip(),
+                "date": (d.get("payment_date") or "").strip(),
+                "due_date": "",
+                "aging": "",
+                "amount": round(float(d.get("amount") or 0), 2),
+                "open_balance": 0.0,
+                "status": "Paid",
+                "attachment_path": "",
+            }
+        )
+    out.sort(key=lambda x: ((x.get("date") or ""), int(x.get("record_id") or 0)), reverse=True)
+    return out
+
+
 def list_customer_ar_summaries(conn: sqlite3.Connection) -> list[dict]:
     """One row per customer: open AR balance, current vs overdue (by due date), last invoice and payment dates.
 

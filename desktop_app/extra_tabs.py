@@ -84,6 +84,7 @@ from desktop_app.qt_mnemonic import (
 )
 from desktop_app.new_customer_dialog import run_new_customer_dialog
 from desktop_app.theme import ar_ap_master_tab_stylesheet
+from desktop_app.vendor_center_screen import VendorCenterScreen
 from desktop_app.table_clipboard import (
     CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
     QTABLE_PLAIN_TEXT_ROLE,
@@ -1360,300 +1361,156 @@ class ARTab(QWidget):
 
 
 
-class APTab(QWidget):
-    def __init__(self, conn: sqlite3.Connection, parent=None):
-        super().__init__(parent)
-        self.setObjectName("apMasterTab")
-        self.setStyleSheet(ar_ap_master_tab_stylesheet())
-        self._conn = conn
-        self._vendor_summary_by_id: dict[int, dict] = {}
-        self._focused_vendor_id: int | None = None
-        self.setToolTip(
-            "Accounts payable: vendor master list, balances, and last activity; "
-            "F5 refreshes when Business has focus. "
-            "Toolbar export uses UTF-8 BOM for Excel. "
-            "(F5 refreshes when this tab has focus.)"
-        )
-        lay = QVBoxLayout(self)
-        row = QHBoxLayout()
-        ap_new_v = QPushButton("New Vendor")
-        ap_new_v.setToolTip("Create a new vendor record.")
-        ap_new_v.clicked.connect(self._new_v)
-        row.addWidget(ap_new_v)
-        ap_edit_v = QPushButton("Edit Vendor…")
-        ap_edit_v.setToolTip("Choose a vendor and edit name, contact, 1099 flag, and notes.")
-        ap_edit_v.clicked.connect(self._edit_v)
-        row.addWidget(ap_edit_v)
-        ap_export_vendors = QPushButton("Export Vendors CSV…")
-        ap_export_vendors.setToolTip("Export all vendors to CSV." + _CSV_EXCEL_ENCODING_TIP)
-        ap_export_vendors.clicked.connect(self._export_vendors)
-        row.addWidget(ap_export_vendors)
-        row.addStretch()
-        lay.addLayout(row)
 
-        split = QSplitter(Qt.Orientation.Vertical)
-        split.setToolTip("Drag to resize selected-vendor detail vs vendor list.")
+def run_new_vendor_dialog(parent: QWidget, conn: sqlite3.Connection) -> int | None:
+    """Create a vendor record used for AP bills, payments, and 1099-style flags.
 
-        detail_box = QGroupBox("Selected Vendor")
-        detail_box.setToolTip(
-            "Contact fields from the vendor master record; balances from open bills and payments."
-        )
-        df = QFormLayout(detail_box)
-        self._d_name = QLabel("—")
-        self._d_address = QLabel("—")
-        self._d_address.setWordWrap(True)
-        self._d_phone = QLabel("—")
-        self._d_email = QLabel("—")
-        self._d_tax_id = QLabel("—")
-        self._d_tax_id.setToolTip(
-            "No dedicated Tax ID column in the database yet; store EIN/TIN in Notes if needed."
-        )
-        self._d_terms = QLabel("—")
-        self._d_terms.setToolTip(
-            "Payment terms are not stored separately yet; describe them in Notes if needed."
-        )
-        self._d_open_bal = QLabel("—")
-        self._d_cur_due = QLabel("—")
-        self._d_overdue = QLabel("—")
-        self._d_last_bill = QLabel("—")
-        self._d_last_pay = QLabel("—")
-        self._d_notes = QLabel("—")
-        self._d_notes.setWordWrap(True)
-        df.addRow("Vendor Name", self._d_name)
-        df.addRow("Address", self._d_address)
-        df.addRow("Phone", self._d_phone)
-        df.addRow("Email", self._d_email)
-        df.addRow("Tax ID", self._d_tax_id)
-        df.addRow("Terms", self._d_terms)
-        df.addRow("Open Balance", self._d_open_bal)
-        df.addRow("Current Due", self._d_cur_due)
-        df.addRow("Overdue", self._d_overdue)
-        df.addRow("Last Bill Date", self._d_last_bill)
-        df.addRow("Last Payment Date", self._d_last_pay)
-        df.addRow("Notes", self._d_notes)
-        split.addWidget(detail_box)
+    Returns the new vendor id, or ``None`` if cancelled.
+    """
+    d = QDialog(parent)
+    d.setWindowTitle("New vendor")
+    d.setToolTip("Create a vendor record used for AP bills, payments, and 1099-style flags.")
+    f = QFormLayout(d)
+    ne = QLineEdit()
+    ne.setToolTip("Vendor display name (required).")
+    em = QLineEdit()
+    em.setToolTip("Contact email (optional).")
+    ph = QLineEdit()
+    ph.setToolTip("Phone number (optional).")
+    ad = QPlainTextEdit()
+    ad.setFixedHeight(56)
+    ad.setToolTip("Mailing or remittance address (optional).")
+    no = QPlainTextEdit()
+    no.setFixedHeight(48)
+    no.setToolTip("Internal notes about this vendor (optional).")
+    irs = QCheckBox("1099 vendor")
+    irs.setToolTip("Mark if this vendor should be included in 1099-style reporting.")
+    f.addRow("Name *", ne)
+    f.addRow("Email", em)
+    f.addRow("Phone", ph)
+    f.addRow("Address", ad)
+    f.addRow("Notes", no)
+    f.addRow("", irs)
+    bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+    _tip_dialog_ok_cancel(bb, "Add the vendor with these details.")
+    bb.accepted.connect(d.accept)
+    bb.rejected.connect(d.reject)
+    f.addRow(bb)
+    if d.exec() != QDialog.DialogCode.Accepted or not ne.text().strip():
+        return None
+    return business.add_vendor(
+        conn,
+        ne.text().strip(),
+        email=em.text().strip(),
+        phone=ph.text().strip(),
+        address=ad.toPlainText().strip(),
+        notes=no.toPlainText().strip(),
+        is_1099=irs.isChecked(),
+    )
 
-        list_box = QGroupBox("Vendors")
-        list_box.setToolTip("Click a row to show that vendor in the detail card above.")
-        lb_lay = QVBoxLayout(list_box)
-        self._vendor_tbl = QTableWidget()
-        self._vendor_tbl.setColumnCount(7)
-        self._vendor_tbl.setHorizontalHeaderLabels(
-            [
-                "Vendor",
-                "Open Balance",
-                "Current Due",
-                "Overdue",
-                "Last Bill Date",
-                "Last Payment Date",
-                "Status",
-            ]
+
+def run_edit_vendor_dialog(
+    parent: QWidget,
+    conn: sqlite3.Connection,
+    vendor_id: int | None = None,
+) -> bool:
+    """Edit an existing vendor. Returns True if saved."""
+    vs = business.list_vendors(conn)
+    if not vs:
+        message_box_information_ok(
+            parent,
+            "Vendors",
+            "No vendors to edit.",
+            ok_tip="Close; use New vendor first.",
         )
-        self._vendor_tbl.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self._vendor_tbl.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self._vendor_tbl.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self._vendor_tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self._vendor_tbl.setSortingEnabled(True)
-        self._vendor_tbl.cellClicked.connect(self._on_vendor_row_clicked)
-        self._vendor_tbl.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self._vendor_tbl.customContextMenuRequested.connect(self._on_vendor_context_menu)
-        self._vendor_tbl.setToolTip(
-            "Vendor master snapshot; click a row to update the detail card. F5 refreshes. "
-            "CSV exports (toolbar) use UTF-8 BOM for Excel."
-        )
-        lb_lay.addWidget(self._vendor_tbl)
-        split.addWidget(list_box)
-        split.setStretchFactor(0, 1)
-        split.setStretchFactor(1, 2)
-        lay.addWidget(split, 1)
-        self._refresh()
+        return False
+    d = QDialog(parent)
+    d.setWindowTitle("Edit vendor")
+    d.setToolTip("Filter the list, pick a vendor, then update name, contact fields, notes, or 1099 flag.")
+    f = QFormLayout(d)
+    filt = QLineEdit()
+    filt.setPlaceholderText("Filter by name, email, phone, address, notes, 1099, or id…")
+    filt.setClearButtonEnabled(True)
+    filt.setToolTip("Narrow the vendor list; clear the field to show all vendors again.")
+    cb = QComboBox()
+    cb.setToolTip("Choose the vendor to edit.")
+    ne = QLineEdit()
+    ne.setToolTip("Vendor display name (required).")
+    em = QLineEdit()
+    em.setToolTip("Contact email (optional).")
+    ph = QLineEdit()
+    ph.setToolTip("Phone number (optional).")
+    ad = QPlainTextEdit()
+    ad.setFixedHeight(56)
+    ad.setToolTip("Mailing or remittance address (optional).")
+    no = QPlainTextEdit()
+    no.setFixedHeight(48)
+    no.setToolTip("Internal notes about this vendor (optional).")
+    irs = QCheckBox("1099 vendor")
+    irs.setToolTip("Mark if this vendor should be included in 1099-style reporting.")
 
-    def persist_header_state(self) -> None:
-        QSettings().setValue(
-            _AP_VENDOR_HEADER_STATE_KEY,
-            self._vendor_tbl.horizontalHeader().saveState(),
-        )
-
-    def showEvent(self, event: QShowEvent) -> None:
-        super().showEvent(event)
-        raw = QSettings().value(_AP_VENDOR_HEADER_STATE_KEY)
-        if raw:
-            self._vendor_tbl.horizontalHeader().restoreState(raw)
-
-    def hideEvent(self, event: QHideEvent) -> None:
-        self.persist_header_state()
-        super().hideEvent(event)
-
-    def _on_vendor_row_clicked(self, row: int, _col: int) -> None:
-        if row < 0:
-            return
-        it = self._vendor_tbl.item(row, 0)
-        if it is None:
-            return
-        vid = coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole))
+    def load_vendor(_index: int | None = None) -> None:
+        vid = coerce_combo_int_id(cb.currentData())
         if vid is None:
             return
-        self._focused_vendor_id = vid
-        self._apply_detail_from_focus()
+        row = business.get_vendor(conn, vid)
+        if row is None:
+            return
+        ne.setText(row["name"] or "")
+        em.setText(row["email"] or "")
+        ph.setText(row["phone"] or "")
+        ad.setPlainText(row["address"] or "")
+        no.setPlainText(row["notes"] or "")
+        irs.setChecked(bool(int(row["is_1099"] or 0)))
 
-    def _on_vendor_context_menu(self, pos) -> None:
-        idx = self._vendor_tbl.indexAt(pos)
-        m = QMenu(self)
-        act_keys = m.addAction(
-            "Keyboard shortcuts…",
-            lambda: show_business_keyboard_shortcuts_dialog(self),
+    def sync_vendor_combo() -> None:
+        _sync_filtered_entity_combo(
+            vs,
+            filt.text(),
+            cb,
+            business_list_filter.VENDOR_ENTITY_KEYS,
+            tag_1099=True,
         )
-        act_keys.setToolTip(
-            "Same summary as Help → Business shortcuts… (F5, Vendors grid). "
-            + VIEW_BANK_REGISTER_KEYS_TOOLTIP
-            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
+        load_vendor()
+
+    cb.currentIndexChanged.connect(load_vendor)
+    filt.textChanged.connect(sync_vendor_combo)
+    f.addRow("Filter list", filt)
+    f.addRow("Vendor", cb)
+    sync_vendor_combo()
+    if vendor_id is not None:
+        ix = combo_index_for_int_user_data(cb, int(vendor_id))
+        if ix is not None:
+            cb.setCurrentIndex(ix)
+            load_vendor()
+    f.addRow("Name *", ne)
+    f.addRow("Email", em)
+    f.addRow("Phone", ph)
+    f.addRow("Address", ad)
+    f.addRow("Notes", no)
+    f.addRow("", irs)
+    bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+    _tip_dialog_ok_cancel(bb, "Save changes to the selected vendor.")
+    bb.accepted.connect(d.accept)
+    bb.rejected.connect(d.reject)
+    f.addRow(bb)
+    if d.exec() != QDialog.DialogCode.Accepted:
+        return False
+    if not ne.text().strip():
+        return False
+    vid = coerce_combo_int_id(cb.currentData())
+    if vid is None:
+        message_box_warning_ok(
+            parent,
+            "Vendor",
+            "No vendor selected (try clearing the filter).",
+            ok_tip="Close; pick a vendor or clear the filter.",
         )
-        if not idx.isValid():
-            m.exec(self._vendor_tbl.viewport().mapToGlobal(pos))
-            return
-        row = idx.row()
-        it = self._vendor_tbl.item(row, 0)
-        if it is None or coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole)) is None:
-            m.exec(self._vendor_tbl.viewport().mapToGlobal(pos))
-            return
-        m.addSeparator()
-        act_copy = m.addAction(
-            "Copy row", lambda r=row: copy_table_row_as_tsv(self._vendor_tbl, r)
-        )
-        act_copy.setToolTip(
-            "Copy this vendor row as tab-separated text for pasting into a spreadsheet or editor. "
-            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
-        )
-        m.exec(self._vendor_tbl.viewport().mapToGlobal(pos))
-
-    def _apply_detail_from_focus(self) -> None:
-        if self._focused_vendor_id is None:
-            self._clear_detail_card()
-            return
-        v = business.get_vendor(self._conn, self._focused_vendor_id)
-        summ = self._vendor_summary_by_id.get(self._focused_vendor_id)
-        if v is None:
-            self._clear_detail_card()
-            return
-        d = dict(v)
-        self._d_name.setText(escape_ampersand_for_qt(d.get("name") or "—"))
-        addr = (d.get("address") or "").strip()
-        self._d_address.setText(escape_ampersand_for_qt(addr) if addr else "—")
-        self._d_phone.setText(escape_ampersand_for_qt(d.get("phone") or "") or "—")
-        self._d_email.setText(escape_ampersand_for_qt(d.get("email") or "") or "—")
-        self._d_tax_id.setText("—")
-        self._d_terms.setText("—")
-        notes = (d.get("notes") or "").strip()
-        self._d_notes.setText(escape_ampersand_for_qt(notes) if notes else "—")
-        if summ is None:
-            self._d_open_bal.setText("—")
-            self._d_cur_due.setText("—")
-            self._d_overdue.setText("—")
-            self._d_last_bill.setText("—")
-            self._d_last_pay.setText("—")
-            return
-        self._d_open_bal.setText(f"{float(summ['open_balance']):,.2f}")
-        self._d_cur_due.setText(f"{float(summ['current_due']):,.2f}")
-        self._d_overdue.setText(f"{float(summ['overdue']):,.2f}")
-        self._d_last_bill.setText(summ.get("last_bill_date") or "—")
-        self._d_last_pay.setText(summ.get("last_payment_date") or "—")
-
-    def _clear_detail_card(self) -> None:
-        for w in (
-            self._d_name,
-            self._d_address,
-            self._d_phone,
-            self._d_email,
-            self._d_tax_id,
-            self._d_terms,
-            self._d_open_bal,
-            self._d_cur_due,
-            self._d_overdue,
-            self._d_last_bill,
-            self._d_last_pay,
-            self._d_notes,
-        ):
-            w.setText("—")
-
-    def _refresh(self) -> None:
-        rows = business.list_vendor_ap_summaries(self._conn)
-        self._vendor_summary_by_id = {int(r["vendor_id"]): r for r in rows}
-        self._vendor_tbl.setSortingEnabled(False)
-        self._vendor_tbl.setRowCount(len(rows))
-        for i, r in enumerate(rows):
-            vid = int(r["vendor_id"])
-            nm = r["vendor_name"] or ""
-            it0 = QTableWidgetItem(escape_ampersand_for_qt(nm))
-            it0.setData(Qt.ItemDataRole.UserRole, vid)
-            self._vendor_tbl.setItem(i, 0, it0)
-            ob = float(r["open_balance"] or 0)
-            cd = float(r["current_due"] or 0)
-            ov = float(r["overdue"] or 0)
-            self._vendor_tbl.setItem(i, 1, _FloatSortTableItem(f"{ob:.2f}", ob))
-            self._vendor_tbl.setItem(i, 2, _FloatSortTableItem(f"{cd:.2f}", cd))
-            self._vendor_tbl.setItem(i, 3, _FloatSortTableItem(f"{ov:.2f}", ov))
-            self._vendor_tbl.setItem(
-                i, 4, plain_display_table_item(r["last_bill_date"] or "")
-            )
-            self._vendor_tbl.setItem(
-                i, 5, plain_display_table_item(r["last_payment_date"] or "")
-            )
-            self._vendor_tbl.setItem(
-                i, 6, plain_display_table_item(r.get("ap_status") or "")
-            )
-        self._vendor_tbl.setSortingEnabled(True)
-        ids = {int(r["vendor_id"]) for r in rows}
-        if self._focused_vendor_id is not None and self._focused_vendor_id not in ids:
-            self._focused_vendor_id = None
-        if self._focused_vendor_id is None and rows:
-            self._focused_vendor_id = int(rows[0]["vendor_id"])
-        if self._focused_vendor_id is not None:
-            for row in range(self._vendor_tbl.rowCount()):
-                it = self._vendor_tbl.item(row, 0)
-                if it is None:
-                    continue
-                if coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole)) == self._focused_vendor_id:
-                    self._vendor_tbl.selectRow(row)
-                    break
-            self._apply_detail_from_focus()
-        else:
-            self._vendor_tbl.clearSelection()
-            self._clear_detail_card()
-
-    def _new_v(self):
-        d = QDialog(self)
-        d.setWindowTitle("New vendor")
-        d.setToolTip("Create a vendor record used for AP bills, payments, and 1099-style flags.")
-        f = QFormLayout(d)
-        ne = QLineEdit()
-        ne.setToolTip("Vendor display name (required).")
-        em = QLineEdit()
-        em.setToolTip("Contact email (optional).")
-        ph = QLineEdit()
-        ph.setToolTip("Phone number (optional).")
-        ad = QPlainTextEdit()
-        ad.setFixedHeight(56)
-        ad.setToolTip("Mailing or remittance address (optional).")
-        no = QPlainTextEdit()
-        no.setFixedHeight(48)
-        no.setToolTip("Internal notes about this vendor (optional).")
-        irs = QCheckBox("1099 vendor")
-        irs.setToolTip("Mark if this vendor should be included in 1099-style reporting.")
-        f.addRow("Name *", ne)
-        f.addRow("Email", em)
-        f.addRow("Phone", ph)
-        f.addRow("Address", ad)
-        f.addRow("Notes", no)
-        f.addRow("", irs)
-        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        _tip_dialog_ok_cancel(bb, "Add the vendor with these details.")
-        bb.accepted.connect(d.accept)
-        bb.rejected.connect(d.reject)
-        f.addRow(bb)
-        if d.exec() != QDialog.DialogCode.Accepted or not ne.text().strip():
-            return
-        business.add_vendor(
-            self._conn,
+        return False
+    try:
+        business.update_vendor(
+            conn,
+            vid,
             ne.text().strip(),
             email=em.text().strip(),
             phone=ph.text().strip(),
@@ -1661,141 +1518,25 @@ class APTab(QWidget):
             notes=no.toPlainText().strip(),
             is_1099=irs.isChecked(),
         )
-        self._refresh()
-
-    def _edit_v(self):
-        vs = business.list_vendors(self._conn)
-        if not vs:
-            message_box_information_ok(
-                self,
-                "Vendors",
-                "No vendors to edit.",
-                ok_tip="Close; use New vendor first.",
-            )
-            return
-        d = QDialog(self)
-        d.setWindowTitle("Edit vendor")
-        d.setToolTip("Filter the list, pick a vendor, then update name, contact fields, notes, or 1099 flag.")
-        f = QFormLayout(d)
-        filt = QLineEdit()
-        filt.setPlaceholderText("Filter by name, email, phone, address, notes, 1099, or id…")
-        filt.setClearButtonEnabled(True)
-        filt.setToolTip("Narrow the vendor list; clear the field to show all vendors again.")
-        cb = QComboBox()
-        cb.setToolTip("Choose the vendor to edit.")
-        ne = QLineEdit()
-        ne.setToolTip("Vendor display name (required).")
-        em = QLineEdit()
-        em.setToolTip("Contact email (optional).")
-        ph = QLineEdit()
-        ph.setToolTip("Phone number (optional).")
-        ad = QPlainTextEdit()
-        ad.setFixedHeight(56)
-        ad.setToolTip("Mailing or remittance address (optional).")
-        no = QPlainTextEdit()
-        no.setFixedHeight(48)
-        no.setToolTip("Internal notes about this vendor (optional).")
-        irs = QCheckBox("1099 vendor")
-        irs.setToolTip("Mark if this vendor should be included in 1099-style reporting.")
-
-        def load_vendor(_index: int | None = None) -> None:
-            vid = coerce_combo_int_id(cb.currentData())
-            if vid is None:
-                return
-            row = business.get_vendor(self._conn, vid)
-            if row is None:
-                return
-            ne.setText(row["name"] or "")
-            em.setText(row["email"] or "")
-            ph.setText(row["phone"] or "")
-            ad.setPlainText(row["address"] or "")
-            no.setPlainText(row["notes"] or "")
-            irs.setChecked(bool(int(row["is_1099"] or 0)))
-
-        def sync_vendor_combo() -> None:
-            _sync_filtered_entity_combo(
-                vs,
-                filt.text(),
-                cb,
-                business_list_filter.VENDOR_ENTITY_KEYS,
-                tag_1099=True,
-            )
-            load_vendor()
-
-        cb.currentIndexChanged.connect(load_vendor)
-        filt.textChanged.connect(sync_vendor_combo)
-        f.addRow("Filter list", filt)
-        f.addRow("Vendor", cb)
-        sync_vendor_combo()
-        f.addRow("Name *", ne)
-        f.addRow("Email", em)
-        f.addRow("Phone", ph)
-        f.addRow("Address", ad)
-        f.addRow("Notes", no)
-        f.addRow("", irs)
-        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        _tip_dialog_ok_cancel(bb, "Save changes to the selected vendor.")
-        bb.accepted.connect(d.accept)
-        bb.rejected.connect(d.reject)
-        f.addRow(bb)
-        if d.exec() != QDialog.DialogCode.Accepted:
-            return
-        if not ne.text().strip():
-            return
-        vid = coerce_combo_int_id(cb.currentData())
-        if vid is None:
-            message_box_warning_ok(
-                self,
-                "Vendor",
-                "No vendor selected (try clearing the filter).",
-                ok_tip="Close; pick a vendor or clear the filter.",
-            )
-            return
-        try:
-            business.update_vendor(
-                self._conn,
-                vid,
-                ne.text().strip(),
-                email=em.text().strip(),
-                phone=ph.text().strip(),
-                address=ad.toPlainText().strip(),
-                notes=no.toPlainText().strip(),
-                is_1099=irs.isChecked(),
-            )
-        except ValueError as exc:
-            message_box_warning_ok(
-                self,
-                "Vendor",
-                escape_ampersand_for_qt(str(exc)),
-                ok_tip="Close; fix the validation issue and try again.",
-            )
-            return
-        self._refresh()
-
-    def _export_vendors(self):
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Export vendors", "vendors.csv", "CSV (*.csv)"
+    except ValueError as exc:
+        message_box_warning_ok(
+            parent,
+            "Vendor",
+            escape_ampersand_for_qt(str(exc)),
+            ok_tip="Close; fix the validation issue and try again.",
         )
-        if not path:
-            return
-        if not path.lower().endswith(".csv"):
-            path += ".csv"
-        try:
-            n = business.write_vendors_csv(self._conn, path)
-        except OSError as exc:
-            message_box_critical_ok(
-                self,
-                "Export failed",
-                escape_ampersand_for_qt(str(exc)),
-                ok_tip="Close; check path, permissions, and disk space.",
-            )
-            return
-        message_box_information_ok(
-            self,
-            "Export",
-            f"Exported {n} vendor(s) to {escape_ampersand_for_qt(path)}",
-            ok_tip="Close; open the CSV from the path shown." + CSV_EXPORT_OK_TIP_SUFFIX,
-        )
+        return False
+    return True
+
+
+class APTab(VendorCenterScreen):
+    """Accounts payable: vendor master list, balances, and last activity.
+
+    Vendor Center (QB Pro layout) on the top-level Vendors tab.
+    F5 refreshes when Business has focus. Toolbar export uses UTF-8 BOM for Excel.
+    (F5 refreshes when this tab has focus.)
+    CSV exports (toolbar) use UTF-8 BOM for Excel.
+    """
 
 
 class PayrollTaxTab(QWidget):

@@ -303,3 +303,18 @@ def test_pay_bills_to_be_printed_sets_check_no(qapp: QApplication, db: BankDatab
     assert not w._reference.isReadOnly()
     assert isinstance(w._method, QComboBox)
     assert isinstance(w._reference, QLineEdit)
+
+
+def test_pay_bills_filter_to_vendor(qapp: QApplication, db: BankDatabase) -> None:
+    v1 = business.add_vendor(db._conn, "Office Supplies Co")
+    v2 = business.add_vendor(db._conn, "Fuel Vendor")
+    business.create_bill(db._conn, v1, "2024-06-01", 50.0, vendor_invoice_number="A")
+    business.create_bill(db._conn, v2, "2024-06-02", 75.0, vendor_invoice_number="B")
+    w = PayBillsScreen(ap_conn=db._conn, bank_db=db)
+    t = w.findChild(QTableWidget, "payBillsTable")
+    assert t is not None
+    assert t.rowCount() == 2
+    w.filter_to_vendor(v2)
+    assert t.rowCount() == 1
+    assert t.item(0, 3).text() == "Fuel Vendor"
+    assert coerce_combo_int_id(w._vendor_filter.currentData()) == v2
