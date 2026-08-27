@@ -338,8 +338,8 @@ def test_register_info_footer_totals_only_when_reconciliation_help_always_shown(
         db.close()
 
 
-def test_register_checkbook_mode_hides_memo_clr_match_keeps_spacer(qapp) -> None:
-    """Memo stays hidden; unnamed spacer stays visible; Clr and Match toggle with reconciliation mode."""
+def test_register_checkbook_mode_shows_memo_clr_hides_match_keeps_spacer(qapp) -> None:
+    """Two-line checkbook shows MEMO and ✓; Match stays recon-only; spacer stays visible."""
     p = Path(tempfile.mkdtemp()) / "reg_checkbook_cols.db"
     db = BankDatabase(str(p))
     try:
@@ -347,8 +347,8 @@ def test_register_checkbook_mode_hides_memo_clr_match_keeps_spacer(qapp) -> None
         tab = RegisterTab(db, coa, None)
         hdr = tab._table.horizontalHeader()
         assert tab._reconciliation_mode is False
-        assert hdr.isSectionHidden(_COL_MEMO)
-        assert hdr.isSectionHidden(_COL_CLR)
+        assert not hdr.isSectionHidden(_COL_MEMO)
+        assert not hdr.isSectionHidden(_COL_CLR)
         assert hdr.isSectionHidden(_COL_LINK)
         assert not hdr.isSectionHidden(_COL_SPACER)
         tab._recon_checkbox.setChecked(True)
@@ -357,8 +357,8 @@ def test_register_checkbook_mode_hides_memo_clr_match_keeps_spacer(qapp) -> None
         assert not hdr.isSectionHidden(_COL_LINK)
         assert not hdr.isSectionHidden(_COL_SPACER)
         tab._recon_checkbox.setChecked(False)
-        assert hdr.isSectionHidden(_COL_MEMO)
-        assert hdr.isSectionHidden(_COL_CLR)
+        assert not hdr.isSectionHidden(_COL_MEMO)
+        assert not hdr.isSectionHidden(_COL_CLR)
         assert hdr.isSectionHidden(_COL_LINK)
         assert not hdr.isSectionHidden(_COL_SPACER)
     finally:

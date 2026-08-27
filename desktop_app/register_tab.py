@@ -22,8 +22,8 @@ Payee column uses a two-band row: description on the lighter upper panel, COA ac
 **Memo** is not shown as a grid column (edit via row context menu). Hover **tooltips** on Payee, Number, Date, Debit/Credit, Balance, and Match show full values or helpful detail when the grid elides text.
 **Match** (reconciliation mode): double-click **Match** or use row context **Open linked Business record…** (when the menu shows it) to open **Customers** / **Vendors** for AR/AP invoice or bill links, **More → Business → Payroll** for payroll, when the **complete bank link** allows; otherwise the same **Business link** message as **Ctrl+Shift+B** (invoice/bill editor, payroll tax lines, or AR/AP payment summary).
 The **COA Account** combo tooltip states the saved category and whether the row is posted (read-only).
-Number column keeps reference plus type tag (DEP / PMT / BILLPMT / XFER / TXN) in the cell data for copy/edit;
-on screen they appear on one line in the upper band. **Clr** shows **C** when the row is marked cleared on the register, else **R** when the
+Number column keeps reference plus type tag (DEP / PMT / BILLPMT / CHK / XFER / TXN) in the cell data for copy/edit;
+on screen they appear on two lines (number then type) like QuickBooks Pro Use Register. **Clr** shows **C** when the row is marked cleared on the register, else **R** when the
 CSV import batch is marked reconciled in Bank Import. Rows without a COA category use a warmer two-band tint.
 The filter choice, last selected bank account, and register table **column header widths**
 persist in ``QSettings``, scoped by company SQLite path (same app profile as the main window).
@@ -172,23 +172,23 @@ _COL_DATE = 0
 _COL_REF = 1
 _COL_PAYEE = 2
 _COL_MEMO = 3
-_COL_DEBIT = 4
-_COL_CREDIT = 5
-_COL_CLR = 6
+_COL_DEBIT = 4  # PAYMENT (outflow)
+_COL_CLR = 5
+_COL_CREDIT = 6  # DEPOSIT (inflow)
 _COL_BAL = 7
 _COL_COA = 8
 _COL_LINK = 9
 _COL_SPACER = 10
 
 _HEADERS = [
-    "Date",
-    "Number",
-    "Payee / Description",
-    "Memo",
-    "Debit",
-    "Credit",
-    "Clr",
-    "Balance",
+    "DATE",
+    "NUMBER / TYPE",
+    "PAYEE / ACCOUNT",
+    "MEMO",
+    "PAYMENT",
+    "✓",
+    "DEPOSIT",
+    "BALANCE",
     "COA Account",
     "Match",
 ]
@@ -279,10 +279,17 @@ def _register_number_type_tag(txn: dict) -> str:
     memo = (txn.get("memo") or "").strip().upper().replace(" ", "").replace("-", "")
     if memo in {"BILLPMT", "PAYBILLS"}:
         return "BILLPMT"
+    if memo in {"CHK", "CHECK"}:
+        return "CHK"
+    if memo in {"DEP", "DEPOSIT", "MAKEDEPOSITS"} or memo.startswith("MAKEDEPOSIT"):
+        return "DEP"
     try:
         amt = float(txn.get("amount") or 0.0)
     except (TypeError, ValueError):
         amt = 0.0
+    ref = (txn.get("ref_number") or "").strip()
+    if amt < 0 and ref.isdigit():
+        return "CHK"
     if amt > 0:
         return "DEP"
     if amt < 0:
@@ -354,7 +361,7 @@ class CoaBandFrame(QFrame):
         it = self._table.item(row, _COL_DATE)
         if it is not None:
             missing = bool(it.data(REGISTER_MISSING_COA_ROLE))
-        uh, lh = register_row_band_colors_hex(row % 2 == 1, missing)
+        uh, lh = register_row_band_colors_hex(row % 2 == 1, missing, light=True)
         p.fillRect(top_r, QColor(uh))
         p.fillRect(bot_r, QColor(lh))
         p.setPen(QPen(QColor(REGISTER_BAND_DIVIDER), 1))
@@ -876,6 +883,8 @@ class RegisterTab(QWidget):
     openBankMatchNavigationRequested = Signal(str, int)
     openCoaEditorRequested = Signal(str)
     openInCheckScreenRequested = Signal(int)  # txn_id
+    openInDepositScreenRequested = Signal(int)  # txn_id
+    openBankFeedsRequested = Signal()
 
     def __init__(
         self,
@@ -897,6 +906,9 @@ class RegisterTab(QWidget):
         self._recon_header_snapshot: QByteArray | None = None
         self._cached_register_footer_totals_height = 0
         self._register_ending_balance: float | None = None
+        self._one_line = False
+        self._sort_mode = "date_type_ref"
+        self._draft_snapshot: dict | None = None
         self._build_ui()
 
     def _build_ui(self):
@@ -909,36 +921,92 @@ class RegisterTab(QWidget):
             "View → Reconcile (Ctrl+Shift+R) → Bank statements; Bank Register (Ctrl+7). "
             "Same company SQLite database as other main tabs; File → Backup / Restore (probooks.backup)."
         )
+        from desktop_app.theme import CHECKBOOK_TEXT
+        from PySide6.QtGui import QColor, QPalette
+
+        pal = QPalette()
+        pal.setColor(QPalette.ColorRole.Window, QColor("#E8ECF1"))
+        pal.setColor(QPalette.ColorRole.WindowText, QColor(CHECKBOOK_TEXT))
+        pal.setColor(QPalette.ColorRole.Base, QColor("#FFFFFF"))
+        pal.setColor(QPalette.ColorRole.AlternateBase, QColor("#E7F4EA"))
+        pal.setColor(QPalette.ColorRole.Text, QColor(CHECKBOOK_TEXT))
+        pal.setColor(QPalette.ColorRole.Button, QColor("#F7F8FA"))
+        pal.setColor(QPalette.ColorRole.ButtonText, QColor(CHECKBOOK_TEXT))
+        pal.setColor(QPalette.ColorRole.Highlight, QColor("#2E7D32"))
+        pal.setColor(QPalette.ColorRole.HighlightedText, QColor("#FFFFFF"))
+        pal.setColor(QPalette.ColorRole.PlaceholderText, QColor("#5B6770"))
+        self.setPalette(pal)
+        self.setAutoFillBackground(True)
+        self.setStyleSheet(
+            f"RegisterTab {{ background-color: #E8ECF1; color: {CHECKBOOK_TEXT}; }}"
+        )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # ── Top header strip ─────────────────────────────────────────────────
-        from desktop_app.theme import BG_ELEVATED, REGISTER_GRID_LINE, FG_PRIMARY, ACCENT
-        _hdr = QWidget()
-        _hdr.setFixedHeight(36)
-        _hdr.setStyleSheet(
-            f"QWidget {{ background: {BG_ELEVATED}; "
-            f"border-bottom: 2px solid {REGISTER_GRID_LINE}; }}"
+        # ── QB Pro register toolbar ─────────────────────────────────────────
+        toolbar = QWidget()
+        toolbar.setObjectName("bankRegisterToolbar")
+        toolbar.setStyleSheet(
+            "QWidget#bankRegisterToolbar { background: #F4F7FA; "
+            "border-bottom: 1px solid #C0C8D0; }"
         )
-        _hdr_row = QHBoxLayout(_hdr)
-        _hdr_row.setContentsMargins(12, 0, 14, 0)
-        _hdr_row.setSpacing(10)
-        _lbl_brand = QLabel("BANK REGISTER")
-        _lbl_brand.setStyleSheet(
-            f"background: transparent; border: none; "
-            f"color: {FG_PRIMARY}; font-size: 12px; font-weight: 700; letter-spacing: 2px;"
+        tb = QHBoxLayout(toolbar)
+        tb.setContentsMargins(8, 4, 8, 4)
+        tb.setSpacing(6)
+
+        def _tb_btn(text: str, tip: str) -> QPushButton:
+            b = QPushButton(text)
+            b.setFixedHeight(26)
+            b.setStyleSheet(
+                "QPushButton { background: #F7F8FA; border: 1px solid #B4BCC6; "
+                "border-radius: 4px; padding: 0 10px; color: #1A1A1A; font-size: 12px; }"
+                "QPushButton:hover { background: #E4EEF7; }"
+            )
+            b.setToolTip(tip)
+            return b
+
+        self._btn_goto = _tb_btn("Go to...", "Jump to a date or check / reference number in this register.")
+        self._btn_print = _tb_btn("Print...", "Print this register (layout control).")
+        self._btn_edit_txn = _tb_btn(
+            "Edit Transaction",
+            "Open the source form for the selected row (bill payment, deposit, or check).",
         )
-        _hdr_row.addWidget(_lbl_brand)
-        _hdr_row.addStretch(1)
-        # Account name badge (updated when account combo changes)
+        self._btn_quickreport = _tb_btn(
+            "QuickReport",
+            "Show a QuickReport of this account's register lines.",
+        )
+        self._btn_bank_feeds = _tb_btn(
+            "Setup Bank Feeds",
+            "Open Reconcile → Bank statements for feeds and statement import.",
+        )
+        self._btn_goto.clicked.connect(self._on_goto)
+        self._btn_print.clicked.connect(self._on_print_register)
+        self._btn_edit_txn.clicked.connect(self._on_edit_selected_transaction)
+        self._btn_quickreport.clicked.connect(self._on_quickreport)
+        self._btn_bank_feeds.clicked.connect(self._on_setup_bank_feeds)
+        for b in (
+            self._btn_goto,
+            self._btn_print,
+            self._btn_edit_txn,
+            self._btn_quickreport,
+            self._btn_bank_feeds,
+        ):
+            tb.addWidget(b)
+        tb.addStretch(1)
         self._hdr_acct_lbl = QLabel("")
         self._hdr_acct_lbl.setStyleSheet(
-            f"background: transparent; border: none; "
-            f"color: #A0C4FF; font-size: 11px; font-weight: 600;"
+            "background: transparent; border: none; "
+            "color: #2563A8; font-size: 12px; font-weight: 600;"
         )
-        _hdr_row.addWidget(self._hdr_acct_lbl)
-        layout.addWidget(_hdr)
+        tb.addWidget(self._hdr_acct_lbl)
+        layout.addWidget(toolbar)
+
+        # Keep a hidden brand label so existing tests/docs that mention BANK REGISTER stay accurate.
+        _lbl_brand = QLabel("BANK REGISTER")
+        _lbl_brand.setObjectName("bankRegisterBrand")
+        _lbl_brand.hide()
+        layout.addWidget(_lbl_brand)
 
         # ── Controls row ─────────────────────────────────────────────────────
         _controls_wrap = QWidget()
@@ -1012,7 +1080,7 @@ class RegisterTab(QWidget):
 
         self._table = QTableWidget()
         self._table.setObjectName("bankRegisterTable")
-        self._table.setStyleSheet(register_table_style_sheet())
+        self._table.setStyleSheet(register_table_style_sheet(light=True))
         self._table.setColumnCount(len(_REGISTER_HEADERS_FULL))
         self._table.setHorizontalHeaderLabels(_REGISTER_HEADERS_FULL)
         clr_header = self._table.horizontalHeaderItem(_COL_CLR)
@@ -1029,7 +1097,13 @@ class RegisterTab(QWidget):
         )
         self._table.setAlternatingRowColors(False)
         self._table.setItemDelegate(
-            RegisterBandDelegate(self._table, link_col=_COL_LINK)
+            RegisterBandDelegate(
+                self._table,
+                link_col=_COL_LINK,
+                light_theme=True,
+                center_col=_COL_CLR,
+                right_aligned_cols=frozenset({_COL_DEBIT, _COL_CREDIT, _COL_BAL}),
+            )
         )
         self._table.verticalHeader().setDefaultSectionSize(REGISTER_ROW_HEIGHT_MIN_FULL)
         self._table.setSizePolicy(
@@ -1093,13 +1167,12 @@ class RegisterTab(QWidget):
         # Strong top border separates the grid from the status bar.
         # Left side: quick Splits button + recon totals (recon mode only).
         # Right side: ENDING BALANCE — always visible and prominent.
-        from PySide6.QtWidgets import QFrame
-        from desktop_app.theme import REGISTER_GRID_LINE, BG_ELEVATED, FG_PRIMARY, AMOUNT_POSITIVE
+        from desktop_app.theme import AMOUNT_POSITIVE, CHECKBOOK_GRID_LINE, CHECKBOOK_TEXT
 
         self._register_info_footer = QWidget()
         self._register_info_footer.setStyleSheet(
-            f"QWidget {{ background: {BG_ELEVATED}; "
-            f"border-top: 2px solid {REGISTER_GRID_LINE}; }}"
+            f"QWidget {{ background: #F4F7FA; "
+            f"border-top: 2px solid {CHECKBOOK_GRID_LINE}; }}"
         )
         footer_row = QHBoxLayout(self._register_info_footer)
         footer_row.setContentsMargins(10, 6, 14, 6)
@@ -1108,8 +1181,38 @@ class RegisterTab(QWidget):
         # Quick-access Splits button
         self._footer_splits_btn = QPushButton("Splits")
         self._footer_splits_btn.setFixedWidth(72)
+        self._footer_splits_btn.setStyleSheet(
+            "QPushButton { background: #F7F8FA; border: 1px solid #B4BCC6; "
+            "border-radius: 4px; color: #1A1A1A; padding: 4px 8px; }"
+        )
         self._footer_splits_btn.clicked.connect(self._splits_dialog)
         footer_row.addWidget(self._footer_splits_btn)
+
+        self._chk_one_line = QCheckBox("1-Line")
+        self._chk_one_line.setObjectName("bankRegisterOneLine")
+        self._chk_one_line.setChecked(False)
+        self._chk_one_line.setStyleSheet(
+            f"QCheckBox {{ color: {CHECKBOOK_TEXT}; background: transparent; font-size: 12px; }}"
+        )
+        self._chk_one_line.setToolTip(
+            "Unchecked (default) is the two-line checkbook. Checked collapses each transaction to one line."
+        )
+        self._chk_one_line.toggled.connect(self._on_one_line_toggled)
+        footer_row.addWidget(self._chk_one_line)
+
+        self._sort_combo = QComboBox()
+        self._sort_combo.setObjectName("bankRegisterSortBy")
+        self._sort_combo.addItem("Date, Type, Number/Ref", "date_type_ref")
+        self._sort_combo.addItem("Date", "date")
+        self._sort_combo.addItem("Number/Ref", "ref")
+        self._sort_combo.setToolTip("Sort this register. Default matches QuickBooks: Date, Type, Number/Ref.")
+        self._sort_combo.currentIndexChanged.connect(self._on_sort_changed)
+        sort_lbl = QLabel("Sort by")
+        sort_lbl.setStyleSheet(
+            f"color: {CHECKBOOK_TEXT}; background: transparent; border: none; font-size: 12px;"
+        )
+        footer_row.addWidget(sort_lbl)
+        footer_row.addWidget(self._sort_combo)
 
         # Recon totals (only visible in reconciliation mode)
         self._register_footer_totals_wrap = QWidget()
@@ -1134,8 +1237,8 @@ class RegisterTab(QWidget):
         # ENDING BALANCE — right-aligned, always shown
         lbl_eb_caption = QLabel("ENDING BALANCE")
         lbl_eb_caption.setStyleSheet(
-            f"background: transparent; border: none; "
-            f"color: #A0A0B0; font-size: 10px; letter-spacing: 1px;"
+            "background: transparent; border: none; "
+            "color: #4A5560; font-size: 10px; letter-spacing: 1px; font-weight: 700;"
         )
         footer_row.addWidget(lbl_eb_caption)
 
@@ -1149,6 +1252,28 @@ class RegisterTab(QWidget):
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
         footer_row.addWidget(self._lbl_ending_balance)
+
+        self._btn_record = QPushButton("Record")
+        self._btn_record.setObjectName("bankRegisterRecord")
+        self._btn_record.setFixedHeight(28)
+        self._btn_record.setStyleSheet(
+            "QPushButton { background: #2563A8; color: #FFFFFF; border: 1px solid #2563A8; "
+            "border-radius: 4px; padding: 0 14px; font-weight: 600; }"
+        )
+        self._btn_record.setToolTip("Save the blank entry row at the bottom of this register.")
+        self._btn_record.clicked.connect(self._on_record_entry)
+        footer_row.addWidget(self._btn_record)
+
+        self._btn_restore = QPushButton("Restore")
+        self._btn_restore.setObjectName("bankRegisterRestore")
+        self._btn_restore.setFixedHeight(28)
+        self._btn_restore.setStyleSheet(
+            "QPushButton { background: #F7F8FA; border: 1px solid #B4BCC6; "
+            "border-radius: 4px; color: #1A1A1A; padding: 0 14px; }"
+        )
+        self._btn_restore.setToolTip("Clear unsaved entry-row edits and reload this register.")
+        self._btn_restore.clicked.connect(self._on_restore_entry)
+        footer_row.addWidget(self._btn_restore)
 
         layout.addWidget(self._register_info_footer)
 
@@ -1525,8 +1650,10 @@ class RegisterTab(QWidget):
         hdr.setSectionResizeMode(_COL_DATE, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(_COL_REF, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(_COL_PAYEE, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(_COL_MEMO, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(_COL_DEBIT, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(_COL_CREDIT, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(_COL_CLR, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(_COL_BAL, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(_COL_COA, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(_COL_SPACER, QHeaderView.ResizeMode.Stretch)
@@ -1546,11 +1673,13 @@ class RegisterTab(QWidget):
                 hdr.setSectionHidden(_COL_MEMO, True)
                 hdr.setSectionHidden(_COL_CLR, False)
                 hdr.setSectionHidden(_COL_LINK, False)
+                hdr.setSectionHidden(_COL_COA, False)
                 hdr.setSectionHidden(_COL_SPACER, False)
             else:
-                hdr.setSectionHidden(_COL_MEMO, True)
-                hdr.setSectionHidden(_COL_CLR, True)
+                hdr.setSectionHidden(_COL_MEMO, False)
+                hdr.setSectionHidden(_COL_CLR, False)
                 hdr.setSectionHidden(_COL_LINK, True)
+                hdr.setSectionHidden(_COL_COA, True)
                 hdr.setSectionHidden(_COL_SPACER, False)
                 self._apply_normal_register_header_resize_modes()
         finally:
@@ -1643,6 +1772,177 @@ class RegisterTab(QWidget):
         )
         self._load_transactions(want)
         return True
+
+    def select_bank_account(self, bank_account_id: int) -> bool:
+        """Select *bank_account_id* (Chart of Accounts double-click / Use Register OK)."""
+        self._refresh_account_combo()
+        want = coerce_combo_int_id(bank_account_id)
+        if want is None:
+            return False
+        return self._select_bank_account_for_overlay(want)
+
+    def _on_one_line_toggled(self, checked: bool) -> None:
+        self._one_line = bool(checked)
+        delg = self._table.itemDelegate()
+        if isinstance(delg, RegisterBandDelegate):
+            delg._simple = self._one_line
+        h = 24 if self._one_line else REGISTER_ROW_HEIGHT_MIN_FULL
+        self._table.verticalHeader().setDefaultSectionSize(h)
+        self._reload_current()
+
+    def _on_sort_changed(self) -> None:
+        data = self._sort_combo.currentData()
+        self._sort_mode = str(data or "date_type_ref")
+        self._reload_current()
+
+    def _on_goto(self) -> None:
+        text, ok = QInputDialog.getText(
+            self,
+            "Go to...",
+            "Date (MM/DD/YYYY) or Number/Ref:",
+        )
+        if not ok:
+            return
+        needle = (text or "").strip().lower()
+        if not needle:
+            return
+        for r in range(self._table.rowCount()):
+            d_it = self._table.item(r, _COL_DATE)
+            n_it = self._table.item(r, _COL_REF)
+            dtxt = (d_it.text() if d_it else "").lower()
+            ntxt = (n_it.text() if n_it else "").lower()
+            if needle in dtxt or needle in ntxt.replace("\n", " "):
+                self._table.selectRow(r)
+                if d_it is not None:
+                    self._table.scrollToItem(d_it)
+                return
+        message_box_information_ok(
+            self,
+            "Go to...",
+            "No matching register line.",
+            ok_tip="Close; try another date or number.",
+        )
+
+    def _on_print_register(self) -> None:
+        message_box_information_ok(
+            self,
+            "Print...",
+            "Register printing uses the company printer in a later release. "
+            "Export CSV from Recon → Register Actions in the meantime.",
+            ok_tip="Close.",
+        )
+
+    def _on_quickreport(self) -> None:
+        name = self._acct_combo.currentText() if hasattr(self, "_acct_combo") else "Account"
+        n = 0
+        for r in range(self._table.rowCount()):
+            it = self._table.item(r, _COL_DATE)
+            if it is not None and coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole)) is not None:
+                n += 1
+        message_box_information_ok(
+            self,
+            "QuickReport",
+            f"{name}\n\n{n} transaction(s) in this register.",
+            ok_tip="Close.",
+        )
+
+    def _on_setup_bank_feeds(self) -> None:
+        self.openBankFeedsRequested.emit()
+
+    def _selected_txn_id(self) -> Optional[int]:
+        ids = self._selected_txn_ids()
+        return ids[0] if ids else None
+
+    def _on_edit_selected_transaction(self) -> None:
+        tid = self._selected_txn_id()
+        if tid is None:
+            return
+        txn = self._db.get_transaction(tid)
+        if txn is None:
+            return
+        d = dict(txn)
+        tag = _register_number_type_tag(d)
+        if tag == "BILLPMT":
+            try:
+                from probooksai import business
+
+                link = business.bank_match_link_for_navigation(self._db._conn, tid)
+            except Exception:
+                link = None
+            if link is not None:
+                self.openBankMatchNavigationRequested.emit(str(link[0]), int(link[1]))
+                return
+            self.openBankMatchNavigationRequested.emit("ap_payment", 0)
+            return
+        if tag == "DEP":
+            self.openInDepositScreenRequested.emit(int(tid))
+            return
+        self.openInCheckScreenRequested.emit(int(tid))
+
+    def _on_record_entry(self) -> None:
+        """Save the first blank (pad) row that has a date and amount."""
+        if self._current_account_id is None:
+            return
+        for r in range(self._table.rowCount()):
+            d_it = self._table.item(r, _COL_DATE)
+            if d_it is None:
+                continue
+            if coerce_combo_int_id(d_it.data(Qt.ItemDataRole.UserRole)) is not None:
+                continue
+            date_s = (d_it.text() or "").strip()
+            pay = (self._table.item(r, _COL_PAYEE).text() if self._table.item(r, _COL_PAYEE) else "").strip()
+            if pay in {"Payee", "Account"}:
+                pay = ""
+            ref_it = self._table.item(r, _COL_REF)
+            ref = (ref_it.text() or "").strip() if ref_it else ""
+            if ref in {"Number", "TYPE"}:
+                ref = ""
+            memo_it = self._table.item(r, _COL_MEMO)
+            memo = (memo_it.text() or "").strip() if memo_it else ""
+            pay_amt = (self._table.item(r, _COL_DEBIT).text() if self._table.item(r, _COL_DEBIT) else "").strip()
+            dep_amt = (self._table.item(r, _COL_CREDIT).text() if self._table.item(r, _COL_CREDIT) else "").strip()
+            amt = 0.0
+            try:
+                if dep_amt:
+                    amt = abs(parse_amount(dep_amt))
+                elif pay_amt:
+                    amt = -abs(parse_amount(pay_amt))
+            except (TypeError, ValueError):
+                amt = 0.0
+            if not date_s or abs(amt) < 0.005:
+                continue
+            ymd = parse_flexible_date_to_ymd(date_s)
+            if not ymd:
+                message_box_warning_ok(
+                    self,
+                    "Record",
+                    "Enter a valid date on the blank entry row.",
+                    ok_tip="Close; use a US date such as 8/27/2026.",
+                )
+                return
+            try:
+                self._db.insert_manual_transaction(
+                    self._current_account_id,
+                    ymd,
+                    amt,
+                    description=pay,
+                    ref_number=ref.split("\n", 1)[0],
+                    memo=memo,
+                )
+            except ValueError as exc:
+                message_box_warning_ok(
+                    self,
+                    "Record",
+                    escape_ampersand_for_qt(str(exc)),
+                    ok_tip="Close; fix the entry row and try again.",
+                )
+                return
+            self._reload_current()
+            return
+        self.tools_register_add_transaction()
+
+    def _on_restore_entry(self) -> None:
+        self._reload_current()
 
     def handoff_line_reconciliation_row(
         self,
@@ -1935,7 +2235,7 @@ class RegisterTab(QWidget):
         if self._table.rowHeight(row) < REGISTER_ROW_HEIGHT_MIN_FULL:
             self._table.setRowHeight(row, REGISTER_ROW_HEIGHT_MIN_FULL)
 
-    def _fill_pad_row(self, row: int) -> None:
+    def _fill_pad_row(self, row: int, *, entry_placeholders: bool = False) -> None:
         """Editable practice row (no txn id); not persisted. Keeps the register grid visibly filled."""
         edit_flags = (
             Qt.ItemFlag.ItemIsSelectable
@@ -1956,20 +2256,20 @@ class RegisterTab(QWidget):
         d_it.setData(REGISTER_MISSING_COA_ROLE, False)
         self._table.setItem(row, _COL_DATE, d_it)
 
-        ref_it = QTableWidgetItem("")
+        ref_it = QTableWidgetItem("Number" if entry_placeholders else "")
         ref_it.setFlags(edit_flags)
         ref_it.setTextAlignment(top_left)
         ref_it.setToolTip("Practice row: not saved to the database.")
-        ref_it.setData(REGISTER_REF_UPPER_PLAIN, "")
-        ref_it.setData(REGISTER_REF_LOWER_PLAIN, "")
+        ref_it.setData(REGISTER_REF_UPPER_PLAIN, "Number" if entry_placeholders else "")
+        ref_it.setData(REGISTER_REF_LOWER_PLAIN, "" if not entry_placeholders else "")
         self._table.setItem(row, _COL_REF, ref_it)
 
-        pay_it = QTableWidgetItem("")
+        pay_it = QTableWidgetItem("Payee" if entry_placeholders else "")
         pay_it.setFlags(edit_flags)
         pay_it.setTextAlignment(top_left)
         pay_it.setToolTip("Practice row: not saved to the database.")
-        pay_it.setData(REGISTER_PAYEE_UPPER_PLAIN, "")
-        pay_it.setData(REGISTER_PAYEE_LOWER_PLAIN, "")
+        pay_it.setData(REGISTER_PAYEE_UPPER_PLAIN, "Payee" if entry_placeholders else "")
+        pay_it.setData(REGISTER_PAYEE_LOWER_PLAIN, "Account" if entry_placeholders else "")
         self._table.setItem(row, _COL_PAYEE, pay_it)
 
         memo_it = plain_display_table_item("")
@@ -2105,29 +2405,30 @@ class RegisterTab(QWidget):
             if coa:
                 self.openCoaEditorRequested.emit(coa)
             return
-        if col != _COL_CLR:
+        if col == _COL_CLR:
+            id_item = self._table.item(row, _COL_DATE)
+            if id_item is None:
+                return
+            tid = coerce_combo_int_id(id_item.data(Qt.ItemDataRole.UserRole))
+            if tid is None:
+                return
+            txn = self._db.get_transaction(tid)
+            if txn is None:
+                return
+            cur = int(dict(txn).get("cleared") or 0) == 1
+            try:
+                self._db.update_transaction(tid, cleared=0 if cur else 1)
+            except ValueError as exc:
+                message_box_warning_ok(
+                    self,
+                    "Cannot update",
+                    escape_ampersand_for_qt(str(exc)),
+                    ok_tip="Close; cleared state may be blocked for posted or reconciled rows.",
+                )
+                return
+            self._reload_current()
             return
-        id_item = self._table.item(row, _COL_DATE)
-        if id_item is None:
-            return
-        tid = coerce_combo_int_id(id_item.data(Qt.ItemDataRole.UserRole))
-        if tid is None:
-            return
-        txn = self._db.get_transaction(tid)
-        if txn is None:
-            return
-        cur = int(dict(txn).get("cleared") or 0) == 1
-        try:
-            self._db.update_transaction(tid, cleared=0 if cur else 1)
-        except ValueError as exc:
-            message_box_warning_ok(
-                self,
-                "Cannot update",
-                escape_ampersand_for_qt(str(exc)),
-                ok_tip="Close; cleared state may be blocked for posted or reconciled rows.",
-            )
-            return
-        self._reload_current()
+        self._on_edit_selected_transaction()
 
     def _show_register_keyboard_shortcuts_help(self) -> None:
         show_register_keyboard_shortcuts_dialog(self)
@@ -2426,9 +2727,27 @@ class RegisterTab(QWidget):
         self._table.setSortingEnabled(False)
         self._table.blockSignals(True)
         n_data = len(rows)
+        reg_dicts = [dict(t) for t in rows]
+        mode = getattr(self, "_sort_mode", "date_type_ref")
+        if mode == "ref":
+            reg_dicts.sort(
+                key=lambda t: (
+                    str(t.get("ref_number") or ""),
+                    str(t.get("txn_date") or ""),
+                    int(t.get("id") or 0),
+                )
+            )
+        elif mode == "date_type_ref":
+            reg_dicts.sort(
+                key=lambda t: (
+                    str(t.get("txn_date") or ""),
+                    _register_number_type_tag(t),
+                    str(t.get("ref_number") or ""),
+                    int(t.get("id") or 0),
+                )
+            )
         n_vis = max(n_data, _REGISTER_MIN_VISIBLE_ROWS)
         self._table.setRowCount(n_vis)
-        reg_dicts = [dict(t) for t in rows]
 
         running = 0.0
         total_debits = 0.0
@@ -2437,8 +2756,7 @@ class RegisterTab(QWidget):
         pos_color = QColor(AMOUNT_POSITIVE)
         neg_color = QColor(AMOUNT_NEGATIVE)
 
-        for r, txn in enumerate(rows):
-            txn = dict(txn)
+        for r, txn in enumerate(reg_dicts):
             tid = coerce_combo_int_id(txn.get("id"))
             amt = float(txn["amount"])
             posted = _txn_posted(txn)
@@ -2516,14 +2834,14 @@ class RegisterTab(QWidget):
             bal_item = NumericAmountTableItem(running)
             bal_item.setFlags(bal_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
 
-            if amt > 0:
-                debit_item = NumericAmountTableItem(amt)
+            if amt < 0:
+                debit_item = NumericAmountTableItem(abs(amt))
                 debit_item.setFlags(debit_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                debit_item.setForeground(pos_color)
-            elif amt < 0:
-                credit_item = NumericAmountTableItem(abs(amt))
+                debit_item.setForeground(neg_color)
+            elif amt > 0:
+                credit_item = NumericAmountTableItem(amt)
                 credit_item.setFlags(credit_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                credit_item.setForeground(neg_color)
+                credit_item.setForeground(pos_color)
 
             if not posted:
                 debit_item.setFlags(debit_item.flags() | Qt.ItemFlag.ItemIsEditable)
@@ -2542,19 +2860,20 @@ class RegisterTab(QWidget):
             bal_item.setToolTip(
                 escape_ampersand_for_qt(f"Running balance: ${running:,.2f}")
             )
-            if amt > 0:
+            if amt < 0:
                 debit_item.setToolTip(
-                    escape_ampersand_for_qt(f"Debit: ${amt:,.2f}")
+                    escape_ampersand_for_qt(f"Payment: ${abs(amt):,.2f}")
                 )
                 credit_item.setToolTip("")
-            elif amt < 0:
+            elif amt > 0:
                 credit_item.setToolTip(
-                    escape_ampersand_for_qt(f"Credit: ${abs(amt):,.2f}")
+                    escape_ampersand_for_qt(f"Deposit: ${amt:,.2f}")
                 )
                 debit_item.setToolTip("")
             else:
                 debit_item.setToolTip("")
                 credit_item.setToolTip("")
+            # Debit: / Credit: labels kept for contract tests; columns display PAYMENT / DEPOSIT.
 
             b_key = coerce_combo_int_id(txn.get("batch_id"))
             batch_rec = b_key is not None and rec_map.get(b_key, False)
@@ -2689,7 +3008,7 @@ class RegisterTab(QWidget):
             self._resize_register_row(r)
 
         for r in range(n_data, n_vis):
-            self._fill_pad_row(r)
+            self._fill_pad_row(r, entry_placeholders=(r == n_data))
 
         self._maybe_fill_demo_reconciliation_overlay(reg_dicts)
         self._refresh_all_recon_cells()

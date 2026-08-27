@@ -175,7 +175,6 @@ def test_home_opens_existing_daily_loop_screens(qapp: QApplication, tmp_path: Pa
             ("homeShortcut_pay_bills", w._pay_bills_screen, PayBillsScreen),
             ("homeShortcut_checks", w._check_screen, CheckScreen),
             ("homeShortcut_deposits", w._make_deposits_screen, MakeDepositsScreen),
-            ("homeShortcut_register", w._register_tab, RegisterTab),
             ("homeShortcut_coa", w._coa_tab, COATab),
             ("homeShortcut_codes", w._invoice_codes_screen, InvoiceCodesScreen),
         )
@@ -194,6 +193,29 @@ def test_home_opens_existing_daily_loop_screens(qapp: QApplication, tmp_path: Pa
         rec.click()
         qapp.processEvents()
         assert tabs.currentWidget() is w._reconcile_root
+
+        from unittest.mock import patch
+
+        from PySide6.QtWidgets import QDialog
+
+        from desktop_app.use_register_dialog import UseRegisterDialog
+
+        try:
+            w._bank_db.add_bank_account("Checking")
+        except (ValueError, TypeError):
+            pass
+        w._register_tab.refresh_bank_accounts()
+        tabs.setCurrentIndex(0)
+        qapp.processEvents()
+        btn_reg = w._dashboard_tab.findChild(QToolButton, "homeShortcut_register")
+        assert btn_reg is not None
+        with patch.object(
+            UseRegisterDialog, "exec", return_value=int(QDialog.DialogCode.Accepted)
+        ):
+            btn_reg.click()
+            qapp.processEvents()
+        assert tabs.currentWidget() is w._register_tab
+        assert isinstance(tabs.currentWidget(), RegisterTab)
     finally:
         w.close()
 

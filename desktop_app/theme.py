@@ -43,6 +43,18 @@ REGISTER_BAND_LOWER_ODD = "#131E22"
 REGISTER_BAND_UPPER_MISSING = "#4A4024"
 REGISTER_BAND_LOWER_MISSING = "#342C18"
 REGISTER_BAND_DIVIDER = "#5A6E90"
+# QuickBooks Pro two-line checkbook (light paper; used by Bank Register daily books).
+CHECKBOOK_BAND_UPPER_EVEN = "#FFFFFF"
+CHECKBOOK_BAND_LOWER_EVEN = "#F3F6F8"
+CHECKBOOK_BAND_UPPER_ODD = "#E7F4EA"
+CHECKBOOK_BAND_LOWER_ODD = "#D8EDDC"
+CHECKBOOK_BAND_UPPER_MISSING = "#F7EED8"
+CHECKBOOK_BAND_LOWER_MISSING = "#EFE2C4"
+CHECKBOOK_SELECT_BG = "#2E7D32"
+CHECKBOOK_SELECT_FG = "#FFFFFF"
+CHECKBOOK_GRID_LINE = "#B8C4CE"
+CHECKBOOK_TEXT = "#1A1A1A"
+CHECKBOOK_SECONDARY = "#5B6770"
 # Minimum row heights (px); keep in sync with :class:`desktop_app.register_band_delegate.RegisterBandDelegate`.
 REGISTER_ROW_HEIGHT_MIN_FULL = 46
 REGISTER_ROW_HEIGHT_MIN_PREVIEW = 38
@@ -93,8 +105,16 @@ MAIN_WORKSPACE_TAB_FONT_WEIGHT = "500"
 MAIN_WORKSPACE_TAB_BAR_WIDGET_MIN_HEIGHT_PX = 32
 
 
-def register_row_band_colors_hex(alternate_row: bool, missing_coa: bool) -> tuple[str, str]:
+def register_row_band_colors_hex(
+    alternate_row: bool, missing_coa: bool, *, light: bool = False
+) -> tuple[str, str]:
     """Return ``(upper_hex, lower_hex)`` for register row panels (even/odd zebra; missing-COA tint)."""
+    if light:
+        if missing_coa:
+            return CHECKBOOK_BAND_UPPER_MISSING, CHECKBOOK_BAND_LOWER_MISSING
+        if alternate_row:
+            return CHECKBOOK_BAND_UPPER_ODD, CHECKBOOK_BAND_LOWER_ODD
+        return CHECKBOOK_BAND_UPPER_EVEN, CHECKBOOK_BAND_LOWER_EVEN
     if missing_coa:
         return REGISTER_BAND_UPPER_MISSING, REGISTER_BAND_LOWER_MISSING
     if alternate_row:
@@ -102,13 +122,41 @@ def register_row_band_colors_hex(alternate_row: bool, missing_coa: bool) -> tupl
     return REGISTER_BAND_UPPER_EVEN, REGISTER_BAND_LOWER_EVEN
 
 
-def register_table_style_sheet() -> str:
+def register_table_style_sheet(*, light: bool = False) -> str:
     """Styles for register-style tables (object name ``bankRegisterTable``): Register tab and Bank Import preview.
 
     Row bands and cell border lines are painted by
     :class:`desktop_app.register_band_delegate.RegisterBandDelegate` (using ``REGISTER_GRID_LINE``).
     ``::item`` uses ``border: none`` so those lines are not doubled.
     """
+    if light:
+        return f"""
+QTableWidget#bankRegisterTable {{
+    background-color: {CHECKBOOK_BAND_UPPER_EVEN};
+    alternate-background-color: {CHECKBOOK_BAND_UPPER_ODD};
+    gridline-color: {CHECKBOOK_GRID_LINE};
+    color: {CHECKBOOK_TEXT};
+    outline: none;
+}}
+QTableWidget#bankRegisterTable::item {{
+    background: transparent;
+    border: none;
+    padding: 3px 6px;
+    color: {CHECKBOOK_TEXT};
+}}
+QTableWidget#bankRegisterTable::item:selected {{
+    background-color: {CHECKBOOK_SELECT_BG};
+    color: {CHECKBOOK_SELECT_FG};
+}}
+QHeaderView::section {{
+    background-color: #D8DEE6;
+    color: #2563A8;
+    font-weight: 700;
+    font-size: 11px;
+    padding: 4px 6px;
+    border: 1px solid {CHECKBOOK_GRID_LINE};
+}}
+"""
     return f"""
 QTableWidget#bankRegisterTable {{
     background-color: {BG_PRIMARY};
