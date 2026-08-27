@@ -2,7 +2,8 @@
 
 **Create Invoices** (sub-tab): header matches QB Pro (Customer:Job, Bill To | Ship To, Date /
 Invoice # / Terms / Due Date / P.O. Number) with live SQLite persistence. **Invoice Intake**
-stages PDFs, images, and pasted text; **Send to Manual Invoice** opens a new draft.
+stages PDFs, images, pasted text, and dispatch CSV; **Send to Manual Invoice** opens a new
+draft (memo + banner, or full line items from dispatch).
 
 Create Invoices follows QuickBooks Pro Desktop: **Customer:Job** at the top, **Bill To** from the
 selected customer, editable **Ship To** saved on the invoice (defaults to Bill To when
@@ -80,6 +81,7 @@ from desktop_app.customer_bill_to_panel import (
 from desktop_app.flexible_date import (
     attach_line_edit_us_date_normalization,
     configure_qdate_edit_us,
+    format_iso_to_us_display,
     parse_flexible_date_to_ymd,
 )
 from desktop_app.invoice_preferences import (
@@ -92,6 +94,11 @@ from desktop_app.invoice_pdf import invoice_html_string, save_invoice_pdf
 from desktop_app.qt_mnemonic import message_box_information_ok, message_box_warning_ok
 from probooksai import business
 from probooksai.company_identity import company_identity_plain_block
+from probooksai.dispatch_intake import (
+    DispatchInvoiceDraft,
+    job_billing_rule,
+    match_named_entity_id,
+)
 from desktop_app.ar_customer_actions import (
     export_invoices_csv,
     open_new_ar_invoice_dialog,
@@ -1332,6 +1339,12 @@ class InvoiceScreen(QWidget):
         self._refresh_company_identity_header()
         self._refresh_browse_state()
 
+    def set_enter_bills_screen(self, screen: Optional[QWidget]) -> None:
+        """Wire Enter Bills so Invoice Intake can pre-fill payables from dispatch rows."""
+        intake = getattr(self, "_invoice_intake", None)
+        if intake is not None and hasattr(intake, "set_enter_bills_screen"):
+            intake.set_enter_bills_screen(screen)
+
     def _refresh_company_identity_header(self) -> None:
         """Keep company identity off the form (PDF/print still use ``company_identity_plain_block``)."""
         lbl = getattr(self, "_company_identity_label", None)
@@ -1491,6 +1504,108 @@ class InvoiceScreen(QWidget):
                 f"From Invoice Intake — {k}: {src}. Details are in the invoice memo (Save). "
                 f"Suggested invoice # {num or '—'}."
             )
+        self._invoice_intake_handoff_banner.setText(banner)
+        self._invoice_intake_handoff_banner.setVisible(True)
+
+        self._refresh_browse_state()
+        self._update_browse_buttons()
+        return True
+
+    def apply_dispatch_invoice_draft(self, draft: DispatchInvoiceDraft) -> bool:
+        """Pre-fill Create Invoices from grouped dispatch loads. Does not save."""
+        if self._ap_conn is None:
+            message_box_information_ok(
+                self,
+                "Invoice",
+                "Open a company file to create an invoice draft.",
+                ok_tip="Close; use File → Open company… then try again.",
+            )
+            return False
+        self._invoice_tabs.setCurrentIndex(0)
+        self._go_to_new_invoice_draft()
+
+        if draft.date_iso:
+            self._set_date_edit_iso(self._date, draft.date_iso)
+        self._job.setText(draft.invoice_code)
+        self._po.setText(draft.po_load)
+        if (draft.qb_inv_no or "").strip():
+            self._inv_number.setText(draft.qb_inv_no.strip())
+
+        cid = None
+        rule = job_billing_rule(draft.invoice_code)
+        if self._ap_conn is not None:
+            try:
+                choices = business.list_bill_to_customer_choices(self._ap_conn)
+            except (sqlite3.Error, TypeError, ValueError):
+                choices = []
+            needles: list[str] = []
+            if rule and rule.get("customer_name"):
+                needles.append(rule["customer_name"])
+            if draft.invoice_code:
+                needles.append(draft.invoice_code)
+            for needle in needles:
+                cid = match_named_entity_id(choices, needle)
+                if cid is not None:
+                    break
+        self._bill_customer_panel.reload_customers()
+        if cid is not None:
+            self._bill_customer_panel.select_customer_by_id(cid)
+
+        overflow = 0
+        self._suppress_invoice_line_recalc = True
+        try:
+            for i, ln in enumerate(draft.lines):
+                if i >= self._N_LINE_ROWS:
+                    overflow = len(draft.lines) - self._N_LINE_ROWS
+                    break
+                dt_w = self._table.cellWidget(i, 0)
+                desc_w = self._table.cellWidget(i, 2)
+                bol_w = self._table.cellWidget(i, 3)
+                rate_w = self._table.cellWidget(i, 4)
+                qty_w = self._table.cellWidget(i, 5)
+                if isinstance(dt_w, QLineEdit):
+                    dt_w.setText(
+                        format_iso_to_us_display(ln.date_iso) if ln.date_iso else ""
+                    )
+                if isinstance(desc_w, QLineEdit):
+                    desc_w.setText(ln.description)
+                if isinstance(bol_w, QLineEdit):
+                    bol_w.setText(ln.bol)
+                if isinstance(rate_w, QDoubleSpinBox):
+                    rate_w.setValue(float(ln.rate))
+                if isinstance(qty_w, QDoubleSpinBox):
+                    qty_w.setValue(float(ln.qty))
+        finally:
+            self._suppress_invoice_line_recalc = False
+        for r in range(self._N_LINE_ROWS):
+            self._sync_invoice_line_row_total(r)
+        self._recalc_invoice_footer_from_grid()
+
+        memo_lines = [
+            "[Dispatch intake] Draft from 1 CHAVAN DISPATCH CSV — review before Save.",
+            f"Job / INVOICE code: {draft.invoice_code or '—'}",
+            f"Loads: {len(draft.lines)}",
+        ]
+        if rule:
+            memo_lines.append(
+                f"Billing: {rule.get('customer_name') or '—'} — {rule.get('how_to_bill') or ''}"
+            )
+        if overflow:
+            memo_lines.append(
+                f"{overflow} additional load(s) did not fit the line grid; add them manually."
+            )
+        self._invoice_memo_notes = "\n".join(memo_lines).strip()
+        self._set_memo_edit_text(self._invoice_memo_notes)
+
+        num = (self._inv_number.text() or "").strip()
+        banner = (
+            f"From Invoice Intake — dispatch CSV ({len(draft.lines)} load"
+            f"{'s' if len(draft.lines) != 1 else ''}"
+            f" for {draft.invoice_code or 'job'}). "
+            f"Invoice # {num or '—'}. Review lines, Bill To, and Save."
+        )
+        if overflow:
+            banner += f" {overflow} load(s) omitted from the grid."
         self._invoice_intake_handoff_banner.setText(banner)
         self._invoice_intake_handoff_banner.setVisible(True)
 
