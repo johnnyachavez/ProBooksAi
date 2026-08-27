@@ -124,7 +124,7 @@ def _combo_qss() -> str:
 def _link_qss() -> str:
     return (
         f"QPushButton {{ background: transparent; border: none; color: {_SNAP_LINK}; "
-        "font-size: 11px; text-decoration: underline; padding: 0px; }}"
+        "font-size: 11px; padding: 0px; }}"
         f"QPushButton:hover {{ color: {_SNAP_ACCENT}; }}"
     )
 
@@ -145,6 +145,14 @@ def _nice_max(value: float) -> float:
         if v <= m * base:
             return float(m * base)
     return float(10 * base)
+
+
+def _axis_scale(max_value: float) -> tuple[float, str]:
+    """Thousands scale only when live totals are actually in the thousands."""
+    v = max(0.0, float(max_value or 0))
+    if v >= 1000.0:
+        return 1000.0, "$ in 1000s"
+    return 1.0, "$"
 
 
 # ---------------------------------------------------------------------------
@@ -178,9 +186,10 @@ class _BarChart(QWidget):
     def paintEvent(self, event) -> None:  # noqa: ARG002
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setClipRect(self.rect())
         w, h = self.width(), self.height()
         p.fillRect(0, 0, w, h, QColor(_SNAP_PAPER))
-        left, top, right, bottom = 44, 8, 10, 36
+        left, top, right, bottom = 44, 8, 10, 44
         plot = QRectF(left, top, max(10, w - left - right), max(10, h - top - bottom))
         p.setPen(QPen(QColor(_SNAP_CAPTION), 1))
         p.drawLine(plot.bottomLeft(), plot.bottomRight())
@@ -188,9 +197,11 @@ class _BarChart(QWidget):
         vals: list[float] = []
         for _lab, _col, numbers in self._series:
             vals.extend(float(n or 0) for n in numbers)
-        peak = _nice_max(max(vals) if vals else 0.0)
-        scale_div = 1000.0 if peak >= 1000 else 1.0
-        unit = "$ in 1000s" if scale_div == 1000.0 else (self._y_caption or "$")
+        data_max = max(vals) if vals else 0.0
+        peak = _nice_max(data_max)
+        scale_div, unit = _axis_scale(data_max)
+        if scale_div == 1.0:
+            unit = self._y_caption or "$"
         p.setPen(QColor(_SNAP_CAPTION))
         font = p.font()
         font.setPointSize(8)
@@ -212,7 +223,7 @@ class _BarChart(QWidget):
         group_w = plot.width() / n
         series_n = max(1, len(self._series))
         bar_w = max(4.0, (group_w * 0.7) / series_n)
-        if not vals or max(vals) <= 0.005:
+        if not vals or data_max <= 0.005:
             p.setPen(QColor(_SNAP_CAPTION))
             p.drawText(plot, int(Qt.AlignmentFlag.AlignCenter), "No activity in this period")
         else:
@@ -234,14 +245,20 @@ class _BarChart(QWidget):
             )
         legend_y = h - 16
         lx = left
+        fm = p.fontMetrics()
         p.setFont(font)
         for lab, color, _nums in self._series:
+            tw = fm.horizontalAdvance(lab)
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QColor(color))
             p.drawRect(QRectF(lx, legend_y, 10, 10))
             p.setPen(QColor(_SNAP_TEXT))
-            p.drawText(QRectF(lx + 14, legend_y - 3, 90, 16), int(Qt.AlignmentFlag.AlignLeft), lab)
-            lx += 110
+            p.drawText(
+                QRectF(lx + 14, legend_y - 3, tw + 8, 16),
+                int(Qt.AlignmentFlag.AlignLeft),
+                lab,
+            )
+            lx += 28 + tw
         p.end()
 
 
@@ -261,9 +278,10 @@ class _HBarChart(QWidget):
     def paintEvent(self, event) -> None:  # noqa: ARG002
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setClipRect(self.rect())
         w, h = self.width(), self.height()
         p.fillRect(0, 0, w, h, QColor(_SNAP_PAPER))
-        left, top, right, bottom = 108, 8, 12, 22
+        left, top, right, bottom = 108, 8, 12, 34
         plot = QRectF(left, top, max(10, w - left - right), max(10, h - top - bottom))
         font = p.font()
         font.setPointSize(8)
@@ -273,8 +291,9 @@ class _HBarChart(QWidget):
             p.drawText(plot, int(Qt.AlignmentFlag.AlignCenter), "No sales in this period")
             p.end()
             return
-        peak = _nice_max(max(v for _n, v in self._rows))
-        scale_div = 1000.0 if peak >= 1000 else 1.0
+        data_max = max(v for _n, v in self._rows)
+        peak = _nice_max(data_max)
+        scale_div, unit_suffix = _axis_scale(data_max)
         n = len(self._rows)
         row_h = plot.height() / max(1, n)
         bar_h = max(8.0, min(18.0, row_h * 0.55))
@@ -292,17 +311,12 @@ class _HBarChart(QWidget):
                 label,
             )
         p.setPen(QColor(_SNAP_CAPTION))
-        unit = "Sales Volume ($ in 1000s)" if scale_div == 1000.0 else "Sales Volume"
+        unit = f"Sales Volume ({unit_suffix})" if scale_div == 1000.0 else "Sales Volume ($)"
         p.drawText(
-            QRectF(left, h - 18, plot.width(), 16),
+            QRectF(left, h - 16, plot.width(), 14),
             int(Qt.AlignmentFlag.AlignHCenter),
             unit,
         )
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(self._color))
-        p.drawRect(QRectF(left, h - 16, 10, 10))
-        p.setPen(QColor(_SNAP_TEXT))
-        p.drawText(QRectF(left + 14, h - 19, 80, 16), int(Qt.AlignmentFlag.AlignLeft), "Sales Volume")
         p.end()
 
 
@@ -320,6 +334,7 @@ class _PieChart(QWidget):
     def paintEvent(self, event) -> None:  # noqa: ARG002
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setClipRect(self.rect())
         w, h = self.width(), self.height()
         p.fillRect(0, 0, w, h, QColor(_SNAP_PAPER))
         total = sum(v for _l, v in self._slices)
@@ -543,13 +558,13 @@ class CompanySnapshotScreen(QWidget):
 
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(8, 6, 8, 6)
-        outer.setSpacing(4)
+        outer.setContentsMargins(6, 4, 6, 4)
+        outer.setSpacing(2)
 
         title = QLabel("Company Snapshot")
         title.setObjectName("snapshotPageTitle")
         title.setStyleSheet(
-            f"font-size: 16px; font-weight: 700; color: {_SNAP_TITLE}; background: transparent;"
+            f"font-size: 14px; font-weight: 700; color: {_SNAP_TITLE}; background: transparent;"
         )
         outer.addWidget(title)
         outer.addWidget(self._build_toolbar())
@@ -570,8 +585,8 @@ class CompanySnapshotScreen(QWidget):
             "border-radius: 3px; }"
         )
         lay = QVBoxLayout(bar)
-        lay.setContentsMargins(8, 4, 8, 4)
-        lay.setSpacing(4)
+        lay.setContentsMargins(8, 2, 8, 2)
+        lay.setSpacing(2)
 
         tabs = QHBoxLayout()
         tabs.setSpacing(0)
@@ -664,8 +679,8 @@ class CompanySnapshotScreen(QWidget):
         page = QWidget()
         page.setObjectName("snapshotCompanyPage")
         grid = QGridLayout(page)
-        grid.setContentsMargins(0, 6, 0, 0)
-        grid.setSpacing(8)
+        grid.setContentsMargins(0, 4, 0, 0)
+        grid.setSpacing(6)
         for c in range(3):
             grid.setColumnStretch(c, 1)
         for r in range(3):
@@ -696,6 +711,7 @@ class CompanySnapshotScreen(QWidget):
         self._w_owe = self._make_widget("customers_owe")
         self._tbl_owe = _MoneyTable(("CUSTOMER", "DUE DATE", "AMT DUE"))
         self._tbl_owe.setObjectName("snapshotCustomersOweTable")
+        self._tbl_owe.cellClicked.connect(self._on_owe_activated)
         self._tbl_owe.cellDoubleClicked.connect(self._on_owe_activated)
         self._tbl_owe.itemSelectionChanged.connect(self._on_owe_selected)
         self._w_owe.body_layout.addWidget(self._tbl_owe, 1)
@@ -786,6 +802,7 @@ class CompanySnapshotScreen(QWidget):
         owe = _SnapshotWidget("pay_customers_owe", "Customers Who Owe Money", self)
         self._tbl_pay_owe = _MoneyTable(("CUSTOMER", "DUE DATE", "AMT DUE"))
         self._tbl_pay_owe.setObjectName("snapshotPaymentsOweTable")
+        self._tbl_pay_owe.cellClicked.connect(self._on_owe_activated)
         self._tbl_pay_owe.cellDoubleClicked.connect(self._on_owe_activated)
         owe.body_layout.addWidget(self._tbl_pay_owe, 1)
         recv = QPushButton("Receive Payments")
@@ -834,6 +851,7 @@ class CompanySnapshotScreen(QWidget):
         owe = _SnapshotWidget("cust_owe", "Customers Who Owe Money", self)
         self._tbl_cust_owe = _MoneyTable(("CUSTOMER", "DUE DATE", "AMT DUE"))
         self._tbl_cust_owe.setObjectName("snapshotCustomerOweTable")
+        self._tbl_cust_owe.cellClicked.connect(self._on_owe_activated)
         self._tbl_cust_owe.cellDoubleClicked.connect(self._on_owe_activated)
         owe.body_layout.addWidget(self._tbl_cust_owe, 1)
         recv = QPushButton("Receive Payments")

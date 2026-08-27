@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from desktop_app.coa_tab import COATab
-from desktop_app.company_snapshot_screen import CompanySnapshotScreen
+from desktop_app.company_snapshot_screen import CompanySnapshotScreen, _axis_scale
 from desktop_app.customer_center_screen import CustomerCenterScreen
 from desktop_app.extra_tabs import ARTab
 from desktop_app.receive_checks_screen import ReceiveChecksScreen
@@ -78,6 +78,15 @@ def _seed(conn) -> dict[str, int]:
         conn, vid, "2026-03-04", 50.00, vendor_invoice_number="OS-1", due_date="2026-03-20"
     )
     return {"c1": c1, "c2": c2, "inv_overdue": inv_overdue, "inv_open": inv_open}
+
+
+def test_axis_scale_keeps_dollars_below_one_thousand() -> None:
+    div, unit = _axis_scale(860.0)
+    assert div == 1.0
+    assert "1000" not in unit
+    div_k, unit_k = _axis_scale(15_000.0)
+    assert div_k == 1000.0
+    assert "1000" in unit_k
 
 
 def test_snapshot_chrome_and_live_owe_table(qapp: QApplication, db: BankDatabase) -> None:
