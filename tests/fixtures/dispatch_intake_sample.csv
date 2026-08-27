@@ -1,0 +1,6 @@
+DATE,INVOICE,DISPATCH,DRIVER,INVOICE RATE,PAY RATE,PO / LOAD#,BOL#,QB Inv No.
+2026-08-01,3235,Plant A to Site North,Alex Rivera,150.00,100.00,PO-3235-A,BOL-101,
+2026-08-01,3235,Plant A to Site East,Alex Rivera,200,100,PO-3235-A,BOL-102,
+2026-08-01,3235,Plant A to Site West 160X7,Alex Rivera,160X7,100,PO-3235-A,BOL-103,
+2026-08-01,3235,Plant A extra load (no invoice rate),Alex Rivera,,90,PO-3235-A,BOL-104,
+2026-08-01,BST,BST yard to mill,Sample Hauling LLC,85,0,LOAD-88,BOL-201,

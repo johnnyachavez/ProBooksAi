@@ -1204,6 +1204,7 @@ class MainWindow(QMainWindow):
         self._invoice_codes_screen = InvoiceCodesScreen(ap_conn=conn, coa_db=self._coa_db)
         self._enter_bills_screen = EnterBillsScreen(ap_conn=conn)
         self._enter_bills_screen.payBillsRequested.connect(self._on_enter_bills_pay_bill)
+        self._invoice_screen.set_enter_bills_screen(self._enter_bills_screen)
         self._pay_bills_screen = PayBillsScreen(
             ap_conn=conn, bank_db=self._bank_db
         )

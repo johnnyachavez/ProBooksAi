@@ -56,6 +56,7 @@ from desktop_app.invoice_preferences import (
 from desktop_app.qt_mnemonic import escape_ampersand_for_qt, message_box_information_ok
 from desktop_app.theme import DISABLED_FG
 from probooksai import business
+from probooksai.dispatch_intake import DispatchBillDraft, match_named_entity_id
 
 _LOG = logging.getLogger(__name__)
 
@@ -829,6 +830,71 @@ class EnterBillsScreen(QWidget):
                 self._header_memo.setText(memo)
         finally:
             self._suppress_header_autofill = False
+
+    def apply_dispatch_bill_draft(self, draft: DispatchBillDraft) -> bool:
+        """Pre-fill Enter Bills from dispatch DRIVER + PAY RATE. Does not save.
+
+        Amount 0 is allowed (owner-operator JC). Vendor is matched by trucker name when present.
+        Maps onto the QB Expenses grid (AMOUNT / MEMO / CUSTOMER:JOB); BOL lives in memo.
+        """
+        if self._ap_conn is None:
+            message_box_information_ok(
+                self,
+                "Bill",
+                "Open a company file to create a bill draft.",
+                ok_tip="Close; use File → Open company… then try again.",
+            )
+            return False
+        self._reset_form_new_draft()
+        if draft.date_iso:
+            self._set_date_edit(self._bill_date, draft.date_iso)
+        vendor_name = (draft.vendor_name or "").strip()
+        matched = False
+        if vendor_name:
+            try:
+                choices = [
+                    (int(dict(r)["id"]), (dict(r).get("name") or "").strip())
+                    for r in business.list_vendors(self._ap_conn)
+                ]
+            except (sqlite3.Error, KeyError, TypeError, ValueError):
+                choices = []
+            vid = match_named_entity_id(choices, vendor_name)
+            if vid is not None:
+                self._select_vendor_id(vid)
+                matched = True
+        memo_bits = [draft.header_memo] if draft.header_memo else []
+        if vendor_name and not matched:
+            memo_bits.append(f"Vendor (from dispatch): {vendor_name}")
+        if memo_bits:
+            self._header_memo.setText(" · ".join(p for p in memo_bits if p))
+
+        overflow = 0
+        self._suppress_line_recalc = True
+        try:
+            for i, ln in enumerate(draft.lines):
+                if i >= self._N_EXPENSE_ROWS:
+                    overflow = len(draft.lines) - self._N_EXPENSE_ROWS
+                    break
+                amt_w = self._table.cellWidget(i, 1)
+                memo_w = self._table.cellWidget(i, 2)
+                job_w = self._table.cellWidget(i, 3)
+                if isinstance(amt_w, QDoubleSpinBox):
+                    amt_w.setValue(float(ln.amount))
+                if isinstance(memo_w, QLineEdit):
+                    memo_w.setText(ln.memo)
+                if isinstance(job_w, QLineEdit):
+                    job_w.setText(ln.customer_job)
+        finally:
+            self._suppress_line_recalc = False
+        tabs = getattr(self, "_line_tabs", None)
+        if tabs is not None:
+            tabs.setCurrentIndex(0)
+        self._recalc_total_label()
+        if overflow:
+            extra = self._header_memo.text().strip()
+            note = f"{overflow} additional pay line(s) omitted from the grid."
+            self._header_memo.setText(f"{extra} · {note}".strip(" ·"))
+        return True
 
     def _feedback(self, msg: str) -> None:
         if not (msg or "").strip():
