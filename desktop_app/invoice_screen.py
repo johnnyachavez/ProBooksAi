@@ -1,23 +1,28 @@
-"""Invoice entry workflow screen — intake queue and Manual Invoice with live SQLite persistence; Bill To uses Customer Center data.
+"""Invoice entry workflow screen — Create Invoices (QuickBooks Pro Desktop mimic) + Invoice Intake.
 
-**Invoice Intake** (sub-tab): stage PDFs, images, and pasted text; **Send to Manual Invoice** opens a new draft with source in memo + banner. **Manual Invoice** sub-tab saves to ``invoices`` / ``invoice_lines``.
+**Create Invoices** (sub-tab): header matches QB Pro (Customer:Job, Bill To | Ship To, Date /
+Invoice # / Terms / Due Date / P.O. Number) with live SQLite persistence. **Invoice Intake**
+stages PDFs, images, and pasted text; **Send to Manual Invoice** opens a new draft.
 
-Create Invoices (Manual Invoice) follows QuickBooks Pro Desktop: **Bill To** from the
+Create Invoices follows QuickBooks Pro Desktop: **Customer:Job** at the top, **Bill To** from the
 selected customer, editable **Ship To** saved on the invoice (defaults to Bill To when
 the customer has no separate shipping address), auto-sequenced editable invoice #,
 ``QDateEdit`` invoice date, terms-driven due date, and line **Amount** (qty × rate).
 
-Dark navy panel styling matches Customers / Vendors AR/AP master tabs. Line grid uses in-cell widgets
-so editors stay inline (no multiline popup editors). Bill To is wired to
-``probooksai.business`` customers when *ap_conn* is set (same source as Business → Customers).
+Line grid uses in-cell widgets so editors stay inline (no multiline popup editors). Bill To is
+wired to ``probooksai.business`` customers when *ap_conn* is set (same source as Business → Customers).
 
 **Invoice UI dialog policy (print / PDF / file picker)**
 
 Modal UI for *this* workflow tab is allowed only from explicit header buttons:
 
-- **Save** (``_btn_save``): persists to SQLite first, then writes **PDF** to the folder from
+- **Save & New** (``_btn_save``): persists to SQLite first, then writes **PDF** to the folder from
   **Edit → Preferences → Invoice Options** when that folder is set (or after a one-time pick).
-  If no PDF folder is chosen, the invoice is still saved to the company database. No print dialog.
+  If no PDF folder is chosen, the invoice is still saved to the company database. Then starts a
+  blank invoice (QuickBooks **Save & New**). No print dialog.
+- **Save & Close** (``_btn_save_close``): same persist + optional PDF, then stays on the saved
+  invoice (tab analog of QuickBooks **Save & Close** — the form is not a floating window).
+- **Clear** (``_btn_clear_fields``): new draft without saving.
 - **Export PDF…** (``_btn_export_pdf``): persists, then **Save file** dialog for a single ``.pdf`` path
   (does not change the preferences folder).
 - **Print…** (``_btn_print``): ``sender()`` must be that button; ``_invoice_print_dialog_armed``
@@ -26,7 +31,7 @@ Modal UI for *this* workflow tab is allowed only from explicit header buttons:
 
 No other signal may trigger Save / Export / Print invoice output paths.
 ``desktop_app.invoice_pdf.invoice_html_string`` / ``save_invoice_pdf`` also serve tests and CLI.
-Company identity from ``company_settings`` appears above the Manual Invoice title and in PDF/print HTML.
+Company identity from ``company_settings`` appears above the Create Invoices title and in PDF/print HTML.
 """
 
 from __future__ import annotations
@@ -49,6 +54,7 @@ from PySide6.QtWidgets import (
     QDateEdit,
     QDoubleSpinBox,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QFileDialog,
     QHeaderView,
@@ -92,34 +98,48 @@ from desktop_app.ar_customer_actions import (
 )
 from desktop_app.theme import DISABLED_FG
 
-# QuickBooks-style light palette (consistent with desktop_app/check_screen.py).
-# White invoice "paper" on a light-gray canvas, QB light-blue striped line grid.
-_INV_CANVAS   = "#F2F2F2"   # gray surround behind the white form
+# QuickBooks Pro Desktop mimic: light paper, compact chrome so the line grid dominates.
+_INV_CANVAS   = "#E8ECF1"   # gray surround behind the form
 _INV_BG       = "#FFFFFF"   # invoice paper
-_INV_PANEL    = "#FBFBFB"   # header band (slightly off-white)
+_INV_PANEL    = "#F4F7FA"   # header band
+_INV_BAR      = "#1E4A78"   # CUSTOMER:JOB / ACCOUNT / TEMPLATE (QB dark-blue bar)
+_INV_BAR_FG   = "#F3F6FA"   # captions on the dark bar
 _INV_STRIPE   = "#D0E6F4"   # QB light-blue alternating rows
-_INV_CAPTION  = "#555555"   # muted field captions
-_INV_GRID     = "#C8C8C8"   # hairlines / borders
-_INV_HEADER   = "#DBDBDB"   # table header fill
+_INV_CAPTION  = "#4A5560"   # muted field captions
+_INV_GRID     = "#C0C8D0"   # hairlines / borders
+_INV_HEADER   = "#D8DEE6"   # table header fill
 _INV_TEXT     = "#1A1A1A"   # primary text on light
+_INV_ACCENT   = "#2563A8"   # Save & New (QB primary action, slightly cleaner blue)
 WORKFLOW_INPUT_BG = "#FFFFFF"
-WORKFLOW_CONTROL_FACE = "#F5F5F5"
-WORKFLOW_CONTROL_HOVER = "#E0EAF4"
-WORKFLOW_CONTROL_PRESSED = "#C8D8EC"
-_INV_STRIP_ACTION_BTN_OUTLINE = "#BCBCBC"
+WORKFLOW_CONTROL_FACE = "#F7F8FA"
+WORKFLOW_CONTROL_HOVER = "#E4EEF7"
+WORKFLOW_CONTROL_PRESSED = "#C9D8EC"
+_INV_STRIP_ACTION_BTN_OUTLINE = "#B4BCC6"
 
-# Dark navy workflow theme (aligned with Customers / Vendors AR/AP master tabs).
-# Invoice # box: max width. Title uses same 20px weight as Pay Bills / Receive Payments.
+# Create Invoices window title on the form is "Invoice"; the module window is Create Invoices.
 _INVOICE_TOP_HEADER_FIELD_MAX_WIDTH_PX = 158
-_INVOICE_TITLE_FONT_PX = 20
+_INVOICE_TITLE_FONT_PX = 26
 _INVOICE_NUMBER_FIELD_MAX_WIDTH_PX = int(round(_INVOICE_TOP_HEADER_FIELD_MAX_WIDTH_PX * 0.75))
-_INVOICE_TOP_FOUR_FIELD_MIN_WIDTH_PX = 158
-# Bill To: ~65% narrower than the old full-stretch right column; body ~20% taller than default (68px).
+_INVOICE_TOP_FOUR_FIELD_MIN_WIDTH_PX = 110
+# Modest address boxes so the line grid keeps the vertical space (QB Pro proportions).
 _INVOICE_BILL_TO_MAX_WIDTH_PX = int(round(_INVOICE_TOP_HEADER_FIELD_MAX_WIDTH_PX * 5 * 0.35))
-_INVOICE_BILL_TO_TEXT_HEIGHT_PX = int(round(68 * 1.2))
-_INVOICE_BILL_TO_COMBO_MIN_WIDTH_PX = 100
+_INVOICE_BILL_TO_TEXT_HEIGHT_PX = 52
+_INVOICE_BILL_TO_COMBO_MIN_WIDTH_PX = 200
+_RIBBON_BTN_HEIGHT_PX = 22
+_FOOTER_BTN_HEIGHT_PX = 24
+_RIBBON_MAX_HEIGHT_PX = 50
+# DESCRIPTION (index 2) is 0 here = stretch to leftover width (~40%).
+_INVOICE_LINE_COL_DEFAULT_PX = (88, 64, 0, 64, 76, 76, 84)
+# Never a live-company name. Company files may store their own template label.
+_DEFAULT_INVOICE_TEMPLATE = "Standard Invoice"
+_DEFAULT_AR_ACCOUNT = "Accounts Receivable"
+_CUSTOMER_MESSAGE_CHOICES = (
+    "",
+    "Thank you for your business.",
+    "Please remit payment upon receipt.",
+)
 # Top four header line edits: ~half the Bill To multi-line body height, compact padding.
-_INVOICE_TOP_FOUR_LINE_HEIGHT_PX = max(22, _INVOICE_BILL_TO_TEXT_HEIGHT_PX // 2)
+_INVOICE_TOP_FOUR_LINE_HEIGHT_PX = 26
 
 # Top strip (four fields + Clear / Print / New Customer): one visual system (QB-style).
 _TOP_STRIP_RADIUS_PX = 6
@@ -168,11 +188,21 @@ def _top_strip_combo_qss() -> str:
     )
 
 
-def _top_strip_action_button_qss() -> str:
-    """Stylesheet for the six invoice header-row action buttons (Clear Fields … Forward)."""
+def _top_strip_action_button_qss(*, primary: bool = False) -> str:
+    """Stylesheet for Create Invoices ribbon / footer buttons."""
     bw = _INV_STRIP_ACTION_BTN_BORDER_W
     bc = _INV_STRIP_ACTION_BTN_OUTLINE
     r = _TOP_STRIP_RADIUS_PX
+    if primary:
+        return (
+            f"QPushButton {{ background-color: {_INV_ACCENT}; border: {bw}px solid {_INV_ACCENT}; "
+            f"border-radius: {r}px; color: #FFFFFF; "
+            f"font-size: {_TOP_STRIP_BODY_FONT_PX}px; padding: 0 14px; font-weight: 600; }}"
+            f"QPushButton:hover {{ background-color: #1D4F8C; border: {bw}px solid #1D4F8C; }}"
+            f"QPushButton:pressed {{ background-color: #163E6E; }}"
+            f"QPushButton:disabled {{ color: #D7E3F0; background-color: #8AA7C7; "
+            f"border: {bw}px solid #8AA7C7; }}"
+        )
     return (
         f"QPushButton {{ background-color: {WORKFLOW_CONTROL_FACE}; border: {bw}px solid {bc}; "
         f"border-radius: {r}px; color: {_INV_TEXT}; "
@@ -186,9 +216,9 @@ def _top_strip_action_button_qss() -> str:
     )
 
 
-# Line grid: user-resizable row heights via vertical header; sensible startup defaults.
+# Line grid: user-resizable row heights via vertical header; compact so many rows show.
 _INVOICE_LINE_ROW_MIN_HEIGHT_PX = 22
-_INVOICE_LINE_ROW_DEFAULT_EXTRA_PX = 10
+_INVOICE_LINE_ROW_DEFAULT_EXTRA_PX = 4
 # Non-Total columns: minimum width while clamping (matches header minimumSectionSize).
 _INVOICE_LINE_COL_MIN_OTHER_PX = 24
 
@@ -214,7 +244,7 @@ def _cell_line() -> QLineEdit:
     le = QLineEdit()
     le.setStyleSheet(
         f"QLineEdit {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_INV_GRID}; "
-        f"padding: 2px 6px; color: {_INV_TEXT}; }}"
+        f"padding: 1px 4px; color: {_INV_TEXT}; }}"
     )
     return le
 
@@ -251,7 +281,7 @@ def _cell_line_invoice_code() -> _InvoiceCodeLineEdit:
     le = _InvoiceCodeLineEdit()
     le.setStyleSheet(
         f"QLineEdit {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_INV_GRID}; "
-        f"padding: 2px 6px; color: {_INV_TEXT}; }}"
+        f"padding: 1px 4px; color: {_INV_TEXT}; }}"
     )
     return le
 
@@ -270,7 +300,7 @@ def _qty_spin() -> QDoubleSpinBox:
     s.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
     s.setStyleSheet(
         f"QDoubleSpinBox {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_INV_GRID}; "
-        f"padding: 2px 6px; color: {_INV_TEXT}; }}"
+        f"padding: 1px 4px; color: {_INV_TEXT}; }}"
     )
     return s
 
@@ -283,7 +313,7 @@ def _money_spin() -> QDoubleSpinBox:
     s.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
     s.setStyleSheet(
         f"QDoubleSpinBox {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_INV_GRID}; "
-        f"padding: 2px 6px; color: {_INV_TEXT}; }}"
+        f"padding: 1px 4px; color: {_INV_TEXT}; }}"
     )
     return s
 
@@ -297,21 +327,23 @@ def _line_total_spin() -> QDoubleSpinBox:
 
 
 class InvoiceScreen(QWidget):
-    """Manual Invoice: header, line grid, totals; persists to ``invoices`` / ``invoice_lines`` when connected."""
+    """Create Invoices: QB Pro Desktop header, line grid, totals; persists to ``invoices`` / ``invoice_lines``."""
 
     customerRecordsChanged = Signal()
     openInvoicesChanged = Signal()
 
+    # Column order matches the live QB Pro Create Invoices template (and print HTML).
     _LINE_COLS = (
-        "Date",
-        "Code",
-        "Description",
+        "SERVICED ON",
+        "JL #",
+        "DESCRIPTION",
         "BOL#",
-        "Rate",
-        "Qty",
-        "Amount",
+        "RATE",
+        "QUANTITY",
+        "AMOUNT",
     )
-    _N_LINE_ROWS = 15
+    _LINE_DESC_COL = 2
+    _N_LINE_ROWS = 22
 
     def __init__(
         self,
@@ -319,6 +351,7 @@ class InvoiceScreen(QWidget):
         ap_conn: Optional[sqlite3.Connection] = None,
     ) -> None:
         super().__init__(parent)
+        self.setWindowTitle("Create Invoices")
         self._ap_conn = ap_conn
         self._invoice_number_autofill_value = ""
         self._browse_ids: list[int] = []
@@ -332,14 +365,15 @@ class InvoiceScreen(QWidget):
         self._suppress_invoice_header_autofill: bool = False
         # Last customer id that auto-filled Ship To (avoid overwrite on tab show/reload).
         self._ship_to_autofill_customer_id: int | None = None
-        # Memo text from DB when loading (no longer a visible header box after removing blank field).
+        # Memo text from DB when loading (also shown in the Memo field).
         self._invoice_memo_notes: str = ""
+        self._payments_applied: float = 0.0
         # Set True only inside Print click handler while QPrintDialog may run (blocks stray callers).
         self._invoice_print_dialog_armed: bool = False
         # Last committed Code column text per line (strip); avoids re-applying saved Code rate when only Rate changed.
         self._invoice_line_code_committed: list[str] = [""] * self._N_LINE_ROWS
         self.setToolTip(
-            "Manual Invoice: enter lines and totals; Save writes to your company file. "
+            "Create Invoices: Customer:Job, Bill To / Ship To, line items; Save writes to your company file. "
             "Invoice # suggests the next number from your company file (editable). "
             "Bill To searches customers when connected. Ship To defaults to Bill To "
             "(QuickBooks Pro when the customer has no separate shipping address) and is saved with the invoice. "
@@ -348,10 +382,10 @@ class InvoiceScreen(QWidget):
         self._build_ui()
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        """Keep Total column flush to the viewport right when the table is resized."""
+        """Keep DESCRIPTION as the wide stretch column when the table is resized."""
         vp = getattr(self, "_invoice_lines_viewport", None)
         if vp is not None and watched is vp and event.type() == QEvent.Type.Resize:
-            self._sync_invoice_line_total_column_width_safe()
+            self._sync_invoice_line_description_column_width_safe()
         return super().eventFilter(watched, event)
 
     def showEvent(self, event: QShowEvent) -> None:
@@ -362,8 +396,8 @@ class InvoiceScreen(QWidget):
         self._sync_invoice_number_suggestion()
         self._refresh_browse_state()
         self._update_new_customer_button_state()
-        # After layout, anchor Total to the viewport right (width was 0 during build).
-        QTimer.singleShot(0, self._sync_invoice_line_total_column_width_safe)
+        # After layout, give leftover width to DESCRIPTION (width was 0 during build).
+        QTimer.singleShot(0, self._sync_invoice_line_description_column_width_safe)
 
     def hideEvent(self, event: QHideEvent) -> None:
         # Avoid focus landing on Save/Print when switching main tabs (stray Return/Space).
@@ -382,11 +416,16 @@ class InvoiceScreen(QWidget):
             return
         for b in (
             getattr(self, "_btn_save", None),
+            getattr(self, "_btn_save_close", None),
+            getattr(self, "_btn_ribbon_save", None),
             getattr(self, "_btn_export_pdf", None),
             getattr(self, "_btn_print", None),
             getattr(self, "_btn_clear_fields", None),
             getattr(self, "_btn_reverse", None),
             getattr(self, "_btn_forward", None),
+            getattr(self, "_btn_find", None),
+            getattr(self, "_btn_intake", None),
+            getattr(self, "_btn_new_invoice", None),
         ):
             if b is not None and fw is b:
                 t = getattr(self, "_table", None)
@@ -399,11 +438,29 @@ class InvoiceScreen(QWidget):
     def _on_invoice_module_subtab_changed(self, _index: int) -> None:
         """Manual Invoice ↔ Invoice Intake: keep draft in memory; never prompt save here."""
         self._defocus_invoice_action_buttons()
+        self._sync_create_invoices_module_chrome()
+
+    def _sync_create_invoices_module_chrome(self) -> None:
+        """While Create Invoices is showing, hide extra module tabs so the form is the window."""
+        tabs = getattr(self, "_invoice_tabs", None)
+        if tabs is None:
+            return
+        on_form = tabs.currentIndex() == 0
+        tabs.tabBar().setVisible(not on_form)
+        corner = tabs.cornerWidget(Qt.Corner.TopRightCorner)
+        if corner is not None:
+            corner.setVisible(not on_form)
 
     def _update_new_customer_button_state(self) -> None:
         on = self._ap_conn is not None
         self._btn_new_customer.setEnabled(on)
         self._btn_save.setEnabled(on)
+        if getattr(self, "_btn_save_close", None) is not None:
+            self._btn_save_close.setEnabled(on)
+        if getattr(self, "_btn_ribbon_save", None) is not None:
+            self._btn_ribbon_save.setEnabled(on)
+        if getattr(self, "_btn_new_invoice", None) is not None:
+            self._btn_new_invoice.setEnabled(True)
         if getattr(self, "_btn_ar_new_inv", None) is not None:
             self._sync_ar_toolbar_enabled()
 
@@ -509,7 +566,7 @@ class InvoiceScreen(QWidget):
     def _line_edit_header_style(self) -> str:
         return (
             f"QLineEdit {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_INV_GRID}; "
-            f"padding: 4px 8px; color: {_INV_TEXT}; }}"
+            f"padding: 1px 6px; color: {_INV_TEXT}; }}"
         )
 
     def _header_field_box(
@@ -592,17 +649,422 @@ class InvoiceScreen(QWidget):
             )
         return fr
 
+    def _bar_caption(self, text: str) -> QLabel:
+        cap = QLabel(text)
+        cap.setStyleSheet(
+            f"color: {_INV_CAPTION}; font-size: 10px; font-weight: 700; "
+            "letter-spacing: 0.04em; background: transparent;"
+        )
+        return cap
+
+    def _style_strip_button(self, b: QPushButton, *, primary: bool = False, height: int | None = None) -> None:
+        h = height if height is not None else _FOOTER_BTN_HEIGHT_PX
+        b.setStyleSheet(_top_strip_action_button_qss(primary=primary))
+        b.setFixedHeight(h)
+        b.setAutoDefault(False)
+        b.setDefault(False)
+
+    def _bar_caption_on_dark(self, text: str) -> QLabel:
+        cap = QLabel(text)
+        cap.setStyleSheet(
+            f"color: {_INV_BAR_FG}; font-size: 10px; font-weight: 700; "
+            "letter-spacing: 0.04em; background: transparent;"
+        )
+        return cap
+
+    def _compact_meta_field(self, caption: str, editor: QWidget) -> QWidget:
+        """Caption + 22px editor — tight DATE / INVOICE # / TERMS / DUE DATE stack."""
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(1)
+        cap = QLabel(caption)
+        cap.setStyleSheet(
+            f"color: {_INV_CAPTION}; font-size: 9px; font-weight: 700; background: transparent;"
+        )
+        lay.addWidget(cap)
+        editor.setFixedHeight(22)
+        if isinstance(editor, QLineEdit):
+            editor.setStyleSheet(self._line_edit_header_style())
+        elif isinstance(editor, QDateEdit):
+            editor.setStyleSheet(
+                f"QDateEdit {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_INV_GRID}; "
+                f"padding: 1px 6px; color: {_INV_TEXT}; }}"
+            )
+        elif isinstance(editor, QComboBox):
+            editor.setStyleSheet(
+                f"QComboBox {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_INV_GRID}; "
+                f"padding: 1px 6px; color: {_INV_TEXT}; }}"
+            )
+        lay.addWidget(editor)
+        w.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        return w
+
+    def _invoice_template_choices(self) -> list[str]:
+        """Built-in template plus whatever the company file stored (never a hardcoded live name)."""
+        names = [_DEFAULT_INVOICE_TEMPLATE]
+        raw = ""
+        if self._ap_conn is not None:
+            try:
+                raw = (business.get_setting(self._ap_conn, "invoice_template_name", "") or "").strip()
+            except (sqlite3.Error, TypeError, ValueError):
+                raw = ""
+        if raw and raw not in names:
+            names.append(raw)
+        return names
+
+    def _ar_account_choices(self) -> list[str]:
+        names = [_DEFAULT_AR_ACCOUNT]
+        if self._ap_conn is not None:
+            try:
+                label = business._get_coa_account_label(self._ap_conn, "1100")
+            except (sqlite3.Error, TypeError, ValueError, AttributeError):
+                label = ""
+            if label and label != "1100" and label not in names:
+                names.insert(0, label)
+        return names
+
+    def _build_create_invoices_chrome(self, play: QVBoxLayout) -> None:
+        """QB Pro Create Invoices header: slim ribbon, one-row Customer:Job bar, compact Bill To."""
+        _uc = Qt.ConnectionType.UniqueConnection
+        _bar_combo_qss = (
+            f"QComboBox {{ background: {WORKFLOW_INPUT_BG}; color: {_INV_TEXT}; "
+            f"border: 1px solid #9AA8B8; padding: 1px 6px; min-height: 20px; max-height: 22px; }}"
+        )
+
+        # ── Ribbon (Main / Formatting / Send-Ship / Reports) — fixed slim height ──
+        self._invoice_ribbon = QTabWidget()
+        self._invoice_ribbon.setObjectName("invoiceRibbonTabs")
+        self._invoice_ribbon.setDocumentMode(True)
+        self._invoice_ribbon.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed
+        )
+        self._invoice_ribbon.setFixedHeight(_RIBBON_MAX_HEIGHT_PX)
+        self._invoice_ribbon.setStyleSheet(
+            f"QTabWidget#invoiceRibbonTabs::pane {{ border: 1px solid {_INV_GRID}; "
+            f"background: {_INV_PANEL}; border-radius: 4px; }}"
+            f"QTabWidget#invoiceRibbonTabs QTabBar::tab {{ padding: 2px 8px; min-height: 16px; "
+            f"max-height: 18px; }}"
+        )
+
+        main_rib = QWidget()
+        main_lay = QHBoxLayout(main_rib)
+        main_lay.setContentsMargins(6, 2, 6, 2)
+        main_lay.setSpacing(4)
+
+        self._btn_find = QPushButton("Find")
+        self._btn_find.setToolTip(
+            "Previous invoice by invoice number (QuickBooks Find / Previous on this form)."
+        )
+        self._btn_new_invoice = QPushButton("New")
+        self._btn_new_invoice.setToolTip("Start a blank invoice (does not save the current form).")
+        self._btn_ribbon_save = QPushButton("Save")
+        self._btn_ribbon_save.setToolTip(
+            "Save this invoice to the company file and keep it open (QuickBooks ribbon Save)."
+        )
+        self._btn_print = QPushButton("Print")
+        self._btn_print.setToolTip(
+            "Save this invoice to the company file, then print using the default printer from "
+            "Edit → Preferences → Invoice Options (or pick a printer once if unset). "
+            "After a successful print, the form resets for the next invoice."
+        )
+        self._btn_email = QPushButton("Email")
+        self._btn_email.setToolTip(
+            "Email from Create Invoices is not wired yet. Use Print or Export PDF."
+        )
+        self._btn_email.setEnabled(False)
+        self._btn_export_pdf = QPushButton("Export PDF…")
+        self._btn_export_pdf.setToolTip(
+            "Save this invoice to the company file, then pick a PDF file path (one-time). "
+            "Does not change the default folder used by Save."
+        )
+        self._btn_new_customer = QPushButton("New Customer")
+        self._btn_new_customer.setToolTip(
+            "Same **New customer** dialog as the Customers tab; Bill To fills when you save."
+        )
+        self._btn_reverse = QPushButton("Previous")
+        self._btn_forward = QPushButton("Next")
+        self._btn_reverse.setToolTip(
+            "Previous invoice by invoice number (stops at the lowest #). "
+            "From an unsaved draft, opens the last saved invoice."
+        )
+        self._btn_forward.setToolTip(
+            "Next invoice by invoice number. After the highest saved invoice, opens one blank draft "
+            "(stops there — Next does not cycle to the first invoice)."
+        )
+        self._btn_intake = QPushButton("Intake")
+        self._btn_intake.setToolTip(
+            "Open Invoice Intake (stage PDFs / images / pasted text). Hidden from the form tab strip "
+            "so Create Invoices keeps the window height."
+        )
+        for b in (
+            self._btn_find,
+            self._btn_new_invoice,
+            self._btn_ribbon_save,
+            self._btn_print,
+            self._btn_email,
+            self._btn_export_pdf,
+            self._btn_new_customer,
+            self._btn_reverse,
+            self._btn_forward,
+            self._btn_intake,
+        ):
+            self._style_strip_button(b, height=_RIBBON_BTN_HEIGHT_PX)
+            main_lay.addWidget(b)
+        main_lay.addStretch(1)
+        self._invoice_ribbon.addTab(main_rib, "Main")
+
+        def _later_tab(body: str) -> QWidget:
+            w = QWidget()
+            lay = QHBoxLayout(w)
+            lay.setContentsMargins(8, 2, 8, 2)
+            lb = QLabel(body)
+            lb.setStyleSheet(f"color: {_INV_CAPTION}; font-size: 11px; background: transparent;")
+            lay.addWidget(lb)
+            return w
+
+        self._invoice_ribbon.addTab(
+            _later_tab("Formatting follows later QuickBooks screens."),
+            "Formatting",
+        )
+        self._invoice_ribbon.addTab(
+            _later_tab("Send/Ship follows later QuickBooks screens."),
+            "Send/Ship",
+        )
+        self._invoice_ribbon.addTab(
+            _later_tab("Reports follows later QuickBooks screens."),
+            "Reports",
+        )
+        play.addWidget(self._invoice_ribbon)
+
+        bill_panel, bill_te = build_customer_bill_to_panel(
+            self,
+            ap_conn=self._ap_conn,
+            layout_max_width_px=None,
+            bill_plain_height_px=_INVOICE_BILL_TO_TEXT_HEIGHT_PX,
+            combo_min_width_px=_INVOICE_BILL_TO_COMBO_MIN_WIDTH_PX,
+            show_new_customer_button=False,
+            show_combo_in_panel=False,
+        )
+        self._bill_customer_panel = bill_panel
+        self._bill_to = (bill_panel, bill_te)
+        self._bill_customer_panel.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
+        )
+        self._ship_to = self._address_box(
+            "Ship To",
+            height_px=_INVOICE_BILL_TO_TEXT_HEIGHT_PX,
+        )
+        self._ship_to[0].setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
+        )
+        self._bill_customer_panel.customerIdChanged.connect(
+            self._on_bill_to_customer_changed
+        )
+
+        # ── Customer:Job / Account / Template — one short dark-blue row ──
+        job_bar = QFrame()
+        job_bar.setObjectName("invoiceCustomerJobBar")
+        job_bar.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        job_bar.setStyleSheet(
+            f"QFrame#invoiceCustomerJobBar {{ background-color: {_INV_BAR}; border: none; }}"
+        )
+        jb = QHBoxLayout(job_bar)
+        jb.setContentsMargins(8, 4, 8, 4)
+        jb.setSpacing(8)
+        cj_cap = self._bar_caption_on_dark("CUSTOMER:JOB")
+        cj_cap.setObjectName("invoiceCustomerJobCaption")
+        jb.addWidget(cj_cap)
+        combo = self._bill_customer_panel.customer_combo()
+        combo.setMinimumWidth(_INVOICE_BILL_TO_COMBO_MIN_WIDTH_PX)
+        combo.setMaximumHeight(22)
+        combo.setStyleSheet(_bar_combo_qss)
+        jb.addWidget(combo, 3)
+        jb.addWidget(self._bar_caption_on_dark("ACCOUNT"))
+        self._ar_account = QComboBox()
+        self._ar_account.setObjectName("invoiceArAccount")
+        self._ar_account.setEditable(False)
+        self._ar_account.addItems(self._ar_account_choices())
+        self._ar_account.setToolTip("Accounts Receivable account for this invoice.")
+        self._ar_account.setMaximumHeight(22)
+        self._ar_account.setStyleSheet(_bar_combo_qss)
+        jb.addWidget(self._ar_account, 2)
+        jb.addWidget(self._bar_caption_on_dark("TEMPLATE"))
+        self._invoice_template = QComboBox()
+        self._invoice_template.setObjectName("invoiceTemplateCombo")
+        self._invoice_template.setEditable(False)
+        self._invoice_template.addItems(self._invoice_template_choices())
+        self._invoice_template.setCurrentIndex(0)
+        self._invoice_template.setToolTip(
+            "Invoice template. Default is Standard Invoice — live company names are not hardcoded."
+        )
+        self._invoice_template.setMaximumHeight(22)
+        self._invoice_template.setStyleSheet(_bar_combo_qss)
+        jb.addWidget(self._invoice_template, 2)
+        play.addWidget(job_bar)
+
+        # ── Compact header: Invoice | Bill To + PO/Job | Ship To | DATE stack ──
+        self._date = QDateEdit()
+        configure_qdate_edit_us(self._date)
+        self._date.setDate(QDate.currentDate())
+        self._date.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        self._date.setToolTip("Invoice date (QuickBooks Pro date control).")
+
+        self._inv_number = QLineEdit()
+        self._inv_number.setObjectName("invoiceNumberEdit")
+        self._inv_number.setPlaceholderText("Invoice #")
+        self._inv_number.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self._inv_number.setStyleSheet(self._line_edit_header_style())
+
+        self._terms = QComboBox()
+        self._terms.setEditable(False)
+        self._terms.addItems(list(business.INVOICE_TERMS_CHOICES))
+        self._terms.setToolTip(
+            "Payment terms. Changing terms (or the invoice date) fills Due Date."
+        )
+        self._due_date = QDateEdit()
+        configure_qdate_edit_us(self._due_date)
+        self._due_date.setDate(QDate.currentDate())
+        self._due_date.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        self._due_date.setToolTip(
+            "Due date. Filled from Terms when you change Date or Terms; you can still edit it."
+        )
+        self._date.dateChanged.connect(self._on_invoice_date_or_terms_changed)
+        self._terms.currentIndexChanged.connect(self._on_invoice_date_or_terms_changed)
+
+        self._po = QLineEdit()
+        self._po.setPlaceholderText("PO / contract #")
+        self._job = QLineEdit()
+        self._job.setPlaceholderText("Name / job #")
+
+        header_band = QFrame()
+        header_band.setObjectName("invoiceHeaderBand")
+        header_band.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        header_band.setStyleSheet(
+            f"QFrame#invoiceHeaderBand {{ background-color: {_INV_PANEL}; "
+            f"border: 1px solid {_INV_GRID}; border-radius: 6px; }}"
+        )
+        hb = QGridLayout(header_band)
+        hb.setContentsMargins(8, 4, 8, 6)
+        hb.setHorizontalSpacing(8)
+        hb.setVerticalSpacing(4)
+
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 4, 0, 0)
+        title_row.setSpacing(6)
+        title = QLabel("Invoice")
+        title.setObjectName("createInvoicesTitle")
+        title.setStyleSheet(
+            f"font-size: {_INVOICE_TITLE_FONT_PX}px; font-weight: 700; color: #3D4A54; "
+            "background: transparent;"
+        )
+        title_row.addWidget(title)
+        self._invoice_status_badge = QLabel("")
+        self._invoice_status_badge.setObjectName("invoiceStatusBadge")
+        self._invoice_status_badge.setVisible(False)
+        self._invoice_status_badge.setStyleSheet(
+            "QLabel#invoiceStatusBadge { color: #16a34a; font-size: 12px; font-weight: 700; "
+            "letter-spacing: 0.06em; background: transparent; padding: 0 8px 0 0; }"
+        )
+        title_row.addWidget(self._invoice_status_badge, 0, Qt.AlignmentFlag.AlignVCenter)
+        title_row.addStretch(1)
+        title_wrap = QWidget()
+        title_wrap.setLayout(title_row)
+        title_wrap.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        hb.addWidget(title_wrap, 0, 0, 2, 1, Qt.AlignmentFlag.AlignTop)
+
+        bill_col = QVBoxLayout()
+        bill_col.setContentsMargins(0, 0, 0, 0)
+        bill_col.setSpacing(3)
+        bill_col.addWidget(self._bill_to[0])
+        po_job = QHBoxLayout()
+        po_job.setSpacing(6)
+        po_job.addWidget(self._compact_meta_field("PO/CONTRACT#", self._po), 1)
+        po_job.addWidget(self._compact_meta_field("NAME/JOB#", self._job), 1)
+        bill_col.addLayout(po_job)
+        bill_wrap = QWidget()
+        bill_wrap.setLayout(bill_col)
+        bill_wrap.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        hb.addWidget(bill_wrap, 0, 1, 2, 1)
+
+        hb.addWidget(self._ship_to[0], 0, 2, 1, 1, Qt.AlignmentFlag.AlignTop)
+
+        meta = QGridLayout()
+        meta.setContentsMargins(0, 0, 0, 0)
+        meta.setHorizontalSpacing(6)
+        meta.setVerticalSpacing(2)
+        meta.addWidget(self._compact_meta_field("DATE", self._date), 0, 0)
+        meta.addWidget(self._compact_meta_field("INVOICE #", self._inv_number), 0, 1)
+        meta.addWidget(self._compact_meta_field("TERMS", self._terms), 1, 0)
+        meta.addWidget(self._compact_meta_field("DUE DATE", self._due_date), 1, 1)
+        meta_w = QWidget()
+        meta_w.setLayout(meta)
+        meta_w.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        hb.addWidget(meta_w, 0, 3, 2, 1, Qt.AlignmentFlag.AlignTop)
+
+        hb.setColumnStretch(0, 1)
+        hb.setColumnStretch(1, 3)
+        hb.setColumnStretch(2, 2)
+        hb.setColumnStretch(3, 2)
+        play.addWidget(header_band)
+
+        self._btn_save = QPushButton("Save && New")
+        self._btn_save.setToolTip(
+            "Save this invoice to the company file and write a PDF when a folder is set, "
+            "then start a new blank invoice (QuickBooks Save & New)."
+        )
+        self._btn_save_close = QPushButton("Save && Close")
+        self._btn_save_close.setToolTip(
+            "Save this invoice to the company file and keep it on the form "
+            "(tab analog of QuickBooks Save & Close)."
+        )
+        self._btn_clear_fields = QPushButton("Clear")
+        self._btn_clear_fields.setToolTip(
+            "Clear lines and header fields and start a new draft without saving."
+        )
+        self._style_strip_button(self._btn_save, primary=True, height=_FOOTER_BTN_HEIGHT_PX)
+        self._style_strip_button(self._btn_save_close, height=_FOOTER_BTN_HEIGHT_PX)
+        self._style_strip_button(self._btn_clear_fields, height=_FOOTER_BTN_HEIGHT_PX)
+
+        self._btn_save.clicked.connect(self._on_save_invoice, _uc)
+        self._btn_save_close.clicked.connect(self._on_save_close_invoice, _uc)
+        self._btn_ribbon_save.clicked.connect(self._on_ribbon_save_invoice, _uc)
+        self._btn_export_pdf.clicked.connect(self._on_export_pdf_as, _uc)
+        self._btn_print.clicked.connect(self._on_print_invoice, _uc)
+        self._btn_clear_fields.clicked.connect(self._on_clear_fields, _uc)
+        self._btn_new_customer.clicked.connect(
+            self._bill_customer_panel.open_new_customer_dialog, _uc
+        )
+        self._bill_customer_panel.customerCreated.connect(
+            lambda _nid: self.customerRecordsChanged.emit()
+        )
+        self._btn_reverse.clicked.connect(self._on_reverse_invoice, _uc)
+        self._btn_forward.clicked.connect(self._on_forward_invoice, _uc)
+        self._btn_find.clicked.connect(self._on_reverse_invoice, _uc)
+        self._btn_new_invoice.clicked.connect(self._on_clear_fields, _uc)
+        self._btn_intake.clicked.connect(self._on_open_invoice_intake, _uc)
+
+    def _on_open_invoice_intake(self) -> None:
+        tabs = getattr(self, "_invoice_tabs", None)
+        if tabs is None:
+            return
+        tabs.setCurrentIndex(1)
+
     def _build_ui(self) -> None:
         self.setStyleSheet(f"InvoiceScreen {{ background: {_INV_CANVAS}; }}")
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(8, 6, 8, 8)
+        outer.setContentsMargins(4, 2, 4, 4)
         outer.setSpacing(0)
 
         self._invoice_tabs = QTabWidget(self)
         self._invoice_tabs.setObjectName("invoiceModuleTabs")
         self._invoice_tabs.setToolTip(
-            "Manual Invoice: full entry workflow. Invoice Intake: stage sources and send to a draft invoice."
+            "Create Invoices: QuickBooks Pro invoice form. Invoice Intake: stage sources and send to a draft."
         )
+        self._invoice_tabs.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        self._invoice_tabs.setDocumentMode(True)
 
         self._btn_ar_new_inv = QPushButton("New invoice (AR)…")
         self._btn_ar_new_inv.setToolTip(
@@ -628,7 +1090,7 @@ class InvoiceScreen(QWidget):
         self._invoice_tabs.tabBar().setExpanding(False)
         self._invoice_tabs.setStyleSheet(
             f"QTabWidget#invoiceModuleTabs::pane {{ border: none; margin: 0; padding: 0; }}"
-            f"QTabWidget#invoiceModuleTabs QTabBar::tab {{ padding: 3px 10px; min-height: 20px; }}"
+            f"QTabWidget#invoiceModuleTabs QTabBar::tab {{ padding: 2px 8px; min-height: 16px; }}"
         )
 
         self._sync_ar_toolbar_enabled()
@@ -637,256 +1099,21 @@ class InvoiceScreen(QWidget):
         page.setObjectName("invoiceLightPanel")
         page.setStyleSheet(
             f"QFrame#invoiceLightPanel {{ background-color: {_INV_BG}; border: 1px solid {_INV_GRID}; "
-            "border-radius: 8px; }}"
+            "border-radius: 4px; }}"
         )
         play = QVBoxLayout(page)
-        play.setContentsMargins(12, 10, 12, 12)
-        play.setSpacing(8)
+        play.setContentsMargins(6, 4, 6, 4)
+        play.setSpacing(4)
 
-        # Company letterhead (same ``company_settings`` text as PDF/print via ``company_identity_plain_block``).
+        # Company identity stays on PDF/print; omit it from the form so the grid keeps the height.
         self._company_identity_label = QLabel("")
-        self._company_identity_label.setWordWrap(True)
-        self._company_identity_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-        )
-        self._company_identity_label.setStyleSheet(
-            f"color: {_INV_TEXT}; font-size: 11px; background: transparent; padding: 0 0 6px 0;"
-        )
         self._company_identity_label.setVisible(False)
         self._company_identity_label.setToolTip(
             "Company identity from your company file (File → New Company). "
             "Matches the top-left block on printed and PDF invoices."
         )
-        play.addWidget(self._company_identity_label)
 
-        # ── Title row (Pay Bills / Receive Payments style: title left, key field right) ──
-        title_row = QHBoxLayout()
-        title_row.setSpacing(12)
-        title = QLabel("Invoice")
-        title.setStyleSheet(
-            f"font-size: {_INVOICE_TITLE_FONT_PX}px; font-weight: 600; color: {_INV_TEXT}; background: transparent;"
-        )
-        title_row.addWidget(title)
-        self._invoice_status_badge = QLabel("")
-        self._invoice_status_badge.setObjectName("invoiceStatusBadge")
-        self._invoice_status_badge.setVisible(False)
-        self._invoice_status_badge.setStyleSheet(
-            "QLabel#invoiceStatusBadge { color: #16a34a; font-size: 13px; font-weight: 700; "
-            "letter-spacing: 0.06em; background: transparent; padding: 0 8px 0 0; }"
-        )
-        title_row.addWidget(self._invoice_status_badge, 0, Qt.AlignmentFlag.AlignVCenter)
-        title_row.addStretch(1)
-        self._inv_number = QLineEdit()
-        self._inv_number.setPlaceholderText("INVOICE #")
-        self._inv_number.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        self._inv_number.setStyleSheet(self._line_edit_header_style())
-        inv_number_box = self._header_field_box(
-            "",
-            self._inv_number,
-            max_width_px=_INVOICE_NUMBER_FIELD_MAX_WIDTH_PX,
-            left_align=True,
-        )
-        title_row.addWidget(inv_number_box, 0, Qt.AlignmentFlag.AlignRight)
-        play.addLayout(title_row)
-
-        bill_panel, bill_te = build_customer_bill_to_panel(
-            self,
-            ap_conn=self._ap_conn,
-            layout_max_width_px=_INVOICE_BILL_TO_MAX_WIDTH_PX,
-            bill_plain_height_px=_INVOICE_BILL_TO_TEXT_HEIGHT_PX,
-            combo_min_width_px=_INVOICE_BILL_TO_COMBO_MIN_WIDTH_PX,
-            show_new_customer_button=False,
-        )
-        self._bill_customer_panel = bill_panel
-        self._bill_to = (bill_panel, bill_te)
-        self._ship_to = self._address_box(
-            "Ship To",
-            height_px=_INVOICE_BILL_TO_TEXT_HEIGHT_PX,
-            max_width_px=_INVOICE_BILL_TO_MAX_WIDTH_PX,
-        )
-        self._bill_customer_panel.customerIdChanged.connect(
-            self._on_bill_to_customer_changed
-        )
-
-        # ── Header: Invoice Date / Terms / Due Date / PO / Job + Bill To + Ship To ──
-        top_fields_row = QHBoxLayout()
-        top_fields_row.setSpacing(10)
-
-        self._date = QDateEdit()
-        configure_qdate_edit_us(self._date)
-        self._date.setDate(QDate.currentDate())
-        self._date.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
-        self._date.setToolTip("Invoice date (QuickBooks Pro date control).")
-
-        self._terms = QComboBox()
-        self._terms.setEditable(False)
-        self._terms.addItems(list(business.INVOICE_TERMS_CHOICES))
-        self._terms.setToolTip(
-            "Payment terms. Changing terms (or the invoice date) fills Due Date, "
-            "as in QuickBooks Pro Desktop."
-        )
-
-        self._due_date = QDateEdit()
-        configure_qdate_edit_us(self._due_date)
-        self._due_date.setDate(QDate.currentDate())
-        self._due_date.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
-        self._due_date.setToolTip(
-            "Due date. Filled from Terms when you change Invoice Date or Terms; "
-            "you can still edit it before Save."
-        )
-        self._date.dateChanged.connect(self._on_invoice_date_or_terms_changed)
-        self._terms.currentIndexChanged.connect(self._on_invoice_date_or_terms_changed)
-
-        self._po = QLineEdit()
-
-        self._job = QLineEdit()
-
-        _top_three_kw = dict(
-            min_width_px=_INVOICE_TOP_FOUR_FIELD_MIN_WIDTH_PX,
-            max_width_px=None,
-            left_align=True,
-            compact_vertical=True,
-            unified_top_strip=True,
-        )
-
-        three_col = QWidget()
-        three_lay = QVBoxLayout(three_col)
-        three_lay.setContentsMargins(0, 0, 0, 0)
-        three_lay.setSpacing(8)
-        fields_h = QHBoxLayout()
-        fields_h.setSpacing(10)
-        fields_h.addWidget(
-            self._header_field_box("Invoice Date", self._date, **_top_three_kw),
-            0,
-        )
-        fields_h.addWidget(
-            self._header_field_box("Terms", self._terms, **_top_three_kw),
-            0,
-        )
-        fields_h.addWidget(
-            self._header_field_box("Due Date", self._due_date, **_top_three_kw),
-            0,
-        )
-        fields_h.addWidget(
-            self._header_field_box("PO Number", self._po, **_top_three_kw),
-            0,
-        )
-        fields_h.addWidget(
-            self._header_field_box("Job Number", self._job, **_top_three_kw),
-            0,
-        )
-        three_lay.addLayout(fields_h)
-
-        btns_h = QHBoxLayout()
-        btns_h.setContentsMargins(0, 0, 0, 0)
-        btns_h.setSpacing(8)
-        self._btn_clear_fields = QPushButton("Clear Fields")
-        self._btn_clear_fields.setToolTip(
-            "Clear lines and header fields except Invoice #; set Invoice Date to today."
-        )
-        self._btn_print = QPushButton("Print…")
-        self._btn_print.setToolTip(
-            "Save this invoice to the company file, then print using the default printer from "
-            "Edit → Preferences → Invoice Options (or pick a printer once if unset). "
-            "After a successful print, the form resets for the next invoice."
-        )
-        self._btn_new_customer = QPushButton("New Customer")
-        self._btn_new_customer.setToolTip(
-            "Same **New customer** dialog as the Customers tab (type, parent for jobs, contact fields); "
-            "Bill To fills when you save."
-        )
-        self._btn_save = QPushButton("Save")
-        self._btn_save.setToolTip(
-            "Save this invoice to the company file and write a PDF to the folder set under "
-            "Edit → Preferences → Invoice Options (you can choose the folder once if unset). "
-            "Then start a new blank invoice with the next number."
-        )
-        self._btn_export_pdf = QPushButton("Export PDF…")
-        self._btn_export_pdf.setToolTip(
-            "Save this invoice to the company file, then pick a PDF file path (one-time). "
-            "Does not change the default folder used by Save. Then start a new blank invoice."
-        )
-        self._btn_reverse = QPushButton("Reverse")
-        self._btn_forward = QPushButton("Forward")
-        self._btn_reverse.setToolTip(
-            "Previous invoice by invoice number (stops at the lowest #). "
-            "From an unsaved draft, opens the last saved invoice."
-        )
-        self._btn_forward.setToolTip(
-            "Next invoice by invoice number. After the highest saved invoice, opens one blank draft "
-            "(stops there — Forward does not cycle to the first invoice)."
-        )
-        _strip_h = _top_strip_field_outer_height_px()
-        _strip_btn_ss = _top_strip_action_button_qss()
-        for b in (
-            self._btn_clear_fields,
-            self._btn_save,
-            self._btn_export_pdf,
-            self._btn_print,
-            self._btn_new_customer,
-            self._btn_reverse,
-            self._btn_forward,
-        ):
-            b.setStyleSheet(_strip_btn_ss)
-            b.setFixedHeight(_strip_h)
-            # MinimumExpanding + equal stretch shares width evenly under the three field boxes.
-            b.setSizePolicy(
-                QSizePolicy.Policy.MinimumExpanding,
-                QSizePolicy.Policy.Fixed,
-            )
-            # Fix stray Save/Print validation popups: never treat these as dialog default
-            # buttons (Return/Enter from table/header editors must not fire clicked).
-            b.setAutoDefault(False)
-            b.setDefault(False)
-        for b in (
-            self._btn_clear_fields,
-            self._btn_save,
-            self._btn_export_pdf,
-            self._btn_print,
-            self._btn_new_customer,
-            self._btn_reverse,
-            self._btn_forward,
-        ):
-            btns_h.addWidget(b, 1)
-        three_lay.addLayout(btns_h)
-
-        top_fields_row.addWidget(three_col, 0, Qt.AlignmentFlag.AlignTop)
-        top_fields_row.addStretch(1)
-
-        bill_col = QWidget()
-        bill_lay = QVBoxLayout(bill_col)
-        bill_lay.setContentsMargins(0, 0, 0, 0)
-        bill_lay.setSpacing(8)
-        bill_lay.addWidget(self._bill_to[0], 0, Qt.AlignmentFlag.AlignTop)
-        top_fields_row.addWidget(bill_col, 0, Qt.AlignmentFlag.AlignTop)
-        top_fields_row.addWidget(self._ship_to[0], 0, Qt.AlignmentFlag.AlignTop)
-
-        header_band = QFrame()
-        header_band.setObjectName("invoiceHeaderBand")
-        header_band.setStyleSheet(
-            f"QFrame#invoiceHeaderBand {{ background-color: {_INV_PANEL}; "
-            f"border: 1px solid {_INV_GRID}; border-radius: 8px; }}"
-        )
-        hb_lay = QVBoxLayout(header_band)
-        hb_lay.setContentsMargins(10, 8, 10, 10)
-        hb_lay.setSpacing(8)
-        hb_lay.addLayout(top_fields_row)
-        play.addWidget(header_band)
-
-        # Save/Print: only clicked → persistence; UniqueConnection prevents duplicate slots.
-        _uc = Qt.ConnectionType.UniqueConnection
-        self._btn_save.clicked.connect(self._on_save_invoice, _uc)
-        self._btn_export_pdf.clicked.connect(self._on_export_pdf_as, _uc)
-        self._btn_print.clicked.connect(self._on_print_invoice, _uc)
-        self._btn_clear_fields.clicked.connect(self._on_clear_fields, _uc)
-        self._btn_new_customer.clicked.connect(
-            self._bill_customer_panel.open_new_customer_dialog, _uc
-        )
-        self._bill_customer_panel.customerCreated.connect(
-            lambda _nid: self.customerRecordsChanged.emit()
-        )
-        self._btn_reverse.clicked.connect(self._on_reverse_invoice, _uc)
-        self._btn_forward.clicked.connect(self._on_forward_invoice, _uc)
+        self._build_create_invoices_chrome(play)
 
         self._update_new_customer_button_state()
 
@@ -899,18 +1126,10 @@ class InvoiceScreen(QWidget):
         self._invoice_intake_handoff_banner.setVisible(False)
         self._invoice_intake_handoff_banner.setStyleSheet(
             f"QLabel#invoiceIntakeHandoffBanner {{ color: {_INV_TEXT}; font-size: 12px; "
-            f"background-color: {_INV_PANEL}; border: 1px solid {_INV_GRID}; border-radius: 6px; "
-            f"padding: 8px 10px; }}"
+            f"background-color: {_INV_PANEL}; border: 1px solid {_INV_GRID}; border-radius: 4px; "
+            f"padding: 4px 8px; }}"
         )
         play.addWidget(self._invoice_intake_handoff_banner)
-
-        line_sec = QLabel("Line items")
-        line_sec.setStyleSheet(
-            f"color: {_INV_CAPTION}; font-size: 11px; font-weight: 600; "
-            "letter-spacing: 0.03em; background: transparent;"
-        )
-        line_sec.setToolTip("Service lines; amounts roll into subtotal, tax, and total below.")
-        play.addWidget(line_sec)
 
         # ── Line items grid ──
         self._table = QTableWidget(self._N_LINE_ROWS, len(self._LINE_COLS))
@@ -925,7 +1144,7 @@ class InvoiceScreen(QWidget):
         _hh = self._table.horizontalHeader()
         _hh.setCascadingSectionResizes(False)
         _hh.setSectionsMovable(False)
-        # Total width is set in code so its right edge stays on the viewport (no Qt stretch).
+        # DESCRIPTION stretches to leftover width so columns fit without a horizontal scrollbar.
         _hh.setStretchLastSection(False)
         for _ci in range(len(self._LINE_COLS)):
             _hh.setSectionResizeMode(_ci, QHeaderView.ResizeMode.Interactive)
@@ -938,6 +1157,12 @@ class InvoiceScreen(QWidget):
             _fm.horizontalAdvance(str(lbl)) + 28 for lbl in self._LINE_COLS
         )
         _hh.setMinimumSectionSize(max(1, min(self._invoice_col_mins)))
+        self._table.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        self._table.setMinimumHeight(220)
+        self._table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._table.setCornerButtonEnabled(False)
         self._table.setAlternatingRowColors(True)
         self._table.setShowGrid(True)
@@ -955,7 +1180,7 @@ class InvoiceScreen(QWidget):
             f"QHeaderView::section {{"
             f" background-color: {_INV_HEADER};"
             f" color: {_INV_TEXT};"
-            f" padding: 6px; border: 1px solid {_INV_GRID};"
+            f" padding: 4px; border: 1px solid {_INV_GRID};"
             " font-weight: 600;"
             " text-align: left;"
             " }}"
@@ -963,11 +1188,11 @@ class InvoiceScreen(QWidget):
 
         for row in range(self._N_LINE_ROWS):
             dt = _cell_line_date()
-            dt.setPlaceholderText("Date")
+            dt.setPlaceholderText("Serviced On")
             self._table.setCellWidget(row, 0, dt)
 
             code = _cell_line_invoice_code()
-            code.setPlaceholderText("Code (click for list)")
+            code.setPlaceholderText("JL # (click for list)")
             code.setToolTip(
                 "Pick an invoice code from the saved Codes list, or type to filter. "
                 "Click or focus to open the dropdown; typing narrows choices live. "
@@ -1000,20 +1225,13 @@ class InvoiceScreen(QWidget):
         self._wire_invoice_line_recalc()
         self._setup_invoice_code_helpers()
 
-        # Column widths: content-based default unless QSettings has saved widths for this company file.
-        self._table.resizeColumnsToContents()
+        # Column widths: DESCRIPTION stretches; others stay narrow (no horizontal scrollbar).
         self._invoice_table_resizing = False
         self._line_widths_persist_timer: QTimer | None = None
         self._invoice_lines_viewport = self._table.viewport()
         self._invoice_lines_viewport.installEventFilter(self)
         if not self._restore_invoice_line_column_widths():
-            self._invoice_table_resizing = True
-            _hh.blockSignals(True)
-            try:
-                self._sync_invoice_line_total_column_width_inner()
-            finally:
-                _hh.blockSignals(False)
-                self._invoice_table_resizing = False
+            self._apply_default_invoice_line_column_widths()
         _hh.sectionResized.connect(self._on_invoice_line_header_section_resized)
 
         # Row heights: thin vertical gutter (no row numbers) with interactive resize between rows.
@@ -1038,60 +1256,96 @@ class InvoiceScreen(QWidget):
 
         play.addWidget(self._table, 1)
 
-        # ── Totals ──
+        # ── Footer strip: message / memo / totals / Save & Close / Save & New / Clear ──
         tot_frame = QFrame()
+        tot_frame.setObjectName("invoiceFooterBand")
+        tot_frame.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         tot_frame.setStyleSheet(
-            f"background-color: {_INV_PANEL}; border: 1px solid {_INV_GRID}; border-radius: 6px;"
+            f"QFrame#invoiceFooterBand {{ background-color: {_INV_PANEL}; "
+            f"border: 1px solid {_INV_GRID}; border-radius: 4px; }}"
         )
         tot = QHBoxLayout(tot_frame)
-        tot.setContentsMargins(14, 10, 14, 10)
-        tot.addStretch(1)
-        tot_col = QVBoxLayout()
-        tot_col.setSpacing(4)
+        tot.setContentsMargins(8, 4, 8, 4)
+        tot.setSpacing(8)
+
+        msg_block = QVBoxLayout()
+        msg_block.setContentsMargins(0, 0, 0, 0)
+        msg_block.setSpacing(1)
+        msg_block.addWidget(self._bar_caption("CUSTOMER MESSAGE"))
+        self._customer_message = QComboBox()
+        self._customer_message.setObjectName("invoiceCustomerMessage")
+        self._customer_message.setEditable(True)
+        self._customer_message.setFixedHeight(22)
+        self._customer_message.addItems(list(_CUSTOMER_MESSAGE_CHOICES))
+        self._customer_message.setToolTip("Printed customer message (saved with the invoice memo).")
+        msg_block.addWidget(self._customer_message)
+        tot.addLayout(msg_block, 1)
+
+        memo_block = QVBoxLayout()
+        memo_block.setContentsMargins(0, 0, 0, 0)
+        memo_block.setSpacing(1)
+        memo_block.addWidget(self._bar_caption("MEMO"))
+        self._memo_edit = QLineEdit()
+        self._memo_edit.setObjectName("invoiceMemoEdit")
+        self._memo_edit.setPlaceholderText("Memo")
+        self._memo_edit.setFixedHeight(22)
+        self._memo_edit.setStyleSheet(self._line_edit_header_style())
+        self._memo_edit.setToolTip("Internal memo (saved with PO/CONTRACT# and NAME/JOB# on the invoice).")
+        memo_block.addWidget(self._memo_edit)
+        tot.addLayout(memo_block, 1)
+
         self._lbl_sub = QLabel("Subtotal: $0.00")
         self._lbl_tax = QLabel("Tax: $0.00")
         self._lbl_total = QLabel("Total: $0.00")
-        for lb in (self._lbl_sub, self._lbl_tax, self._lbl_total):
-            lb.setStyleSheet(f"color: {_INV_TEXT}; font-size: 13px;")
-            lb.setAlignment(Qt.AlignmentFlag.AlignRight)
-        self._lbl_total.setStyleSheet(
-            f"color: {_INV_TEXT}; font-size: 15px; font-weight: 600;"
+        self._lbl_payments = QLabel("Payments Applied: $0.00")
+        self._lbl_balance = QLabel("Balance Due: $0.00")
+        for lb in (self._lbl_sub, self._lbl_tax, self._lbl_total, self._lbl_payments, self._lbl_balance):
+            lb.setStyleSheet(f"color: {_INV_TEXT}; font-size: 12px;")
+            lb.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._lbl_sub.setVisible(False)
+        self._lbl_tax.setVisible(False)
+        self._lbl_balance.setStyleSheet(
+            f"color: {_INV_TEXT}; font-size: 13px; font-weight: 700;"
         )
+        tot_col = QVBoxLayout()
+        tot_col.setContentsMargins(0, 0, 0, 0)
+        tot_col.setSpacing(0)
         tot_col.addWidget(self._lbl_sub)
         tot_col.addWidget(self._lbl_tax)
         tot_col.addWidget(self._lbl_total)
+        tot_col.addWidget(self._lbl_payments)
+        tot_col.addWidget(self._lbl_balance)
         tot.addLayout(tot_col)
+        tot.addWidget(self._btn_save_close)
+        tot.addWidget(self._btn_save)
+        tot.addWidget(self._btn_clear_fields)
         play.addWidget(tot_frame)
 
         self._invoice_intake = InvoiceIntakePanel(self._invoice_tabs, invoice_screen=self)
-        self._invoice_tabs.addTab(page, "Manual Invoice")
+        self._invoice_tabs.addTab(page, "Create Invoices")
         self._invoice_tabs.addTab(self._invoice_intake, "Invoice Intake")
         self._invoice_tabs.setCurrentIndex(0)
         self._invoice_tabs.currentChanged.connect(self._on_invoice_module_subtab_changed)
         outer.addWidget(self._invoice_tabs, 1)
+        self._sync_create_invoices_module_chrome()
 
         self._refresh_company_identity_header()
         self._refresh_browse_state()
 
     def _refresh_company_identity_header(self) -> None:
-        """Show company name / address / contact from ``company_settings`` when any field is set."""
+        """Keep company identity off the form (PDF/print still use ``company_identity_plain_block``)."""
         lbl = getattr(self, "_company_identity_label", None)
         if lbl is None:
             return
+        lbl.setVisible(False)
         if self._ap_conn is None:
             lbl.clear()
-            lbl.setVisible(False)
             return
         try:
             block = company_identity_plain_block(self._ap_conn).strip()
         except (sqlite3.Error, OSError, TypeError, ValueError):
             block = ""
-        if not block:
-            lbl.clear()
-            lbl.setVisible(False)
-            return
         lbl.setText(block)
-        lbl.setVisible(True)
 
     def apply_intake_item_to_draft(
         self,
@@ -1169,6 +1423,7 @@ class InvoiceScreen(QWidget):
             memo_lines.append((file_extract_note or "").strip())
 
         self._invoice_memo_notes = "\n".join(memo_lines).strip()
+        self._set_memo_edit_text(self._invoice_memo_notes)
 
         if ex is not None:
             if ex.date_confidence == "high" and ex.date_display:
@@ -1378,11 +1633,7 @@ class InvoiceScreen(QWidget):
         self._line_widths_persist_timer.start(250)
 
     def _restore_invoice_line_column_widths(self) -> bool:
-        """Restore saved widths for all columns except the last; Total fills the viewport right edge.
-
-        The last column width in settings is ignored — it is always recomputed from the viewport
-        so the Total header stays anchored to the table's right side.
-        """
+        """Restore saved widths; DESCRIPTION always fills leftover viewport width."""
         t = getattr(self, "_table", None)
         if t is None:
             return False
@@ -1399,40 +1650,58 @@ class InvoiceScreen(QWidget):
         n = t.columnCount()
         if len(parts) != n:
             return False
+        desc = self._LINE_DESC_COL
         self._invoice_table_resizing = True
         hh = t.horizontalHeader()
         hh.blockSignals(True)
         try:
-            for i in range(n - 1):
+            for i in range(n):
+                if i == desc:
+                    continue
                 m = self._invoice_col_minimum_width(i)
                 t.setColumnWidth(i, max(m, parts[i]))
-            self._sync_invoice_line_total_column_width_inner()
+            self._sync_invoice_line_description_column_width_inner()
         finally:
             hh.blockSignals(False)
             self._invoice_table_resizing = False
         return True
 
-    def _sync_invoice_line_total_column_width_inner(self) -> None:
-        """Set Total column width so its right edge meets the viewport (>= header minimum).
+    def _apply_default_invoice_line_column_widths(self) -> None:
+        """Narrow SERVICED ON / JL / BOL / RATE / QTY / AMOUNT; DESCRIPTION takes the rest."""
+        t = getattr(self, "_table", None)
+        if t is None:
+            return
+        desc = self._LINE_DESC_COL
+        self._invoice_table_resizing = True
+        hh = t.horizontalHeader()
+        hh.blockSignals(True)
+        try:
+            for i, default in enumerate(_INVOICE_LINE_COL_DEFAULT_PX):
+                if i == desc or default <= 0:
+                    continue
+                m = self._invoice_col_minimum_width(i)
+                t.setColumnWidth(i, max(m, int(default)))
+            self._sync_invoice_line_description_column_width_inner()
+        finally:
+            hh.blockSignals(False)
+            self._invoice_table_resizing = False
 
-        Caller should block horizontal header signals and set ``_invoice_table_resizing`` when needed
-        to avoid re-entrancy from ``sectionResized``.
-        """
+    def _sync_invoice_line_description_column_width_inner(self) -> None:
+        """Set DESCRIPTION width so columns fill the viewport with no horizontal scrollbar."""
         t = getattr(self, "_table", None)
         if t is None:
             return
         n = t.columnCount()
-        if n < 1:
+        desc = self._LINE_DESC_COL
+        if n < 1 or desc < 0 or desc >= n:
             return
-        last = n - 1
         vw = max(0, t.viewport().width())
-        sum_others = sum(t.columnWidth(i) for i in range(last))
-        min_last = self._invoice_col_minimum_width(last)
-        w_last = max(min_last, vw - sum_others)
-        t.setColumnWidth(last, int(w_last))
+        sum_others = sum(t.columnWidth(i) for i in range(n) if i != desc)
+        min_desc = self._invoice_col_minimum_width(desc)
+        t.setColumnWidth(desc, int(max(min_desc, vw - sum_others)))
 
-    def _sync_invoice_line_total_column_width_safe(self) -> None:
-        """Re-anchor Total after show/layout (debounced from ``showEvent``)."""
+    def _sync_invoice_line_description_column_width_safe(self) -> None:
+        """Re-anchor DESCRIPTION after show/layout."""
         if getattr(self, "_invoice_table_resizing", False):
             return
         t = getattr(self, "_table", None)
@@ -1442,7 +1711,7 @@ class InvoiceScreen(QWidget):
         hh = t.horizontalHeader()
         hh.blockSignals(True)
         try:
-            self._sync_invoice_line_total_column_width_inner()
+            self._sync_invoice_line_description_column_width_inner()
         finally:
             hh.blockSignals(False)
             self._invoice_table_resizing = False
@@ -1451,13 +1720,8 @@ class InvoiceScreen(QWidget):
     def _on_invoice_line_header_section_resized(
         self, logical_index: int, old_size: int, new_size: int
     ) -> None:
-        """Resize only the section the user dragged; Total column fills the rest (right edge fixed).
-
-        No pair/cascade: neighbors are not adjusted except Total, which always absorbs slack so the
-        last column stays flush to the viewport right. Dragging the outer edge of Total is ignored
-        (sync overwrites with viewport-derived width).
-        """
-        del old_size  # Qt provides it; pair-resize logic no longer uses it.
+        """Resize the dragged column; DESCRIPTION absorbs leftover width."""
+        del old_size
         if getattr(self, "_invoice_table_resizing", False):
             return
         t = getattr(self, "_table", None)
@@ -1466,17 +1730,16 @@ class InvoiceScreen(QWidget):
         n = t.columnCount()
         if n < 2:
             return
-        last = n - 1
+        desc = self._LINE_DESC_COL
 
         self._invoice_table_resizing = True
         hh = t.horizontalHeader()
         hh.blockSignals(True)
         try:
-            if logical_index < last:
+            if logical_index != desc:
                 m = self._invoice_col_minimum_width(logical_index)
                 t.setColumnWidth(logical_index, max(m, int(new_size)))
-            # Resizing Total (last) via its right edge: do not honor — keep right glued to viewport.
-            self._sync_invoice_line_total_column_width_inner()
+            self._sync_invoice_line_description_column_width_inner()
         finally:
             hh.blockSignals(False)
             self._invoice_table_resizing = False
@@ -1532,6 +1795,12 @@ class InvoiceScreen(QWidget):
         self._lbl_sub.setText(f"Subtotal: ${subtotal:,.2f}")
         self._lbl_tax.setText(f"Tax: ${tax:,.2f}")
         self._lbl_total.setText(f"Total: ${total:,.2f}")
+        paid = float(getattr(self, "_payments_applied", 0.0) or 0.0)
+        bal = round(total - paid, 2)
+        if getattr(self, "_lbl_payments", None) is not None:
+            self._lbl_payments.setText(f"Payments Applied: ${paid:,.2f}")
+        if getattr(self, "_lbl_balance", None) is not None:
+            self._lbl_balance.setText(f"Balance Due: ${bal:,.2f}")
 
     def _invoice_tax_rate_pct(self) -> float:
         """Company default sales tax % (Business hub Tax %); used for Save totals and live footer."""
@@ -1725,6 +1994,9 @@ class InvoiceScreen(QWidget):
             self._po.clear()
             self._job.clear()
             self._invoice_memo_notes = ""
+            self._set_customer_message_text("")
+            self._set_memo_edit_text("")
+            self._payments_applied = 0.0
             self._hide_invoice_intake_handoff_banner()
             self._bill_customer_panel.clear_bill_to()
             self._set_ship_to_plain("")
@@ -1807,6 +2079,9 @@ class InvoiceScreen(QWidget):
             self._po.clear()
             self._job.clear()
             self._invoice_memo_notes = ""
+            self._set_customer_message_text("")
+            self._set_memo_edit_text("")
+            self._payments_applied = 0.0
             self._hide_invoice_intake_handoff_banner()
             self._bill_customer_panel.clear_bill_to()
             self._set_ship_to_plain("")
@@ -1860,10 +2135,12 @@ class InvoiceScreen(QWidget):
                 self._set_date_edit_iso(self._due_date, due_raw)
             else:
                 self._apply_due_date_from_terms()
-            po, job, memo_rest = self._split_memo_po_job((d.get("memo") or "").strip())
+            po, job, message, memo_rest = self._split_memo_po_job((d.get("memo") or "").strip())
             self._po.setText(po)
             self._job.setText(job)
+            self._set_customer_message_text(message)
             self._invoice_memo_notes = memo_rest
+            self._set_memo_edit_text(memo_rest)
             self._bill_customer_panel.reload_customers()
             try:
                 cid = int(d["customer_id"])
@@ -1945,16 +2222,44 @@ class InvoiceScreen(QWidget):
             )
         self._current_invoice_id = invoice_id
         try:
+            tot = float(d.get("total") or 0.0)
+        except (TypeError, ValueError):
+            tot = 0.0
+        try:
             bd = float(d.get("balance_due") or 0.0)
         except (TypeError, ValueError):
             bd = None
+        if bd is None:
+            self._payments_applied = 0.0
+        else:
+            self._payments_applied = max(0.0, round(tot - float(bd), 2))
         raw_st = d.get("status")
         st_str = str(raw_st).strip() if raw_st is not None else ""
         self._sync_invoice_status_badge(status=st_str or None, balance_due=bd)
+        self._recalc_invoice_footer_from_grid()
 
-    def _split_memo_po_job(self, memo: str) -> tuple[str, str, str]:
-        """Split stored memo into PO, Job, and remaining free text (matches :meth:`_build_invoice_memo`)."""
-        po, job = "", ""
+    def _set_customer_message_text(self, text: str) -> None:
+        w = getattr(self, "_customer_message", None)
+        if w is None:
+            return
+        raw = (text or "").strip()
+        idx = w.findText(raw)
+        if idx < 0 and raw:
+            w.addItem(raw)
+            idx = w.findText(raw)
+        w.setCurrentIndex(max(0, idx))
+        le = w.lineEdit()
+        if le is not None:
+            le.setText(raw)
+
+    def _set_memo_edit_text(self, text: str) -> None:
+        w = getattr(self, "_memo_edit", None)
+        if w is not None:
+            w.setText(text or "")
+
+    def _split_memo_po_job(self, memo: str) -> tuple[str, str, str, str]:
+        """Split stored memo into PO, Job, customer message, and remaining free text."""
+        po, job, message = "", "", ""
         extra: list[str] = []
         for raw in (memo or "").split("\n"):
             line = raw.strip()
@@ -1965,9 +2270,11 @@ class InvoiceScreen(QWidget):
                 po = line.split(":", 1)[1].strip()
             elif low.startswith("job:"):
                 job = line.split(":", 1)[1].strip()
+            elif low.startswith("message:"):
+                message = line.split(":", 1)[1].strip()
             else:
                 extra.append(raw)
-        return po, job, "\n".join(extra).strip()
+        return po, job, message, "\n".join(extra).strip()
 
     def _on_reverse_invoice(self) -> None:
         self._refresh_browse_state()
@@ -2001,11 +2308,16 @@ class InvoiceScreen(QWidget):
         parts: list[str] = []
         po = self._po.text().strip()
         job = self._job.text().strip()
+        msg_w = getattr(self, "_customer_message", None)
+        message = msg_w.currentText().strip() if msg_w is not None else ""
+        memo_w = getattr(self, "_memo_edit", None)
+        extra = (memo_w.text() if memo_w is not None else self._invoice_memo_notes or "").strip()
         if po:
             parts.append(f"PO: {po}")
         if job:
             parts.append(f"Job: {job}")
-        extra = (self._invoice_memo_notes or "").strip()
+        if message:
+            parts.append(f"Message: {message}")
         if extra:
             parts.append(extra)
         return "\n".join(parts)
@@ -2148,18 +2460,14 @@ class InvoiceScreen(QWidget):
         """Write current invoice to SQLite only; never opens print/PDF/file dialogs."""
         return self._try_persist_invoice()
 
-    def _on_save_invoice(self) -> None:
-        # Phantom dialog fix: only a real Save button click may persist from this slot
-        # (sender None is rejected — avoids queued/spurious clicked without a mouse/keyboard source).
-        if self.sender() is not self._btn_save:
-            return
+    def _persist_invoice_and_optional_pdf(self) -> tuple[bool, int | None, bool]:
+        """Save to DB (+ optional prefs PDF). Returns ``(ok, invoice_id, was_new)``."""
         was_new = self._current_invoice_id is None
         ok, msg, inv_id = self._save_invoice_data_only()
         if not ok:
             self._invoice_feedback_message(msg)
-            return
+            return False, None, was_new
         assert inv_id is not None and self._ap_conn is not None
-        # Persist to SQLite first; PDF folder is optional (Export PDF always available after save).
         folder = ensure_invoice_output_folder(self)
         if folder:
             num = self._inv_number.text().strip()
@@ -2181,10 +2489,35 @@ class InvoiceScreen(QWidget):
                 "Edit → Preferences → Invoice Options: set a PDF folder to auto-save on Save."
             )
         self._refresh_browse_state()
+        return True, inv_id, was_new
+
+    def _on_save_invoice(self) -> None:
+        # Phantom dialog fix: only a real Save & New button click may persist from this slot.
+        if self.sender() is not self._btn_save:
+            return
+        ok, inv_id, was_new = self._persist_invoice_and_optional_pdf()
+        if not ok or inv_id is None:
+            return
         if was_new:
             self._go_to_new_invoice_draft()
         else:
             self._load_invoice_into_form(inv_id)
+
+    def _on_save_close_invoice(self) -> None:
+        if self.sender() is not self._btn_save_close:
+            return
+        ok, inv_id, _was_new = self._persist_invoice_and_optional_pdf()
+        if not ok or inv_id is None:
+            return
+        self._load_invoice_into_form(inv_id)
+
+    def _on_ribbon_save_invoice(self) -> None:
+        if self.sender() is not self._btn_ribbon_save:
+            return
+        ok, inv_id, _was_new = self._persist_invoice_and_optional_pdf()
+        if not ok or inv_id is None:
+            return
+        self._load_invoice_into_form(inv_id)
 
     def _on_export_pdf_as(self) -> None:
         if self.sender() is not self._btn_export_pdf:
@@ -2290,18 +2623,18 @@ class InvoiceScreen(QWidget):
                 QSizePolicy.Policy.Preferred,
             )
         lay = QVBoxLayout(fr)
-        lay.setContentsMargins(8, 6, 8, 8)
-        lay.setSpacing(4)
+        lay.setContentsMargins(6, 2, 6, 4)
+        lay.setSpacing(2)
         cap = QLabel(caption)
-        cap.setStyleSheet(f"color: {_INV_TEXT}; font-size: 12px; font-weight: 600;")
+        cap.setStyleSheet(f"color: {_INV_TEXT}; font-size: 11px; font-weight: 600; background: transparent;")
         te = QPlainTextEdit()
         te.setPlaceholderText(caption)
         te.setFixedHeight(
             height_px if height_px is not None else _INVOICE_BILL_TO_TEXT_HEIGHT_PX
         )
         te.setStyleSheet(
-            f"QPlainTextEdit {{ background: {_INV_PANEL}; color: {_INV_TEXT}; "
-            f"border: 1px solid {_INV_GRID}; border-radius: 4px; padding: 4px; }}"
+            f"QPlainTextEdit {{ background: {WORKFLOW_INPUT_BG}; color: {_INV_TEXT}; "
+            f"border: 1px solid {_INV_GRID}; border-radius: 4px; padding: 2px; }}"
         )
         te.setToolTip(
             "Ship To is saved with this invoice. Selecting a customer copies Bill To "

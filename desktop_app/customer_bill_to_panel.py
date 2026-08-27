@@ -95,6 +95,7 @@ class CustomerBillToPanel(QFrame):
         bill_plain_height_px: int | None = None,
         combo_min_width_px: int | None = None,
         show_new_customer_button: bool = True,
+        show_combo_in_panel: bool = True,
     ) -> None:
         super().__init__(parent)
         self._conn: sqlite3.Connection | None = ap_conn
@@ -105,10 +106,15 @@ class CustomerBillToPanel(QFrame):
             "border-radius: 6px; }}"
         )
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(8, 6, 8, 8)
-        lay.setSpacing(4)
+        if show_combo_in_panel:
+            lay.setContentsMargins(8, 6, 8, 8)
+            lay.setSpacing(4)
+        else:
+            # Create Invoices reparents the combo onto the Customer:Job bar; keep Bill To short.
+            lay.setContentsMargins(6, 2, 6, 4)
+            lay.setSpacing(2)
         cap = QLabel("Bill To")
-        cap.setStyleSheet(f"color: {_INV_TEXT}; font-size: 12px; font-weight: 600; background: transparent;")
+        cap.setStyleSheet(f"color: {_INV_TEXT}; font-size: 11px; font-weight: 600; background: transparent;")
         lay.addWidget(cap)
 
         row = QHBoxLayout()
@@ -125,7 +131,7 @@ class CustomerBillToPanel(QFrame):
         )
         le = self._combo.lineEdit()
         if le is not None:
-            le.setPlaceholderText("Type to find customer…")
+            le.setPlaceholderText("Type to find customer or job…")
             le.installEventFilter(self)
         comp = self._combo.completer()
         if comp is not None:
@@ -147,10 +153,14 @@ class CustomerBillToPanel(QFrame):
         )
         self._btn_new.clicked.connect(self._on_new_customer)
         self._btn_new.setVisible(show_new_customer_button)
-        row.addWidget(self._combo, 1)
-        if show_new_customer_button:
+        if show_combo_in_panel:
+            row.addWidget(self._combo, 1)
+            if show_new_customer_button:
+                row.addWidget(self._btn_new, 0)
+            lay.addLayout(row)
+        elif show_new_customer_button:
             row.addWidget(self._btn_new, 0)
-        lay.addLayout(row)
+            lay.addLayout(row)
 
         self._bill_te = QPlainTextEdit()
         self._bill_te.setPlaceholderText("Bill To")
@@ -175,7 +185,13 @@ class CustomerBillToPanel(QFrame):
             self.reload_customers()
 
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:
-        le = self._combo.lineEdit()
+        combo = getattr(self, "_combo", None)
+        if combo is None:
+            return super().eventFilter(obj, event)
+        try:
+            le = combo.lineEdit()
+        except RuntimeError:
+            return super().eventFilter(obj, event)
         if le is not None and obj is le:
             et = event.type()
             if et == QEvent.Type.FocusIn:
@@ -209,12 +225,24 @@ class CustomerBillToPanel(QFrame):
         """Open customer list on first focus (after line edit receives focus)."""
         if self._filling_combo:
             return
-        le = self._combo.lineEdit()
+        combo = getattr(self, "_combo", None)
+        if combo is None:
+            return
+        try:
+            le = combo.lineEdit()
+            count = combo.count()
+        except RuntimeError:
+            # Combo was reparented onto Create Invoices Customer:Job bar; C++ object
+            # may already be gone during widget teardown / atexit.
+            return
         if le is None or not le.hasFocus():
             return
-        if self._conn is None or self._combo.count() < 1:
+        if self._conn is None or count < 1:
             return
-        self._combo.showPopup()
+        try:
+            combo.showPopup()
+        except RuntimeError:
+            return
 
     def bill_text_edit(self) -> QPlainTextEdit:
         return self._bill_te
@@ -239,6 +267,10 @@ class CustomerBillToPanel(QFrame):
     def selected_customer_id(self) -> int | None:
         return self._customer_id
 
+    def customer_combo(self) -> QComboBox:
+        """Customer:Job combo (may be placed outside this panel by Create Invoices)."""
+        return self._combo
+
     def set_connection(self, conn: sqlite3.Connection | None) -> None:
         self._conn = conn
         self._apply_conn_state()
@@ -254,8 +286,8 @@ class CustomerBillToPanel(QFrame):
             )
         else:
             tip = (
-                "Pick or type a customer; jobs show as Parent > Job. Bill To fills from Customer Center. "
-                "Use **New customer…** if no match."
+                "Customer:Job — pick or type a customer; jobs show as Parent > Job. "
+                "Bill To fills from Customer Center. Use **New Customer** if no match."
             )
         self.setToolTip(tip)
         self._combo.setToolTip(tip)
@@ -279,7 +311,7 @@ class CustomerBillToPanel(QFrame):
         self._combo.setCurrentIndex(-1)
         if le is not None:
             le.setText(cur_text)
-            le.setPlaceholderText("Type to find customer…")
+            le.setPlaceholderText("Type to find customer or job…")
         self._combo.blockSignals(False)
         self._filling_combo = False
         if keep_id is not None and self._conn is not None:
@@ -349,6 +381,7 @@ def build_customer_bill_to_panel(
     bill_plain_height_px: int | None = None,
     combo_min_width_px: int | None = None,
     show_new_customer_button: bool = True,
+    show_combo_in_panel: bool = True,
 ) -> tuple[CustomerBillToPanel, QPlainTextEdit]:
     """Build framed Bill To + return ``(panel, plain_text_edit)`` for layout/tests."""
     panel = CustomerBillToPanel(
@@ -358,5 +391,6 @@ def build_customer_bill_to_panel(
         bill_plain_height_px=bill_plain_height_px,
         combo_min_width_px=combo_min_width_px,
         show_new_customer_button=show_new_customer_button,
+        show_combo_in_panel=show_combo_in_panel,
     )
     return panel, panel.bill_text_edit()
