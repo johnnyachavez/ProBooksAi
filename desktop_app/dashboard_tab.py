@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from desktop_app.qt_mnemonic import escape_ampersand_for_qt
 from probooksai import business
 
 # Light canvas like Create Invoices / Enter Bills — captions sit on white, not a navy bar.
@@ -371,7 +372,7 @@ class _HomeShortcut(QToolButton):
         self.nav_key = key
         self._badge = 0
         self.setObjectName(f"homeShortcut_{key}")
-        self.setText(caption)
+        self.setText(escape_ampersand_for_qt(caption))
         self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
         self.setIcon(_home_icon(kind))
         self.setIconSize(QSize(_ICON_PX, _ICON_PX))
@@ -380,8 +381,8 @@ class _HomeShortcut(QToolButton):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setToolTip(tooltip)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self.setFixedWidth(108)
-        self.setMinimumHeight(92)
+        self.setFixedWidth(122)
+        self.setMinimumHeight(102)
         self.setStyleSheet(
             f"QToolButton {{ background: transparent; border: none; color: {_HOME_TEXT}; "
             f"font-size: 11px; padding: 4px 2px 6px 2px; }}"
@@ -562,7 +563,7 @@ class DashboardTab(QWidget):
         grid = QGridLayout()
         grid.setSpacing(12)
         grid.setColumnStretch(0, 3)
-        grid.setColumnStretch(1, 2)
+        grid.setColumnStretch(1, 3)
 
         vendors = _HomeSection("VENDORS", "homeSectionVendors")
         v_row = QHBoxLayout()
@@ -599,13 +600,13 @@ class DashboardTab(QWidget):
         c_row.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self._btn_coa = self._shortcut(
             "coa",
-            "Chart of Accounts",
+            "Chart of\nAccounts",
             "coa",
             "Open Chart of Accounts.",
         )
         self._btn_codes = self._shortcut(
             "codes",
-            "Items & Services",
+            "Items &\nServices",
             "items",
             "Open Codes (invoice items and services).",
         )
@@ -622,13 +623,13 @@ class DashboardTab(QWidget):
         cust_row.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self._btn_invoices = self._shortcut(
             "invoices",
-            "Create Invoices",
+            "Create\nInvoices",
             "invoice",
             "Open Create Invoices.",
         )
         self._btn_payments = self._shortcut(
             "payments",
-            "Receive Payments",
+            "Receive\nPayments",
             "payments",
             "Open Receive Payments (Customer Payment).",
         )
@@ -647,7 +648,7 @@ class DashboardTab(QWidget):
         b_grid.setVerticalSpacing(8)
         self._btn_deposits = self._shortcut(
             "deposits",
-            "Record Deposits",
+            "Record\nDeposits",
             "deposits",
             "Open Make Deposits (Payments to Deposit).",
         )
@@ -659,13 +660,13 @@ class DashboardTab(QWidget):
         )
         self._btn_checks = self._shortcut(
             "checks",
-            "Write Checks",
+            "Write\nChecks",
             "checks",
             "Open Write Checks.",
         )
         self._btn_register = self._shortcut(
             "register",
-            "Check Register",
+            "Check\nRegister",
             "register",
             "Open Bank Register.",
         )

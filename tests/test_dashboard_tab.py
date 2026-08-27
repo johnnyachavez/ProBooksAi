@@ -40,6 +40,10 @@ def db(tmp_path: Path) -> BankDatabase:
     b.close()
 
 
+def _caption_plain(btn: QToolButton) -> str:
+    return (btn.text() or "").replace("\n", " ").replace("&&", "&")
+
+
 _DAILY_LOOP = (
     ("homeShortcut_invoices", "Create Invoices"),
     ("homeShortcut_payments", "Receive Payments"),
@@ -68,9 +72,12 @@ def test_home_layout_has_qb_boxes_and_daily_loop_captions(
     assert "BANKING" in labels
     assert "Account Balances" in labels
     assert "COMPANY NAME" in labels
-    btns = {b.objectName(): b.text() for b in w.findChildren(QToolButton)}
+    btns = {b.objectName(): _caption_plain(b) for b in w.findChildren(QToolButton)}
     for name, caption in _DAILY_LOOP + _OTHER_EXISTING:
         assert btns[name] == caption
+    codes = w.findChild(QToolButton, "homeShortcut_codes")
+    assert codes is not None
+    assert "&&" in codes.text()
     w.close()
 
 
