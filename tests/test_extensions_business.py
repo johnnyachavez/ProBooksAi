@@ -1561,3 +1561,30 @@ def test_list_vendor_center_transactions_bills_and_payments(db):
     assert pay["amount"] == pytest.approx(40.0)
     all_rows = business.list_vendor_center_transactions(db._conn, None)
     assert len(all_rows) >= 2
+
+
+def test_list_customer_center_transactions_invoices_and_payments(db):
+    c1 = business.add_customer(db._conn, "Harbor Logistics")
+    iid = business.create_invoice(
+        db._conn,
+        c1,
+        "INV-9",
+        "2024-06-01",
+        due_date="2024-07-01",
+        lines=[{"description": "Haul", "qty": 1, "rate": 100.0}],
+    )
+    business.record_ar_payment(
+        db._conn, c1, "2024-06-15", 40.0, [(iid, 40.0)], method="Check", reference="1001"
+    )
+    rows = business.list_customer_center_transactions(db._conn, c1)
+    kinds = {r["kind"] for r in rows}
+    assert kinds == {"invoice", "payment"}
+    inv = next(r for r in rows if r["kind"] == "invoice")
+    pay = next(r for r in rows if r["kind"] == "payment")
+    assert inv["num"] == "INV-9"
+    assert inv["open_balance"] == pytest.approx(60.0)
+    assert pay["type"] == "Pmt -Check"
+    assert pay["num"] == "1001"
+    assert pay["amount"] == pytest.approx(40.0)
+    all_rows = business.list_customer_center_transactions(db._conn, None)
+    assert len(all_rows) >= 2

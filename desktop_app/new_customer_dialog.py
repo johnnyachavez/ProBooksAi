@@ -37,13 +37,15 @@ def run_new_customer_dialog(
     *,
     initial_name: str = "",
     show_success_message: bool = True,
+    initial_as_job: bool = False,
+    initial_parent_customer_id: int | None = None,
 ) -> int | None:
     """Modal new-customer flow. Returns new ``customers.id`` or ``None`` if cancelled / not saved."""
     d = QDialog(parent)
-    d.setWindowTitle("New customer")
+    d.setWindowTitle("Add Job" if initial_as_job else "New customer")
     d.setToolTip(
-        "Create a customer record used for AR invoices, payments, and aging. "
-        "Same data as Customers tab (File → Backup / Restore, probooks.backup)."
+        "Create a customer or job record used for AR invoices, payments, and aging. "
+        "Same data as Customer Center (File → Backup / Restore, probooks.backup)."
     )
     f = QFormLayout(d)
     type_cb = QComboBox()
@@ -74,6 +76,19 @@ def run_new_customer_dialog(
 
     type_cb.currentIndexChanged.connect(lambda _i=None: sync_parent_visibility())
     refill_parent_cb()
+    if initial_as_job:
+        type_cb.setCurrentIndex(1)
+        if initial_parent_customer_id is not None:
+            ix = next(
+                (
+                    i
+                    for i in range(parent_cb.count())
+                    if coerce_combo_int_id(parent_cb.itemData(i)) == int(initial_parent_customer_id)
+                ),
+                -1,
+            )
+            if ix >= 0:
+                parent_cb.setCurrentIndex(ix)
     sync_parent_visibility()
 
     ne = QLineEdit((initial_name or "").strip())

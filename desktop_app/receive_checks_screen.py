@@ -740,6 +740,15 @@ class ReceiveChecksScreen(QWidget):
     def _selected_customer_id(self) -> Optional[int]:
         return coerce_combo_int_id(self._customer_filter.currentData())
 
+    def select_customer_by_id(self, customer_id: int) -> None:
+        """Tiny Customer Center hook: Received From = *customer_id*."""
+        self._populate_customer_filter()
+        want = int(customer_id)
+        for i in range(self._customer_filter.count()):
+            if coerce_combo_int_id(self._customer_filter.itemData(i)) == want:
+                self._customer_filter.setCurrentIndex(i)
+                return
+
     def _on_received_from_changed(self, _index: int = 0) -> None:
         self._rebuild_table()
         if self._btn_auto_apply.isChecked() and self._pay_amount.value() > 0.005:

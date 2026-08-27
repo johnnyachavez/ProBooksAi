@@ -1343,6 +1343,11 @@ class MainWindow(QMainWindow):
         self._vendors_tab.openBillRequested.connect(self._on_vendor_center_open_bill)
         self._vendors_tab.openPaymentRequested.connect(self._on_vendor_center_open_payment)
         self._vendors_tab.vendorRecordsChanged.connect(self._on_vendor_center_records_changed)
+        self._customers_tab.createInvoicesRequested.connect(self._on_customer_center_create_invoices)
+        self._customers_tab.receivePaymentsRequested.connect(self._on_customer_center_receive_payments)
+        self._customers_tab.openInvoiceRequested.connect(self._on_customer_center_open_invoice)
+        self._customers_tab.openPaymentRequested.connect(self._on_customer_center_open_payment)
+        self._customers_tab.customerRecordsChanged.connect(self._on_customer_center_records_changed)
 
     def _on_main_tab_changing(self, new_index: int) -> None:
         """Guard switching away from a screen that has unsaved invoice changes."""
@@ -1381,6 +1386,8 @@ class MainWindow(QMainWindow):
         self._invoice_screen.openInvoicesChanged.connect(
             self._receive_payments_screen._load_invoices_from_db
         )
+        self._invoice_screen.openInvoicesChanged.connect(self._customers_tab._refresh)
+        self._receive_payments_screen.arPaymentPosted.connect(self._customers_tab._refresh)
         self._invoice_codes_screen.codesChanged.connect(
             self._invoice_screen.refresh_invoice_item_codes
         )
@@ -1441,8 +1448,9 @@ class MainWindow(QMainWindow):
                 + _main_tab_bar_db_hint
             ),
             (
-                "Customers: customer master (detail + list), balances and activity; export customers CSV (F5). "
-                "Invoices, payments, and AR exports use Invoices, Receive Payments, and Reports (Business hub holds Rules, Payroll, Tax % only)."
+                "Customers: Customer Center — list, jobs, Customer Information, invoices and payments (F5). "
+                "New Customer & Job, New Transactions (Create Invoices / Receive Payments), Excel CSV. "
+                "Invoices and payments use Invoices, Receive Payments, and Reports (Business hub holds Rules, Payroll, Tax % only)."
                 + _tab_bar_csv_excel_hint
                 + _main_tab_bar_db_hint
             ),
@@ -2749,6 +2757,76 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_pay_bills_screen"):
             try:
                 self._pay_bills_screen.reload()
+            except Exception:
+                pass
+
+    def _on_customer_center_create_invoices(self, customer_id: int) -> None:
+        if not hasattr(self, "_tabs") or not hasattr(self, "_invoice_screen"):
+            return
+        if customer_id:
+            self._invoice_screen.prepare_new_invoice_for_customer(int(customer_id))
+        idx = self._tabs.indexOf(self._invoice_screen)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+
+    def _on_customer_center_receive_payments(self, customer_id: int) -> None:
+        if not hasattr(self, "_tabs") or not hasattr(self, "_receive_payments_screen"):
+            return
+        try:
+            self._receive_payments_screen._load_invoices_from_db()
+        except Exception:
+            pass
+        if customer_id:
+            self._receive_payments_screen.select_customer_by_id(int(customer_id))
+        idx = self._tabs.indexOf(self._receive_payments_screen)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+
+    def _on_customer_center_open_invoice(self, invoice_id: int) -> None:
+        if not hasattr(self, "_tabs") or not hasattr(self, "_invoice_screen"):
+            return
+        idx = self._tabs.indexOf(self._invoice_screen)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+        self._invoice_screen.open_invoice_by_id(int(invoice_id))
+
+    def _on_customer_center_open_payment(self, payment_id: int) -> None:
+        """Payment row → Receive Payments for that customer (same company file)."""
+        if not hasattr(self, "_tabs") or not hasattr(self, "_receive_payments_screen"):
+            return
+        conn = getattr(getattr(self, "_bank_db", None), "_conn", None)
+        cid = 0
+        if conn is not None:
+            try:
+                row = conn.execute(
+                    "SELECT customer_id FROM ar_payments WHERE id = ?",
+                    (int(payment_id),),
+                ).fetchone()
+            except Exception:
+                row = None
+            if row is not None:
+                cid = int(row["customer_id"] or 0)
+        try:
+            self._receive_payments_screen._load_invoices_from_db()
+        except Exception:
+            pass
+        if cid:
+            self._receive_payments_screen.select_customer_by_id(cid)
+        idx = self._tabs.indexOf(self._receive_payments_screen)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+
+    def _on_customer_center_records_changed(self) -> None:
+        inv = getattr(self, "_invoice_screen", None)
+        if inv is not None:
+            try:
+                inv._bill_customer_panel.reload_customers()
+            except Exception:
+                pass
+        pay = getattr(self, "_receive_payments_screen", None)
+        if pay is not None:
+            try:
+                pay._load_invoices_from_db()
             except Exception:
                 pass
 

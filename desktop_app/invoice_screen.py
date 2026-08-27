@@ -592,6 +592,15 @@ class InvoiceScreen(QWidget):
     def selected_bill_to_customer_id(self) -> Optional[int]:
         return self._bill_customer_panel.selected_customer_id()
 
+    def prepare_new_invoice_for_customer(self, customer_id: int) -> None:
+        """Tiny Customer Center hook: new invoice draft with Bill To *customer_id*."""
+        if getattr(self, "_invoice_tabs", None) is not None:
+            self._invoice_tabs.setCurrentIndex(0)
+        self._go_to_new_invoice_draft()
+        if customer_id and self._ap_conn is not None:
+            self._bill_customer_panel.reload_customers()
+            self._bill_customer_panel.select_customer_by_id(int(customer_id))
+
     def _line_edit_header_style(self) -> str:
         return (
             f"QLineEdit {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_INV_GRID}; "
