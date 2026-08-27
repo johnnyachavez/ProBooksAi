@@ -169,12 +169,17 @@ def _flag_pixmap(color: str, size: int = 16) -> QPixmap:
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    p.setPen(QPen(QColor("#4A5560"), 1.2))
-    p.drawLine(QPointF(4, 2), QPointF(4, size - 2))
+    p.setPen(QPen(QColor("#4A5560"), 1.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+    p.drawLine(QPointF(3.5, 1.5), QPointF(3.5, size - 1.5))
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(QColor(color))
     flag = QPolygonF(
-        [QPointF(5, 2), QPointF(size - 2, 6), QPointF(5, 11)]
+        [
+            QPointF(4.5, 2),
+            QPointF(size - 1.5, 5),
+            QPointF(size - 3, 8),
+            QPointF(4.5, 11),
+        ]
     )
     p.drawPolygon(flag)
     p.end()
