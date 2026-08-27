@@ -23,33 +23,32 @@ def build_bill_print_html(
     vendor_name: str = "",
     vendor_block_plain: str = "",
     memo_plain: str = "",
-    line_rows: list[tuple[str, str, str, str, str]] | None = None,
+    line_rows: list[tuple[str, str, str, str]] | None = None,
     total_plain: str = "",
     min_body_rows: int = DEFAULT_MIN_LINE_ROWS,
 ) -> str:
     """
     ``line_rows`` tuples are
-    ``(line_date, ticket_ref, amount, memo, customer_job)`` — display strings.
+    ``(account, amount, memo, customer_job)`` — display strings.
     """
     rows = list(line_rows or [])
     n = max(len(rows), max(0, min_body_rows))
     body_html: list[str] = []
     for i in range(n):
         if i < len(rows):
-            dt, tk, amt, memo, job = rows[i]
+            acct, amt, memo, job = rows[i]
             cells = [
-                _he((dt or "").strip()),
-                _he((tk or "").strip()),
+                _he((acct or "").strip()),
                 _he((amt or "").strip()),
                 _he((memo or "").strip()),
                 _he((job or "").strip()),
             ]
         else:
-            cells = ["&#160;"] * 5
+            cells = ["&#160;"] * 4
         body_html.append(
             "<tr>"
             + "".join(
-                f'<td style="text-align:{"right" if j == 2 else "left"}; vertical-align:top;">{c}</td>'
+                f'<td style="text-align:{"right" if j == 1 else "left"}; vertical-align:top;">{c}</td>'
                 for j, c in enumerate(cells)
             )
             + "</tr>"
@@ -117,15 +116,14 @@ def build_bill_print_html(
         '<table width="100%" cellspacing="0" cellpadding="4" '
         'style="border-collapse:collapse; margin-top:12px; border:1px solid #000;">',
         "<thead><tr>",
-        '<th style="text-align:center; font-weight:bold; border:1px solid #000;">Date</th>',
-        '<th style="text-align:center; font-weight:bold; border:1px solid #000;">Ticket #</th>',
+        '<th style="text-align:center; font-weight:bold; border:1px solid #000;">Account</th>',
         '<th style="text-align:center; font-weight:bold; border:1px solid #000;">Amount</th>',
         '<th style="text-align:center; font-weight:bold; border:1px solid #000;">Memo</th>',
         '<th style="text-align:center; font-weight:bold; border:1px solid #000;">Customer:Job</th>',
         "</tr></thead><tbody>",
         *body_html,
         "<tr>",
-        '<td colspan="3" style="border:1px solid #000; border-top:2px solid #000;">&#160;</td>',
+        '<td colspan="2" style="border:1px solid #000; border-top:2px solid #000;">&#160;</td>',
         '<td colspan="2" style="border:2px solid #000; padding:10px 12px; '
         'border-top:2px solid #000; vertical-align:middle;">',
         '<table width="100%" cellspacing="0" cellpadding="0" style="border:none;">',

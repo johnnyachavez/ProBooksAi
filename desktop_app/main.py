@@ -1203,6 +1203,7 @@ class MainWindow(QMainWindow):
         self._invoice_screen = InvoiceScreen(ap_conn=conn)
         self._invoice_codes_screen = InvoiceCodesScreen(ap_conn=conn, coa_db=self._coa_db)
         self._enter_bills_screen = EnterBillsScreen(ap_conn=conn)
+        self._enter_bills_screen.payBillsRequested.connect(self._on_enter_bills_pay_bill)
         self._pay_bills_screen = PayBillsScreen(
             ap_conn=conn, bank_db=self._bank_db
         )
@@ -1331,12 +1332,19 @@ class MainWindow(QMainWindow):
         if old_index == new_index:
             return
         old_widget = self._tabs.widget(old_index)
-        if isinstance(old_widget, InvoiceScreen) and old_widget._is_form_dirty():
+        is_dirty = getattr(old_widget, "_is_form_dirty", None)
+        confirm_leave = getattr(old_widget, "_confirm_leave_loaded_invoice", None)
+        if (
+            isinstance(old_widget, InvoiceScreen)
+            and callable(is_dirty)
+            and callable(confirm_leave)
+            and is_dirty()
+        ):
             # Switch back before showing the dialog so the form is visible
             self._tabs.blockSignals(True)
             self._tabs.setCurrentIndex(old_index)
             self._tabs.blockSignals(False)
-            if not old_widget._confirm_leave_loaded_invoice():
+            if not confirm_leave():
                 # User chose Stay — stay on the invoice screen
                 return
             # User saved or discarded — proceed to the requested tab
@@ -2616,6 +2624,8 @@ class MainWindow(QMainWindow):
             self._journal_tab.refresh_coa(self._coa_db.display_list())
         if hasattr(self, "_invoice_codes_screen"):
             self._invoice_codes_screen.refresh_coa_combos()
+        if hasattr(self, "_enter_bills_screen"):
+            self._enter_bills_screen.refresh_lookups()
 
     def _on_dashboard_navigate(self, target: str) -> None:
         """Dashboard quick-action buttons → jump to the requested tab."""
@@ -2631,6 +2641,14 @@ class MainWindow(QMainWindow):
             idx = self._tabs.indexOf(widget)
             if idx >= 0:
                 self._tabs.setCurrentIndex(idx)
+
+    def _on_enter_bills_pay_bill(self) -> None:
+        """Enter Bills ribbon **Pay Bill** → Pay Bills tab."""
+        if not hasattr(self, "_tabs") or not hasattr(self, "_pay_bills_screen"):
+            return
+        idx = self._tabs.indexOf(self._pay_bills_screen)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
 
     def _on_tools_invoice(self) -> None:
         """Tools → Invoice: top-level Invoices tab."""
