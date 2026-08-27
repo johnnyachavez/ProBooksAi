@@ -122,6 +122,16 @@ def test_invoice_screen_line_grid_and_headers(qapp: QApplication) -> None:
     assert isinstance(t.cellWidget(0, 4), QDoubleSpinBox)
     assert isinstance(t.cellWidget(0, 5), QDoubleSpinBox)
     assert isinstance(t.cellWidget(0, 6), QDoubleSpinBox)
+    for col in range(4):
+        cell = t.cellWidget(0, col)
+        assert isinstance(cell, QLineEdit)
+        assert (cell.placeholderText() or "").strip() == ""
+        assert (cell.text() or "").strip() == ""
+    for col in (4, 5, 6):
+        spin = t.cellWidget(0, col)
+        assert isinstance(spin, QDoubleSpinBox)
+        assert spin.value() == 0.0
+        assert (spin.specialValueText() or "").strip() == ""
 
 
 def test_invoice_line_table_column_widths_persist_in_qsettings(
@@ -971,7 +981,7 @@ def test_invoice_line_code_widget_is_dropdown_typeahead_backed_by_codes_table(
 def test_invoice_line_code_cell_tooltip_documents_dropdown_typeahead(
     qapp: QApplication, tmp_path
 ) -> None:
-    """Code cell tooltip and placeholder mention the dropdown + type-ahead behavior."""
+    """Code cell tooltip documents dropdown + type-ahead; empty cell has no hint text."""
     db_path = tmp_path / "inv_code_tooltip.db"
     db = BankDatabase(str(db_path))
     apply_extensions(db._conn)
@@ -980,7 +990,8 @@ def test_invoice_line_code_cell_tooltip_documents_dropdown_typeahead(
     qapp.processEvents()
     code_w = w._table.cellWidget(0, 1)
     assert isinstance(code_w, _InvoiceCodeLineEdit)
-    assert "click" in code_w.placeholderText().lower() or "list" in code_w.placeholderText().lower()
+    assert (code_w.placeholderText() or "").strip() == ""
+    assert "click" not in (code_w.text() or "").lower()
     tip = code_w.toolTip()
     assert "saved Codes" in tip
     assert "type to filter" in tip or "narrows" in tip
@@ -1231,6 +1242,57 @@ def test_create_invoices_qb_header_layout(qapp: QApplication) -> None:
     assert "Total: $0.00" in w._lbl_total.text()
     assert "Payments Applied: $0.00" in w._lbl_payments.text()
     assert "Balance Due: $0.00" in w._lbl_balance.text()
+    job_bar = w.findChild(QFrame, "invoiceCustomerJobBar")
+    assert job_bar is not None
+    bar_ss = job_bar.styleSheet().lower()
+    assert "#1e4a78" not in bar_ss
+    assert "#ffffff" in bar_ss
+    cj = w.findChild(QLabel, "invoiceCustomerJobCaption")
+    assert cj is not None
+    cap_ss = cj.styleSheet().lower()
+    assert "#f3f6fa" not in cap_ss
+    assert "#4a5560" in cap_ss or "#1a1a1a" in cap_ss
+    title = w.findChild(QLabel, "createInvoicesTitle")
+    assert title is not None
+    title_ss = title.styleSheet().lower()
+    assert "#1e4a78" not in title_ss
+    assert "transparent" in title_ss or "#ffffff" in title_ss
+    assert "#3d4a54" in title_ss
+
+
+def test_create_invoices_empty_line_cells_are_blank(qapp: QApplication) -> None:
+    """Column headers name the fields; empty line cells have no gray hint and no $0.00 filler."""
+    w = InvoiceScreen()
+    w.show()
+    qapp.processEvents()
+    t = w.findChild(QTableWidget, "invoiceLinesTable")
+    assert t is not None
+    assert t.horizontalHeaderItem(0).text() == "SERVICED ON"
+    assert t.horizontalHeaderItem(1).text() == "JL #"
+    for col in range(4):
+        cell = t.cellWidget(0, col)
+        assert isinstance(cell, QLineEdit)
+        assert (cell.placeholderText() or "").strip() == ""
+        assert (cell.text() or "").strip() == ""
+        assert "click" not in (cell.placeholderText() or "").lower()
+    rate = t.cellWidget(0, 4)
+    qty = t.cellWidget(0, 5)
+    amt = t.cellWidget(0, 6)
+    assert isinstance(rate, QDoubleSpinBox)
+    assert isinstance(qty, QDoubleSpinBox)
+    assert isinstance(amt, QDoubleSpinBox)
+    for spin in (rate, qty, amt):
+        assert spin.value() == 0.0
+        shown = (spin.lineEdit().text() if spin.lineEdit() is not None else spin.text()) or ""
+        assert shown.strip() == ""
+        assert "0.00" not in shown
+    rate.setValue(12.5)
+    qty.setValue(2.0)
+    qapp.processEvents()
+    rate_shown = (rate.lineEdit().text() if rate.lineEdit() is not None else rate.text()) or ""
+    amt_shown = (amt.lineEdit().text() if amt.lineEdit() is not None else amt.text()) or ""
+    assert "12.50" in rate_shown.replace(",", "")
+    assert "25.00" in amt_shown.replace(",", "")
 
 
 def test_create_invoices_line_grid_dominates_window_height(qapp: QApplication) -> None:

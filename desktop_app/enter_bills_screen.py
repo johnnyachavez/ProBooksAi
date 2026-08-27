@@ -86,8 +86,8 @@ _N_ITEM_ROWS = 20
 _LINE_ROW_HEIGHT_PX = 22
 _RIBBON_BTN_HEIGHT_PX = 24
 _SIDE_CAPTION_W = 86
-_ACCOUNT_PLACEHOLDER = "(select account)"
-_ITEM_PLACEHOLDER = "(select item)"
+_ACCOUNT_PLACEHOLDER = ""
+_ITEM_PLACEHOLDER = ""
 
 
 def _safe_bill_pdf_stem(vendor_invoice_number: str, bill_id: int) -> str:
@@ -154,6 +154,12 @@ def _zebra_cell_qss(widget: str, row: int) -> str:
     )
 
 
+def _blank_zero_spin(s: QDoubleSpinBox) -> QDoubleSpinBox:
+    """Empty line cells stay blank at 0. Qt ignores an empty specialValueText, so a space stands in."""
+    s.setSpecialValueText(" ")
+    return s
+
+
 def _money_spin(*, prefix: str = "", row: int | None = None) -> QDoubleSpinBox:
     s = QDoubleSpinBox()
     s.setRange(0.0, 999_999_999.99)
@@ -166,6 +172,7 @@ def _money_spin(*, prefix: str = "", row: int | None = None) -> QDoubleSpinBox:
         s.setStyleSheet(_input_qss("QDoubleSpinBox"))
     else:
         s.setStyleSheet(_zebra_cell_qss("QDoubleSpinBox", row))
+        _blank_zero_spin(s)
     return s
 
 
@@ -176,7 +183,7 @@ def _qty_spin(*, row: int = 0) -> QDoubleSpinBox:
     s.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
     s.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     s.setStyleSheet(_zebra_cell_qss("QDoubleSpinBox", row))
-    return s
+    return _blank_zero_spin(s)
 
 
 def _cell_line(*, row: int = 0) -> QLineEdit:
@@ -677,11 +684,9 @@ class EnterBillsScreen(QWidget):
             self._table.setCellWidget(row, 1, amt)
             self._amount_spins.append(amt)
             memo = _cell_line(row=row)
-            memo.setPlaceholderText("Memo")
             memo.textChanged.connect(lambda _t: self._on_line_amount_changed(0.0))
             self._table.setCellWidget(row, 2, memo)
             job = _cell_line(row=row)
-            job.setPlaceholderText("Customer:Job")
             self._table.setCellWidget(row, 3, job)
             billable = self._make_billable_check()
             self._table.setCellWidget(row, 4, billable)
@@ -695,7 +700,6 @@ class EnterBillsScreen(QWidget):
         for row in range(_N_ITEM_ROWS):
             self._items_table.setCellWidget(row, 0, self._make_item_combo(row=row))
             desc = _cell_line(row=row)
-            desc.setPlaceholderText("Description")
             self._items_table.setCellWidget(row, 1, desc)
             qty = _qty_spin(row=row)
             cost = _money_spin(prefix="$ ", row=row)
@@ -710,7 +714,6 @@ class EnterBillsScreen(QWidget):
             self._item_cost_spins.append(cost)
             self._item_amount_spins.append(amt)
             job = _cell_line(row=row)
-            job.setPlaceholderText("Customer:Job")
             self._items_table.setCellWidget(row, 5, job)
             billable = self._make_billable_check()
             self._items_table.setCellWidget(row, 6, billable)
