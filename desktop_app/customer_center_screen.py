@@ -876,6 +876,16 @@ QHeaderView::section {{
     def _focused_id(self) -> int:
         return int(self._focused_customer_id or 0)
 
+    def focus_customer(self, customer_id: int) -> None:
+        """Tiny Company Snapshot hook: select this customer in Customer Center."""
+        cid = int(customer_id or 0)
+        if cid <= 0:
+            return
+        self._focused_customer_id = cid
+        self._refresh()
+        self._select_customer_row(cid)
+        self._apply_detail_from_focus()
+
     def _on_left_tab_changed(self, index: int) -> None:
         self._left_stack.setCurrentIndex(0 if index <= 0 else 1)
         if index == 1:

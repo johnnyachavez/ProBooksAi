@@ -21,6 +21,7 @@ Usage (with a virtual display already active, e.g. via xvfb-run):
     python scripts/capture_ui_screenshot.py --tab income-tracker --output artifacts/ui/income_tracker.png
     python scripts/capture_ui_screenshot.py --tab bill-tracker --output artifacts/ui/bill_tracker.png
     python scripts/capture_ui_screenshot.py --tab calendar --output artifacts/ui/calendar.png
+    python scripts/capture_ui_screenshot.py --tab snapshot --output artifacts/ui/company_snapshot.png
 
 Saves: artifacts/ui/main_window.png (default)
 Exit code 0 on success, non-zero on failure.
@@ -110,7 +111,7 @@ def main() -> int:
     parser.add_argument(
         "--tab",
         default="main",
-        help="Which surface to capture: main (default), home, invoices, bills (Enter Bills), pay-bills, payments, deposits, checks, vendors, customers, coa, register, use-register, items, edit-item, income-tracker, bill-tracker, or calendar.",
+        help="Which surface to capture: main (default), home, invoices, bills (Enter Bills), pay-bills, payments, deposits, checks, vendors, customers, coa, register, use-register, items, edit-item, income-tracker, bill-tracker, calendar, or snapshot.",
     )
     parser.add_argument(
         "--output",
@@ -141,6 +142,7 @@ def main() -> int:
     from desktop_app.use_register_dialog import UseRegisterDialog  # noqa: E402
     from desktop_app.tracker_screens import BillTrackerScreen, IncomeTrackerScreen  # noqa: E402
     from desktop_app.calendar_screen import CalendarScreen  # noqa: E402
+    from desktop_app.company_snapshot_screen import CompanySnapshotScreen  # noqa: E402
     from desktop_app.vendor_center_screen import VendorCenterScreen  # noqa: E402
 
     app = QApplication(sys.argv)
@@ -182,6 +184,8 @@ def main() -> int:
         output_path = Path("artifacts") / "ui" / "bill_tracker.png"
     elif tab in ("calendar",):
         output_path = Path("artifacts") / "ui" / "calendar.png"
+    elif tab in ("snapshot", "company-snapshot", "company_snapshot"):
+        output_path = Path("artifacts") / "ui" / "company_snapshot.png"
     else:
         output_path = Path("artifacts") / "ui" / "main_window.png"
 
@@ -215,6 +219,9 @@ def main() -> int:
         "bill-tracker",
         "bill_tracker",
         "calendar",
+        "snapshot",
+        "company-snapshot",
+        "company_snapshot",
     ):
         shot_dir = Path(tempfile.mkdtemp(prefix="probooks-ui-shot-"))
         extra_kw["db_path"] = str(shot_dir / "shot.db")
@@ -734,6 +741,112 @@ def main() -> int:
             screen._today = _date(2026, 8, 27)
             screen._month = _date(2026, 8, 1)
             screen._selected = _date(2026, 8, 26)
+            screen.reload()
+        if screen is not None and hasattr(window, "_tabs"):
+            idx = window._tabs.indexOf(screen)
+            if idx >= 0:
+                window._tabs.setCurrentIndex(idx)
+        grab_widget = screen
+        if grab_widget is not None:
+            grab_widget.resize(1400, 900)
+            grab_widget.setMinimumSize(1400, 900)
+            grab_widget.show()
+    elif tab in ("snapshot", "company-snapshot", "company_snapshot"):
+        from datetime import date as _date
+
+        from probooksai import business
+
+        conn = getattr(getattr(window, "_bank_db", None), "_conn", None)
+        bank_db = getattr(window, "_bank_db", None)
+        if conn is not None:
+            c1 = business.add_customer(conn, "Harbor Logistics")
+            business.create_invoice(
+                conn,
+                c1,
+                "INV-2101",
+                "2026-01-12",
+                due_date="2026-02-10",
+                lines=[{"description": "Haul", "qty": 1, "rate": 420.00}],
+            )
+            business.create_invoice(
+                conn,
+                c1,
+                "INV-0888",
+                "2026-06-08",
+                due_date="2026-07-08",
+                lines=[{"description": "Haul", "qty": 1, "rate": 180.00}],
+            )
+            business.create_invoice(
+                conn,
+                c1,
+                "INV-1990",
+                "2025-11-02",
+                due_date="2025-12-01",
+                lines=[{"description": "Haul", "qty": 1, "rate": 260.00}],
+            )
+            c2 = business.add_customer(conn, "Westside Hauling")
+            business.create_invoice(
+                conn,
+                c2,
+                "WH-88",
+                "2026-08-05",
+                due_date="2026-09-04",
+                lines=[{"description": "Haul", "qty": 1, "rate": 310.00}],
+            )
+            c3 = business.add_customer(conn, "Metro Freight")
+            business.create_invoice(
+                conn,
+                c3,
+                "MF-40",
+                "2026-03-20",
+                due_date="2026-04-20",
+                lines=[{"description": "Haul", "qty": 1, "rate": 96.40}],
+            )
+            v1 = business.add_vendor(conn, "Office Supplies Co")
+            v2 = business.add_vendor(conn, "Fuel Vendor")
+            business.create_bill(
+                conn, v1, "2026-02-10", 75.00, vendor_invoice_number="OS-1042", due_date="2026-03-01"
+            )
+            business.create_bill(
+                conn, v2, "2026-06-12", 140.00, vendor_invoice_number="FV-19", due_date="2026-07-12"
+            )
+            business.create_bill(
+                conn, v1, "2025-08-04", 40.00, vendor_invoice_number="OS-88", due_date="2025-09-04"
+            )
+            if bank_db is not None:
+                existing = list(bank_db.list_bank_accounts())
+                if existing:
+                    aid = int(existing[0]["id"])
+                else:
+                    aid = bank_db.add_bank_account("Checking", "1000", "Bank")
+                bank_db.insert_manual_transaction(
+                    aid, "2026-01-05", 800.00, description="Opening"
+                )
+                bank_db.insert_manual_transaction(
+                    aid,
+                    "2026-06-02",
+                    -140.00,
+                    description="Fuel Vendor",
+                    coa_account="6310 Vehicle Expense",
+                )
+                bank_db.insert_manual_transaction(
+                    aid,
+                    "2026-02-12",
+                    -75.00,
+                    description="Office Supplies Co",
+                    coa_account="6220 Office Supplies",
+                )
+                bank_db.insert_manual_transaction(
+                    aid,
+                    "2026-04-03",
+                    -48.00,
+                    description="Shop rent",
+                    coa_account="6100 Rent Expense",
+                )
+        screen = getattr(window, "_snapshot_screen", None)
+        if isinstance(screen, CompanySnapshotScreen):
+            screen._today = _date(2026, 8, 27)
+            screen.restore_default()
             screen.reload()
         if screen is not None and hasattr(window, "_tabs"):
             idx = window._tabs.indexOf(screen)

@@ -341,6 +341,17 @@ def _home_icon_pixmap(kind: str, size: int = _ICON_PX) -> QPixmap:
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor("#2E7D32"))
         p.drawRect(QRectF(box.center().x() - 4, box.bottom() - 16, 8, 8))
+    elif kind == "snapshot":
+        p.setPen(QPen(QColor("#2563A8"), 1.3))
+        p.setBrush(QColor("#E8F1FA"))
+        p.drawRoundedRect(box.adjusted(4, 4, -4, -4), 3, 3)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor("#43A047"))
+        p.drawRect(QRectF(box.left() + 10, box.top() + 12, 10, 14))
+        p.setBrush(QColor("#D2693A"))
+        p.drawRect(QRectF(box.left() + 22, box.top() + 16, 10, 10))
+        p.setBrush(QColor("#5B8DB8"))
+        p.drawRect(QRectF(box.left() + 12, box.bottom() - 16, 22, 6))
     else:  # items / codes
         p.setPen(QPen(QColor("#6A4C9A"), 1.4))
         p.setBrush(QColor("#EDE4F5"))
@@ -662,9 +673,16 @@ class DashboardTab(QWidget):
             "calendar",
             "Open Calendar (Entered and Due invoices and bills).",
         )
+        self._btn_snapshot = self._shortcut(
+            "snapshot",
+            "Company\nSnapshot",
+            "snapshot",
+            "Open Company Snapshot (income, expenses, who owes money).",
+        )
         c_row.addWidget(self._btn_coa)
         c_row.addWidget(self._btn_codes)
         c_row.addWidget(self._btn_calendar)
+        c_row.addWidget(self._btn_snapshot)
         c_row.addStretch(1)
         company.body.addLayout(c_row)
         company.body.addStretch(1)
