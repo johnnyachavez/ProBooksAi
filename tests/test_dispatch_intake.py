@@ -234,6 +234,7 @@ def test_google_live_pull_is_stubbed_without_using_a_token() -> None:
     assert "CSV" in msg
     assert "current calendar year" in msg
     assert expected_live_dispatch_year_tab() in msg
+    assert "DATE | INVOICE | DISPATCH | DRIVER | INVOICE RATE | PAY RATE | PO / LOAD# | BOL# | QB Inv No." in msg
     assert "not-a-real-token" not in msg
     assert GOOGLE_DISPATCH_SHEET_ID == "112pHWAkiTIk5N31mAUzUuydsSdUh9fVoBSADnZHzlXQ"
     assert "token" not in GOOGLE_DISPATCH_SHEET_ID.lower()

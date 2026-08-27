@@ -1,9 +1,10 @@
 """Dispatch sheet intake — CSV v1 for Invoice Intake → Create Invoices / Enter Bills.
 
-Parses the live **1 CHAVAN DISPATCH** loads table (headers: DATE, INVOICE,
-DISPATCH, DRIVER, INVOICE RATE, PAY RATE, PO / LOAD#, BOL #, QB Inv No.) into
-staged rows, then groups invoice-ready loads and pay-ready loads for the
-desktop forms. Older year tabs may use TICKET # / INV PRICE / PAY PRICE.
+Parses the live **1 CHAVAN DISPATCH** year-tab loads table (headers:
+DATE | INVOICE | DISPATCH | DRIVER | INVOICE RATE | PAY RATE | PO / LOAD# |
+BOL# | QB Inv No.) into staged rows, then groups invoice-ready loads and
+pay-ready loads for the desktop forms. ``BOL #`` is the same column; older
+year tabs may use TICKET # / INV PRICE / PAY PRICE.
 
 v1 is **offline CSV** matching those columns (not a live Google token in the
 app). Live loads live on the workbook tab named for the **current calendar
@@ -780,6 +781,8 @@ def fetch_google_dispatch_rows(
         f"Live loads are the tab named for the current calendar year ({year_tab}); "
         "if that tab is missing, use the highest 4-digit year tab. Older year "
         "tabs are history, not the live intake source. "
+        "Year-tab columns: DATE | INVOICE | DISPATCH | DRIVER | INVOICE RATE | "
+        "PAY RATE | PO / LOAD# | BOL# | QB Inv No. "
         "Column mapping follows that workbook; do not paste API tokens into the app."
     )
 

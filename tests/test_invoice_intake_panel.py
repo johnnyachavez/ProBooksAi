@@ -235,6 +235,7 @@ def test_dispatch_google_stub_does_not_require_token(qapp: QApplication) -> None
     assert "1 CHAVAN DISPATCH" in args[2]
     assert "CSV" in args[2]
     assert "current calendar year" in args[2]
+    assert "BOL#" in args[2]
 
 
 def test_dispatch_intake_screenshot_after_csv_load(qapp: QApplication, tmp_path) -> None:

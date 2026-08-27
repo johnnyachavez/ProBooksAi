@@ -185,8 +185,8 @@ class InvoiceIntakePanel(QWidget):
         self._btn_csv = QPushButton("Import dispatch CSV…")
         self._btn_csv.setToolTip(
             "Load a CSV export of the 1 CHAVAN DISPATCH live loads table "
-            "(the tab named for the current calendar year: DATE, INVOICE, DISPATCH, "
-            "DRIVER, INVOICE RATE, PAY RATE, PO / LOAD#, BOL # or TICKET #, QB Inv No.). "
+            "(the tab named for the current calendar year: DATE | INVOICE | DISPATCH | "
+            "DRIVER | INVOICE RATE | PAY RATE | PO / LOAD# | BOL# | QB Inv No.). "
             "Tax ID / SSN / EIN / DIR / bank columns are ignored. "
             "Blank invoice rates stay in the queue as needs rate. "
             "Live Google pull is not used; export the year tab as CSV."
