@@ -633,9 +633,9 @@ def test_main_window_tab_bar_has_tab_tooltips() -> None:
     assert "_apply_main_tab_bar_tooltips" in text
     tips = text.index("tips = [")
     assert "Home:" in text[tips : tips + 1200]
-    assert "Invoices:" in text[tips : tips + 2000]
-    assert "Write Checks:" in text[tips : tips + 2000]
-    assert "More:" in text[tips : tips + 4500]
+    assert "Invoices:" in text[tips : tips + 2800]
+    assert "Write Checks:" in text[tips : tips + 2800]
+    assert "More:" in text[tips : tips + 5200]
     assert "for i, tip in enumerate(tips):" in text
     assert text.count("_main_tab_bar_db_hint") >= 11
     assert "self._tabs.setToolTip(" in text
@@ -5229,7 +5229,7 @@ def test_main_window_banner_tabs_status_bar_and_worker_counts() -> None:
     chunk = text[start:end]
     assert chunk.count("self._header.") == 2
     assert chunk.count("self._status_bar.showMessage(") == 15
-    assert chunk.count("self._tabs.") == 101
+    assert chunk.count("self._tabs.") == 102
     assert chunk.count("self._worker") == 17
 
 

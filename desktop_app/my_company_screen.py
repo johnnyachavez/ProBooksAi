@@ -120,7 +120,7 @@ def _link_qss() -> str:
     return (
         f"QPushButton {{ background: transparent; border: none; color: {_MC_LINK}; "
         "font-size: 12px; text-align: left; padding: 2px 0px; }}"
-        f"QPushButton:hover {{ color: {_MC_ACCENT}; text-decoration: underline; }}"
+        f"QPushButton:hover {{ color: {_MC_ACCENT}; }}"
     )
 
 
