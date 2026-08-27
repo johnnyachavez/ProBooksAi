@@ -230,6 +230,7 @@ class ReceiveChecksScreen(QWidget):
         self._suppress_apply = False
         self._pay_method = _METHOD_CHECK
         self.setWindowTitle("Receive Payments")
+        self.setMinimumSize(960, 640)
         self.setToolTip(
             "Receive Payments: record customer payments against open invoices. "
             "Payments go to Undeposited Funds until Make Deposits (later). "
@@ -426,7 +427,8 @@ class ReceiveChecksScreen(QWidget):
         b = QPushButton(label)
         b.setCheckable(True)
         b.setFixedHeight(_METHOD_BTN_HEIGHT_PX)
-        b.setMinimumWidth(88)
+        b.setMinimumWidth(108)
+        b.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         b.setProperty("payMethod", method)
         b.setStyleSheet(
             f"QPushButton {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_PAY_GRID}; "
@@ -503,15 +505,31 @@ class ReceiveChecksScreen(QWidget):
         self._check_num.setObjectName("receivePaymentsCheckNumber")
         self._check_num.setToolTip("Check number or payment reference.")
 
+        self._where_link = QLabel('<a href="#undeposited">Where does this payment go?</a>')
+        self._where_link.setObjectName("receivePaymentsWhereLink")
+        self._where_link.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+        self._where_link.setOpenExternalLinks(False)
+        self._where_link.setStyleSheet(
+            f"color: {_PAY_ACCENT}; font-size: 11px; background: transparent;"
+        )
+        self._where_link.linkActivated.connect(self._on_where_payment_goes)
+
+        received_col = QVBoxLayout()
+        received_col.setContentsMargins(0, 0, 0, 0)
+        received_col.setSpacing(2)
+        received_col.addWidget(self._stacked_field("RECEIVED FROM", self._customer_filter))
+        received_col.addWidget(self._where_link, 0, Qt.AlignmentFlag.AlignLeft)
+
         fields = QHBoxLayout()
         fields.setSpacing(10)
-        fields.addWidget(self._stacked_field("RECEIVED FROM", self._customer_filter), 3)
+        fields.addLayout(received_col, 3)
         fields.addWidget(self._stacked_field("PAYMENT AMOUNT", self._pay_amount), 1)
         fields.addWidget(self._stacked_field("DATE", self._pay_date), 1)
         fields.addWidget(self._stacked_field("CHECK #", self._check_num), 1)
+        hb.addLayout(fields)
 
         methods = QHBoxLayout()
-        methods.setSpacing(4)
+        methods.setSpacing(6)
         self._method_group = QButtonGroup(self)
         self._method_group.setExclusive(True)
         self._btn_method_cash = self._method_button("CASH", _METHOD_CASH)
@@ -530,7 +548,7 @@ class ReceiveChecksScreen(QWidget):
         self._method_group.buttonClicked.connect(self._on_method_button)
         self._btn_method_more = QPushButton("MORE ▾")
         self._btn_method_more.setFixedHeight(_METHOD_BTN_HEIGHT_PX)
-        self._btn_method_more.setMinimumWidth(72)
+        self._btn_method_more.setMinimumWidth(80)
         self._btn_method_more.setStyleSheet(
             f"QPushButton {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_PAY_GRID}; "
             f"border-radius: 4px; color: {_PAY_TEXT}; font-size: 11px; font-weight: 700; }}"
@@ -542,25 +560,16 @@ class ReceiveChecksScreen(QWidget):
         more_menu.addAction("Other", lambda: self._set_pay_method("Other"))
         self._btn_method_more.setMenu(more_menu)
         methods.addWidget(self._btn_method_more)
-        fields.addLayout(methods, 0)
+        methods.addStretch(1)
 
         self._ar_account = QComboBox()
         self._ar_account.setObjectName("receivePaymentsArAccount")
         self._ar_account.setEditable(False)
         self._ar_account.addItems(self._ar_account_choices())
+        self._ar_account.setMinimumWidth(180)
         self._ar_account.setToolTip("Accounts Receivable account this payment applies against.")
-        fields.addWidget(self._stacked_field("A/R ACCOUNT", self._ar_account), 2)
-        hb.addLayout(fields)
-
-        self._where_link = QLabel('<a href="#undeposited">Where does this payment go?</a>')
-        self._where_link.setObjectName("receivePaymentsWhereLink")
-        self._where_link.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
-        self._where_link.setOpenExternalLinks(False)
-        self._where_link.setStyleSheet(
-            f"color: {_PAY_ACCENT}; font-size: 11px; background: transparent;"
-        )
-        self._where_link.linkActivated.connect(self._on_where_payment_goes)
-        hb.addWidget(self._where_link, 0, Qt.AlignmentFlag.AlignLeft)
+        methods.addWidget(self._stacked_field("A/R ACCOUNT", self._ar_account), 0)
+        hb.addLayout(methods)
 
         play.addWidget(form)
 

@@ -100,6 +100,7 @@ def main() -> int:
         if isinstance(pay, ReceiveChecksScreen):
             grab_widget = pay
             grab_widget.resize(1280, 860)
+            grab_widget.setMinimumSize(1280, 860)
             grab_widget.show()
 
     success = False
