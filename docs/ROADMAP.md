@@ -307,6 +307,7 @@ Apply customer payments against open invoices.
 - Select customer and apply payment to one or more open invoices.
 - Update `balance_due` and status (`Unpaid` / `Partially Paid` / `Paid`) on each invoice.
 - Optional: deposit-to account selection (bank/cash GL account) for later bank matching.
+- **Make Deposits** (desktop) lists undeposited customer payments, lets you pick them in Payments to Deposit, and posts the deposit into a bank account (for example CHASE BANK).
 
 **Related issues:** [#57](https://github.com/johnnyachavez/ProBooksAi/issues/57) / [#67](https://github.com/johnnyachavez/ProBooksAi/issues/67) (Receive Payments — #67 is canonical)
 

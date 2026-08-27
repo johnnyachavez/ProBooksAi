@@ -114,6 +114,7 @@ from desktop_app.invoice_codes_screen import InvoiceCodesScreen
 from desktop_app.invoice_screen import InvoiceScreen
 from desktop_app.pay_bills_screen import PayBillsScreen
 from desktop_app.receive_checks_screen import ReceiveChecksScreen
+from desktop_app.make_deposits_screen import MakeDepositsScreen
 from desktop_app.create_company_file_dialog import CreateCompanyFileDialog
 from desktop_app.hover_messages import install_global_hover_message_suppression
 from desktop_app.theme import apply_dark_theme, STATUS_COLORS as THEME_STATUS_COLORS
@@ -1211,6 +1212,9 @@ class MainWindow(QMainWindow):
         self._receive_payments_screen = ReceiveChecksScreen(
             ap_conn=conn, bank_db=self._bank_db
         )
+        self._make_deposits_screen = MakeDepositsScreen(
+            ap_conn=conn, bank_db=self._bank_db
+        )
         self._check_screen = CheckScreen(
             bank_db=self._bank_db,
             coa_list=[r["account_name"] for r in (self._coa_db.list_accounts() or [])],
@@ -1318,6 +1322,7 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(self._enter_bills_screen, "Enter Bills")
         self._tabs.addTab(self._pay_bills_screen, "Pay Bills")
         self._tabs.addTab(self._receive_payments_screen, "Receive Payments")
+        self._tabs.addTab(self._make_deposits_screen, "Make Deposits")
         self._tabs.addTab(self._register_tab, "Bank Register")
         self._tabs.addTab(self._coa_tab, "Chart of Accounts")
         self._tabs.addTab(self._customers_tab, "Customers")
@@ -1326,6 +1331,10 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(self._more_hub, "More")
         self._tabs.currentChanged.connect(self._on_main_tab_changing)
         self._prev_main_tab_index: int = 0
+        self._make_deposits_screen.depositPosted.connect(self._on_make_deposit_posted)
+        self._receive_payments_screen.arPaymentPosted.connect(
+            self._on_ar_payment_posted_for_deposits
+        )
 
     def _on_main_tab_changing(self, new_index: int) -> None:
         """Guard switching away from a screen that has unsaved invoice changes."""
@@ -1353,6 +1362,9 @@ class MainWindow(QMainWindow):
             self._tabs.setCurrentIndex(new_index)
             self._tabs.blockSignals(False)
         self._prev_main_tab_index = new_index
+        md = getattr(self, "_make_deposits_screen", None)
+        if md is not None and self._tabs.widget(new_index) is md:
+            md.on_activated()
 
         self._invoice_screen.customerRecordsChanged.connect(self._customers_tab._refresh)
         self._invoice_screen.customerRecordsChanged.connect(
@@ -1393,6 +1405,11 @@ class MainWindow(QMainWindow):
             ),
             (
                 "Receive Payments: customer payments against open invoices (Undeposited Funds)."
+                + _main_tab_bar_db_hint
+            ),
+            (
+                "Make Deposits: pick undeposited payments and post them into a bank account "
+                "(Payments to Deposit popup)."
                 + _main_tab_bar_db_hint
             ),
             (
@@ -1481,7 +1498,7 @@ class MainWindow(QMainWindow):
 
         self._tabs = QTabWidget()
         self._tabs.setToolTip(
-            "Main workspace: Invoices, Codes, Enter Bills, Pay Bills, Receive Payments, Bank Register, "
+            "Main workspace: Invoices, Codes, Enter Bills, Pay Bills, Receive Payments, Make Deposits, Bank Register, "
             "Chart of Accounts, Customers, Vendors, Reconcile, and More (hover each tab). "
             "File → Backup / Restore applies to the whole company database (CLI: probooks backup / restore)."
         )
@@ -1613,8 +1630,8 @@ class MainWindow(QMainWindow):
         )
         # Tab indices: 0=Dashboard, 1=Invoices, 2=Codes, 3=Write Checks,
         #              4=Enter Bills, 5=Pay Bills, 6=Receive Payments,
-        #              7=Bank Register, 8=Chart of Accounts, 9=Customers,
-        #              10=Vendors, 11=Reconcile, 12=More
+        #              7=Make Deposits, 8=Bank Register, 9=Chart of Accounts,
+        #              10=Customers, 11=Vendors, 12=Reconcile, 13=More
         _view_tab_tip_extra = {
             1: " Invoice entry workflow.",
             2: " Codes: service/discount items for invoice lines (default rates and COA labels).",
@@ -1622,30 +1639,29 @@ class MainWindow(QMainWindow):
             4: " Enter Bills screen.",
             5: " Pay Bills screen.",
             6: " Receive Payments screen.",
-            7: " Bank Register: Match overlay (Bank Import can populate).",
-            8: " Chart of Accounts editor.",
-            9: " AR: customers, invoices, payments (primary route; Business hub is Rules/Payroll/Tax %).",
-            10: " AP: vendors, bills, payments (primary route; Business hub is Rules/Payroll/Tax %).",
-            11: " Reconcile: Bank statements + Documents (intake → review/match).",
-            12: " Reports, Journal, Business, Audit log.",
+            7: " Make Deposits: undeposited payments into a bank account.",
+            8: " Bank Register: Match overlay (Bank Import can populate).",
+            9: " Chart of Accounts editor.",
+            10: " AR: customers, invoices, payments (primary route; Business hub is Rules/Payroll/Tax %).",
+            11: " AP: vendors, bills, payments (primary route; Business hub is Rules/Payroll/Tax %).",
+            12: " Reconcile: Bank statements + Documents (intake → review/match).",
+            13: " Reports, Journal, Business, Audit log.",
         }
-        for tab_idx, (sc, label) in zip(
-            range(1, 13),  # skip Dashboard (index 0); Invoices=1 … More=12
-            [
-                ("Ctrl+1", "&Invoices"),
-                ("Ctrl+2", "&Codes"),
-                ("Ctrl+3", "&Write Checks"),
-                ("Ctrl+4", "&Enter Bills"),
-                ("Ctrl+5", "&Pay Bills"),
-                ("Ctrl+6", "&Receive Payments"),
-                ("Ctrl+7", "&Bank Register"),
-                ("Ctrl+8", "Chart of &Accounts"),
-                ("Ctrl+9", "&Customers"),
-                ("Ctrl+0", "&Vendors"),
-                ("Ctrl+Shift+R", "&Reconcile"),
-                ("Ctrl+Shift+M", "&More"),
-            ]
-        ):
+        for tab_idx, (sc, label) in [
+            (1, ("Ctrl+1", "&Invoices")),
+            (2, ("Ctrl+2", "&Codes")),
+            (3, ("Ctrl+3", "&Write Checks")),
+            (4, ("Ctrl+4", "&Enter Bills")),
+            (5, ("Ctrl+5", "&Pay Bills")),
+            (6, ("Ctrl+6", "&Receive Payments")),
+            (7, ("Ctrl+Shift+D", "Make &Deposits")),
+            (8, ("Ctrl+7", "&Bank Register")),
+            (9, ("Ctrl+8", "Chart of &Accounts")),
+            (10, ("Ctrl+9", "&Customers")),
+            (11, ("Ctrl+0", "&Vendors")),
+            (12, ("Ctrl+Shift+R", "&Reconcile")),
+            (13, ("Ctrl+Shift+M", "&More")),
+        ]:
             act = QAction(label, self)
             act.setShortcut(sc)
             act.setShortcutContext(Qt.ApplicationShortcut)
@@ -2650,6 +2666,20 @@ class MainWindow(QMainWindow):
         idx = self._tabs.indexOf(self._pay_bills_screen)
         if idx >= 0:
             self._tabs.setCurrentIndex(idx)
+
+    def _on_ar_payment_posted_for_deposits(self, _invoice_ids=None) -> None:
+        """Receive Payments posted: refresh Make Deposits bank list / undeposited picker."""
+        screen = getattr(self, "_make_deposits_screen", None)
+        if screen is not None:
+            screen.reload_undeposited()
+
+    def _on_make_deposit_posted(self) -> None:
+        """Make Deposits posted: refresh Bank Register if it is built."""
+        if hasattr(self, "_register_tab"):
+            try:
+                self._register_tab._reload_current()
+            except Exception:
+                pass
 
     def _on_tools_invoice(self) -> None:
         """Tools → Invoice: top-level Invoices tab."""

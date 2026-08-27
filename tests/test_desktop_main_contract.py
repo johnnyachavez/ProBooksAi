@@ -468,13 +468,13 @@ def test_edit_menu_preferences_disabled_stub() -> None:
 def test_view_menu_tab_actions_use_menu_action_tip_only() -> None:
     """**View** menu tab shortcuts use ``_menu_action_tip(act, …)`` only (no direct tip methods).
 
-    The loop body is written once in source; the list must still enumerate ten main tabs.
+    The loop body is written once in source; the list enumerates thirteen shortcut tuples.
     """
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("# View menu")
     end = text.index("# Edit menu", start)
     chunk = text[start:end]
-    assert chunk.count('("Ctrl+') == 12
+    assert chunk.count('("Ctrl+') == 13
     assert chunk.count("act = QAction(") == 1
     assert chunk.count("_menu_action_tip(") == 3
     assert "view_menu.addAction(act)" in chunk
@@ -889,7 +889,7 @@ def test_main_window_build_ui_has_no_toolbar() -> None:
 
 
 def test_main_window_build_ui_sets_central_status_and_assemble_adds_ten_main_tabs() -> None:
-    """``_build_ui`` attaches one central widget, one status bar; ``_assemble_main_tabs`` adds thirteen ``addTab`` calls."""
+    """``_build_ui`` attaches one central widget, one status bar; ``_assemble_main_tabs`` adds fourteen ``addTab`` calls."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("def _build_ui(self):")
     end = text.index("def _build_menu_bar", start)
@@ -900,17 +900,17 @@ def test_main_window_build_ui_sets_central_status_and_assemble_adds_ten_main_tab
     start_a = text.index("def _assemble_main_tabs(self) -> None:")
     end_a = text.index("def _apply_main_tab_bar_tooltips(self) -> None:", start_a)
     chunk_a = text[start_a:end_a]
-    assert chunk_a.count("self._tabs.addTab(") == 13
+    assert chunk_a.count("self._tabs.addTab(") == 14
 
 
 def test_main_window_assemble_tab_strip_titles_fixed_order() -> None:
-    """Thirteen ``addTab`` lines: Dashboard first, More last, with stable user-visible titles."""
+    """Fourteen ``addTab`` lines: Dashboard first, More last, with stable user-visible titles."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("def _assemble_main_tabs(self) -> None:")
     end = text.index("def _apply_main_tab_bar_tooltips(self) -> None:", start)
     chunk = text[start:end]
     lines = [ln.strip() for ln in chunk.splitlines() if "self._tabs.addTab(" in ln]
-    assert len(lines) == 13
+    assert len(lines) == 14
     want = (
         "Dashboard",
         "Invoices",
@@ -919,6 +919,7 @@ def test_main_window_assemble_tab_strip_titles_fixed_order() -> None:
         "Enter Bills",
         "Pay Bills",
         "Receive Payments",
+        "Make Deposits",
         "Bank Register",
         "Chart of Accounts",
         "Customers",
@@ -1508,6 +1509,7 @@ def test_main_window_assemble_main_tabs_instantiates_core_widgets() -> None:
     assert chunk.count("EnterBillsScreen(") == 1
     assert chunk.count("PayBillsScreen(") == 1
     assert chunk.count("ReceiveChecksScreen(") == 1
+    assert chunk.count("MakeDepositsScreen(") == 1
     assert chunk.count("BankImportTab(") == 1
     assert chunk.count("RegisterTab(self._bank_db,") == 1
     assert chunk.count("COATab(") == 1
@@ -2987,7 +2989,7 @@ def test_main_help_menu_wires_document_intake_shortcuts_dialog() -> None:
 
 
 def test_main_window_view_menu_enumerates_ctrl_one_through_zero() -> None:
-    """View menu builds twelve tab actions: Ctrl+1..Ctrl+9, Ctrl+0, Ctrl+Shift+R, Ctrl+Shift+M."""
+    """View menu builds thirteen tab actions: Ctrl+1..Ctrl+9, Ctrl+0, Ctrl+Shift+D, Ctrl+Shift+R, Ctrl+Shift+M."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("# View menu — tab shortcuts")
     end = text.index("# Edit menu", start)
@@ -2997,6 +2999,7 @@ def test_main_window_view_menu_enumerates_ctrl_one_through_zero() -> None:
     assert '("Ctrl+0"' in chunk
     assert '("Ctrl+Shift+R"' in chunk
     assert '("Ctrl+Shift+M"' in chunk
+    assert '("Ctrl+Shift+D"' in chunk
     tuples = (
         '("Ctrl+1", "&Invoices")',
         '("Ctrl+2", "&Codes")',
@@ -3004,6 +3007,7 @@ def test_main_window_view_menu_enumerates_ctrl_one_through_zero() -> None:
         '("Ctrl+4", "&Enter Bills")',
         '("Ctrl+5", "&Pay Bills")',
         '("Ctrl+6", "&Receive Payments")',
+        '("Ctrl+Shift+D", "Make &Deposits")',
         '("Ctrl+7", "&Bank Register")',
         '("Ctrl+8", "Chart of &Accounts")',
         '("Ctrl+9", "&Customers")',

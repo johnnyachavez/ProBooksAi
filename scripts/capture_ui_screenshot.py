@@ -8,6 +8,7 @@ Usage (with a virtual display already active, e.g. via xvfb-run):
     python scripts/capture_ui_screenshot.py --tab invoices --output artifacts/ui/create_invoices.png
     python scripts/capture_ui_screenshot.py --tab bills --output artifacts/ui/enter_bills.png
     python scripts/capture_ui_screenshot.py --tab payments --output artifacts/ui/receive_payments.png
+    python scripts/capture_ui_screenshot.py --tab deposits --output artifacts/ui/make_deposits.png
 
 Saves: artifacts/ui/main_window.png (default)
 Exit code 0 on success, non-zero on failure.
@@ -31,7 +32,7 @@ def main() -> int:
     parser.add_argument(
         "--tab",
         default="main",
-        help="Which surface to capture: main (default), invoices, bills (Enter Bills), or payments.",
+        help="Which surface to capture: main (default), invoices, bills (Enter Bills), payments, or deposits.",
     )
     parser.add_argument(
         "--output",
@@ -50,6 +51,7 @@ def main() -> int:
     from desktop_app.enter_bills_screen import EnterBillsScreen  # noqa: E402
     from desktop_app.invoice_screen import InvoiceScreen  # noqa: E402
     from desktop_app.main import MainWindow  # noqa: E402
+    from desktop_app.make_deposits_screen import MakeDepositsScreen  # noqa: E402
     from desktop_app.receive_checks_screen import ReceiveChecksScreen  # noqa: E402
 
     app = QApplication(sys.argv)
@@ -63,6 +65,8 @@ def main() -> int:
         output_path = Path("artifacts") / "ui" / "enter_bills.png"
     elif tab in ("payments", "receive-payments", "receive_payments"):
         output_path = Path("artifacts") / "ui" / "receive_payments.png"
+    elif tab in ("deposits", "make-deposits", "make_deposits"):
+        output_path = Path("artifacts") / "ui" / "make_deposits.png"
     else:
         output_path = Path("artifacts") / "ui" / "main_window.png"
 
@@ -99,6 +103,17 @@ def main() -> int:
                 window._tabs.setCurrentIndex(idx)
         if isinstance(pay, ReceiveChecksScreen):
             grab_widget = pay
+            grab_widget.resize(1280, 860)
+            grab_widget.setMinimumSize(1280, 860)
+            grab_widget.show()
+    elif tab in ("deposits", "make-deposits", "make_deposits"):
+        dep = getattr(window, "_make_deposits_screen", None)
+        if dep is not None and hasattr(window, "_tabs"):
+            idx = window._tabs.indexOf(dep)
+            if idx >= 0:
+                window._tabs.setCurrentIndex(idx)
+        if isinstance(dep, MakeDepositsScreen):
+            grab_widget = dep
             grab_widget.resize(1280, 860)
             grab_widget.setMinimumSize(1280, 860)
             grab_widget.show()
