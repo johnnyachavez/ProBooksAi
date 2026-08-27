@@ -178,6 +178,7 @@ def test_extension_schema_applied(db):
     db._conn.execute("SELECT * FROM payroll_run_tax_lines LIMIT 0")
     db._conn.execute("SELECT * FROM categorization_rules LIMIT 0")
     db._conn.execute("SELECT ship_to, terms FROM invoices LIMIT 0")
+    db._conn.execute("SELECT * FROM calendar_todos LIMIT 0")
 
 
 def test_suggest_coa_matches_respects_priority(db):

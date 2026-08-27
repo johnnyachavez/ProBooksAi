@@ -13,7 +13,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
-EXTENSION_SCHEMA_VERSION = 10
+EXTENSION_SCHEMA_VERSION = 11
 
 _DDL_VERSION = """
 CREATE TABLE IF NOT EXISTS extension_schema_version (
@@ -293,6 +293,18 @@ ALTER TABLE invoice_item_codes ADD COLUMN used_in_assemblies INTEGER NOT NULL DE
 ALTER TABLE invoice_item_codes ADD COLUMN notes TEXT NOT NULL DEFAULT '';
 """
 
+# v11 — Calendar To Dos (QB Pro Calendar reminder list; not a photocopy of vendor data).
+_MIGRATION_V11 = """
+CREATE TABLE IF NOT EXISTS calendar_todos (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    title      TEXT    NOT NULL DEFAULT '',
+    notes      TEXT    NOT NULL DEFAULT '',
+    due_date   TEXT    NOT NULL DEFAULT '',
+    is_done    INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT    NOT NULL
+);
+"""
+
 
 def _seed_payroll_tax_items(conn: sqlite3.Connection) -> None:
     """Default federal/state placeholder codes (amounts entered manually per run)."""
@@ -405,6 +417,13 @@ def apply_extensions(conn: sqlite3.Connection) -> None:
             if s:
                 conn.execute(s)
         current = 10
+
+    if current < 11:
+        for stmt in _MIGRATION_V11.strip().split(";"):
+            s = stmt.strip()
+            if s:
+                conn.execute(s)
+        current = 11
 
     conn.execute(
         "UPDATE extension_schema_version SET version = ? WHERE id = 1",

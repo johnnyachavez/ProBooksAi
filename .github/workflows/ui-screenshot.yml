@@ -68,6 +68,8 @@ jobs:
             python scripts/capture_ui_screenshot.py --tab income-tracker
           xvfb-run --auto-servernum --server-args="-screen 0 1400x900x24" \
             python scripts/capture_ui_screenshot.py --tab bill-tracker
+          xvfb-run --auto-servernum --server-args="-screen 0 1400x900x24" \
+            python scripts/capture_ui_screenshot.py --tab calendar
         env:
           QT_QPA_PLATFORM: xcb
           # Leave OPENAI_API_KEY unset; the screenshot only needs the UI shell

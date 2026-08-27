@@ -321,6 +321,26 @@ def _home_icon_pixmap(kind: str, size: int = _ICON_PX) -> QPixmap:
             p.drawLine(QPointF(box.left() + 20, y + 3), QPointF(box.right() - 12, y + 3))
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QColor("#2563A8"))
+    elif kind == "calendar":
+        p.setPen(QPen(QColor("#2563A8"), 1.4))
+        p.setBrush(QColor("#E8F1FA"))
+        p.drawRoundedRect(box.adjusted(6, 4, -6, -4), 3, 3)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor("#2563A8"))
+        p.drawRect(QRectF(box.left() + 8, box.top() + 6, box.width() - 16, 8))
+        p.setPen(QPen(QColor("#2563A8"), 1.1))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawLine(
+            QPointF(box.left() + 16, box.top() + 18),
+            QPointF(box.left() + 16, box.bottom() - 8),
+        )
+        p.drawLine(
+            QPointF(box.right() - 16, box.top() + 18),
+            QPointF(box.right() - 16, box.bottom() - 8),
+        )
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor("#2E7D32"))
+        p.drawRect(QRectF(box.center().x() - 4, box.bottom() - 16, 8, 8))
     else:  # items / codes
         p.setPen(QPen(QColor("#6A4C9A"), 1.4))
         p.setBrush(QColor("#EDE4F5"))
@@ -518,7 +538,7 @@ class DashboardTab(QWidget):
         self.setStyleSheet(f"QWidget#qbHomePage {{ background: {_HOME_CANVAS}; }}")
         self.setToolTip(
             "Home: company overview with Create Invoices, Receive Payments, Income Tracker, "
-            "Enter Bills, Pay Bills, Bill Tracker, Write Checks, and Make Deposits. Same company .db as other tabs "
+            "Enter Bills, Pay Bills, Bill Tracker, Calendar, Write Checks, and Make Deposits. Same company .db as other tabs "
             "(File → Backup / Restore, probooks.backup)."
         )
         self._build_ui()
@@ -636,8 +656,15 @@ class DashboardTab(QWidget):
             "items",
             "Open Item List (invoice items and services).",
         )
+        self._btn_calendar = self._shortcut(
+            "calendar",
+            "Calendar",
+            "calendar",
+            "Open Calendar (Entered and Due invoices and bills).",
+        )
         c_row.addWidget(self._btn_coa)
         c_row.addWidget(self._btn_codes)
+        c_row.addWidget(self._btn_calendar)
         c_row.addStretch(1)
         company.body.addLayout(c_row)
         company.body.addStretch(1)
