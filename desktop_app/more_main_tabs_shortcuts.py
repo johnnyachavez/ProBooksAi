@@ -31,7 +31,7 @@ def more_main_tabs_keyboard_shortcuts_help_text() -> str:
         "Tools menu: Go to … main tabs; Ctrl+Shift+I — Invoice… (top-level Invoices tab); AR lists: **Customers**.\n"
         "Help → Document intake shortcuts… lists the same chords plus Intake-specific notes "
         "(including File → Backup company file… / Restore from backup… via probooks.backup).\n"
-        "Hover the main window menu bar (File, View, Edit, Tools, Recon, Help) for status bar hints and per-item hover tooltips.\n\n"
+        "Hover the main window menu bar (File, View, Edit, Tools, Recon, Reports, Help) for status bar hints and per-item hover tooltips.\n\n"
         "Right-click the main grid or list on these tabs (including empty area) for "
         "Keyboard shortcuts… (same as this dialog).\n\n"
         "Other shortcuts:\n"

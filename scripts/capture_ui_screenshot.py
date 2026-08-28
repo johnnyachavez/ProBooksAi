@@ -23,6 +23,7 @@ Usage (with a virtual display already active, e.g. via xvfb-run):
     python scripts/capture_ui_screenshot.py --tab calendar --output artifacts/ui/calendar.png
     python scripts/capture_ui_screenshot.py --tab snapshot --output artifacts/ui/company_snapshot.png
     python scripts/capture_ui_screenshot.py --tab my-company --output artifacts/ui/my_company.png
+    python scripts/capture_ui_screenshot.py --tab ar-aging --output artifacts/ui/ar_aging_summary.png
 
 Saves: artifacts/ui/main_window.png (default)
 Exit code 0 on success, non-zero on failure.
@@ -112,7 +113,7 @@ def main() -> int:
     parser.add_argument(
         "--tab",
         default="main",
-        help="Which surface to capture: main (default), home, invoices, bills (Enter Bills), pay-bills, payments, deposits, checks, vendors, customers, coa, register, use-register, items, edit-item, income-tracker, bill-tracker, calendar, snapshot, or my-company.",
+        help="Which surface to capture: main (default), home, invoices, bills (Enter Bills), pay-bills, payments, deposits, checks, vendors, customers, coa, register, use-register, items, edit-item, income-tracker, bill-tracker, calendar, snapshot, my-company, or ar-aging.",
     )
     parser.add_argument(
         "--output",
@@ -145,6 +146,7 @@ def main() -> int:
     from desktop_app.calendar_screen import CalendarScreen  # noqa: E402
     from desktop_app.company_snapshot_screen import CompanySnapshotScreen  # noqa: E402
     from desktop_app.my_company_screen import MyCompanyScreen  # noqa: E402
+    from desktop_app.ar_aging_summary_screen import ARAgingSummaryScreen  # noqa: E402
     from desktop_app.vendor_center_screen import VendorCenterScreen  # noqa: E402
 
     app = QApplication(sys.argv)
@@ -190,6 +192,8 @@ def main() -> int:
         output_path = Path("artifacts") / "ui" / "company_snapshot.png"
     elif tab in ("my-company", "my_company"):
         output_path = Path("artifacts") / "ui" / "my_company.png"
+    elif tab in ("ar-aging", "ar_aging", "ar-aging-summary", "ar_aging_summary"):
+        output_path = Path("artifacts") / "ui" / "ar_aging_summary.png"
     else:
         output_path = Path("artifacts") / "ui" / "main_window.png"
 
@@ -228,6 +232,10 @@ def main() -> int:
         "company_snapshot",
         "my-company",
         "my_company",
+        "ar-aging",
+        "ar_aging",
+        "ar-aging-summary",
+        "ar_aging_summary",
     ):
         shot_dir = Path(tempfile.mkdtemp(prefix="probooks-ui-shot-"))
         extra_kw["db_path"] = str(shot_dir / "shot.db")
@@ -871,6 +879,97 @@ def main() -> int:
                 window._tabs.setCurrentIndex(idx)
         if isinstance(screen, MyCompanyScreen):
             screen.reload()
+        grab_widget = screen
+        if grab_widget is not None:
+            grab_widget.resize(1400, 900)
+            grab_widget.setMinimumSize(1400, 900)
+            grab_widget.show()
+    elif tab in ("ar-aging", "ar_aging", "ar-aging-summary", "ar_aging_summary"):
+        from datetime import date as _date
+
+        from PySide6.QtCore import QDate
+
+        from probooksai import business
+
+        conn = getattr(getattr(window, "_bank_db", None), "_conn", None)
+        if conn is not None:
+            parent = business.add_customer(conn, "Harbor Logistics")
+            job = business.add_customer(conn, "Site A", parent_customer_id=parent)
+            business.create_invoice(
+                conn,
+                parent,
+                "INV-2101",
+                "2026-08-01",
+                due_date="2026-08-20",
+                lines=[{"description": "Haul", "qty": 1, "rate": 450.00}],
+            )
+            business.create_invoice(
+                conn,
+                job,
+                "JOB-12",
+                "2026-07-01",
+                due_date="2026-07-10",
+                lines=[{"description": "Site work", "qty": 1, "rate": 200.00}],
+            )
+            c2 = business.add_customer(conn, "Westside Hauling")
+            iid = business.create_invoice(
+                conn,
+                c2,
+                "WH-88",
+                "2026-07-15",
+                due_date="2026-08-14",
+                lines=[{"description": "Haul", "qty": 1, "rate": 780.50}],
+            )
+            business.record_ar_payment(
+                conn,
+                c2,
+                "2026-08-10",
+                200.00,
+                [(iid, 200.00)],
+                method="Check",
+                reference="1008",
+            )
+            c3 = business.add_customer(conn, "Metro Freight")
+            business.create_invoice(
+                conn,
+                c3,
+                "MF-40",
+                "2026-06-01",
+                due_date="2026-06-20",
+                lines=[{"description": "Haul", "qty": 1, "rate": 96.40}],
+            )
+            c4 = business.add_customer(conn, "Northwind Cartage")
+            business.create_invoice(
+                conn,
+                c4,
+                "NW-7",
+                "2026-04-01",
+                due_date="2026-04-15",
+                lines=[{"description": "Haul", "qty": 1, "rate": 310.00}],
+            )
+            c5 = business.add_customer(conn, "Ridgeway Express")
+            business.create_invoice(
+                conn,
+                c5,
+                "RX-3",
+                "2026-08-20",
+                due_date="2026-09-20",
+                lines=[{"description": "Haul", "qty": 1, "rate": 125.00}],
+            )
+        screen = getattr(window, "_ar_aging_screen", None)
+        if isinstance(screen, ARAgingSummaryScreen):
+            as_of = _date(2026, 8, 27)
+            screen._dates.blockSignals(True)
+            screen._dates.setCurrentText("Custom Date")
+            screen._dates.blockSignals(False)
+            screen._as_of_edit.blockSignals(True)
+            screen._as_of_edit.setDate(QDate(as_of.year, as_of.month, as_of.day))
+            screen._as_of_edit.blockSignals(False)
+            screen.reload()
+        if screen is not None and hasattr(window, "_tabs"):
+            idx = window._tabs.indexOf(screen)
+            if idx >= 0:
+                window._tabs.setCurrentIndex(idx)
         grab_widget = screen
         if grab_widget is not None:
             grab_widget.resize(1400, 900)

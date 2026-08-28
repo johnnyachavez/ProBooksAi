@@ -119,6 +119,7 @@ from desktop_app.make_deposits_screen import MakeDepositsScreen
 from desktop_app.calendar_screen import CalendarScreen
 from desktop_app.company_snapshot_screen import CompanySnapshotScreen
 from desktop_app.my_company_screen import MyCompanyScreen
+from desktop_app.ar_aging_summary_screen import ARAgingSummaryScreen
 from desktop_app.tracker_screens import BillTrackerScreen, IncomeTrackerScreen
 from desktop_app.create_company_file_dialog import CreateCompanyFileDialog
 from desktop_app.hover_messages import install_global_hover_message_suppression
@@ -152,7 +153,7 @@ def _document_intake_keyboard_shortcuts_help_text() -> str:
     """Plain text for **Help → Document intake shortcuts…** (aligned with **F5** / **InboxWidget**)."""
     return (
         "These shortcuts apply when Document Intake or its controls have focus:\n\n"
-        "Menu bar: hover File, View, Edit, Tools, Recon, Help to see shortcut and action hints "
+        "Menu bar: hover File, View, Edit, Tools, Recon, Reports, Help to see shortcut and action hints "
         "in the status bar and on hover for each menu item.\n\n"
         "F5 — Refresh the document list when Document Intake has focus.\n\n"
         "Detail pane: Run AI, Approve, Mark Posted, and Reject have short descriptions on hover.\n\n"
@@ -1212,6 +1213,7 @@ class MainWindow(QMainWindow):
         self._calendar_screen = CalendarScreen(ap_conn=conn)
         self._snapshot_screen = CompanySnapshotScreen(ap_conn=conn)
         self._my_company_screen = MyCompanyScreen(ap_conn=conn)
+        self._ar_aging_screen = ARAgingSummaryScreen(ap_conn=conn)
         self._invoice_codes_screen = InvoiceCodesScreen(ap_conn=conn, coa_db=self._coa_db)
         self._enter_bills_screen = EnterBillsScreen(ap_conn=conn)
         self._enter_bills_screen.payBillsRequested.connect(self._on_enter_bills_pay_bill)
@@ -1346,6 +1348,11 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(self._vendors_tab, "Vendors")
         self._tabs.addTab(self._reconcile_root, "Reconcile")
         self._tabs.addTab(self._more_hub, "More")
+        # Hidden: opened from Reports / Customer Center Open Balance — icon bar stays 19 tabs.
+        self._tabs.addTab(self._ar_aging_screen, "A/R Aging")
+        ar_idx = self._tabs.indexOf(self._ar_aging_screen)
+        if ar_idx >= 0:
+            self._tabs.tabBar().setTabVisible(ar_idx, False)
         self._tabs.currentChanged.connect(self._on_main_tab_changing)
         self._prev_main_tab_index: int = 0
         self._make_deposits_screen.depositPosted.connect(self._on_make_deposit_posted)
@@ -1366,6 +1373,8 @@ class MainWindow(QMainWindow):
         self._customers_tab.openInvoiceRequested.connect(self._on_customer_center_open_invoice)
         self._customers_tab.openPaymentRequested.connect(self._on_customer_center_open_payment)
         self._customers_tab.customerRecordsChanged.connect(self._on_customer_center_records_changed)
+        self._customers_tab.arAgingSummaryRequested.connect(self._focus_ar_aging_summary)
+        self._ar_aging_screen.openCustomerRequested.connect(self._on_ar_aging_open_customer)
         self._income_tracker_screen.openInvoiceRequested.connect(
             self._on_customer_center_open_invoice
         )
@@ -1554,6 +1563,13 @@ class MainWindow(QMainWindow):
             ),
             (
                 "More: Reports, Journal, Business hub, and Audit log."
+                + _tab_bar_csv_excel_hint
+                + _main_tab_bar_db_hint
+            ),
+            (
+                "A/R Aging Summary: live open invoices by customer and job "
+                "(Current / 1-30 / 31-60 / 61-90 / >90). "
+                "Open from Reports or Customer Center Open Balance."
                 + _tab_bar_csv_excel_hint
                 + _main_tab_bar_db_hint
             ),
@@ -1807,7 +1823,7 @@ class MainWindow(QMainWindow):
             + _view_tab_tip_suffix,
         )
         for label, kind, tip in (
-            ("&A/R aging", "ar_aging", "Open invoice balances by aging bucket (as-of: End date or today)."),
+            ("A/&R Aging Summary", "ar_aging", "A/R Aging Summary (QB Pro layout) from live open invoices."),
             ("A/&P aging", "ap_aging", "Open bill balances by aging bucket."),
             ("&Open invoices", "open_inv", "Invoices with balance due."),
             ("Open &bills", "open_bill", "Bills with balance due."),
@@ -2029,6 +2045,23 @@ class MainWindow(QMainWindow):
             lambda: self._register_tab.tools_register_clear_needs_receipt()
         )
         m_reg_flags.addAction(act_reg_clear_rcpt)
+
+        # Reports menu
+        reports_menu = mb.addMenu("&Reports")
+        _menu_action_tip(
+            reports_menu,
+            "A/R Aging Summary and other receivables reports. "
+            "Same live company file as Customer Center (File → Backup / Restore, probooks.backup).",
+        )
+        act_ar_aging = QAction("A/&R Aging Summary", self)
+        _menu_action_tip(
+            act_ar_aging,
+            "Open A/R Aging Summary (customers and jobs, Current / 1-30 / 31-60 / 61-90 / >90). "
+            "Live open invoices; empty company shows zeros. "
+            "Customer Center Open Balance also opens this report.",
+        )
+        act_ar_aging.triggered.connect(self._focus_ar_aging_summary)
+        reports_menu.addAction(act_ar_aging)
 
         # Help menu
         help_menu = mb.addMenu("&Help")
@@ -3135,8 +3168,43 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_register_tab"):
             self._register_tab._reload_current()
 
+    def _focus_ar_aging_summary(self) -> None:
+        """Reports → A/R Aging Summary (also Customer Center Open Balance)."""
+        tabs = getattr(self, "_tabs", None)
+        screen = getattr(self, "_ar_aging_screen", None)
+        if tabs is None or screen is None:
+            return
+        idx = tabs.indexOf(screen)
+        if idx >= 0:
+            tabs.setCurrentIndex(idx)
+        try:
+            screen.reload()
+        except Exception:
+            pass
+
+    def _on_ar_aging_open_customer(self, customer_id: int) -> None:
+        """Double-click a customer or job row → Customer Center open invoices."""
+        if not hasattr(self, "_tabs") or not hasattr(self, "_customers_tab"):
+            return
+        cid = int(customer_id or 0)
+        if cid:
+            try:
+                self._customers_tab.focus_open_invoices(cid)
+            except Exception:
+                try:
+                    self._customers_tab.focus_customer(cid)
+                except Exception:
+                    pass
+        idx = self._tabs.indexOf(self._customers_tab)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+
     def _focus_more_report(self, kind: str) -> None:
         """View → More reports: show **More** → **Reports** and run an A/R or A/P report."""
+        k = (kind or "").strip().lower().replace("-", "_")
+        if k in ("ar_aging", "ar_aging_summary"):
+            self._focus_ar_aging_summary()
+            return
         tabs = getattr(self, "_tabs", None)
         hub = getattr(self, "_more_hub", None)
         rt = getattr(self, "_reports_tab", None)
