@@ -23,14 +23,18 @@ Modal UI for *this* workflow tab is allowed only from explicit header buttons:
   blank invoice (QuickBooks **Save & New**). No print dialog.
 - **Save & Close** (``_btn_save_close``): same persist + optional PDF, then stays on the saved
   invoice (tab analog of QuickBooks **Save & Close** — the form is not a floating window).
-- **Clear** (``_btn_clear_fields``): new draft without saving.
-- **Export PDF…** (``_btn_export_pdf``): persists, then **Save file** dialog for a single ``.pdf`` path
-  (does not change the preferences folder).
+- **Clear** (``_btn_clear_fields``) / **New**: if the form is dirty, asks **Save invoice ###?** first.
+- **Save As** (``_btn_export_pdf``): persists, then a Save dialog with an editable file name
+  (default ``8114.pdf``). The folder is shown by the dialog, not in the name box. Remembers
+  the last folder per company on this PC. Asks before overwrite.
+- Leaving the Invoice tab, or Previous / Next / Find onto another invoice, asks
+  **Save invoice ###?** Yes (company file + PDF if a folder is already set) / No (discard
+  and leave) / Cancel or **X** (stay; keep the data; do not save or wipe).
 - **Print…** (``_btn_print``): ``sender()`` must be that button; ``_invoice_print_dialog_armed``
   gates ``QPrintDialog``. After save, print uses the **same HTML as PDF** (loaded from the saved invoice row).
   Uses the saved printer when set; otherwise ``QPrintDialog`` once (includes “Print to PDF” / virtual printers).
 
-No other signal may trigger Save / Export / Print invoice output paths.
+No other signal may trigger Save / Export / Print invoice output paths except the leave-tab prompt.
 ``desktop_app.invoice_pdf.invoice_html_string`` / ``save_invoice_pdf`` also serve tests and CLI.
 Company identity from ``company_settings`` appears above the Create Invoices title and in PDF/print HTML.
 """
@@ -57,7 +61,6 @@ from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
     QHBoxLayout,
-    QFileDialog,
     QHeaderView,
     QInputDialog,
     QLabel,
@@ -89,11 +92,18 @@ from desktop_app.find_matchers import first_matching_row
 from desktop_app.invoice_preferences import (
     configure_printer_for_invoice_print,
     ensure_invoice_output_folder,
+    get_invoice_output_folder,
+    prompt_invoice_save_as_path,
 )
 from desktop_app.invoice_intake_panel import InvoiceIntakePanel
 from desktop_app.invoice_intake_text_extract import TextIntakeExtraction
 from desktop_app.invoice_pdf import invoice_html_string, save_invoice_pdf
-from desktop_app.qt_mnemonic import message_box_information_ok, message_box_warning_ok
+from desktop_app.qt_mnemonic import (
+    message_box_information_ok,
+    message_box_question_yes_no,
+    message_box_question_yes_no_cancel,
+    message_box_warning_ok,
+)
 from probooksai import business
 from probooksai.company_identity import company_identity_plain_block
 from probooksai.dispatch_intake import (
@@ -152,7 +162,7 @@ _INVOICE_TOP_FOUR_LINE_HEIGHT_PX = 26
 _TOP_STRIP_RADIUS_PX = 6
 _TOP_STRIP_CAPTION_FONT_PX = 11
 _TOP_STRIP_BODY_FONT_PX = 12
-# Clear Fields / Save / Export PDF / Print / New Customer / Reverse / Forward — per-button outline on dark
+# Clear Fields / Save / Save As / Print / New Customer / Reverse / Forward — per-button outline on dark
 # faces (not the outer panel). Same on all six.
 _INV_STRIP_ACTION_BTN_BORDER_W = 1
 
@@ -257,12 +267,17 @@ def _invoice_line_table_qsettings() -> QSettings:
 
 
 def _safe_invoice_pdf_stem(invoice_number: str) -> str:
-    """Single path segment for ``Invoice-<stem>.pdf`` (no slashes or Windows-forbidden chars)."""
+    """Single path segment for ``<stem>.pdf`` (no slashes or Windows-forbidden chars)."""
     raw = (invoice_number or "").strip() or "invoice"
     forbidden = '<>:"/\\|?*\x00'
     cleaned = "".join(ch if ch not in forbidden and ord(ch) >= 32 else "_" for ch in raw)
     cleaned = cleaned.strip(" .") or "invoice"
     return cleaned[:120]
+
+
+def invoice_pdf_basename(invoice_number: str) -> str:
+    """PDF file name is the invoice number, e.g. ``8114.pdf``."""
+    return f"{_safe_invoice_pdf_stem(invoice_number)}.pdf"
 
 
 def _cell_line() -> QLineEdit:
@@ -401,6 +416,9 @@ class InvoiceScreen(QWidget):
         self._payments_applied: float = 0.0
         # Set True only inside Print click handler while QPrintDialog may run (blocks stray callers).
         self._invoice_print_dialog_armed: bool = False
+        # Fingerprint of last loaded/saved form (leave-tab dirty check for saved invoices).
+        self._clean_fingerprint: tuple | None = None
+        # Last committed Code column text per line (strip); avoids re-applying saved Code rate when only Rate changed.
         # Last committed Code column text per line (strip); avoids re-applying saved Code rate when only Rate changed.
         self._invoice_line_code_committed: list[str] = [""] * self._N_LINE_ROWS
         self.setToolTip(
@@ -421,11 +439,15 @@ class InvoiceScreen(QWidget):
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
-        if self._ap_conn is not None:
-            self._bill_customer_panel.reload_customers()
+        dirty = self._is_form_dirty()
+        # Leaving the main tab switches away then back before the save prompt; do not
+        # reload customers or the invoice # while dirty (that would wipe the draft).
+        if not dirty:
+            if self._ap_conn is not None:
+                self._bill_customer_panel.reload_customers()
+            self._sync_invoice_number_suggestion()
+            self._refresh_browse_state()
         self._refresh_company_identity_header()
-        self._sync_invoice_number_suggestion()
-        self._refresh_browse_state()
         self._update_new_customer_button_state()
         # After layout, give leftover width to DESCRIPTION (width was 0 during build).
         QTimer.singleShot(0, self._sync_invoice_line_description_column_width_safe)
@@ -596,6 +618,8 @@ class InvoiceScreen(QWidget):
 
     def prepare_new_invoice_for_customer(self, customer_id: int) -> None:
         """Tiny Customer Center hook: new invoice draft with Bill To *customer_id*."""
+        if not self._prompt_save_unsaved_invoice():
+            return
         if getattr(self, "_invoice_tabs", None) is not None:
             self._invoice_tabs.setCurrentIndex(0)
         self._go_to_new_invoice_draft()
@@ -805,7 +829,9 @@ class InvoiceScreen(QWidget):
             "Use Previous / Next to browse from there."
         )
         self._btn_new_invoice = QPushButton("New")
-        self._btn_new_invoice.setToolTip("Start a blank invoice (does not save the current form).")
+        self._btn_new_invoice.setToolTip(
+            "Start a blank invoice. If this form has unsaved changes, asks Save invoice ###? first."
+        )
         self._btn_ribbon_save = QPushButton("Save")
         self._btn_ribbon_save.setToolTip(
             "Save this invoice to the company file and keep it open (QuickBooks ribbon Save)."
@@ -823,10 +849,12 @@ class InvoiceScreen(QWidget):
             "If the customer has no email address, or your OS has no mail handler, a real "
             "message explains what to do next — no silent failure."
         )
-        self._btn_export_pdf = QPushButton("Export PDF…")
+        self._btn_export_pdf = QPushButton("Save As")
         self._btn_export_pdf.setToolTip(
-            "Save this invoice to the company file, then pick a PDF file path (one-time). "
-            "Does not change the default folder used by Save."
+            "Save this invoice to the company file, then pick a PDF file. "
+            "The default name is the invoice number (for example 8114.pdf); you can edit it. "
+            "Opens in the last folder used for this company on this PC. "
+            "Asks before overwriting an existing file."
         )
         self._btn_new_customer = QPushButton("New Customer")
         self._btn_new_customer.setToolTip(
@@ -1442,6 +1470,8 @@ class InvoiceScreen(QWidget):
                 ok_tip="Close; use File → Open company… then try again.",
             )
             return False
+        if not self._prompt_save_unsaved_invoice():
+            return False
         self._invoice_tabs.setCurrentIndex(0)
         self._go_to_new_invoice_draft()
 
@@ -1578,6 +1608,8 @@ class InvoiceScreen(QWidget):
                 ok_tip="Close; use File → Open company… then try again.",
             )
             return False
+        if not self._prompt_save_unsaved_invoice():
+            return False
         self._invoice_tabs.setCurrentIndex(0)
         self._go_to_new_invoice_draft()
 
@@ -1690,7 +1722,12 @@ class InvoiceScreen(QWidget):
                 ok_tip="Close; refresh the register or company data and try again.",
             )
             return False
+        if iid == self._current_invoice_id:
+            self._invoice_tabs.setCurrentIndex(0)
+            return True
         self._invoice_tabs.setCurrentIndex(0)
+        if not self._prompt_save_unsaved_invoice():
+            return False
         self._load_invoice_into_form(iid)
         self._bill_customer_panel.reload_customers()
         self._sync_invoice_number_suggestion()
@@ -1757,6 +1794,10 @@ class InvoiceScreen(QWidget):
         Prefer the open SQLite file path from ``ap_conn`` (works before main window
         writes ``company_database_path`` to QSettings). Fall back to QSettings.
         """
+        return f"{_INVOICE_LINE_TABLE_WIDTHS_KEY_PREFIX}_{self._company_settings_sid()}"
+
+    def _company_settings_sid(self) -> str:
+        """Stable id for this PC + company file (QSettings keys)."""
         path = ""
         conn = self._ap_conn
         if conn is not None:
@@ -1777,10 +1818,8 @@ class InvoiceScreen(QWidget):
             if qs:
                 path = os.path.normcase(os.path.normpath(os.path.abspath(qs)))
         if not path:
-            sid = "default"
-        else:
-            sid = hashlib.sha256(path.encode("utf-8", errors="replace")).hexdigest()[:16]
-        return f"{_INVOICE_LINE_TABLE_WIDTHS_KEY_PREFIX}_{sid}"
+            return "default"
+        return hashlib.sha256(path.encode("utf-8", errors="replace")).hexdigest()[:16]
 
     def _persist_invoice_line_column_widths(self) -> None:
         t = getattr(self, "_table", None)
@@ -2158,6 +2197,8 @@ class InvoiceScreen(QWidget):
         b.setText("")
 
     def _on_clear_fields(self) -> None:
+        if not self._prompt_save_unsaved_invoice():
+            return
         self._current_invoice_id = None
         self._browse_slot = None
         self._suppress_invoice_header_autofill = True
@@ -2182,6 +2223,7 @@ class InvoiceScreen(QWidget):
         self._sync_invoice_number_suggestion()
         self._update_browse_buttons()
         self._sync_invoice_status_badge(status=None, balance_due=None)
+        self._mark_form_clean()
 
     def _sync_invoice_status_badge(
         self, *, status: str | None, balance_due: float | None
@@ -2269,6 +2311,7 @@ class InvoiceScreen(QWidget):
         self._browse_slot = len(self._browse_ids)
         self._update_browse_buttons()
         self._sync_invoice_status_badge(status=None, balance_due=None)
+        self._mark_form_clean()
 
     def _load_invoice_by_list_index(self, list_index: int) -> None:
         n = len(self._browse_ids)
@@ -2409,6 +2452,7 @@ class InvoiceScreen(QWidget):
         st_str = str(raw_st).strip() if raw_st is not None else ""
         self._sync_invoice_status_badge(status=st_str or None, balance_due=bd)
         self._recalc_invoice_footer_from_grid()
+        self._mark_form_clean()
 
     def _set_customer_message_text(self, text: str) -> None:
         w = getattr(self, "_customer_message", None)
@@ -2449,6 +2493,8 @@ class InvoiceScreen(QWidget):
         return po, job, message, "\n".join(extra).strip()
 
     def _on_reverse_invoice(self) -> None:
+        if not self._prompt_save_unsaved_invoice():
+            return
         self._refresh_browse_state()
         n = len(self._browse_ids)
         if n == 0:
@@ -2465,6 +2511,8 @@ class InvoiceScreen(QWidget):
         self._load_invoice_by_list_index(slot - 1)
 
     def _on_forward_invoice(self) -> None:
+        if not self._prompt_save_unsaved_invoice():
+            return
         self._refresh_browse_state()
         n = len(self._browse_ids)
         if n == 0:
@@ -2556,10 +2604,181 @@ class InvoiceScreen(QWidget):
                     return
             w = w.parentWidget()
 
+    def _invoice_form_fingerprint(self) -> tuple:
+        """Comparable snapshot of fields that Save writes."""
+        lines: list[tuple] = []
+        for r in range(self._N_LINE_ROWS):
+            dt_w = self._table.cellWidget(r, 0)
+            code_w = self._table.cellWidget(r, 1)
+            desc_w = self._table.cellWidget(r, 2)
+            bol_w = self._table.cellWidget(r, 3)
+            rate_w = self._table.cellWidget(r, 4)
+            qty_w = self._table.cellWidget(r, 5)
+            lines.append(
+                (
+                    dt_w.text().strip() if isinstance(dt_w, QLineEdit) else "",
+                    code_w.text().strip() if isinstance(code_w, QLineEdit) else "",
+                    desc_w.text().strip() if isinstance(desc_w, QLineEdit) else "",
+                    bol_w.text().strip() if isinstance(bol_w, QLineEdit) else "",
+                    round(float(rate_w.value()), 2) if isinstance(rate_w, QDoubleSpinBox) else 0.0,
+                    round(float(qty_w.value()), 2) if isinstance(qty_w, QDoubleSpinBox) else 0.0,
+                )
+            )
+        msg_w = getattr(self, "_customer_message", None)
+        memo_w = getattr(self, "_memo_edit", None)
+        return (
+            self.selected_bill_to_customer_id(),
+            self._inv_number.text().strip(),
+            self._iso_from_date_edit(self._date),
+            self._iso_from_date_edit(self._due_date),
+            self._terms.currentText().strip(),
+            self._po.text().strip(),
+            self._job.text().strip(),
+            (msg_w.currentText().strip() if msg_w is not None else ""),
+            (memo_w.text().strip() if memo_w is not None else ""),
+            self._ship_to_plain(),
+            tuple(lines),
+        )
+
+    def _form_has_user_content(self) -> bool:
+        """True when a new draft has more than the autofilled invoice # / date."""
+        if self.selected_bill_to_customer_id() is not None:
+            return True
+        if self._po.text().strip() or self._job.text().strip():
+            return True
+        msg_w = getattr(self, "_customer_message", None)
+        if msg_w is not None and msg_w.currentText().strip():
+            return True
+        memo_w = getattr(self, "_memo_edit", None)
+        if memo_w is not None and memo_w.text().strip():
+            return True
+        if self._ship_to_plain().strip():
+            return True
+        for r in range(self._N_LINE_ROWS):
+            dt_w = self._table.cellWidget(r, 0)
+            code_w = self._table.cellWidget(r, 1)
+            desc_w = self._table.cellWidget(r, 2)
+            bol_w = self._table.cellWidget(r, 3)
+            rate_w = self._table.cellWidget(r, 4)
+            qty_w = self._table.cellWidget(r, 5)
+            if isinstance(dt_w, QLineEdit) and dt_w.text().strip():
+                return True
+            if isinstance(code_w, QLineEdit) and code_w.text().strip():
+                return True
+            if isinstance(desc_w, QLineEdit) and desc_w.text().strip():
+                return True
+            if isinstance(bol_w, QLineEdit) and bol_w.text().strip():
+                return True
+            if isinstance(rate_w, QDoubleSpinBox) and abs(float(rate_w.value())) > 0.0005:
+                return True
+            if isinstance(qty_w, QDoubleSpinBox) and abs(float(qty_w.value())) > 0.0005:
+                return True
+        return False
+
+    def _mark_form_clean(self) -> None:
+        self._clean_fingerprint = self._invoice_form_fingerprint()
+
+    def _is_form_dirty(self) -> bool:
+        """Used by the main window when leaving the Invoice tab."""
+        if self._ap_conn is None:
+            return False
+        if self._current_invoice_id is None:
+            return self._form_has_user_content()
+        return self._invoice_form_fingerprint() != self._clean_fingerprint
+
+    def _write_pdf_if_folder_already_set(self, inv_id: int) -> None:
+        """Write ``<invoice#>.pdf`` only when Invoice Options already has a folder (no picker)."""
+        folder = get_invoice_output_folder()
+        if not folder or inv_id is None:
+            return
+        num = self._inv_number.text().strip()
+        pdf_path = os.path.join(folder, invoice_pdf_basename(num))
+        self._write_invoice_pdf_file(inv_id, pdf_path)
+
+    def _prompt_save_unsaved_invoice(self) -> bool:
+        """If the form is dirty, ask **Save invoice ###?** Yes / No / Cancel.
+
+        Yes: save to the company file, and write a PDF when a folder is already set.
+        No: do not save (caller may discard or replace the form).
+        Cancel or window **X**: stay; keep the data; do not save or wipe.
+        Returns ``False`` to stay (Cancel / X, or Yes but save failed).
+        """
+        if not self._is_form_dirty():
+            return True
+        num = self._inv_number.text().strip() or "this invoice"
+        choice = message_box_question_yes_no_cancel(
+            self,
+            "Save invoice",
+            f"Save invoice {num}?",
+            yes_tip="Save this invoice to the company file, then continue.",
+            no_tip="Discard these changes and continue.",
+            cancel_tip="Stay on this invoice. Keep the data. Do not save.",
+            default_yes=True,
+        )
+        if choice == "cancel":
+            return False
+        if choice != "yes":
+            return True
+        ok, msg, inv_id = self._save_invoice_data_only()
+        if not ok:
+            self._invoice_feedback_message(msg)
+            return False
+        if inv_id is not None:
+            self._current_invoice_id = inv_id
+            self._write_pdf_if_folder_already_set(inv_id)
+        self._mark_form_clean()
+        return True
+
+    def _confirm_leave_loaded_invoice(self) -> bool:
+        """Ask **Save invoice ###?** Yes / No / Cancel when leaving the Invoice tab.
+
+        Yes saves (company file + PDF if a folder is already set). No discards and leaves.
+        Cancel or **X** stays on the invoice with the data intact. Returns ``False`` to stay
+        (Cancel / X, or Yes but save failed).
+        """
+        was_dirty = self._is_form_dirty()
+        if not self._prompt_save_unsaved_invoice():
+            return False
+        if was_dirty and self._is_form_dirty():
+            self._go_to_new_invoice_draft()
+        return True
+
+    def _confirm_overwrite_invoice_pdf(self, pdf_path: str) -> bool:
+        name = os.path.basename(pdf_path)
+        if not os.path.isfile(pdf_path):
+            return True
+        return message_box_question_yes_no(
+            self,
+            "Overwrite PDF",
+            f"{name} already exists. Overwrite?",
+            yes_tip="Replace the existing PDF.",
+            no_tip="Keep the existing file.",
+            default_yes=False,
+        )
+
+    def _write_invoice_pdf_file(self, inv_id: int, pdf_path: str) -> bool:
+        """Write Chavan-layout PDF. Asks before overwrite. Returns True if written."""
+        if not self._confirm_overwrite_invoice_pdf(pdf_path):
+            return False
+        assert self._ap_conn is not None
+        try:
+            save_invoice_pdf(self._ap_conn, inv_id, pdf_path)
+        except OSError as exc:
+            self._invoice_feedback_message(
+                f"Invoice saved, but the PDF could not be written: {exc}"
+            )
+            return False
+        except Exception as exc:  # noqa: BLE001
+            self._invoice_feedback_message(
+                f"Invoice saved, but PDF export failed: {exc}"
+            )
+            return False
+        return True
+
     def _try_persist_invoice(self) -> tuple[bool, str, int | None]:
         """Create or update the current invoice row. Returns ``(ok, message, invoice_id)``.
 
-        Silent DB only — no PDF or print UI here. Call only from Save/Print click paths.
+        Silent DB only — no PDF, print, folder, or company-file UI here.
         """
         if self._ap_conn is None:
             return False, "Connect a company file to save invoices.", None
@@ -2596,6 +2815,7 @@ class InvoiceScreen(QWidget):
                     terms=terms_s,
                 )
                 self.openInvoicesChanged.emit()
+                self._mark_form_clean()
                 return True, "", edit_id
             inv_id = business.create_invoice(
                 conn,
@@ -2626,6 +2846,7 @@ class InvoiceScreen(QWidget):
         except sqlite3.Error as exc:
             return False, str(exc), None
         self.openInvoicesChanged.emit()
+        self._mark_form_clean()
         return True, "", inv_id
 
     def _save_invoice_data_only(self) -> tuple[bool, str, int | None]:
@@ -2643,18 +2864,8 @@ class InvoiceScreen(QWidget):
         folder = ensure_invoice_output_folder(self)
         if folder:
             num = self._inv_number.text().strip()
-            pdf_name = f"Invoice-{_safe_invoice_pdf_stem(num)}.pdf"
-            pdf_path = os.path.join(folder, pdf_name)
-            try:
-                save_invoice_pdf(self._ap_conn, inv_id, pdf_path)
-            except OSError as exc:
-                self._invoice_feedback_message(
-                    f"Invoice saved, but the PDF could not be written: {exc}"
-                )
-            except Exception as exc:  # noqa: BLE001
-                self._invoice_feedback_message(
-                    f"Invoice saved, but PDF export failed: {exc}"
-                )
+            pdf_path = os.path.join(folder, invoice_pdf_basename(num))
+            self._write_invoice_pdf_file(inv_id, pdf_path)
         else:
             self._invoice_feedback_message(
                 "Invoice saved to the company file. "
@@ -2695,43 +2906,24 @@ class InvoiceScreen(QWidget):
         if self.sender() is not self._btn_export_pdf:
             return
         if self._ap_conn is None:
-            self._invoice_feedback_message("Connect a company file to export a PDF.")
+            self._invoice_feedback_message("Connect a company file to save a PDF.")
             return
-        was_new = self._current_invoice_id is None
         ok, msg, inv_id = self._save_invoice_data_only()
         if not ok:
             self._invoice_feedback_message(msg)
             return
         assert inv_id is not None
         num = self._inv_number.text().strip()
-        default_name = f"Invoice-{_safe_invoice_pdf_stem(num)}.pdf"
-        path, _filt = QFileDialog.getSaveFileName(
-            self,
-            "Export invoice as PDF",
-            default_name,
-            "PDF files (*.pdf);;All files (*.*)",
+        path = prompt_invoice_save_as_path(
+            self, self._company_settings_sid(), invoice_pdf_basename(num)
         )
         if not path:
-            return
-        if not path.lower().endswith(".pdf"):
-            path = f"{path}.pdf"
-        try:
-            save_invoice_pdf(self._ap_conn, inv_id, path)
-        except OSError as exc:
-            self._invoice_feedback_message(
-                f"Invoice saved, but the PDF could not be written: {exc}"
-            )
-            return
-        except Exception as exc:  # noqa: BLE001
-            self._invoice_feedback_message(
-                f"Invoice saved, but PDF export failed: {exc}"
-            )
-            return
-        self._refresh_browse_state()
-        if was_new:
-            self._go_to_new_invoice_draft()
-        else:
+            self._refresh_browse_state()
             self._load_invoice_into_form(inv_id)
+            return
+        self._write_invoice_pdf_file(inv_id, path)
+        self._refresh_browse_state()
+        self._load_invoice_into_form(inv_id)
 
     def _run_invoice_print_dialog(self, inv_id: int, *, advance_after: bool = True) -> None:
         """Print saved invoice HTML when ``_invoice_print_dialog_armed``; same template as PDF."""
@@ -2816,6 +3008,8 @@ class InvoiceScreen(QWidget):
             return
         needle = (text or "").strip()
         if not needle:
+            return
+        if not self._prompt_save_unsaved_invoice():
             return
         inv_id = self.find_invoice_id_matching(needle)
         if inv_id is None:

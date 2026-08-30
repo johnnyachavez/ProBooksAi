@@ -1443,9 +1443,9 @@ class MainWindow(QMainWindow):
             self._tabs.setCurrentIndex(old_index)
             self._tabs.blockSignals(False)
             if not confirm_leave():
-                # User chose Stay — stay on the invoice screen
+                # Save failed — stay on the invoice screen
                 return
-            # User saved or discarded — proceed to the requested tab
+            # Yes saved, or No skipped save — proceed to the requested tab
             self._tabs.blockSignals(True)
             self._tabs.setCurrentIndex(new_index)
             self._tabs.blockSignals(False)

@@ -4,6 +4,8 @@
 
 - **Invoices** tab uses ``invoice_html_string`` for print preview HTML and ``save_invoice_pdf`` for
   PDF files; **Print…** opens ``QPrintDialog`` (user may pick a physical printer or a “Print to PDF” driver).
+- Print and Save PDF share the Chavan layout in ``invoice_print_html`` (BILL TO, Date, Invoice #,
+  PO/CONTRACT#, NAME/JOB#, line grid, CO/compliance-fee line, Balance Due, JOHNNY footer + phone).
 - ``save_invoice_pdf`` / ``invoice_html_string`` are also used from tests and CLI helpers.
 
 ``save_invoice_pdf`` creates ``QPrinter`` in PDF mode and calls ``QTextDocument.print_``.
@@ -20,7 +22,10 @@ from pathlib import Path
 
 from desktop_app.flexible_date import format_iso_to_us_display
 from desktop_app.invoice_print_html import (
+    DEFAULT_THANK_YOU,
     build_invoice_print_html,
+    compliance_fee_display_fields,
+    is_compliance_fee_line,
     parse_invoice_line_description,
     parse_invoice_memo_po_job_footer,
 )
@@ -157,6 +162,39 @@ def _logo_dimensions_from_settings(conn: sqlite3.Connection) -> tuple[int, int]:
     return _logo_display_dimensions(logo_path)
 
 
+def _company_phone_from_settings(conn: sqlite3.Connection) -> str:
+    """Phone for the printed footer (My Company / letterhead keys)."""
+    from probooksai import business
+
+    for key in ("company_setup_phone", "invoice_company_phone", "company_phone"):
+        val = (business.get_setting(conn, key, "") or "").strip()
+        if val:
+            return val
+    return ""
+
+
+def _lookup_percent_fee_rate(conn: sqlite3.Connection, *candidates: str) -> str:
+    """Return ``3%`` when a matching Item List code is stored as a percent; else ``""``."""
+    from probooksai import business
+
+    for key in candidates:
+        raw = (key or "").strip()
+        if not raw:
+            continue
+        item = business.get_invoice_item_code_by_code(conn, raw)
+        if item is None:
+            continue
+        d = dict(item)
+        if str(d.get("rate_kind") or "").strip().lower() != "percent":
+            continue
+        try:
+            rv = float(d.get("rate_value") or 0)
+        except (TypeError, ValueError):
+            continue
+        return f"{rv:g}%"
+    return ""
+
+
 def invoice_html_string(conn: sqlite3.Connection, invoice_id: int) -> str:
     """Build the same HTML used for PDF export and **Invoices** tab printing (saved invoice row)."""
     from probooksai import business
@@ -167,7 +205,7 @@ def invoice_html_string(conn: sqlite3.Connection, invoice_id: int) -> str:
 
     inv_d = dict(inv)
     memo = (inv_d.get("memo") or "").strip()
-    po, job, footer = parse_invoice_memo_po_job_footer(memo)
+    po, job, _extras = parse_invoice_memo_po_job_footer(memo)
     inv_date_raw = (inv_d.get("invoice_date") or "").strip()
     inv_date = format_iso_to_us_display(inv_date_raw) if inv_date_raw else ""
 
@@ -177,24 +215,55 @@ def invoice_html_string(conn: sqlite3.Connection, invoice_id: int) -> str:
     if addr:
         bill_parts.append(addr)
     bill_to_plain = "\n".join(bill_parts)
-    ship_to_plain = (inv_d.get("ship_to") or "").strip()
 
     line_rows: list[tuple[str, str, str, str, str, str, str]] = []
+    fee_row: tuple[str, str, str, str, str] | None = None
+    haul_subtotal = 0.0
     for ln in lines:
         d = dict(ln)
         so, jl, desc, bol = parse_invoice_line_description(d.get("description") or "")
         qty = float(d.get("qty") or 0)
         rate = float(d.get("rate") or 0)
         lt = float(d.get("line_total") or 0)
+        if fee_row is None and is_compliance_fee_line(so, jl, desc, bol):
+            fee_jl, fee_desc = compliance_fee_display_fields(so, jl, desc, bol)
+            if not fee_desc:
+                fee_desc = "Compliance fee"
+            pct = _lookup_percent_fee_rate(conn, fee_jl, jl, so, desc, fee_desc)
+            rate_disp = pct if pct else f"{rate:,.2f}"
+            qty_disp = "" if pct else f"{qty:.2f}"
+            fee_row = (fee_jl, fee_desc, rate_disp, qty_disp, f"{lt:,.2f}")
+            continue
+        haul_subtotal += lt
         line_rows.append(
             (so, jl, desc, bol, f"{rate:,.2f}", f"{qty:.2f}", f"{lt:,.2f}")
         )
 
-    total = float(inv_d.get("total") or 0)
-    balance_plain = f"${total:,.2f}"
+    tax_total = float(inv_d.get("tax_total") or 0)
+    stored_sub = float(inv_d.get("subtotal") or 0)
+    if fee_row is None and tax_total:
+        # Company Tax % is printed as the Chavan CO / compliance-fee line when
+        # there is no explicit CO item on the invoice.
+        base = stored_sub if stored_sub else haul_subtotal
+        pct_disp = ""
+        if base:
+            pct_disp = f"{round(tax_total / base * 100.0, 4):g}%"
+        fee_row = ("CO", "Compliance fee", pct_disp, "", f"{tax_total:,.2f}")
+        subtotal_plain = f"{base:,.2f}"
+    elif fee_row is not None:
+        subtotal_plain = f"{haul_subtotal:,.2f}"
+    else:
+        subtotal_plain = f"{(stored_sub if stored_sub else haul_subtotal):,.2f}"
+
+    try:
+        balance = float(inv_d.get("balance_due") if inv_d.get("balance_due") is not None else inv_d.get("total") or 0)
+    except (TypeError, ValueError):
+        balance = float(inv_d.get("total") or 0)
+    balance_plain = f"${balance:,.2f}"
 
     logo_uri = _logo_data_uri_from_settings(conn)
     logo_w, logo_h = _logo_dimensions_from_settings(conn) if logo_uri else (220, 80)
+    phone = _company_phone_from_settings(conn)
 
     return build_invoice_print_html(
         company_block_plain=_letterhead_plain_from_company_settings(conn),
@@ -204,11 +273,13 @@ def invoice_html_string(conn: sqlite3.Connection, invoice_id: int) -> str:
         invoice_date=inv_date,
         invoice_number=(inv_d.get("invoice_number") or "").strip(),
         bill_to_plain=bill_to_plain,
-        ship_to_plain=ship_to_plain,
         po_contract=po,
         name_job=job,
-        footer_plain=footer,
+        footer_plain=DEFAULT_THANK_YOU,
+        footer_phone=phone,
         line_rows=line_rows,
+        fee_row=fee_row,
+        subtotal_plain=subtotal_plain,
         balance_due_plain=balance_plain,
     )
 

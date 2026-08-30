@@ -1275,6 +1275,101 @@ def test_invoice_html_string_invoice_company_block_overrides_setup(db) -> None:
     assert "Ignored Name" not in html
 
 
+def test_invoice_html_string_chavan_layout_footer_and_no_ship_to(db) -> None:
+    from desktop_app.invoice_pdf import invoice_html_string
+    from desktop_app.invoice_print_html import DEFAULT_THANK_YOU
+
+    cid = business.add_customer(db._conn, "Harbor LLC", address="9 Pier Rd")
+    iid = business.create_invoice(
+        db._conn,
+        cid,
+        "2101",
+        "2026-03-15",
+        memo="PO: CT-88\nJob: JOB-12\nMessage: ignored on print",
+        lines=[
+            {"description": "03/15/26 — 4412 — Sand haul — BOL-7", "qty": 12.0, "rate": 85.0},
+        ],
+        tax_rate_pct=0,
+        ship_to="Should not print",
+    )
+    business.set_setting(db._conn, "company_setup_name", "Chavan Trucking Corporation")
+    business.set_setting(db._conn, "company_setup_phone", "661-555-0144")
+    db._conn.commit()
+    html = invoice_html_string(db._conn, iid)
+    assert "BILL TO" in html
+    assert "SHIP TO" not in html
+    assert "Should not print" not in html
+    assert "Harbor LLC" in html
+    assert "Serviced On" in html
+    assert "JL #" in html
+    assert "BOL#" in html
+    assert "Quantity" in html
+    assert "Balance Due" in html
+    assert "CT-88" in html
+    assert "JOB-12" in html
+    assert DEFAULT_THANK_YOU in html
+    assert "661-555-0144" in html
+    assert "ignored on print" not in html
+
+
+def test_invoice_html_string_compliance_fee_percent_from_item_code(db) -> None:
+    from desktop_app.invoice_pdf import invoice_html_string
+
+    business.replace_invoice_item_codes(
+        db._conn,
+        [
+            {
+                "code": "CO",
+                "description": "Compliance fee",
+                "item_type": "Other Charge",
+                "coa_account": "4000 – Sales Revenue",
+                "rate_value": 3.0,
+                "rate_kind": "percent",
+                "sort_order": 0,
+            }
+        ],
+    )
+    cid = business.add_customer(db._conn, "FeeCo")
+    iid = business.create_invoice(
+        db._conn,
+        cid,
+        "CO-1",
+        "2026-04-01",
+        lines=[
+            {"description": "04/01/26 — 100 — Dirt — B1", "qty": 10.0, "rate": 100.0},
+            {"description": "CO — Compliance fee", "qty": 1.0, "rate": 30.0},
+        ],
+        tax_rate_pct=0,
+    )
+    db._conn.commit()
+    html = invoice_html_string(db._conn, iid)
+    assert "3%" in html
+    assert "Compliance fee" in html
+    assert "1,000.00" in html
+    assert "30.00" in html
+    assert "Subtotal" in html
+
+
+def test_invoice_html_string_tax_prints_as_compliance_fee(db) -> None:
+    from desktop_app.invoice_pdf import invoice_html_string
+
+    cid = business.add_customer(db._conn, "TaxCo")
+    iid = business.create_invoice(
+        db._conn,
+        cid,
+        "CO-2",
+        "2026-04-02",
+        lines=[{"description": "Haul", "qty": 1.0, "rate": 200.0}],
+        tax_rate_pct=3.0,
+    )
+    db._conn.commit()
+    html = invoice_html_string(db._conn, iid)
+    assert "Compliance fee" in html
+    assert "3%" in html
+    assert "6.00" in html
+    assert "$206.00" in html
+
+
 def test_write_ar_and_ap_payments_csv(db, tmp_path):
     cid = business.add_customer(db._conn, "PayerCo")
     vid = business.add_vendor(db._conn, "PayeeCo")

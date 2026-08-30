@@ -34,6 +34,7 @@ from desktop_app.invoice_screen import (
     _INVOICE_LINE_ROW_MIN_HEIGHT_PX,
     _InvoiceCodeLineEdit,
     _invoice_line_table_qsettings,
+    invoice_pdf_basename,
 )
 from probooksai import business
 from probooksai.bank_import import BankDatabase
@@ -202,7 +203,7 @@ def test_invoice_screen_print_and_nav_buttons_exist(qapp: QApplication) -> None:
     assert w._btn_clear_fields.text() == "Clear"
     assert "Save" in w._btn_save.text() and "New" in w._btn_save.text()
     assert "Save" in w._btn_save_close.text() and "Close" in w._btn_save_close.text()
-    assert w._btn_export_pdf.text() == "Export PDF…"
+    assert w._btn_export_pdf.text() == "Save As"
     assert w._btn_print.text() == "Print"
     assert w._btn_new_customer.text() == "New Customer"
     assert w._btn_reverse.text() == "Previous"
@@ -218,7 +219,7 @@ def test_invoice_screen_print_and_nav_buttons_exist(qapp: QApplication) -> None:
 def test_invoice_screen_export_pdf_saves_to_chosen_path(
     qapp: QApplication, tmp_path
 ) -> None:
-    """Export PDF… persists, then writes to the path from Save file (mocked)."""
+    """Save As persists, then writes ``<invoice#>.pdf`` into the chosen folder."""
     db_path = tmp_path / "invoice_export.db"
     db = BankDatabase(str(db_path))
     apply_extensions(db._conn)
@@ -235,17 +236,19 @@ def test_invoice_screen_export_pdf_saves_to_chosen_path(
     qty = w._table.cellWidget(0, 5)
     assert isinstance(qty, QDoubleSpinBox)
     qty.setValue(1.0)
-    out = tmp_path / "MyInvoice.pdf"
+    out_dir = tmp_path / "save_as_out"
+    out_dir.mkdir()
+    out = out_dir / "93001.pdf"
     with patch(
-        "desktop_app.invoice_screen.QFileDialog.getSaveFileName",
-        return_value=(str(out), "PDF files (*.pdf)"),
+        "desktop_app.invoice_screen.prompt_invoice_save_as_path",
+        return_value=str(out),
     ):
         QTest.mouseClick(w._btn_export_pdf, Qt.MouseButton.LeftButton)
         qapp.processEvents()
     assert out.is_file()
     invs = business.list_invoices(db._conn)
     assert any((r["invoice_number"] or "").strip() == "93001" for r in invs)
-    assert w._inv_number.text() == "93002"
+    assert w._inv_number.text() == "93001"
     db.close()
 
 
@@ -276,7 +279,7 @@ def test_invoice_screen_save_persists_and_advances_form(qapp: QApplication, tmp_
     assert any((r["invoice_number"] or "").strip() == "91001" for r in invs)
     assert w._inv_number.text() == "91002"
     assert not w._bill_to[1].toPlainText().strip()
-    assert (pdf_dir / "Invoice-91001.pdf").is_file()
+    assert (pdf_dir / "91001.pdf").is_file()
     db.close()
 
 
@@ -423,7 +426,7 @@ def test_invoice_screen_update_existing_does_not_duplicate_row(
     assert len(rows) == 1
     assert int(rows[0]["id"]) == inv_id
     assert w._inv_number.text() == "UP-001"
-    assert (pdf_dir / "Invoice-UP-001.pdf").is_file()
+    assert (pdf_dir / "UP-001.pdf").is_file()
     db.close()
 
 
@@ -674,7 +677,8 @@ def test_apply_intake_item_to_draft_hidden_after_opening_saved_invoice(
     w.show()
     qapp.processEvents()
     assert w._invoice_intake_handoff_banner.isVisible()
-    assert w.open_invoice_by_id(inv_id) is True
+    with patch("desktop_app.invoice_screen.message_box_question_yes_no_cancel", return_value="no"):
+        assert w.open_invoice_by_id(inv_id) is True
     qapp.processEvents()
     assert not w._invoice_intake_handoff_banner.isVisible()
     db.close()
@@ -1414,4 +1418,226 @@ def test_create_invoices_company_template_from_settings_not_hardcoded_chavan(
     assert _DEFAULT_INVOICE_TEMPLATE in items
     assert "Custom Truck Invoice" in items
     assert all("CHAVAN" not in t.upper() for t in items)
+    db.close()
+
+
+def test_invoice_pdf_basename_is_invoice_number() -> None:
+    assert invoice_pdf_basename("8114") == "8114.pdf"
+    assert invoice_pdf_basename(" 8114 ") == "8114.pdf"
+
+
+def test_invoice_form_dirty_and_leave_prompt_saves_without_folder_or_company_dialog(
+    qapp: QApplication, tmp_path
+) -> None:
+    db_path = tmp_path / "inv_leave.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "LeaveCo")
+    w = InvoiceScreen(ap_conn=db._conn)
+    assert w._is_form_dirty() is False
+    w._bill_customer_panel.select_customer_by_id(cid)
+    w._inv_number.setText("8114")
+    desc = w._table.cellWidget(0, 2)
+    assert isinstance(desc, QLineEdit)
+    desc.setText("Haul")
+    rate = w._table.cellWidget(0, 4)
+    qty = w._table.cellWidget(0, 5)
+    assert isinstance(rate, QDoubleSpinBox) and isinstance(qty, QDoubleSpinBox)
+    rate.setValue(10.0)
+    qty.setValue(1.0)
+    assert w._is_form_dirty() is True
+    with (
+        patch(
+            "desktop_app.invoice_screen.message_box_question_yes_no_cancel",
+            return_value="yes",
+        ) as m_ask,
+        patch(
+            "desktop_app.invoice_screen.ensure_invoice_output_folder"
+        ) as m_folder,
+        patch(
+            "desktop_app.invoice_screen.message_box_information_ok"
+        ) as m_info,
+    ):
+        assert w._confirm_leave_loaded_invoice() is True
+    m_ask.assert_called_once()
+    assert "8114" in str(m_ask.call_args)
+    m_folder.assert_not_called()
+    m_info.assert_not_called()
+    rows = business.list_invoices(db._conn)
+    assert any((r["invoice_number"] or "").strip() == "8114" for r in rows)
+    assert w._is_form_dirty() is False
+    db.close()
+
+
+def test_invoice_leave_prompt_no_does_not_save(qapp: QApplication, tmp_path) -> None:
+    db_path = tmp_path / "inv_leave_no.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "NoSaveCo")
+    w = InvoiceScreen(ap_conn=db._conn)
+    w._bill_customer_panel.select_customer_by_id(cid)
+    w._inv_number.setText("8115")
+    desc = w._table.cellWidget(0, 2)
+    assert isinstance(desc, QLineEdit)
+    desc.setText("Haul")
+    with patch(
+        "desktop_app.invoice_screen.message_box_question_yes_no_cancel",
+        return_value="no",
+    ):
+        assert w._confirm_leave_loaded_invoice() is True
+    assert business.list_invoices(db._conn) == []
+    assert w._is_form_dirty() is False
+    assert w.selected_bill_to_customer_id() is None
+    db.close()
+
+
+def test_invoice_leave_prompt_cancel_keeps_form(qapp: QApplication, tmp_path) -> None:
+    db_path = tmp_path / "inv_leave_cancel.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "CancelCo")
+    w = InvoiceScreen(ap_conn=db._conn)
+    w._bill_customer_panel.select_customer_by_id(cid)
+    w._inv_number.setText("8116")
+    desc = w._table.cellWidget(0, 2)
+    assert isinstance(desc, QLineEdit)
+    desc.setText("Haul")
+    with patch(
+        "desktop_app.invoice_screen.message_box_question_yes_no_cancel",
+        return_value="cancel",
+    ):
+        assert w._confirm_leave_loaded_invoice() is False
+    assert business.list_invoices(db._conn) == []
+    assert w._is_form_dirty() is True
+    assert w.selected_bill_to_customer_id() == cid
+    assert w._inv_number.text() == "8116"
+    assert desc.text() == "Haul"
+    db.close()
+
+
+def test_invoice_save_asks_before_overwrite_pdf(
+    qapp: QApplication, tmp_path
+) -> None:
+    db_path = tmp_path / "inv_ow.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    pdf_dir = tmp_path / "ow_pdf"
+    pdf_dir.mkdir()
+    existing = pdf_dir / "8114.pdf"
+    existing.write_bytes(b"old")
+    _INV_PREFS_QS.setValue("invoice_prefs/output_folder", str(pdf_dir))
+    _INV_PREFS_QS.sync()
+    cid = business.add_customer(db._conn, "OwCo")
+    w = InvoiceScreen(ap_conn=db._conn)
+    w._bill_customer_panel.select_customer_by_id(cid)
+    w._inv_number.setText("8114")
+    desc = w._table.cellWidget(0, 2)
+    assert isinstance(desc, QLineEdit)
+    desc.setText("Haul")
+    rate = w._table.cellWidget(0, 4)
+    qty = w._table.cellWidget(0, 5)
+    assert isinstance(rate, QDoubleSpinBox) and isinstance(qty, QDoubleSpinBox)
+    rate.setValue(5.0)
+    qty.setValue(1.0)
+    with patch(
+        "desktop_app.invoice_screen.message_box_question_yes_no",
+        return_value=False,
+    ):
+        QTest.mouseClick(w._btn_ribbon_save, Qt.MouseButton.LeftButton)
+        qapp.processEvents()
+    assert existing.read_bytes() == b"old"
+    assert business.list_invoices(db._conn)
+    db.close()
+
+
+def test_invoice_save_as_remembers_folder_per_company(tmp_path) -> None:
+    from desktop_app.invoice_preferences import (
+        get_invoice_save_as_folder,
+        set_invoice_save_as_folder,
+    )
+
+    a = tmp_path / "co_a"
+    b = tmp_path / "co_b"
+    a.mkdir()
+    b.mkdir()
+    set_invoice_save_as_folder("sid-a", str(a))
+    set_invoice_save_as_folder("sid-b", str(b))
+    assert os.path.normpath(get_invoice_save_as_folder("sid-a")) == os.path.normpath(str(a))
+    assert os.path.normpath(get_invoice_save_as_folder("sid-b")) == os.path.normpath(str(b))
+
+
+def test_prompt_invoice_save_as_path_puts_basename_in_name_box() -> None:
+    import inspect
+
+    from desktop_app.invoice_preferences import prompt_invoice_save_as_path
+
+    src = inspect.getsource(prompt_invoice_save_as_path)
+    assert "selectFile(name)" in src
+    assert "os.path.basename" in src
+    assert "setDirectory(start)" in src
+    assert "DontConfirmOverwrite" in src
+
+
+def test_invoice_previous_asks_before_replacing_dirty_draft(
+    qapp: QApplication, tmp_path
+) -> None:
+    db_path = tmp_path / "inv_prev_dirty.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "PrevCo")
+    business.create_invoice(
+        db._conn,
+        cid,
+        "8100",
+        "2026-01-01",
+        lines=[{"description": "Old", "qty": 1.0, "rate": 1.0}],
+    )
+    w = InvoiceScreen(ap_conn=db._conn)
+    w._bill_customer_panel.select_customer_by_id(cid)
+    w._inv_number.setText("8114")
+    desc = w._table.cellWidget(0, 2)
+    assert isinstance(desc, QLineEdit)
+    desc.setText("New haul")
+    assert w._is_form_dirty() is True
+    with patch(
+        "desktop_app.invoice_screen.message_box_question_yes_no_cancel",
+        return_value="no",
+    ) as m_ask:
+        w._on_reverse_invoice()
+    m_ask.assert_called()
+    assert "8114" in str(m_ask.call_args)
+    assert business.get_invoice_id_by_number(db._conn, "8114") is None
+    assert w._inv_number.text() == "8100"
+    db.close()
+
+
+def test_invoice_previous_cancel_keeps_dirty_draft(
+    qapp: QApplication, tmp_path
+) -> None:
+    db_path = tmp_path / "inv_prev_cancel.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    cid = business.add_customer(db._conn, "PrevCancelCo")
+    business.create_invoice(
+        db._conn,
+        cid,
+        "8100",
+        "2026-01-01",
+        lines=[{"description": "Old", "qty": 1.0, "rate": 1.0}],
+    )
+    w = InvoiceScreen(ap_conn=db._conn)
+    w._bill_customer_panel.select_customer_by_id(cid)
+    w._inv_number.setText("8114")
+    desc = w._table.cellWidget(0, 2)
+    assert isinstance(desc, QLineEdit)
+    desc.setText("New haul")
+    with patch(
+        "desktop_app.invoice_screen.message_box_question_yes_no_cancel",
+        return_value="cancel",
+    ):
+        w._on_reverse_invoice()
+    assert w._inv_number.text() == "8114"
+    assert desc.text() == "New haul"
+    assert w._is_form_dirty() is True
+    assert business.get_invoice_id_by_number(db._conn, "8114") is None
     db.close()

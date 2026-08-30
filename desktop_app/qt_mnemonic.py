@@ -180,6 +180,7 @@ def message_box_question_yes_no(
     *,
     yes_tip: str = "Confirm.",
     no_tip: str = "Cancel.",
+    default_yes: bool = False,
 ) -> bool:
     """Show a Yes/No ``QMessageBox`` and return ``True`` when the user clicks **Yes**."""
     box = QMessageBox(parent)
@@ -189,9 +190,47 @@ def message_box_question_yes_no(
     box.setStandardButtons(
         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
     )
-    box.setDefaultButton(QMessageBox.StandardButton.No)
+    box.setDefaultButton(
+        QMessageBox.StandardButton.Yes if default_yes else QMessageBox.StandardButton.No
+    )
     tip_message_box_buttons(box, yes=yes_tip, no=no_tip)
     return box.exec() == QMessageBox.StandardButton.Yes
+
+
+def message_box_question_yes_no_cancel(
+    parent: "QWidget | None",
+    title: str,
+    text: str,
+    *,
+    yes_tip: str = "Save and continue.",
+    no_tip: str = "Discard and continue.",
+    cancel_tip: str = "Stay and keep this data.",
+    default_yes: bool = True,
+) -> str:
+    """Show a Yes / No / Cancel ``QMessageBox``.
+
+    Returns ``'yes'``, ``'no'``, or ``'cancel'``. The window **X** and Escape map to Cancel.
+    """
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Question)
+    box.setWindowTitle(title)
+    box.setText(text)
+    box.setStandardButtons(
+        QMessageBox.StandardButton.Yes
+        | QMessageBox.StandardButton.No
+        | QMessageBox.StandardButton.Cancel
+    )
+    box.setDefaultButton(
+        QMessageBox.StandardButton.Yes if default_yes else QMessageBox.StandardButton.No
+    )
+    box.setEscapeButton(QMessageBox.StandardButton.Cancel)
+    tip_message_box_buttons(box, yes=yes_tip, no=no_tip, cancel=cancel_tip)
+    result = box.exec()
+    if result == QMessageBox.StandardButton.Yes:
+        return "yes"
+    if result == QMessageBox.StandardButton.No:
+        return "no"
+    return "cancel"
 
 
 def message_box_save_discard_cancel(
