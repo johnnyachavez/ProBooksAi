@@ -910,7 +910,44 @@ class BillTrackerScreen(_TrackerScreenBase):
             "ACTION Pay Bill opens Pay Bills with that bill selected."
         )
         outer.addWidget(self._table, 1)
+        self._empty_state = self._build_empty_state()
+        outer.addWidget(self._empty_state, 1)
+        self._empty_state.setVisible(False)
         outer.addWidget(self._build_footer())
+
+    def _build_empty_state(self) -> QFrame:
+        frame = QFrame()
+        frame.setObjectName("billTrackerEmptyState")
+        frame.setStyleSheet(
+            f"QFrame#billTrackerEmptyState {{ background: {_TK_PAPER}; "
+            f"border: 1px solid {_TK_GRID}; border-radius: 4px; }}"
+        )
+        v = QVBoxLayout(frame)
+        v.setContentsMargins(24, 36, 24, 36)
+        v.setSpacing(8)
+        v.addStretch(1)
+        headline = QLabel("No bills")
+        headline.setObjectName("billTrackerEmptyHeadline")
+        headline.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        headline.setStyleSheet(
+            f"color: {_TK_TEXT}; font-size: 15px; font-weight: 700; background: transparent;"
+        )
+        v.addWidget(headline)
+        sub = QLabel(
+            "This company has no vendor bills yet. Enter Bills to add one. "
+            "Summary tiles stay at 0 until a bill is saved."
+        )
+        sub.setObjectName("billTrackerEmptySubtitle")
+        sub.setWordWrap(True)
+        sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        sub.setStyleSheet(
+            f"color: {_TK_CAPTION}; font-size: 12px; background: transparent;"
+        )
+        v.addWidget(sub)
+        v.addStretch(2)
+        self._empty_headline = headline
+        self._empty_subtitle = sub
+        return frame
 
     def _build_tiles(self) -> QWidget:
         wrap = QWidget()
@@ -1110,6 +1147,23 @@ class BillTrackerScreen(_TrackerScreenBase):
             self._table.sortItems(_BL_COL_DUE, Qt.SortOrder.AscendingOrder)
         n = data_count
         self._set_showing(n, n)
+        empty = getattr(self, "_empty_state", None)
+        if empty is not None:
+            has_any = bool(self._all_rows)
+            is_empty = n == 0
+            empty.setVisible(is_empty)
+            self._table.setVisible(not is_empty)
+            if is_empty and hasattr(self, "_empty_headline"):
+                self._empty_headline.setText("No bills")
+                if has_any:
+                    self._empty_subtitle.setText(
+                        "No bills match the current vendor, type, status, or date filter."
+                    )
+                else:
+                    self._empty_subtitle.setText(
+                        "This company has no vendor bills yet. Enter Bills to add one. "
+                        "Summary tiles stay at 0 until a bill is saved."
+                    )
 
     def _make_bill_action(self, row: dict, index: int) -> QToolButton:
         open_bal = float(row.get("open_balance") or 0) > 0.005

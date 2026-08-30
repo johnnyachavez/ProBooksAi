@@ -9,6 +9,7 @@ import pytest
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
+    QFrame,
     QLabel,
     QTableWidget,
     QToolButton,
@@ -236,8 +237,75 @@ def test_empty_trackers_show_zero_tiles(qapp: QApplication, db: BankDatabase) ->
     assert tbl.rowCount() == 0
     bills = BillTrackerScreen(ap_conn=db._conn)
     assert bills._tile_open._amount.text() == "0.00"
+    assert bills._tile_overdue._amount.text() == "0.00"
+    assert bills._tile_paid._amount.text() == "0.00"
+    empty = bills.findChild(QLabel, "billTrackerEmptyHeadline")
+    assert empty is not None
+    assert empty.text() == "No bills"
+    assert not bills.findChild(QFrame, "billTrackerEmptyState").isHidden()
+    grid = bills.findChild(QTableWidget, "billTrackerTable")
+    assert grid is not None
+    assert grid.rowCount() == 0
+    assert grid.isHidden()
     inc.close()
     bills.close()
+
+
+def test_bill_tracker_filters_vendor_type_status_date(
+    qapp: QApplication, db: BankDatabase
+) -> None:
+    ids = _seed(db._conn)
+    v2 = business.add_vendor(db._conn, "Warehouse Supply")
+    business.create_bill(
+        db._conn, v2, "2026-08-02", 25.00, vendor_invoice_number="W-9", due_date="2026-09-02"
+    )
+    w = BillTrackerScreen(ap_conn=db._conn)
+    tbl = w.findChild(QTableWidget, "billTrackerTable")
+    assert tbl is not None
+    assert not tbl.isHidden()
+    assert w.findChild(QFrame, "billTrackerEmptyState").isHidden()
+    all_count = tbl.rowCount()
+    assert all_count >= 3
+
+    vendor_cb = w.findChild(QComboBox, "billTrackerVendor")
+    vendor_cb.setCurrentIndex(1)
+    qapp.processEvents()
+    vendor_rows = {
+        tbl.item(i, 1).text()
+        for i in range(tbl.rowCount())
+        if tbl.item(i, 1) is not None
+    }
+    assert len(vendor_rows) == 1
+    assert tbl.rowCount() < all_count
+
+    vendor_cb.setCurrentIndex(0)
+    status_cb = w.findChild(QComboBox, "billTrackerStatus")
+    status_cb.setCurrentText("Overdue")
+    qapp.processEvents()
+    assert tbl.rowCount() >= 1
+    for i in range(tbl.rowCount()):
+        assert tbl.item(i, 6).text() == "Overdue"
+
+    status_cb.setCurrentText("All")
+    type_cb = w.findChild(QComboBox, "billTrackerType")
+    type_cb.setCurrentText("Bill")
+    qapp.processEvents()
+    assert tbl.rowCount() >= 2
+    for i in range(tbl.rowCount()):
+        assert tbl.item(i, 2).text() == "Bill"
+
+    date_cb = w.findChild(QComboBox, "billTrackerDate")
+    date_cb.setCurrentText("This Month")
+    qapp.processEvents()
+    month_count = tbl.rowCount()
+    date_cb.setCurrentText("Today")
+    qapp.processEvents()
+    assert tbl.rowCount() <= month_count
+    if tbl.rowCount() == 0:
+        assert w.findChild(QLabel, "billTrackerEmptyHeadline").text() == "No bills"
+        assert not w.findChild(QFrame, "billTrackerEmptyState").isHidden()
+    w.close()
+    assert ids["open_bill"] > 0
 
 
 def test_tracker_screens_have_no_screenshot_company_data() -> None:

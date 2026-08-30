@@ -3627,6 +3627,10 @@ class MainWindow(QMainWindow):
             self._snapshot_screen.set_connection(self._bank_db._conn)
         if hasattr(self, "_my_company_screen"):
             self._my_company_screen.set_connection(self._bank_db._conn)
+        if hasattr(self, "_bill_tracker_screen"):
+            self._bill_tracker_screen.set_connection(self._bank_db._conn)
+        if hasattr(self, "_income_tracker_screen"):
+            self._income_tracker_screen.set_connection(self._bank_db._conn)
         # Track in recent companies
         try:
             row = self._bank_db._conn.execute(

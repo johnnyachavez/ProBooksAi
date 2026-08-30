@@ -1,16 +1,15 @@
-"""My Company — QuickBooks Pro Desktop-style company information page.
+"""My Company — company information for the open company file.
 
-Layout only: boxed company information, account/product sidebar, apps bar,
-and a recommended-apps carousel. Slightly roomier than a gray Win32 photocopy;
-not QuickBooks Online.
-
-Home → My Company opens this screen. Identity values stay blank or generic
-placeholders (header COMPANY NAME). This page does not buy apps or services.
+Loads name, address, phone, email, and EIN/tax ID from ``company_settings``
+(same keys as File → Company Setup). If the file has no saved name, the
+header uses the company ``.db`` filename. Edit + Save writes those fields
+back to the same open file. This page does not sell apps or services.
 """
 
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
@@ -34,9 +33,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPlainTextEdit,
-    QPushButton,
     QScrollArea,
-    QSizePolicy,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -48,6 +45,7 @@ from desktop_app.qt_mnemonic import (
 )
 from desktop_app.version import application_version
 from probooksai import business
+from probooksai.company_identity import get_company_identity, save_company_identity
 
 _MC_CANVAS = "#E8ECF1"
 _MC_PAPER = "#FFFFFF"
@@ -58,7 +56,6 @@ _MC_TEXT = "#1A1A1A"
 _MC_CAPTION = "#4A5560"
 _MC_TITLE = "#5B6770"
 _MC_ACCENT = "#2563A8"
-_MC_LINK = "#1565C0"
 _MC_MUTED = "#8A94A0"
 
 PLACEHOLDER_COMPANY_NAME = "COMPANY NAME"
@@ -81,16 +78,6 @@ _FIELD_KEYS = (
     ("tax_form", "company_income_tax_form"),
     ("payroll_contact", "company_payroll_contact"),
 )
-
-_RECOMMENDED = (
-    ("cart", "Get E-commerce Integration", "Connect an online store to invoices and payments."),
-    ("payroll", "Turn On Payroll", "Track pay runs when payroll is enabled later."),
-    ("cards", "Accept Credit Cards", "Record card payments you already take."),
-    ("checks", "Order Checks", "Print checks from Write Checks when you are ready."),
-    ("plus", "ProBooks+ai Desktop Plus", "More seats and desktop tools when you need them."),
-    ("inventory", "Advanced Inventory", "Item quantities stay on the Item List for now."),
-)
-
 
 def _light_palette() -> QPalette:
     pal = QPalette()
@@ -116,24 +103,6 @@ def _label_qss(*, size: str = "11px", weight: str = "400", color: str = _MC_CAPT
     )
 
 
-def _link_qss() -> str:
-    return (
-        f"QPushButton {{ background: transparent; border: none; color: {_MC_LINK}; "
-        "font-size: 12px; text-align: left; padding: 2px 0px; }}"
-        f"QPushButton:hover {{ color: {_MC_ACCENT}; }}"
-    )
-
-
-def _primary_btn_qss() -> str:
-    return (
-        f"QPushButton {{ background-color: {_MC_ACCENT}; border: 1px solid {_MC_ACCENT}; "
-        "border-radius: 3px; color: #FFFFFF; font-size: 13px; font-weight: 700; "
-        "padding: 8px 16px; }"
-        "QPushButton:hover { background-color: #1D4F8C; }"
-        "QPushButton:pressed { background-color: #163E6E; }"
-    )
-
-
 def _setting(conn: Optional[sqlite3.Connection], key: str) -> str:
     if conn is None:
         return ""
@@ -143,24 +112,82 @@ def _setting(conn: Optional[sqlite3.Connection], key: str) -> str:
         return ""
 
 
+def company_file_display_name(conn: Optional[sqlite3.Connection]) -> str:
+    """Human name from the open ``.db`` path when settings have no ``company_name``."""
+    if conn is None:
+        return ""
+    try:
+        rows = conn.execute("PRAGMA database_list").fetchall()
+    except sqlite3.Error:
+        return ""
+    path = ""
+    for row in rows:
+        db_name = str(row[1] if not isinstance(row, sqlite3.Row) else row["name"])
+        db_file = str(row[2] if not isinstance(row, sqlite3.Row) else row["file"])
+        if db_name == "main":
+            path = (db_file or "").strip()
+            break
+    if not path:
+        return ""
+    lowered = path.lower()
+    if lowered in {":memory:", "memory"} or lowered.startswith("file:"):
+        return ""
+    stem = Path(path).stem.strip()
+    if not stem or stem.startswith(":"):
+        return ""
+    return " ".join(stem.replace("-", " ").replace("_", " ").split())
+
+
 def load_my_company_fields(conn: Optional[sqlite3.Connection]) -> dict[str, str]:
-    """Read My Company fields. Empty company files stay blank except the header placeholder."""
+    """Read identity from the open company file; filename stem if name is unset."""
     data = {ui: _setting(conn, db_key) for ui, db_key in _FIELD_KEYS}
-    name = _setting(conn, "company_name")
+    identity: dict[str, str] = {}
+    if conn is not None:
+        try:
+            identity = get_company_identity(conn)
+        except Exception:
+            identity = {}
+    name = (identity.get("name") or _setting(conn, "company_name")).strip()
+    if not name:
+        name = company_file_display_name(conn)
     data["name"] = name if name else PLACEHOLDER_COMPANY_NAME
+    if not data["contact_address"]:
+        data["contact_address"] = (identity.get("address") or "").strip()
+    if not data["phone"]:
+        data["phone"] = (identity.get("phone") or "").strip()
+    if not data["email"]:
+        data["email"] = (identity.get("email") or "").strip()
+    if not data["ein"]:
+        data["ein"] = (identity.get("tax_id") or "").strip()
     if not data["tax_form"]:
-        data["tax_form"] = _setting(conn, "company_tax_structure")
+        data["tax_form"] = (
+            _setting(conn, "company_tax_structure")
+            or (identity.get("tax_structure") or "").strip()
+        )
     return data
 
 
 def save_my_company_fields(conn: sqlite3.Connection, values: dict[str, str]) -> None:
-    """Persist editable My Company fields. Does not write a legal name into defaults."""
+    """Write My Company fields into the same open company file (identity + extras)."""
     name = (values.get("name") or "").strip()
     if name == PLACEHOLDER_COMPANY_NAME:
         name = ""
-    business.set_setting(conn, "company_name", name)
-    mapping = dict(_FIELD_KEYS)
-    for ui, db_key in mapping.items():
+    existing: dict[str, str] = {}
+    try:
+        existing = get_company_identity(conn)
+    except Exception:
+        existing = {}
+    save_company_identity(
+        conn,
+        name=name,
+        address=(values.get("contact_address") or "").strip(),
+        phone=(values.get("phone") or "").strip(),
+        email=(values.get("email") or "").strip(),
+        tax_id=(values.get("ein") or "").strip(),
+        business_type=(existing.get("business_type") or "").strip(),
+        tax_structure=(existing.get("tax_structure") or "").strip(),
+    )
+    for ui, db_key in _FIELD_KEYS:
         business.set_setting(conn, db_key, (values.get(ui) or "").strip())
 
 
@@ -185,58 +212,6 @@ def _pencil_icon(size: int = 18) -> QIcon:
     )
     p.end()
     return QIcon(pm)
-
-
-def _app_icon_pixmap(kind: str, size: int = 40) -> QPixmap:
-    pm = QPixmap(size, size)
-    pm.fill(Qt.GlobalColor.transparent)
-    p = QPainter(pm)
-    p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    box = QRectF(2, 2, size - 4, size - 4)
-    p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(QColor("#E8F1FA"))
-    p.drawEllipse(box)
-    p.setPen(QPen(QColor(_MC_ACCENT), 1.4))
-    p.setBrush(QColor("#D6E8F8"))
-    inner = box.adjusted(6, 6, -6, -6)
-    if kind == "cart":
-        p.drawRoundedRect(inner.adjusted(2, 6, -2, -8), 2, 2)
-        p.setBrush(QColor(_MC_ACCENT))
-        p.drawEllipse(QPointF(inner.left() + 8, inner.bottom() - 2), 2.4, 2.4)
-        p.drawEllipse(QPointF(inner.right() - 8, inner.bottom() - 2), 2.4, 2.4)
-    elif kind == "payroll":
-        p.drawRoundedRect(inner, 2, 2)
-        p.setPen(QPen(QColor(_MC_ACCENT), 1.1))
-        for i in range(3):
-            y = inner.top() + 6 + i * 5
-            p.drawLine(QPointF(inner.left() + 4, y), QPointF(inner.right() - 4, y))
-    elif kind == "cards":
-        p.drawRoundedRect(inner.adjusted(0, 4, 0, -4), 3, 3)
-        p.setBrush(QColor(_MC_ACCENT))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.drawRect(QRectF(inner.left(), inner.top() + 8, inner.width(), 5))
-    elif kind == "checks":
-        p.drawRoundedRect(inner.adjusted(1, 3, -1, -3), 2, 2)
-        p.setPen(QPen(QColor(_MC_ACCENT), 1.1))
-        p.drawLine(
-            QPointF(inner.left() + 4, inner.center().y()),
-            QPointF(inner.right() - 4, inner.center().y()),
-        )
-    elif kind == "plus":
-        p.drawRoundedRect(inner, 3, 3)
-        p.setPen(QPen(QColor(_MC_ACCENT), 1.1))
-        p.drawLine(QPointF(inner.center().x(), inner.top() + 4), QPointF(inner.center().x(), inner.bottom() - 4))
-        p.drawLine(QPointF(inner.left() + 4, inner.center().y()), QPointF(inner.right() - 4, inner.center().y()))
-    else:
-        p.setBrush(QColor("#43A047"))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.drawRect(QRectF(inner.left() + 2, inner.bottom() - 8, 5, 6))
-        p.setBrush(QColor("#F9A825"))
-        p.drawRect(QRectF(inner.left() + 9, inner.bottom() - 12, 5, 10))
-        p.setBrush(QColor(_MC_ACCENT))
-        p.drawRect(QRectF(inner.left() + 16, inner.bottom() - 16, 5, 14))
-    p.end()
-    return pm
 
 
 class _InfoRow(QWidget):
@@ -271,45 +246,6 @@ class _InfoRow(QWidget):
             self.value.setStyleSheet(_label_qss(color=_MC_MUTED, size="12px"))
 
 
-class _AppCard(QFrame):
-    clicked = Signal(str)
-
-    def __init__(self, kind: str, title: str, body: str, parent: Optional[QWidget] = None) -> None:
-        super().__init__(parent)
-        self._kind = kind
-        self.setObjectName(f"myCompanyAppCard_{kind}")
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedSize(168, 148)
-        self.setStyleSheet(
-            f"QFrame#myCompanyAppCard_{kind} {{ background: {_MC_PAPER}; "
-            f"border: 1px solid {_MC_BORDER}; border-radius: 4px; }}"
-        )
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(12, 12, 12, 10)
-        lay.setSpacing(6)
-        icon = QLabel()
-        icon.setPixmap(_app_icon_pixmap(kind))
-        icon.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        icon.setStyleSheet("background: transparent; border: none;")
-        lay.addWidget(icon)
-        ttl = QLabel(title)
-        ttl.setTextFormat(Qt.TextFormat.PlainText)
-        ttl.setWordWrap(True)
-        ttl.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        ttl.setStyleSheet(_label_qss(color=_MC_TEXT, size="12px", weight="700"))
-        lay.addWidget(ttl)
-        desc = QLabel(body)
-        desc.setWordWrap(True)
-        desc.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
-        desc.setStyleSheet(_label_qss(size="10px"))
-        lay.addWidget(desc, 1)
-
-    def mousePressEvent(self, event) -> None:  # noqa: N802
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit(self._kind)
-        super().mousePressEvent(event)
-
-
 class MyCompanyEditDialog(QDialog):
     """Edit contact / legal / tax fields shown on My Company."""
 
@@ -324,8 +260,8 @@ class MyCompanyEditDialog(QDialog):
         self.setObjectName("myCompanyEditDialog")
         self.setMinimumWidth(520)
         self.setToolTip(
-            "Edit contact and legal fields stored in this company file. "
-            "Header placeholder stays COMPANY NAME until you save a display name."
+            "Edit name, address, phone, email, and EIN/tax ID for this company file. "
+            "Save writes the same keys as File → Company Setup."
         )
         root = QVBoxLayout(self)
         form = QFormLayout()
@@ -418,7 +354,7 @@ class MyCompanyEditDialog(QDialog):
 
 
 class MyCompanyScreen(QWidget):
-    """QB Pro My Company: company information, product block, recommended apps."""
+    """Company information for the open file, plus ProBooks+ai product details."""
 
     navigateRequested = Signal(str)
 
@@ -479,13 +415,6 @@ class MyCompanyScreen(QWidget):
             "background: transparent; border: none;"
         )
         header.addWidget(self._lbl_company, 1)
-        sign_in = QPushButton("Sign In")
-        sign_in.setObjectName("myCompanySignIn")
-        sign_in.setCursor(Qt.CursorShape.PointingHandCursor)
-        sign_in.setStyleSheet(_link_qss())
-        sign_in.setToolTip("Account sign-in is a layout placeholder on this page.")
-        sign_in.clicked.connect(self._on_placeholder_account)
-        header.addWidget(sign_in, 0, Qt.AlignmentFlag.AlignTop)
         board.addLayout(header)
 
         main_card = QFrame()
@@ -502,37 +431,8 @@ class MyCompanyScreen(QWidget):
         divider.setFrameShape(QFrame.Shape.VLine)
         divider.setStyleSheet(f"color: {_MC_LINE};")
         main_lay.addWidget(divider)
-        main_lay.addWidget(self._build_account_sidebar(), 2)
+        main_lay.addWidget(self._build_product_sidebar(), 2)
         board.addWidget(main_card)
-
-        apps_bar = QFrame()
-        apps_bar.setObjectName("myCompanyAppsBar")
-        apps_bar.setStyleSheet(
-            f"QFrame#myCompanyAppsBar {{ background: {_MC_PANEL}; "
-            f"border: 1px solid {_MC_BORDER}; border-radius: 4px; }}"
-        )
-        bar = QHBoxLayout(apps_bar)
-        bar.setContentsMargins(14, 8, 14, 8)
-        manage = QLabel("MANAGE YOUR APPS, SERVICES & SUBSCRIPTIONS")
-        manage.setObjectName("myCompanyManageAppsLabel")
-        manage.setTextFormat(Qt.TextFormat.PlainText)
-        manage.setStyleSheet(_label_qss(size="11px", weight="700", color=_MC_TITLE))
-        bar.addWidget(manage)
-        bar.addStretch(1)
-        missing = QPushButton("Not seeing all your services?")
-        missing.setObjectName("myCompanyMissingServices")
-        missing.setCursor(Qt.CursorShape.PointingHandCursor)
-        missing.setStyleSheet(_link_qss())
-        missing.clicked.connect(self._on_placeholder_account)
-        bar.addWidget(missing)
-        board.addWidget(apps_bar)
-
-        rec_title = QLabel("APPS, SERVICES & SUBSCRIPTIONS RECOMMENDED FOR YOU")
-        rec_title.setObjectName("myCompanyRecommendedTitle")
-        rec_title.setTextFormat(Qt.TextFormat.PlainText)
-        rec_title.setStyleSheet(_label_qss(size="11px", weight="700", color=_MC_TITLE))
-        board.addWidget(rec_title)
-        board.addWidget(self._build_carousel())
         board.addStretch(1)
         scroll.setWidget(content)
 
@@ -599,37 +499,13 @@ class MyCompanyScreen(QWidget):
         lay.addLayout(cols, 1)
         return box
 
-    def _build_account_sidebar(self) -> QWidget:
+    def _build_product_sidebar(self) -> QWidget:
         side = QWidget()
         side.setObjectName("myCompanyAccountSidebar")
         side.setMinimumWidth(260)
         lay = QVBoxLayout(side)
         lay.setContentsMargins(16, 16, 16, 16)
         lay.setSpacing(10)
-
-        manage = QPushButton("Manage Your Account")
-        manage.setObjectName("myCompanyManageAccount")
-        manage.setCursor(Qt.CursorShape.PointingHandCursor)
-        manage.setStyleSheet(_primary_btn_qss())
-        manage.setToolTip("Account management is a layout placeholder on this page.")
-        manage.clicked.connect(self._on_placeholder_account)
-        lay.addWidget(manage)
-
-        links_title = QLabel("Quick links")
-        links_title.setStyleSheet(_label_qss(weight="700", color=_MC_TITLE))
-        lay.addWidget(links_title)
-        for key, caption in (
-            ("history", "Order/Payment History"),
-            ("users", "Authorized Users"),
-            ("methods", "Payment Methods"),
-            ("details", "Account Details"),
-        ):
-            btn = QPushButton(f"•  {caption}")
-            btn.setObjectName(f"myCompanyQuickLink_{key}")
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet(_link_qss())
-            btn.clicked.connect(self._on_placeholder_account)
-            lay.addWidget(btn)
 
         product = QFrame()
         product.setObjectName("myCompanyProductBox")
@@ -668,60 +544,6 @@ class MyCompanyScreen(QWidget):
         lay.addStretch(1)
         return side
 
-    def _build_carousel(self) -> QWidget:
-        wrap = QWidget()
-        wrap.setObjectName("myCompanyCarousel")
-        row = QHBoxLayout(wrap)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(8)
-
-        def _arrow(name: str, text: str) -> QToolButton:
-            btn = QToolButton()
-            btn.setObjectName(name)
-            btn.setText(text)
-            btn.setFixedSize(28, 148)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet(
-                f"QToolButton {{ background: {_MC_PAPER}; border: 1px solid {_MC_BORDER}; "
-                f"border-radius: 4px; color: {_MC_TITLE}; font-size: 16px; font-weight: 700; }}"
-                "QToolButton:hover { background: #E8F1FA; }"
-            )
-            return btn
-
-        self._btn_prev = _arrow("myCompanyCarouselPrev", "<")
-        self._btn_next = _arrow("myCompanyCarouselNext", ">")
-        self._btn_prev.clicked.connect(lambda: self._scroll_carousel(-180))
-        self._btn_next.clicked.connect(lambda: self._scroll_carousel(180))
-        row.addWidget(self._btn_prev)
-
-        self._carousel_scroll = QScrollArea()
-        self._carousel_scroll.setObjectName("myCompanyCarouselScroll")
-        self._carousel_scroll.setWidgetResizable(False)
-        self._carousel_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self._carousel_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._carousel_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._carousel_scroll.setFixedHeight(156)
-        self._carousel_scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
-        host = QWidget()
-        host.setObjectName("myCompanyCarouselHost")
-        cards = QHBoxLayout(host)
-        cards.setContentsMargins(0, 0, 0, 0)
-        cards.setSpacing(10)
-        for kind, title, body in _RECOMMENDED:
-            card = _AppCard(kind, title, body)
-            card.clicked.connect(self._on_placeholder_app)
-            cards.addWidget(card)
-        host.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
-        host.adjustSize()
-        self._carousel_scroll.setWidget(host)
-        row.addWidget(self._carousel_scroll, 1)
-        row.addWidget(self._btn_next)
-        return wrap
-
-    def _scroll_carousel(self, delta: int) -> None:
-        bar = self._carousel_scroll.horizontalScrollBar()
-        bar.setValue(bar.value() + int(delta))
-
     def reload(self) -> None:
         data = load_my_company_fields(self._conn)
         self._lbl_company.setText(data["name"])
@@ -753,19 +575,3 @@ class MyCompanyScreen(QWidget):
             )
             return
         self.reload()
-
-    def _on_placeholder_account(self) -> None:
-        message_box_information_ok(
-            self,
-            "Account",
-            "This control is layout-only. Nothing is purchased or billed from My Company.",
-            ok_tip="Close; company information stays in this company file.",
-        )
-
-    def _on_placeholder_app(self, _kind: str = "") -> None:
-        message_box_information_ok(
-            self,
-            "Recommended for you",
-            "These cards match the My Company layout. They do not subscribe to a service.",
-            ok_tip="Close; keep using ProBooks+ai from Home and the other tabs.",
-        )

@@ -137,10 +137,12 @@ def test_accounting_landing_tabs_show_page_titles(qapp: QApplication, tmp_path: 
                 assert "Account Balances" in titles
                 continue
             if spec is MyCompanyScreen:
-                assert "COMPANY NAME" in titles
+                from desktop_app.my_company_screen import company_file_display_name
+
+                assert company_file_display_name(w._bank_db._conn) in titles
                 assert "COMPANY INFORMATION" in titles
                 assert "Product Information" in titles
-                assert "MANAGE YOUR APPS, SERVICES & SUBSCRIPTIONS" in titles
+                assert "MANAGE YOUR APPS, SERVICES & SUBSCRIPTIONS" not in titles
                 continue
             if spec is InvoiceScreen:
                 tbl = cw.findChild(QTableWidget, "invoiceLinesTable")

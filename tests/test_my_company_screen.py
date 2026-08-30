@@ -1,4 +1,4 @@
-"""My Company screen — QB Pro chrome, placeholder identity, Home open-hook."""
+"""My Company screen — live company identity, no app-store upsell."""
 
 from __future__ import annotations
 
@@ -21,9 +21,11 @@ from desktop_app.my_company_screen import (
     SSN_PLACEHOLDER,
     MyCompanyEditDialog,
     MyCompanyScreen,
+    company_file_display_name,
     load_my_company_fields,
     save_my_company_fields,
 )
+from probooksai.company_identity import get_company_identity, save_company_identity
 from probooksai.bank_import import BankDatabase
 from probooksai.extensions_schema import apply_extensions
 
@@ -58,11 +60,15 @@ def _labels(w) -> list[str]:
     return [lb.text() for lb in w.findChildren(QLabel)]
 
 
-def test_my_company_layout_uses_placeholder_identity(qapp: QApplication, db: BankDatabase) -> None:
+def test_my_company_layout_loads_filename_when_identity_empty(
+    qapp: QApplication, db: BankDatabase
+) -> None:
     w = MyCompanyScreen(ap_conn=db._conn)
     qapp.processEvents()
     labels = _labels(w)
-    assert PLACEHOLDER_COMPANY_NAME in labels
+    expected_name = company_file_display_name(db._conn)
+    assert expected_name
+    assert expected_name in labels
     assert "COMPANY INFORMATION" in labels
     assert "Contact Name & Address" in labels
     assert "Main Phone" in labels
@@ -75,30 +81,47 @@ def test_my_company_layout_uses_placeholder_identity(qapp: QApplication, db: Ban
     assert "Income Tax Form" in labels
     assert "Payroll Contact" in labels
     assert "Product Information" in labels
-    assert "MANAGE YOUR APPS, SERVICES & SUBSCRIPTIONS" in labels
-    assert "APPS, SERVICES & SUBSCRIPTIONS RECOMMENDED FOR YOU" in labels
     assert PRODUCT_DISPLAY_NAME in labels
     assert PRODUCT_LICENSE in labels
     assert PRODUCT_NUMBER in labels
     assert "ACTIVATED" in labels
-    assert w.findChild(QLabel, "myCompanyHeaderName").text() == PLACEHOLDER_COMPANY_NAME
+    assert w.findChild(QLabel, "myCompanyHeaderName").text() == expected_name
     assert w.findChild(QLabel, "myCompanyEin").text() == ""
     assert w.findChild(QLabel, "myCompanySsn").text() == SSN_PLACEHOLDER
     assert w.findChild(QToolButton, "myCompanyEditButton") is not None
-    assert w.findChild(QPushButton, "myCompanyManageAccount") is not None
-    assert w.findChild(QPushButton, "myCompanyQuickLink_history") is not None
-    assert w.findChild(QPushButton, "myCompanyQuickLink_users") is not None
-    assert w.findChild(QPushButton, "myCompanyQuickLink_methods") is not None
-    assert w.findChild(QPushButton, "myCompanyQuickLink_details") is not None
-    assert w.findChild(QPushButton, "myCompanySignIn") is not None
     blob = " ".join(labels)
-    assert "Get E-commerce Integration" in blob
-    assert "Turn On Payroll" in blob
-    assert "Accept Credit Cards" in blob
-    assert "Order Checks" in blob
-    assert "ProBooks+ai Desktop Plus" in blob
-    assert "Advanced Inventory" in blob
-    assert w.findChild(QToolButton, "myCompanyCarouselNext") is not None
+    assert "MANAGE YOUR APPS, SERVICES & SUBSCRIPTIONS" not in blob
+    assert "APPS, SERVICES & SUBSCRIPTIONS RECOMMENDED FOR YOU" not in blob
+    assert "Get E-commerce Integration" not in blob
+    assert "Turn On Payroll" not in blob
+    assert "Accept Credit Cards" not in blob
+    assert "Advanced Inventory" not in blob
+    assert w.findChild(QPushButton, "myCompanySignIn") is None
+    assert w.findChild(QToolButton, "myCompanyCarouselNext") is None
+    w.close()
+
+
+def test_my_company_loads_identity_keys(qapp: QApplication, db: BankDatabase) -> None:
+    save_company_identity(
+        db._conn,
+        name="Harbor Co",
+        address="1 Example Way\nAustin, TX 00000",
+        phone="555-0142",
+        email="office@harbor.example",
+        tax_id="12-3456789",
+    )
+    data = load_my_company_fields(db._conn)
+    assert data["name"] == "Harbor Co"
+    assert "1 Example Way" in data["contact_address"]
+    assert data["phone"] == "555-0142"
+    assert data["email"] == "office@harbor.example"
+    assert data["ein"] == "12-3456789"
+    w = MyCompanyScreen(ap_conn=db._conn)
+    qapp.processEvents()
+    assert w.findChild(QLabel, "myCompanyHeaderName").text() == "Harbor Co"
+    assert w.findChild(QLabel, "myCompanyPhone").text() == "555-0142"
+    assert w.findChild(QLabel, "myCompanyEmail").text() == "office@harbor.example"
+    assert w.findChild(QLabel, "myCompanyEin").text() == "12-3456789"
     w.close()
 
 
@@ -131,6 +154,10 @@ def test_my_company_fields_round_trip_generic_placeholders(
     assert w.findChild(QLabel, "myCompanyHeaderName").text() == "Acme Haul LLC"
     assert w.findChild(QLabel, "myCompanyPhone").text() == "555-0100"
     assert w.findChild(QLabel, "myCompanyEin").text() == ""
+    ident = get_company_identity(db._conn)
+    assert ident["name"] == "Acme Haul LLC"
+    assert ident["phone"] == "555-0100"
+    assert ident["email"] == "billing@acme.example"
     w.close()
 
 
@@ -165,7 +192,7 @@ def test_my_company_main_window_tab_and_home_shortcut(
         qapp.processEvents()
         assert tabs.currentWidget() is w._my_company_screen
         titles = _labels(tabs.currentWidget())
-        assert PLACEHOLDER_COMPANY_NAME in titles
+        assert company_file_display_name(w._bank_db._conn) in titles
         assert "COMPANY INFORMATION" in titles
         assert PRODUCT_DISPLAY_NAME in titles
     finally:
@@ -181,6 +208,11 @@ def test_my_company_source_has_no_live_company_identity() -> None:
     assert PRODUCT_DISPLAY_NAME in text
     assert PRODUCT_LICENSE in text
     assert "layout designer" not in lowered
+    assert "get e-commerce integration" not in lowered
+    assert "turn on payroll" not in lowered
+    assert "accept credit cards" not in lowered
+    assert "advanced inventory" not in lowered
+    assert "manage your apps, services" not in lowered
 
 
 def test_capture_script_has_my_company_tab() -> None:
