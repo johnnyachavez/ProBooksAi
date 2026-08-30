@@ -308,6 +308,7 @@ _EDIT_TOOLS_RECON_HELP_QACTION_NAMES: tuple[str, ...] = (
     "act_reg_link",
     "act_reg_flag_rcpt",
     "act_reg_clear_rcpt",
+    "act_ar_aging",
     "act_roadmap",
     "act_intake_keys",
     "act_bank_import_keys",
@@ -855,7 +856,7 @@ def test_file_exit_menu_tip_suggests_backup() -> None:
 
 
 def test_main_window_no_toolbar_menu_bar_qaction_counts() -> None:
-    """``_build_ui`` has no main ``QToolBar``; menu bar defines 38 ``QAction``s."""
+    """``_build_ui`` has no main ``QToolBar``; menu bar defines 39 ``QAction``s."""
     text = _MAIN.read_text(encoding="utf-8")
     bu_s = text.index("def _build_ui(self):")
     bu_e = text.index("    def _build_menu_bar(self):", bu_s)
@@ -865,7 +866,7 @@ def test_main_window_no_toolbar_menu_bar_qaction_counts() -> None:
     assert "# Toolbar" not in bu_chunk
     mb_s = text.index("def _build_menu_bar")
     mb_e = text.index("def dragEnterEvent", mb_s)
-    assert text[mb_s:mb_e].count("QAction(") == 38
+    assert text[mb_s:mb_e].count("QAction(") == 39
 
 
 def test_file_menu_import_wires_on_import_and_mentions_ctrl_o() -> None:
@@ -891,7 +892,7 @@ def test_main_window_build_ui_has_no_toolbar() -> None:
 
 
 def test_main_window_build_ui_sets_central_status_and_assemble_adds_ten_main_tabs() -> None:
-    """``_build_ui`` attaches one central widget, one status bar; ``_assemble_main_tabs`` adds nineteen ``addTab`` calls."""
+    """``_build_ui`` attaches one central widget, one status bar; ``_assemble_main_tabs`` adds twenty ``addTab`` calls."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("def _build_ui(self):")
     end = text.index("def _build_menu_bar", start)
@@ -902,17 +903,17 @@ def test_main_window_build_ui_sets_central_status_and_assemble_adds_ten_main_tab
     start_a = text.index("def _assemble_main_tabs(self) -> None:")
     end_a = text.index("def _apply_main_tab_bar_tooltips(self) -> None:", start_a)
     chunk_a = text[start_a:end_a]
-    assert chunk_a.count("self._tabs.addTab(") == 19
+    assert chunk_a.count("self._tabs.addTab(") == 20
 
 
 def test_main_window_assemble_tab_strip_titles_fixed_order() -> None:
-    """Nineteen ``addTab`` lines: Home first, More last, with Income/Bill Tracker, Calendar, Company Snapshot, and My Company after Home."""
+    """Twenty ``addTab`` lines: Home first, More then hidden A/R Aging, with Income/Bill Tracker, Calendar, Company Snapshot, and My Company after Home."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("def _assemble_main_tabs(self) -> None:")
     end = text.index("def _apply_main_tab_bar_tooltips(self) -> None:", start)
     chunk = text[start:end]
     lines = [ln.strip() for ln in chunk.splitlines() if "self._tabs.addTab(" in ln]
-    assert len(lines) == 19
+    assert len(lines) == 20
     want = (
         "Home",
         "Income Tracker",
@@ -933,6 +934,7 @@ def test_main_window_assemble_tab_strip_titles_fixed_order() -> None:
         "Vendors",
         "Reconcile",
         "More",
+        "A/R Aging",
     )
     for i, title in enumerate(want):
         assert title in lines[i], (i, title, lines[i])
@@ -2476,13 +2478,13 @@ def test_main_window_build_ui_wires_stmt_match_sync_focus_register() -> None:
 
 
 def test_main_window_build_menu_bar_wires_all_action_triggers() -> None:
-    """Every enabled menu ``QAction`` wires ``triggered.connect`` (35 wired; 3 disabled stubs)."""
+    """Every enabled menu ``QAction`` wires ``triggered.connect`` (36 wired; 3 disabled stubs)."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _build_menu_bar(self):")
     end = text.index("    # -- drag & drop on window", start)
     chunk = text[start:end]
-    assert chunk.count("QAction(") == 38
-    assert chunk.count(".triggered.connect(") == 35
+    assert chunk.count("QAction(") == 39
+    assert chunk.count(".triggered.connect(") == 36
     assert (
         chunk.count(
             "lambda checked=False, i=tab_idx: self._set_main_tab_index(i)"
@@ -2901,7 +2903,7 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
     )
     assert per_menu_add == (8, 1, 4, 3, 8), (
         f"expected top-level addAction counts (File,View,Edit,Tools,Help)=(8,1,4,3,8); "
-        f"Recon register actions use 13 submenu addAction and More reports adds 1 submenu addAction "
+        f"Recon register actions use 13 submenu addAction, More reports adds 1 submenu addAction, "
         f"(counted separately); got {per_menu_add}"
     )
     n_reg_sub_add = (
@@ -2914,15 +2916,17 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
     assert n_reg_sub_add == 13
     n_more_reports_add = chunk.count("m_more_reports.addAction(")
     assert n_more_reports_add == 1
-    n_add = sum(per_menu_add) + n_reg_sub_add + n_more_reports_add
-    assert n_qa == n_add == 38, (
-        f"expected 38 menu QActions and *.addAction( calls "
+    n_reports_add = chunk.count("reports_menu.addAction(")
+    assert n_reports_add == 1
+    n_add = sum(per_menu_add) + n_reg_sub_add + n_more_reports_add + n_reports_add
+    assert n_qa == n_add == 39, (
+        f"expected 39 menu QActions and *.addAction( calls "
         f"(QAction={n_qa}, addAction={n_add})"
     )
     # _menu_action_tip is called once per QAction plus once for the More reports submenu
-    # (which is a QMenu, not a QAction); so n_tip = n_qa + 1.
-    assert n_tip == n_qa + 1 == 39, (
-        f"expected 34 _menu_action_tip calls (one per QAction plus the More reports submenu); "
+    # and once for the Reports menu (QMenu, not a QAction); so n_tip = n_qa + 2.
+    assert n_tip == n_qa + 2 == 41, (
+        f"expected _menu_action_tip calls (one per QAction plus More reports and Reports menus); "
         f"got {n_tip}"
     )
     n_dis = chunk.count("setEnabled(False)")
@@ -2940,8 +2944,8 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
         "to call addSeparator() (4 + 1 + 1 + 1 + 2 = 9)"
     )
     assert chunk.count("self.menuBar()") == 1
-    assert chunk.count("mb.addMenu(") == 6, (
-        "expected six top-level menus (File, View, Edit, Tools, Recon, Help)"
+    assert chunk.count("mb.addMenu(") == 7, (
+        "expected seven top-level menus (File, View, Edit, Tools, Recon, Reports, Help)"
     )
     n_scut = chunk.count(".setShortcut(")
     assert n_scut == 7, (
@@ -2995,7 +2999,7 @@ def test_main_help_menu_wires_document_intake_shortcuts_dialog() -> None:
     assert "Import documents" in text and "Ctrl+O" in text
     assert "status bar" in text
     assert "each menu item" in text
-    assert "File, View, Edit, Tools, Recon, Help" in text
+    assert "File, View, Edit, Tools, Recon, Reports, Help" in text
     assert "Ctrl+Shift+I" in text and "Invoice…" in text
     assert "Detail pane:" in text
 
@@ -3686,7 +3690,7 @@ def test_more_main_tabs_shortcuts_module_exposes_help_dialog() -> None:
     assert "Open linked Business record" in text
     assert "Bank Import** batch preview" in text
     assert "Ctrl+Shift+I" in text and "Invoice…" in text
-    assert "File, View, Edit, Tools, Recon, Help" in text
+    assert "File, View, Edit, Tools, Recon, Reports, Help" in text
     assert "status bar" in text
     assert "per-item hover tooltips" in text
     assert "probooks.backup" in text
@@ -5229,7 +5233,7 @@ def test_main_window_banner_tabs_status_bar_and_worker_counts() -> None:
     chunk = text[start:end]
     assert chunk.count("self._header.") == 2
     assert chunk.count("self._status_bar.showMessage(") == 15
-    assert chunk.count("self._tabs.") == 102
+    assert chunk.count("self._tabs.") == 107
     assert chunk.count("self._worker") == 17
 
 

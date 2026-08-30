@@ -259,6 +259,18 @@ def test_customer_center_search_filters_list(qapp: QApplication, db: BankDatabas
     assert ctbl.item(0, 0).text() == "Westside Hauling"
 
 
+def test_customer_center_open_balance_emits_aging_summary(
+    qapp: QApplication, db: BankDatabase
+) -> None:
+    w = CustomerCenterScreen(db._conn)
+    seen: list[bool] = []
+    w.arAgingSummaryRequested.connect(lambda: seen.append(True))
+    w._on_open_balance_report()
+    assert seen == [True]
+    assert w._show.currentText() == "Invoices"
+    assert w._filter_by.currentText() == "Open Invoices"
+
+
 def test_customer_center_open_balance_filter(qapp: QApplication, db: BankDatabase) -> None:
     c1 = business.add_customer(db._conn, "Harbor Logistics")
     business.add_customer(db._conn, "Westside Hauling")
@@ -394,5 +406,12 @@ def test_customer_center_main_window_wires_signals(qapp: QApplication, tmp_path:
         w._on_customer_center_receive_payments(cid)
         assert w._tabs.currentWidget() is w._receive_payments_screen
         assert w._receive_payments_screen._selected_customer_id() == cid
+        w._customers_tab.arAgingSummaryRequested.emit()
+        assert w._tabs.currentWidget() is w._ar_aging_screen
+        labels = [lb.text() for lb in w._ar_aging_screen.findChildren(QLabel)]
+        assert "COMPANY NAME" in labels
+        assert "A/R Aging Summary" in labels
+        w._ar_aging_screen.openCustomerRequested.emit(cid)
+        assert w._tabs.currentWidget() is w._customers_tab
     finally:
         w.close()

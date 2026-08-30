@@ -251,6 +251,8 @@ class CustomerCenterScreen(QWidget):
         Double-click a Payment row → Receive Payments for that customer.
     customerRecordsChanged
         New / edited customer — Create Invoices and Receive Payments should reload.
+    arAgingSummaryRequested
+        Open Balance / Run Reports → A/R Aging Summary (live open invoices).
     """
 
     createInvoicesRequested = Signal(int)
@@ -259,6 +261,7 @@ class CustomerCenterScreen(QWidget):
     openInvoiceRequested = Signal(int)
     openPaymentRequested = Signal(int)
     customerRecordsChanged = Signal()
+    arAgingSummaryRequested = Signal()
 
     def __init__(self, conn: sqlite3.Connection, parent=None):
         super().__init__(parent)
@@ -642,7 +645,9 @@ QHeaderView::section {{
         self._btn_open_bal.setObjectName("customerCenterOpenBalance")
         self._btn_open_bal.setStyleSheet(_link_qss())
         self._btn_open_bal.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_open_bal.setToolTip("Show open invoices for this customer.")
+        self._btn_open_bal.setToolTip(
+            "Open A/R Aging Summary (live open invoices). Also filters this customer to Open Invoices."
+        )
         self._btn_open_bal.clicked.connect(self._on_open_balance_report)
         rpt_row.addWidget(self._btn_quickreport)
         rpt_row.addSpacing(12)
@@ -853,8 +858,11 @@ QHeaderView::section {{
         rm = QMenu(self._btn_run_reports)
         rm.addAction("QuickReport", self._on_quickreport)
         rm.addAction("Open Balance", self._on_open_balance_report)
+        rm.addAction("A/R Aging Summary", self._on_open_balance_report)
         self._btn_run_reports.setMenu(rm)
-        self._btn_run_reports.setToolTip("QuickReport and Open Balance for this customer.")
+        self._btn_run_reports.setToolTip(
+            "QuickReport, Open Balance, and A/R Aging Summary for this customer."
+        )
         row.addWidget(self._btn_run_reports)
 
         row.addStretch(1)
@@ -885,6 +893,16 @@ QHeaderView::section {{
         self._refresh()
         self._select_customer_row(cid)
         self._apply_detail_from_focus()
+
+    def focus_open_invoices(self, customer_id: int) -> None:
+        """Tiny A/R Aging Summary hook: this customer/job's open invoices."""
+        if customer_id:
+            self.focus_customer(int(customer_id))
+        self._right_tabs.setCurrentIndex(0)
+        self._show.setCurrentText(_SHOW_INVOICES)
+        self._filter_by.setCurrentText(_FILTER_OPEN)
+        self._date_range.setCurrentText(_DATE_ALL)
+        self._reload_txn_table()
 
     def _on_left_tab_changed(self, index: int) -> None:
         self._left_stack.setCurrentIndex(0 if index <= 0 else 1)
@@ -1318,6 +1336,7 @@ QHeaderView::section {{
         self._show.setCurrentText(_SHOW_INVOICES)
         self._filter_by.setCurrentText(_FILTER_OPEN)
         self._date_range.setCurrentText(_DATE_ALL)
+        self.arAgingSummaryRequested.emit()
 
     def _on_attach_hint(self) -> None:
         message_box_information_ok(
