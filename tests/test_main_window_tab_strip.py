@@ -30,7 +30,7 @@ def test_main_window_tab_count_and_fixed_top_level_order(qapp: QApplication, tmp
     w = MainWindow(db_path=str(db_path))
     try:
         tabs = w._tabs
-        assert tabs.count() == 20
+        assert tabs.count() == 21
         order = (
             (0, "Home"),
             (1, "Income Tracker"),
@@ -52,6 +52,7 @@ def test_main_window_tab_count_and_fixed_top_level_order(qapp: QApplication, tmp
             (17, "Reconcile"),
             (18, "More"),
             (19, "A/R Aging"),
+            (20, "A/P Aging"),
         )
         for idx, needle in order:
             assert needle in tabs.tabText(idx)
@@ -61,8 +62,11 @@ def test_main_window_tab_count_and_fixed_top_level_order(qapp: QApplication, tmp
             tabs.setCurrentIndex(i)
             assert tabs.currentIndex() == i
         assert not tb.isTabVisible(19)
+        assert not tb.isTabVisible(20)
         w._focus_ar_aging_summary()
         assert tabs.currentWidget() is w._ar_aging_screen
+        w._focus_ap_aging_summary()
+        assert tabs.currentWidget() is w._ap_aging_screen
     finally:
         w.close()
 

@@ -119,6 +119,7 @@ from desktop_app.make_deposits_screen import MakeDepositsScreen
 from desktop_app.calendar_screen import CalendarScreen
 from desktop_app.company_snapshot_screen import CompanySnapshotScreen
 from desktop_app.my_company_screen import MyCompanyScreen
+from desktop_app.ap_aging_summary_screen import APAgingSummaryScreen
 from desktop_app.ar_aging_summary_screen import ARAgingSummaryScreen
 from desktop_app.tracker_screens import BillTrackerScreen, IncomeTrackerScreen
 from desktop_app.create_company_file_dialog import CreateCompanyFileDialog
@@ -1214,6 +1215,7 @@ class MainWindow(QMainWindow):
         self._snapshot_screen = CompanySnapshotScreen(ap_conn=conn)
         self._my_company_screen = MyCompanyScreen(ap_conn=conn)
         self._ar_aging_screen = ARAgingSummaryScreen(ap_conn=conn)
+        self._ap_aging_screen = APAgingSummaryScreen(ap_conn=conn)
         self._invoice_codes_screen = InvoiceCodesScreen(ap_conn=conn, coa_db=self._coa_db)
         self._enter_bills_screen = EnterBillsScreen(ap_conn=conn)
         self._enter_bills_screen.payBillsRequested.connect(self._on_enter_bills_pay_bill)
@@ -1353,6 +1355,11 @@ class MainWindow(QMainWindow):
         ar_idx = self._tabs.indexOf(self._ar_aging_screen)
         if ar_idx >= 0:
             self._tabs.tabBar().setTabVisible(ar_idx, False)
+        # Hidden: opened from Reports / Vendor Center Open Balance — icon bar stays 19 tabs.
+        self._tabs.addTab(self._ap_aging_screen, "A/P Aging")
+        ap_idx = self._tabs.indexOf(self._ap_aging_screen)
+        if ap_idx >= 0:
+            self._tabs.tabBar().setTabVisible(ap_idx, False)
         self._tabs.currentChanged.connect(self._on_main_tab_changing)
         self._prev_main_tab_index: int = 0
         self._make_deposits_screen.depositPosted.connect(self._on_make_deposit_posted)
@@ -1375,6 +1382,7 @@ class MainWindow(QMainWindow):
         self._customers_tab.customerRecordsChanged.connect(self._on_customer_center_records_changed)
         self._customers_tab.arAgingSummaryRequested.connect(self._focus_ar_aging_summary)
         self._ar_aging_screen.openCustomerRequested.connect(self._on_ar_aging_open_customer)
+        self._ap_aging_screen.openVendorRequested.connect(self._on_ap_aging_open_vendor)
         self._income_tracker_screen.openInvoiceRequested.connect(
             self._on_customer_center_open_invoice
         )
@@ -1570,6 +1578,13 @@ class MainWindow(QMainWindow):
                 "A/R Aging Summary: live open invoices by customer and job "
                 "(Current / 1-30 / 31-60 / 61-90 / >90). "
                 "Open from Reports or Customer Center Open Balance."
+                + _tab_bar_csv_excel_hint
+                + _main_tab_bar_db_hint
+            ),
+            (
+                "A/P Aging Summary: live open bills by vendor "
+                "(Current / 1-30 / 31-60 / 61-90 / >90). "
+                "Open from Reports or Vendor Center Open Balance."
                 + _tab_bar_csv_excel_hint
                 + _main_tab_bar_db_hint
             ),
@@ -2062,6 +2077,16 @@ class MainWindow(QMainWindow):
         )
         act_ar_aging.triggered.connect(self._focus_ar_aging_summary)
         reports_menu.addAction(act_ar_aging)
+
+        act_ap_aging = QAction("A/&P Aging Summary", self)
+        _menu_action_tip(
+            act_ap_aging,
+            "Open A/P Aging Summary (vendors, Current / 1-30 / 31-60 / 61-90 / >90). "
+            "Live open bills; empty company shows zeros. "
+            "Vendor Center Open Balance also opens this report.",
+        )
+        act_ap_aging.triggered.connect(self._focus_ap_aging_summary)
+        reports_menu.addAction(act_ap_aging)
 
         # Help menu
         help_menu = mb.addMenu("&Help")
@@ -3199,11 +3224,47 @@ class MainWindow(QMainWindow):
         if idx >= 0:
             self._tabs.setCurrentIndex(idx)
 
+    def _focus_ap_aging_summary(self) -> None:
+        """Reports → A/P Aging Summary (also Vendor Center Open Balance)."""
+        tabs = getattr(self, "_tabs", None)
+        screen = getattr(self, "_ap_aging_screen", None)
+        if tabs is None or screen is None:
+            return
+        idx = tabs.indexOf(screen)
+        if idx >= 0:
+            tabs.setCurrentIndex(idx)
+        try:
+            screen.reload()
+        except Exception:
+            pass
+
+    def _on_ap_aging_open_vendor(self, vendor_id: int) -> None:
+        """Double-click a vendor row → Vendor Center focused on that vendor."""
+        if not hasattr(self, "_tabs") or not hasattr(self, "_vendors_tab"):
+            return
+        vid = int(vendor_id or 0)
+        if vid:
+            # Vendor Center exposes ``_select_vendor_row`` for its internal
+            # selection; use it defensively so we don't require a new public
+            # method on the existing screen (mirrors AR's soft focus attempt).
+            selector = getattr(self._vendors_tab, "_select_vendor_row", None)
+            if callable(selector):
+                try:
+                    selector(vid)
+                except Exception:
+                    pass
+        idx = self._tabs.indexOf(self._vendors_tab)
+        if idx >= 0:
+            self._tabs.setCurrentIndex(idx)
+
     def _focus_more_report(self, kind: str) -> None:
         """View → More reports: show **More** → **Reports** and run an A/R or A/P report."""
         k = (kind or "").strip().lower().replace("-", "_")
         if k in ("ar_aging", "ar_aging_summary"):
             self._focus_ar_aging_summary()
+            return
+        if k in ("ap_aging", "ap_aging_summary"):
+            self._focus_ap_aging_summary()
             return
         tabs = getattr(self, "_tabs", None)
         hub = getattr(self, "_more_hub", None)

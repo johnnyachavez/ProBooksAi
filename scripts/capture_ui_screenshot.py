@@ -24,6 +24,7 @@ Usage (with a virtual display already active, e.g. via xvfb-run):
     python scripts/capture_ui_screenshot.py --tab snapshot --output artifacts/ui/company_snapshot.png
     python scripts/capture_ui_screenshot.py --tab my-company --output artifacts/ui/my_company.png
     python scripts/capture_ui_screenshot.py --tab ar-aging --output artifacts/ui/ar_aging_summary.png
+    python scripts/capture_ui_screenshot.py --tab ap-aging --output artifacts/ui/ap_aging_summary.png
 
 Saves: artifacts/ui/main_window.png (default)
 Exit code 0 on success, non-zero on failure.
@@ -146,6 +147,7 @@ def main() -> int:
     from desktop_app.calendar_screen import CalendarScreen  # noqa: E402
     from desktop_app.company_snapshot_screen import CompanySnapshotScreen  # noqa: E402
     from desktop_app.my_company_screen import MyCompanyScreen  # noqa: E402
+    from desktop_app.ap_aging_summary_screen import APAgingSummaryScreen  # noqa: E402
     from desktop_app.ar_aging_summary_screen import ARAgingSummaryScreen  # noqa: E402
     from desktop_app.vendor_center_screen import VendorCenterScreen  # noqa: E402
 
@@ -194,6 +196,8 @@ def main() -> int:
         output_path = Path("artifacts") / "ui" / "my_company.png"
     elif tab in ("ar-aging", "ar_aging", "ar-aging-summary", "ar_aging_summary"):
         output_path = Path("artifacts") / "ui" / "ar_aging_summary.png"
+    elif tab in ("ap-aging", "ap_aging", "ap-aging-summary", "ap_aging_summary"):
+        output_path = Path("artifacts") / "ui" / "ap_aging_summary.png"
     else:
         output_path = Path("artifacts") / "ui" / "main_window.png"
 
@@ -236,6 +240,10 @@ def main() -> int:
         "ar_aging",
         "ar-aging-summary",
         "ar_aging_summary",
+        "ap-aging",
+        "ap_aging",
+        "ap-aging-summary",
+        "ap_aging_summary",
     ):
         shot_dir = Path(tempfile.mkdtemp(prefix="probooks-ui-shot-"))
         extra_kw["db_path"] = str(shot_dir / "shot.db")
@@ -958,6 +966,88 @@ def main() -> int:
             )
         screen = getattr(window, "_ar_aging_screen", None)
         if isinstance(screen, ARAgingSummaryScreen):
+            as_of = _date(2026, 8, 27)
+            screen._dates.blockSignals(True)
+            screen._dates.setCurrentText("Custom Date")
+            screen._dates.blockSignals(False)
+            screen._as_of_edit.blockSignals(True)
+            screen._as_of_edit.setDate(QDate(as_of.year, as_of.month, as_of.day))
+            screen._as_of_edit.blockSignals(False)
+            screen.reload()
+        if screen is not None and hasattr(window, "_tabs"):
+            idx = window._tabs.indexOf(screen)
+            if idx >= 0:
+                window._tabs.setCurrentIndex(idx)
+        grab_widget = screen
+        if grab_widget is not None:
+            grab_widget.resize(1400, 900)
+            grab_widget.setMinimumSize(1400, 900)
+            grab_widget.show()
+    elif tab in ("ap-aging", "ap_aging", "ap-aging-summary", "ap_aging_summary"):
+        from datetime import date as _date
+
+        from PySide6.QtCore import QDate
+
+        from probooksai import business
+
+        conn = getattr(getattr(window, "_bank_db", None), "_conn", None)
+        if conn is not None:
+            v1 = business.add_vendor(conn, "Office Supplies Co")
+            business.create_bill(
+                conn,
+                v1,
+                "2026-08-01",
+                450.00,
+                vendor_invoice_number="OS-1042",
+                due_date="2026-08-20",
+            )
+            v2 = business.add_vendor(conn, "Warehouse Supply")
+            bid = business.create_bill(
+                conn,
+                v2,
+                "2026-07-01",
+                780.50,
+                vendor_invoice_number="WS-88",
+                due_date="2026-07-15",
+            )
+            business.record_ap_payment(
+                conn,
+                v2,
+                "2026-08-10",
+                200.00,
+                [(bid, 200.00)],
+                method="Check",
+                reference="1008",
+            )
+            v3 = business.add_vendor(conn, "Fuel Vendor")
+            business.create_bill(
+                conn,
+                v3,
+                "2026-06-01",
+                96.40,
+                vendor_invoice_number="FV-12",
+                due_date="2026-06-20",
+            )
+            v4 = business.add_vendor(conn, "Shop Parts LLC")
+            business.create_bill(
+                conn,
+                v4,
+                "2026-04-01",
+                310.00,
+                vendor_invoice_number="SP-4",
+                due_date="2026-04-15",
+            )
+            v5 = business.add_vendor(conn, "Northwind Freight")
+            business.create_bill(
+                conn,
+                v5,
+                "2026-08-20",
+                125.00,
+                vendor_invoice_number="NF-3",
+                due_date="2026-09-20",
+            )
+        screen = getattr(window, "_ap_aging_screen", None)
+        if isinstance(screen, APAgingSummaryScreen):
             as_of = _date(2026, 8, 27)
             screen._dates.blockSignals(True)
             screen._dates.setCurrentText("Custom Date")

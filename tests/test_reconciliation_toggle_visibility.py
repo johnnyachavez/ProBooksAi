@@ -38,16 +38,19 @@ def test_all_main_tabs_remain_visible_regardless_of_register_reconciliation_mode
         chk.setChecked(True)
         qapp.processEvents()
         assert reg.is_reconciliation_mode()
-        aging_idx = tabs.indexOf(w._ar_aging_screen)
+        hidden_idx = {
+            tabs.indexOf(w._ar_aging_screen),
+            tabs.indexOf(w._ap_aging_screen),
+        }
         for i in range(tabs.count()):
-            if i == aging_idx:
+            if i in hidden_idx:
                 assert not tb.isTabVisible(i)
             else:
                 assert tb.isTabVisible(i)
         chk.setChecked(False)
         qapp.processEvents()
         for i in range(tabs.count()):
-            if i == aging_idx:
+            if i in hidden_idx:
                 assert not tb.isTabVisible(i)
             else:
                 assert tb.isTabVisible(i)
