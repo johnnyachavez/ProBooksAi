@@ -966,7 +966,11 @@ class RegisterTab(QWidget):
             b.setToolTip(tip)
             return b
 
-        self._btn_goto = _tb_btn("Go to...", "Jump to a date or check / reference number in this register.")
+        self._btn_goto = _tb_btn(
+            "Go to...",
+            "Find a register line by date (MM/DD/YYYY), check / reference number, payee, "
+            "or amount, then select and scroll to the first match. Not a filter — other rows stay visible.",
+        )
         self._btn_print = _tb_btn("Print...", "Print this register (layout control).")
         self._btn_edit_txn = _tb_btn(
             "Edit Transaction",
@@ -1799,19 +1803,47 @@ class RegisterTab(QWidget):
         text, ok = QInputDialog.getText(
             self,
             "Go to...",
-            "Date (MM/DD/YYYY) or Number/Ref:",
+            "Date, Number / Ref, Payee, or Amount:",
         )
         if not ok:
             return
-        needle = (text or "").strip().lower()
-        if not needle:
+        needle_raw = (text or "").strip()
+        if not needle_raw:
             return
+        from desktop_app.find_matchers import (
+            parse_amount_needle,
+            parse_date_needle,
+        )
+
+        needle = needle_raw.lower()
+        amt_target = parse_amount_needle(needle_raw)
+        iso_target = parse_date_needle(needle_raw)
+
         for r in range(self._table.rowCount()):
             d_it = self._table.item(r, _COL_DATE)
             n_it = self._table.item(r, _COL_REF)
-            dtxt = (d_it.text() if d_it else "").lower()
-            ntxt = (n_it.text() if n_it else "").lower()
-            if needle in dtxt or needle in ntxt.replace("\n", " "):
+            p_it = self._table.item(r, _COL_PAYEE)
+            deb_it = self._table.item(r, _COL_DEBIT)
+            cred_it = self._table.item(r, _COL_CREDIT)
+            dtxt = (d_it.text() if d_it else "").strip()
+            ntxt = (n_it.text() if n_it else "").replace("\n", " ").lower()
+            ptxt = (p_it.text() if p_it else "").replace("\n", " ").lower()
+            hit = False
+            if needle in dtxt.lower() or needle in ntxt or needle in ptxt:
+                hit = True
+            if not hit and iso_target is not None:
+                # Table date column may render "MM/DD/YYYY"; parse it back for comparison.
+                if parse_date_needle(dtxt) == iso_target:
+                    hit = True
+            if not hit and amt_target is not None:
+                for txt_item in (deb_it, cred_it):
+                    if txt_item is None:
+                        continue
+                    cell = parse_amount_needle(txt_item.text())
+                    if cell is not None and abs(cell - amt_target) < 0.005:
+                        hit = True
+                        break
+            if hit:
                 self._table.selectRow(r)
                 if d_it is not None:
                     self._table.scrollToItem(d_it)
@@ -1819,8 +1851,8 @@ class RegisterTab(QWidget):
         message_box_information_ok(
             self,
             "Go to...",
-            "No matching register line.",
-            ok_tip="Close; try another date or number.",
+            f"No register line matches “{needle_raw}”.",
+            ok_tip="Close; try another date, number, payee, or amount.",
         )
 
     def _on_print_register(self) -> None:

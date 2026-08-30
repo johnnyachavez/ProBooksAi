@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QPlainTextEdit,
@@ -38,6 +39,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from desktop_app.find_matchers import first_matching_row
 from desktop_app.flexible_date import configure_qdate_edit_us
 from desktop_app.qt_combo_ids import coerce_combo_int_id, combo_index_for_int_user_data
 from desktop_app.qt_mnemonic import (
@@ -538,7 +540,10 @@ class CheckScreen(QWidget):
             return sep
 
         self._btn_find = QPushButton("Find")
-        self._btn_find.setToolTip("Go to the previous check for this bank account.")
+        self._btn_find.setToolTip(
+            "Search saved checks on the selected bank account by check number, payee, amount, or date "
+            "(flexible US-style dates), then load the first match into this form."
+        )
         self._btn_new = QPushButton("New")
         self._btn_new.setToolTip("Start a new blank check (does not save the current form).")
         self._btn_save = QPushButton("Save")
@@ -604,7 +609,7 @@ class CheckScreen(QWidget):
         play.addWidget(toolbar)
 
         _uc = Qt.ConnectionType.UniqueConnection
-        self._btn_find.clicked.connect(self._on_prev, _uc)
+        self._btn_find.clicked.connect(self._on_find, _uc)
         self._btn_new.clicked.connect(self._on_new, _uc)
         self._btn_save.clicked.connect(self._on_ribbon_save, _uc)
         self._btn_delete.clicked.connect(self._on_delete, _uc)
@@ -1015,6 +1020,75 @@ class CheckScreen(QWidget):
             self._browse_index -= 1
         self._load_current()
 
+    def find_check_id_matching(self, needle: str) -> Optional[int]:
+        """Return the first check id on the current bank account whose #/payee/amount/date matches."""
+        if self._db is None or self._current_account_id is None:
+            return None
+        needle = (needle or "").strip()
+        if not needle:
+            return None
+        try:
+            rows = list(self._db.list_transactions(self._current_account_id))
+        except Exception:
+            return None
+        check_rows = [dict(r) for r in rows if float(r["amount"] or 0) < 0]
+        hit = first_matching_row(
+            check_rows,
+            needle,
+            number_fields=("ref_number",),
+            name_fields=("description", "memo"),
+            amount_fields=("amount",),
+            date_fields=("txn_date",),
+        )
+        if hit is None:
+            return None
+        return int(hit["id"])
+
+    def _on_find(self) -> None:
+        if self.sender() is not self._btn_find:
+            return
+        if self._db is None or self._current_account_id is None:
+            message_box_information_ok(
+                self,
+                "Find check",
+                "Select a bank account first (top of the form).",
+                ok_tip="Close; choose a bank account, then click Find.",
+            )
+            return
+        if not self._browse_ids:
+            message_box_information_ok(
+                self,
+                "Find check",
+                "No saved checks on this bank account yet.",
+                ok_tip="Close; save a check first, then Find.",
+            )
+            return
+        text, ok = QInputDialog.getText(
+            self,
+            "Find check",
+            "Check #, payee, amount, or date (MM/DD/YYYY):",
+        )
+        if not ok:
+            return
+        needle = (text or "").strip()
+        if not needle:
+            return
+        tid = self.find_check_id_matching(needle)
+        if tid is None:
+            message_box_information_ok(
+                self,
+                "Find check",
+                f"No saved check matches “{needle}”.",
+                ok_tip="Close; try another check #, payee, amount, or date.",
+            )
+            return
+        try:
+            self._browse_index = self._browse_ids.index(int(tid))
+        except ValueError:
+            self._browse_index = None
+        self._load_current()
+        self._update_nav_buttons()
+
     def _on_new(self) -> None:
         self._browse_index = None
         self._load_current()
@@ -1055,8 +1129,7 @@ class CheckScreen(QWidget):
         n = len(self._browse_ids)
         has_any = n > 0
         is_draft = self._browse_index is None
-        can_prev = has_any and (is_draft or (self._browse_index or 0) > 0)
-        self._btn_find.setEnabled(self._db is not None and can_prev)
+        self._btn_find.setEnabled(self._db is not None and has_any)
         self._btn_delete.setEnabled(self._db is not None and not is_draft)
         if is_draft:
             self._lbl_position.setText("New")

@@ -836,6 +836,10 @@ class InvoiceCodesScreen(QWidget):
         )
         outer.addWidget(self._table, stretch=1)
 
+        self._empty_state = self._build_empty_state()
+        outer.addWidget(self._empty_state, stretch=1)
+        self._empty_state.setVisible(False)
+
         self._lbl_count = QLabel("")
         self._lbl_count.setObjectName("itemListCount")
         self._lbl_count.setStyleSheet(
@@ -849,6 +853,50 @@ class InvoiceCodesScreen(QWidget):
         sc_edit = QShortcut(QKeySequence("Return"), self._table)
         sc_edit.setContext(Qt.WidgetWithChildrenShortcut)
         sc_edit.activated.connect(self._on_edit)
+
+    def _build_empty_state(self) -> QFrame:
+        """Empty-state card shown in place of the table when no items exist."""
+        frame = QFrame()
+        frame.setObjectName("itemListEmptyState")
+        frame.setStyleSheet(
+            f"QFrame#itemListEmptyState {{ background: {_IL_PAPER}; "
+            f"border: 1px dashed {_IL_GRID}; border-radius: 6px; }}"
+        )
+        v = QVBoxLayout(frame)
+        v.setContentsMargins(24, 32, 24, 32)
+        v.setSpacing(10)
+        v.addStretch(1)
+        headline = QLabel("No items in this company's item list yet.")
+        headline.setObjectName("itemListEmptyHeadline")
+        headline.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        headline.setStyleSheet(
+            f"color: {_IL_TEXT}; font-size: 15px; font-weight: 700; background: transparent;"
+        )
+        v.addWidget(headline)
+        subtitle = QLabel(
+            "Items (services, discounts, other charges, subtotals) fill the Code column on "
+            "Create Invoices. Add your first item to see it here."
+        )
+        subtitle.setObjectName("itemListEmptySubtitle")
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        subtitle.setWordWrap(True)
+        subtitle.setStyleSheet(
+            f"color: {_IL_CAPTION}; font-size: 12px; background: transparent;"
+        )
+        v.addWidget(subtitle)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        add_btn = QPushButton("+ Add Item")
+        add_btn.setObjectName("itemListEmptyAdd")
+        add_btn.setStyleSheet(_action_button_qss(primary=True))
+        add_btn.setFixedHeight(28)
+        add_btn.setToolTip("Open Edit Item to add the first item to this company's item list.")
+        add_btn.clicked.connect(self._on_new)
+        row.addWidget(add_btn)
+        row.addStretch(1)
+        v.addLayout(row)
+        v.addStretch(2)
+        return frame
 
     def _on_search(self) -> None:
         self._search_term = (self._search.text() or "").strip()
@@ -1053,6 +1101,12 @@ class InvoiceCodesScreen(QWidget):
         extra = f"  ({inactive_n} inactive)" if include_inactive and inactive_n else ""
         n = len(packed)
         self._lbl_count.setText(f"{n} item{'s' if n != 1 else ''}{extra}")
+        empty_state = getattr(self, "_empty_state", None)
+        if empty_state is not None:
+            has_any_filter = bool(self._search_term) or self._within_ids is not None
+            is_empty = n == 0 and not has_any_filter
+            empty_state.setVisible(is_empty)
+            self._table.setVisible(not is_empty)
         self._on_selection()
 
 

@@ -210,7 +210,8 @@ def test_invoice_screen_print_and_nav_buttons_exist(qapp: QApplication) -> None:
     assert w._btn_find.text() == "Find"
     assert w._btn_new_invoice.text() == "New"
     assert w._btn_email.text() == "Email"
-    assert not w._btn_email.isEnabled()
+    # Email is now wired to a real mailto handler with a customer-email check.
+    assert w._btn_email.isEnabled()
     assert w._btn_intake.text() == "Intake"
 
 

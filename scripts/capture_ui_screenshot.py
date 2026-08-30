@@ -152,6 +152,16 @@ def main() -> int:
     from desktop_app.vendor_center_screen import VendorCenterScreen  # noqa: E402
 
     app = QApplication(sys.argv)
+    # Match the QSettings scope used by ``desktop_app.main.main()`` so first-run
+    # prompts / persisted paths line up with a real user launch (and can be
+    # pre-suppressed for headless captures).
+    app.setApplicationName("ProBooks+ai")
+    app.setOrganizationName("ProBooks+ai")
+
+    from PySide6.QtCore import QSettings
+    _capture_settings = QSettings()
+    _capture_settings.setValue("company_file_setup_prompted", True)
+    _capture_settings.sync()
 
     tab = (args.tab or "main").strip().lower()
     if args.output:
@@ -203,6 +213,24 @@ def main() -> int:
 
     extra_kw: dict = {}
     if tab in (
+        "invoices",
+        "invoice",
+        "create-invoices",
+        "create_invoices",
+        "bills",
+        "enter-bills",
+        "enter_bills",
+        "payments",
+        "receive-payments",
+        "receive_payments",
+        "deposits",
+        "make-deposits",
+        "make_deposits",
+        "checks",
+        "write-checks",
+        "write_checks",
+        "home",
+        "dashboard",
         "pay-bills",
         "pay_bills",
         "paybills",

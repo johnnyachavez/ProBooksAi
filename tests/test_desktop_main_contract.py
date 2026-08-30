@@ -1171,7 +1171,7 @@ def test_main_window_init_wires_databases_build_ui_and_refresh() -> None:
     assert chunk.count("self._build_ui()") == 1
     assert chunk.count("self._refresh_inbox()") == 1
     assert chunk.count("self._update_company_status()") == 1
-    assert chunk.count("QTimer.singleShot(0, self._maybe_prompt_first_company_file_setup)") == 1
+    assert chunk.count("QTimer.singleShot(0, self._maybe_prompt_first_company_file_setup)") == 0
     assert chunk.count("self._worker: AIWorker | None = None") == 1
 
 
@@ -1193,7 +1193,6 @@ def test_main_window_init_database_and_ui_bootstrap_order() -> None:
         "self._build_ui()",
         "self._refresh_inbox()",
         "self._update_company_status()",
-        "QTimer.singleShot(0, self._maybe_prompt_first_company_file_setup)",
     )
     positions = [chunk.index(m) for m in markers]
     assert positions == sorted(positions)
@@ -1761,27 +1760,26 @@ def test_main_window_question_and_warning_icons_for_company_dialogs() -> None:
 
 
 def test_main_window_two_stacked_qmessagebox_instances_for_yes_no_flows() -> None:
-    """``MainWindow`` builds three ``QMessageBox(self)`` boxes: first-run welcome, new-company file exists, restore confirm."""
+    """``MainWindow`` builds two ``QMessageBox(self)`` boxes: new-company file exists, restore confirm."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("class MainWindow(QMainWindow):")
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
-    assert chunk.count("box = QMessageBox(self)") == 3
+    assert chunk.count("box = QMessageBox(self)") == 2
 
 
 def test_main_window_maybe_prompt_first_company_file_setup() -> None:
-    """First-run welcome: skip when ``_db_path`` is set or prompt was shown; else offer create-company-file."""
+    """New Company is never auto-opened from launch / restore / incomplete-identity gates."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("    def _maybe_prompt_first_company_file_setup(self) -> None:")
     end = text.index("    def _on_open_company_database(self):", start)
     chunk = text[start:end]
-    assert chunk.count("if self._db_path is not None:") == 1
-    assert chunk.count('settings.value("company_file_setup_prompted", False, type=bool)') == 1
-    assert chunk.count('settings.setValue("company_file_setup_prompted", True)') == 2
-    # Two call sites: the welcome card's accept branch + the
-    # ``_route_into_setup_if_company_incomplete`` gate (re-routes returning users
-    # whose loaded file is missing required identity / business / tax fields).
-    assert chunk.count("self._on_create_company_file()") == 2
+    assert "def _maybe_prompt_first_company_file_setup" in chunk
+    assert "def _route_into_setup_if_company_incomplete" in chunk
+    assert chunk.count("self._on_create_company_file()") == 0
+    assert "box.exec()" not in chunk
+    assert "QMessageBox" not in chunk
+    assert 'settings.value("company_file_setup_prompted"' not in chunk
 
 
 def test_main_window_on_create_new_company_runs_wizard() -> None:
@@ -4145,7 +4143,7 @@ def test_desktop_main_entrypoint_boot_sequence() -> None:
     assert chunk.count("window.show()") == 1
     assert chunk.count("sys.exit(app.exec())") == 1
     assert chunk.count("db_path = args.database") == 1
-    assert chunk.count("if db_path is None:") == 2
+    assert chunk.count("if db_path is None:") == 1
     assert chunk.count("db_path = last") == 1
     assert chunk.count('QSettings().value("company_database_path", "", type=str)') == 1
     assert chunk.count("Path(last).is_file()") == 1
@@ -5301,7 +5299,7 @@ def test_main_window_custom_qmessagebox_yes_no_defaults_to_no() -> None:
     start = text.index("class MainWindow(QMainWindow):")
     end = text.index("\n\n# ---------------------------------------------------------------------------\n# Entry point", start)
     chunk = text[start:end]
-    assert chunk.count("QMessageBox(self)") == 3
+    assert chunk.count("QMessageBox(self)") == 2
     assert chunk.count("box.setDefaultButton(QMessageBox.StandardButton.No)") == 2
 
 

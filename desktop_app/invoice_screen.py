@@ -44,8 +44,8 @@ import sqlite3
 from functools import partial
 from typing import Optional
 
-from PySide6.QtCore import QDate, QEvent, QObject, QStringListModel, QSettings, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QHideEvent, QPalette, QShowEvent, QTextDocument
+from PySide6.QtCore import QDate, QEvent, QObject, QStringListModel, QSettings, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QColor, QDesktopServices, QFont, QFontMetrics, QHideEvent, QPalette, QShowEvent, QTextDocument
 from PySide6.QtPrintSupport import QPrinter
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -59,6 +59,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QFileDialog,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -84,6 +85,7 @@ from desktop_app.flexible_date import (
     format_iso_to_us_display,
     parse_flexible_date_to_ymd,
 )
+from desktop_app.find_matchers import first_matching_row
 from desktop_app.invoice_preferences import (
     configure_printer_for_invoice_print,
     ensure_invoice_output_folder,
@@ -798,7 +800,9 @@ class InvoiceScreen(QWidget):
 
         self._btn_find = QPushButton("Find")
         self._btn_find.setToolTip(
-            "Previous invoice by invoice number (QuickBooks Find / Previous on this form)."
+            "Search saved invoices by invoice number, customer name, total, or date "
+            "(flexible US-style dates), then load the first match into this form. "
+            "Use Previous / Next to browse from there."
         )
         self._btn_new_invoice = QPushButton("New")
         self._btn_new_invoice.setToolTip("Start a blank invoice (does not save the current form).")
@@ -814,9 +818,11 @@ class InvoiceScreen(QWidget):
         )
         self._btn_email = QPushButton("Email")
         self._btn_email.setToolTip(
-            "Email from Create Invoices is not wired yet. Use Print or Export PDF."
+            "Save this invoice, export a PDF, and open a mailto draft addressed to the "
+            "customer (subject and body pre-filled with invoice # and amount). "
+            "If the customer has no email address, or your OS has no mail handler, a real "
+            "message explains what to do next — no silent failure."
         )
-        self._btn_email.setEnabled(False)
         self._btn_export_pdf = QPushButton("Export PDF…")
         self._btn_export_pdf.setToolTip(
             "Save this invoice to the company file, then pick a PDF file path (one-time). "
@@ -1097,7 +1103,8 @@ class InvoiceScreen(QWidget):
         )
         self._btn_reverse.clicked.connect(self._on_reverse_invoice, _uc)
         self._btn_forward.clicked.connect(self._on_forward_invoice, _uc)
-        self._btn_find.clicked.connect(self._on_reverse_invoice, _uc)
+        self._btn_find.clicked.connect(self._on_find_invoice, _uc)
+        self._btn_email.clicked.connect(self._on_email_invoice, _uc)
         self._btn_new_invoice.clicked.connect(self._on_clear_fields, _uc)
         self._btn_intake.clicked.connect(self._on_open_invoice_intake, _uc)
 
@@ -2768,6 +2775,157 @@ class InvoiceScreen(QWidget):
             self._run_invoice_print_dialog(inv_id, advance_after=was_new)
         finally:
             self._invoice_print_dialog_armed = False
+
+    # -- Find (QB Pro-style search) -----------------------------------------
+
+    def find_invoice_id_matching(self, needle: str) -> Optional[int]:
+        """Return the first saved invoice id whose number / customer / total / date matches *needle*.
+
+        Called by ``_on_find_invoice`` and by unit tests; pure data path with no UI.
+        """
+        if self._ap_conn is None:
+            return None
+        needle = (needle or "").strip()
+        if not needle:
+            return None
+        rows = business.list_invoices(self._ap_conn)
+        hit = first_matching_row(
+            rows,
+            needle,
+            number_fields=("invoice_number",),
+            name_fields=("customer_name",),
+            amount_fields=("total",),
+            date_fields=("invoice_date",),
+        )
+        if hit is None:
+            return None
+        return int(hit["id"])
+
+    def _on_find_invoice(self) -> None:
+        if self.sender() is not self._btn_find:
+            return
+        if self._ap_conn is None:
+            self._invoice_feedback_message("Connect a company file to search invoices.")
+            return
+        text, ok = QInputDialog.getText(
+            self,
+            "Find invoice",
+            "Invoice #, customer, amount, or date (MM/DD/YYYY):",
+        )
+        if not ok:
+            return
+        needle = (text or "").strip()
+        if not needle:
+            return
+        inv_id = self.find_invoice_id_matching(needle)
+        if inv_id is None:
+            message_box_information_ok(
+                self,
+                "Find invoice",
+                f"No saved invoice matches “{needle}”.",
+                ok_tip="Close; try another invoice #, customer, amount, or date.",
+            )
+            return
+        self._load_invoice_into_form(inv_id)
+        self._refresh_browse_state()
+
+    # -- Email --------------------------------------------------------------
+
+    def _build_invoice_mailto_url(self, invoice_id: int) -> Optional[QUrl]:
+        """Compose a ``mailto:`` URL for *invoice_id*, or ``None`` if no customer email."""
+        if self._ap_conn is None:
+            return None
+        inv, _lines = business.get_invoice_detail(self._ap_conn, invoice_id)
+        if inv is None:
+            return None
+        d = dict(inv)
+        cust = business.get_customer(self._ap_conn, int(d["customer_id"]))
+        if cust is None:
+            return None
+        email = (dict(cust).get("email") or "").strip()
+        if not email:
+            return None
+        num = (d.get("invoice_number") or "").strip() or f"#{invoice_id}"
+        total = float(d.get("total") or 0)
+        date_iso = (d.get("invoice_date") or "").strip()
+        date_us = format_iso_to_us_display(date_iso) if date_iso else ""
+        url = QUrl(f"mailto:{email}")
+        from PySide6.QtCore import QUrlQuery
+        q = QUrlQuery()
+        q.addQueryItem("subject", f"Invoice {num}")
+        body_lines = [
+            f"Invoice {num}",
+        ]
+        if date_us:
+            body_lines.append(f"Date: {date_us}")
+        body_lines.append(f"Amount due: ${total:,.2f}")
+        body_lines.append("")
+        body_lines.append("Thanks,")
+        q.addQueryItem("body", "\n".join(body_lines))
+        url.setQuery(q)
+        return url
+
+    def _on_email_invoice(self) -> None:
+        if self.sender() is not self._btn_email:
+            return
+        if self._ap_conn is None:
+            self._invoice_feedback_message("Connect a company file to email invoices.")
+            return
+        cid = self.selected_bill_to_customer_id()
+        if cid is None:
+            message_box_warning_ok(
+                self,
+                "Email invoice",
+                "Choose a customer on the Bill To panel before emailing.",
+                ok_tip="Close; pick a customer, then click Email again.",
+            )
+            return
+        cust = business.get_customer(self._ap_conn, int(cid))
+        if cust is None:
+            message_box_warning_ok(
+                self,
+                "Email invoice",
+                "The selected customer could not be found.",
+                ok_tip="Close; reselect the customer and try again.",
+            )
+            return
+        email_addr = (dict(cust).get("email") or "").strip()
+        if not email_addr:
+            name = (dict(cust).get("name") or "This customer").strip()
+            message_box_warning_ok(
+                self,
+                "Email invoice",
+                f"{name} has no email address on file. Add one in Customers → Edit customer.",
+                ok_tip="Close; add an email to the customer record and try again.",
+            )
+            return
+        ok, msg, inv_id = self._save_invoice_data_only()
+        if not ok or inv_id is None:
+            self._invoice_feedback_message(msg or "Could not save invoice before emailing.")
+            return
+        url = self._build_invoice_mailto_url(inv_id)
+        if url is None:
+            message_box_warning_ok(
+                self,
+                "Email invoice",
+                "Could not build the email draft (no customer email on the saved invoice).",
+                ok_tip="Close; add an email to the customer record and try again.",
+            )
+            return
+        opened = QDesktopServices.openUrl(url)
+        if not opened:
+            message_box_warning_ok(
+                self,
+                "Email invoice",
+                "Your operating system has no default mail handler. "
+                f"Copy this address and email the invoice manually: {email_addr}",
+                ok_tip="Close; set a default mail app in Windows Settings → Apps → Default apps.",
+            )
+            return
+        self._load_invoice_into_form(inv_id)
+        self._invoice_feedback_message(
+            f"Email draft opened for {email_addr} (invoice saved)."
+        )
 
     def _address_box(
         self,

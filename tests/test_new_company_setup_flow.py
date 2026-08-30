@@ -85,10 +85,10 @@ def test_on_create_company_file_writes_full_identity_and_backup_folder(
         w._db.close()
 
 
-def test_route_into_setup_when_company_incomplete_opens_wizard(
+def test_route_into_setup_when_company_incomplete_does_not_open_wizard(
     qapp: QApplication, tmp_path: Path
 ) -> None:
-    """If the loaded company file is missing required fields, the wizard is auto-opened."""
+    """A loaded company with missing identity must never auto-open New Company."""
     seed = tmp_path / "incomplete.db"
     w = _make_main_window(qapp, seed)
     try:
@@ -97,7 +97,8 @@ def test_route_into_setup_when_company_incomplete_opens_wizard(
         )
         with patch.object(w, "_on_create_company_file") as mocked:
             w._route_into_setup_if_company_incomplete()
-            mocked.assert_called_once()
+            w._maybe_prompt_first_company_file_setup()
+            mocked.assert_not_called()
     finally:
         w._bank_db.close()
         w._db.close()
@@ -130,6 +131,28 @@ def test_route_into_setup_skips_when_company_complete(
         w._db.close()
 
 
+def test_create_company_file_cancel_does_not_switch_or_create(
+    qapp: QApplication, tmp_path: Path
+) -> None:
+    """Cancel / X on New Company must not create a .db or change the open company."""
+    seed = tmp_path / "open.db"
+    w = _make_main_window(qapp, seed)
+    try:
+        before = w._db_path
+        with patch(
+            "desktop_app.main.CreateCompanyFileDialog"
+        ) as MockDlgCls, patch.object(w, "_switch_company_database") as switch:
+            instance = MockDlgCls.return_value
+            instance.exec.return_value = QDialog.DialogCode.Rejected
+            w._on_create_company_file()
+            instance.identity_values.assert_not_called()
+            switch.assert_not_called()
+        assert w._db_path == before
+    finally:
+        w._bank_db.close()
+        w._db.close()
+
+
 def test_file_menu_action_text_says_new_company(
     qapp: QApplication, tmp_path: Path
 ) -> None:
@@ -149,6 +172,9 @@ def test_file_menu_action_text_says_new_company(
         )
         assert not any(label.startswith("Create Company File") for label in labels), (
             f"Old label 'Create Company File…' must be gone, got: {labels!r}"
+        )
+        assert any(label.startswith("Company Setup") for label in labels), (
+            f"Expected 'Company Setup…' under File, got: {labels!r}"
         )
     finally:
         w._bank_db.close()

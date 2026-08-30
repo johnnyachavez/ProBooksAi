@@ -108,7 +108,6 @@ from desktop_app.extra_tabs import (
 from desktop_app.audit_tab import AuditTab
 from desktop_app.asset_register_tab import AssetRegisterTab
 from desktop_app.dashboard_tab import DashboardTab
-from desktop_app.first_run_wizard import FirstRunWizard, apply_wizard_results
 from desktop_app.check_screen import CheckScreen
 from desktop_app.enter_bills_screen import EnterBillsScreen
 from desktop_app.invoice_codes_screen import InvoiceCodesScreen
@@ -1013,7 +1012,6 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._refresh_inbox()
         self._update_company_status()
-        QTimer.singleShot(0, self._maybe_prompt_first_company_file_setup)
 
     def _restore_main_window_geometry(self) -> None:
         """Restore size (and position) from last session, or use defaults."""
@@ -1700,12 +1698,12 @@ class MainWindow(QMainWindow):
         act_open_company.triggered.connect(self._on_open_company_database)
         file_menu.addAction(act_open_company)
 
-        act_company_info = QAction("Compan&y info\u2026", self)
+        act_company_info = QAction("Company &Setup\u2026", self)
         _menu_action_tip(
             act_company_info,
             "Edit identity for the open company: name, address, phone, email, business type, "
-            "tax structure, and tax ID. Saves into the same fields the New Company wizard captures; "
-            "values feed invoices and reports. Use File → Backup first if you want a snapshot.",
+            "tax structure, and tax ID. Same fields as My Company. Does not create a new file "
+            "or switch companies. Use File → Backup first if you want a snapshot.",
         )
         act_company_info.triggered.connect(self._on_company_info)
         file_menu.addAction(act_company_info)
@@ -3910,47 +3908,12 @@ class MainWindow(QMainWindow):
             action.triggered.connect(lambda checked=False, p=db_path: self._switch_company_database(p, create_new=False))
 
     def _maybe_prompt_first_company_file_setup(self) -> None:
-        """First-run welcome → routes into **File → New Company…** setup wizard.
+        """No-op. New Company is File → New Company only — never auto-opened.
 
-        Shows a one-shot welcome card the first time the app is launched without
-        any saved company database path. Accepting opens the New Company setup
-        wizard via :meth:`_on_create_company_file`; the wizard itself is what
-        enforces the required identity fields (Name, Business Type, Tax
-        Structure). Returning users (``db_path`` already set, prompt already
-        shown) are *not* re-prompted here — they can revisit the wizard from
-        File → New Company… at any time, or use
-        :meth:`_route_into_setup_if_company_incomplete` directly.
+        Kept as a named slot so older call sites and contract tests stay
+        stable. Must not show a dialog, start a timer, or switch companies.
         """
-        if self._db_path is not None:
-            return
-        settings = QSettings()
-        if settings.value("company_file_setup_prompted", False, type=bool):
-            return
-        prev = (settings.value("company_database_path", "", type=str) or "").strip()
-        if prev:
-            settings.setValue("company_file_setup_prompted", True)
-            return
-        box = QMessageBox(self)
-        box.setWindowTitle("Welcome to ProBooks+ai")
-        box.setIcon(QMessageBox.Icon.Information)
-        box.setText(
-            "Let's set up your company. The New Company wizard captures your business name, address, "
-            "phone, email, business type, tax structure, and tax ID, then creates the working "
-            "company file and a matching backup folder."
-        )
-        box.setInformativeText(
-            "Setup is required before invoices and reports can use your company identity. "
-            "You can revisit it anytime from File → New Company…"
-        )
-        create_btn = box.addButton(
-            "New Company…", QMessageBox.ButtonRole.AcceptRole
-        )
-        box.addButton("Not now", QMessageBox.ButtonRole.RejectRole)
-        box.setDefaultButton(create_btn)
-        box.exec()
-        if box.clickedButton() == create_btn:
-            self._on_create_company_file()
-        settings.setValue("company_file_setup_prompted", True)
+        return
 
     def _is_current_company_setup_complete(self) -> bool:
         """Return ``True`` when the active company file has identity + business + tax structure saved."""
@@ -3963,19 +3926,13 @@ class MainWindow(QMainWindow):
             return False
 
     def _route_into_setup_if_company_incomplete(self) -> None:
-        """Open the New Company wizard when the loaded file is missing required identity.
+        """No-op. Incomplete identity must not auto-open New Company.
 
-        Public entry point intended for callers (e.g. CLI ``--database`` flow,
-        File → Open Company Database) that load a company file outside the
-        first-run welcome card. Not auto-invoked from ``__init__`` to keep
-        construction safe for headless tests; production triggers it from the
-        ``main()`` entry point after the application event loop is ready.
+        Edit details from File → Company Setup or the My Company tab.
+        Create a new file only from File → New Company. Cancel / X on that
+        dialog must not create a file or change the open company.
         """
-        if self._db_path is None:
-            return
-        if self._is_current_company_setup_complete():
-            return
-        self._on_create_company_file()
+        return
 
     def _on_open_company_database(self):
         prev = QSettings().value("company_database_path", "", type=str) or ""
@@ -4222,27 +4179,8 @@ def main():
         if last and Path(last).is_file():
             db_path = last
 
-    # First run: no company file configured → launch setup wizard
-    _wizard_results: FirstRunWizard | None = None
-    if db_path is None:
-        wiz = FirstRunWizard()
-        if wiz.exec() != FirstRunWizard.DialogCode.Accepted or not wiz.db_path:
-            sys.exit(0)  # user cancelled — exit cleanly
-        db_path = wiz.db_path
-        _wizard_results = wiz
-
     window = MainWindow(db_path=db_path)
-
-    # Apply company info + bank account saved in the wizard, then refresh UI
-    if _wizard_results is not None:
-        apply_wizard_results(_wizard_results, window._bank_db)
-        # Bank account was just written — rebuild register/import tabs so they see it
-        window._rebuild_bank_related_tabs()
-        if hasattr(window, "_dashboard_tab"):
-            window._dashboard_tab.refresh()
-
     window.show()
-    QTimer.singleShot(0, window._route_into_setup_if_company_incomplete)
     sys.exit(app.exec())
 
 
