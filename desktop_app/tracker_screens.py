@@ -11,7 +11,7 @@ Payments. Double-click a bill → Enter Bills; ACTION Pay Bill → Pay Bills.
 from __future__ import annotations
 
 import sqlite3
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
@@ -259,6 +259,7 @@ class _TrackerScreenBase(QWidget):
         self._all_rows: list[dict] = []
         self._visible_rows: list[dict] = []
         self._paid_ids: set[int] = set()
+        self._loaded_once = False
         self.setAutoFillBackground(True)
         self.setPalette(_light_palette())
 
@@ -268,7 +269,9 @@ class _TrackerScreenBase(QWidget):
 
     def showEvent(self, event: QShowEvent) -> None:  # noqa: N802
         super().showEvent(event)
-        self.reload()
+        if not getattr(self, "_loaded_once", False):
+            self._loaded_once = True
+            self.reload()
 
     def _input_combo(self, object_name: str, items: tuple[str, ...]) -> QComboBox:
         cb = QComboBox()
@@ -292,7 +295,9 @@ class _TrackerScreenBase(QWidget):
         lay.addWidget(widget)
         return wrap
 
-    def _build_filter_bar(self, fields: list[tuple[str, QWidget]]) -> QFrame:
+    def _build_filter_bar(
+        self, fields: list[tuple[str, QWidget]], trailing: Optional[list[QWidget]] = None
+    ) -> QFrame:
         bar = QFrame()
         bar.setObjectName("trackerFilterBar")
         bar.setStyleSheet(
@@ -304,6 +309,8 @@ class _TrackerScreenBase(QWidget):
         for caption, widget in fields:
             row.addWidget(self._filter_field(caption, widget))
         row.addStretch(1)
+        for extra in trailing or []:
+            row.addWidget(extra)
         return bar
 
     def _build_table(self, object_name: str, headers: tuple[str, ...]) -> QTableWidget:
@@ -541,7 +548,6 @@ class IncomeTrackerScreen(_TrackerScreenBase):
         sc = QShortcut(QKeySequence("F5"), self)
         sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         sc.activated.connect(self.reload)
-        self.reload()
 
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self)
@@ -565,6 +571,16 @@ class IncomeTrackerScreen(_TrackerScreenBase):
             "incomeTrackerStatus", ("All", tr.STATUS_OPEN, tr.STATUS_OVERDUE, tr.STATUS_PAID)
         )
         self._date = self._input_combo("incomeTrackerDate", tr.DATE_CHOICES)
+        self._date.blockSignals(True)
+        ix = self._date.findText(tr.DATE_LAST_90)
+        if ix >= 0:
+            self._date.setCurrentIndex(ix)
+        self._date.blockSignals(False)
+        self._lookback_extra_days = 0
+        self._btn_older = QPushButton("Older")
+        self._btn_older.setObjectName("incomeTrackerOlder")
+        self._btn_older.setToolTip("Load the previous 90 days of invoices into this list.")
+        self._btn_older.clicked.connect(self._on_older_invoices)
         outer.addWidget(
             self._build_filter_bar(
                 [
@@ -572,7 +588,8 @@ class IncomeTrackerScreen(_TrackerScreenBase):
                     ("TYPE", self._type),
                     ("STATUS", self._status),
                     ("DATE", self._date),
-                ]
+                ],
+                trailing=[self._btn_older],
             )
         )
 
@@ -673,6 +690,34 @@ class IncomeTrackerScreen(_TrackerScreenBase):
         menu.addAction("Open Invoice", self._on_manage_open)
         menu.addAction("Receive Payment", self._on_manage_receive)
 
+    def _on_filters_changed(self, *_args) -> None:
+        if self.sender() is getattr(self, "_date", None):
+            self._lookback_extra_days = 0
+            self.reload()
+            return
+        self._rebuild_visible()
+
+    def _on_older_invoices(self) -> None:
+        if self._date.currentText() == tr.DATE_ALL:
+            return
+        self._lookback_extra_days = int(getattr(self, "_lookback_extra_days", 0) or 0) + 90
+        self.reload()
+
+    def _grid_since_iso(self) -> Optional[str]:
+        extra = int(getattr(self, "_lookback_extra_days", 0) or 0)
+        today = date.today()
+        preset = self._date.currentText() if hasattr(self, "_date") else tr.DATE_LAST_90
+        if preset == tr.DATE_ALL and extra == 0:
+            return None
+        window = tr.days_range(preset if preset != tr.DATE_ALL else tr.DATE_LAST_90, today)
+        if window is None:
+            start = today - timedelta(days=90)
+        else:
+            start = window[0]
+        if extra:
+            start = start - timedelta(days=extra)
+        return start.isoformat()
+
     def reload(self) -> None:
         self._all_rows = []
         summary = {
@@ -688,7 +733,8 @@ class IncomeTrackerScreen(_TrackerScreenBase):
         }
         if self._conn is not None:
             try:
-                self._all_rows = tr.list_income_tracker_rows(self._conn)
+                since = self._grid_since_iso()
+                self._all_rows = tr.list_income_tracker_rows(self._conn, since_iso=since)
                 summary = tr.income_tracker_summary(self._conn)
             except sqlite3.Error:
                 self._all_rows = []
@@ -744,9 +790,15 @@ class IncomeTrackerScreen(_TrackerScreenBase):
             party_id=self._party_filter_id(),
             type_name=self._type.currentText(),
             status_name=self._status.currentText(),
-            date_preset=self._date.currentText(),
+            date_preset=tr.DATE_ALL,
             tile=self._tile,
             paid_ids=self._paid_ids,
+        )
+        self._visible_rows.sort(
+            key=lambda r: (r.get("number") or "").strip()
+        )
+        self._visible_rows.sort(
+            key=lambda r: (r.get("date") or "").strip(), reverse=True
         )
         self._table.setSortingEnabled(False)
         self._table.setRowCount(len(self._visible_rows))
@@ -771,7 +823,6 @@ class IncomeTrackerScreen(_TrackerScreenBase):
             )
             self._table.setCellWidget(i, _IN_COL_ACTION, self._make_income_action(row, i))
         self._table.setSortingEnabled(True)
-        self._table.sortItems(_IN_COL_DATE, Qt.SortOrder.DescendingOrder)
         n = len(self._visible_rows)
         self._set_showing(n, n)
 
@@ -851,7 +902,6 @@ class BillTrackerScreen(_TrackerScreenBase):
         sc = QShortcut(QKeySequence("F5"), self)
         sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         sc.activated.connect(self.reload)
-        self.reload()
 
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self)

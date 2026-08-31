@@ -214,6 +214,8 @@ def list_bill_to_customer_choices(conn: sqlite3.Connection) -> list[tuple[int, s
                 else f"Customer #{int(pid)}"
             )
             label = f"{pname} > {name}"
+        if customer_is_inactive(d):
+            label = f"{label} (Inactive)"
         out.append((cid, label))
     out.sort(key=lambda t: (t[1].lower(), t[0]))
     return out
@@ -221,6 +223,24 @@ def list_bill_to_customer_choices(conn: sqlite3.Connection) -> list[tuple[int, s
 
 def get_customer(conn: sqlite3.Connection, customer_id: int) -> Optional[sqlite3.Row]:
     return conn.execute("SELECT * FROM customers WHERE id = ?", (customer_id,)).fetchone()
+
+
+def customer_is_inactive(row: object) -> bool:
+    d = dict(row) if not isinstance(row, dict) else row
+    return bool(int(d.get("is_inactive") or 0))
+
+
+def set_customer_inactive(
+    conn: sqlite3.Connection, customer_id: int, inactive: bool = True
+) -> None:
+    """Hide a customer or job from Active lists. Does not delete invoices or payments."""
+    if get_customer(conn, customer_id) is None:
+        raise ValueError("Customer not found.")
+    conn.execute(
+        "UPDATE customers SET is_inactive = ? WHERE id = ?",
+        (1 if inactive else 0, int(customer_id)),
+    )
+    conn.commit()
 
 
 def update_customer(
@@ -873,7 +893,7 @@ def list_invoices(conn: sqlite3.Connection) -> list:
         SELECT i.*, c.name AS customer_name
         FROM invoices i
         JOIN customers c ON c.id = i.customer_id
-        ORDER BY i.invoice_date DESC, i.id DESC
+        ORDER BY i.invoice_date ASC, i.invoice_number ASC, i.id ASC
         """
     ).fetchall()
 
@@ -1859,6 +1879,24 @@ def get_vendor(conn: sqlite3.Connection, vendor_id: int) -> Optional[sqlite3.Row
     return conn.execute("SELECT * FROM vendors WHERE id = ?", (vendor_id,)).fetchone()
 
 
+def vendor_is_inactive(row: object) -> bool:
+    d = dict(row) if not isinstance(row, dict) else row
+    return bool(int(d.get("is_inactive") or 0))
+
+
+def set_vendor_inactive(
+    conn: sqlite3.Connection, vendor_id: int, inactive: bool = True
+) -> None:
+    """Hide a vendor from Active lists. Does not delete bills or payments."""
+    if get_vendor(conn, vendor_id) is None:
+        raise ValueError("Vendor not found.")
+    conn.execute(
+        "UPDATE vendors SET is_inactive = ? WHERE id = ?",
+        (1 if inactive else 0, int(vendor_id)),
+    )
+    conn.commit()
+
+
 def update_vendor(
     conn: sqlite3.Connection,
     vendor_id: int,
@@ -2293,6 +2331,7 @@ def list_vendor_ap_summaries(conn: sqlite3.Connection) -> list[dict]:
             {
                 "vendor_id": vid,
                 "vendor_name": name,
+                "is_inactive": 1 if vendor_is_inactive(v) else 0,
                 "open_balance": round(open_bal, 2),
                 "current_due": round(current_due, 2),
                 "overdue": round(overdue, 2),
@@ -2460,6 +2499,7 @@ def list_customer_ar_summaries(conn: sqlite3.Connection) -> list[dict]:
                 "customer_id": cid,
                 "customer_name": name,
                 "parent_customer_id": parent_id,
+                "is_inactive": 1 if customer_is_inactive(d) else 0,
                 "relationship": customer_relationship_label(conn, cid),
                 "open_balance": round(open_bal, 2),
                 "current_due": round(current_due, 2),

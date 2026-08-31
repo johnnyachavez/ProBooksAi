@@ -86,6 +86,12 @@ def _seed(conn) -> dict[str, int]:
     }
 
 
+def test_days_range_last_90() -> None:
+    start, end = tr.days_range(tr.DATE_LAST_90, _TODAY)
+    assert end == _TODAY
+    assert start == date(2026, 5, 29)
+
+
 def test_tracker_status_open_overdue_paid() -> None:
     assert tr.tracker_status(open_balance=10, due_date="2026-09-01", today=_TODAY) == tr.STATUS_OPEN
     assert tr.tracker_status(open_balance=10, due_date="2026-07-01", today=_TODAY) == tr.STATUS_OVERDUE

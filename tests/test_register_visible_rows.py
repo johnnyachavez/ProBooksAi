@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import tempfile
+from datetime import date
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -20,6 +21,7 @@ from desktop_app.register_tab import (
     _COL_DATE,
     _COL_LINK,
     _COL_MEMO,
+    _COL_PAYEE,
     _COL_SPACER,
     _REGISTER_MIN_VISIBLE_ROWS,
     _UNCATEGORIZED_COMBO_LABEL,
@@ -31,6 +33,20 @@ from desktop_app.register_tab import (
 from probooksai.bank_import import BankDatabase
 from probooksai.coa_db import COADatabase
 from probooksai.statement_line_match import STATUS_MATCHED
+
+_TODAY_ISO = date.today().isoformat()
+
+
+def _assert_clip(expected: str) -> None:
+    """Assert clipboard text; skip when this Windows session cannot host Qt clipboard."""
+    cb = QGuiApplication.clipboard()
+    got = cb.text()
+    if got == expected:
+        return
+    cb.setText("probooks-clip-probe")
+    if cb.text() != "probooks-clip-probe":
+        pytest.skip("system clipboard not writable")
+    assert got == expected
 
 
 def test_register_coa_combo_resolve_user_data(qapp) -> None:
@@ -76,7 +92,7 @@ def test_register_copy_payee_description_from_db(qapp) -> None:
         aid = db.add_bank_account("Primary")
         db.insert_manual_transaction(
             aid,
-            "2024-06-01",
+            _TODAY_ISO,
             -1.0,
             description="  Vendor Name  ",
         )
@@ -92,7 +108,7 @@ def test_register_copy_payee_description_from_db(qapp) -> None:
                 break
         assert row is not None
         tab._copy_register_row_payee_description(row)
-        assert QGuiApplication.clipboard().text() == "Vendor Name"
+        _assert_clip( "Vendor Name")
     finally:
         db.close()
 
@@ -113,14 +129,14 @@ def test_register_and_import_copy_transaction_id(qapp) -> None:
         )
         tab = RegisterTab(db, coa, None)
         tab._copy_register_txn_id(tid)
-        assert QGuiApplication.clipboard().text() == str(tid)
+        _assert_clip(str(tid))
 
         with patch.object(BankImportTab, "_build_ui", lambda self: None), patch.object(
             BankImportTab, "_refresh_accounts", lambda self: None
         ):
             bitab = BankImportTab(db, coa, register_tab=None, after_stmt_match_sync=None)
         bitab._copy_import_txn_id(tid)
-        assert QGuiApplication.clipboard().text() == str(tid)
+        _assert_clip(str(tid))
     finally:
         db.close()
 
@@ -133,7 +149,7 @@ def test_register_copy_amount_from_db(qapp) -> None:
         aid = db.add_bank_account("Primary")
         db.insert_manual_transaction(
             aid,
-            "2024-11-15",
+            _TODAY_ISO,
             -12.5,
             description="Payment",
         )
@@ -149,7 +165,7 @@ def test_register_copy_amount_from_db(qapp) -> None:
                 break
         assert row is not None
         tab._copy_register_row_amount(row)
-        assert QGuiApplication.clipboard().text() == "-12.50"
+        _assert_clip( "-12.50")
     finally:
         db.close()
 
@@ -162,7 +178,7 @@ def test_register_copy_txn_date_from_db(qapp) -> None:
         aid = db.add_bank_account("Primary")
         db.insert_manual_transaction(
             aid,
-            "2024-11-15",
+            _TODAY_ISO,
             -1.0,
             description="X",
         )
@@ -178,7 +194,7 @@ def test_register_copy_txn_date_from_db(qapp) -> None:
                 break
         assert row is not None
         tab._copy_register_row_txn_date(row)
-        assert QGuiApplication.clipboard().text() == "2024-11-15"
+        _assert_clip( _TODAY_ISO)
     finally:
         db.close()
 
@@ -191,7 +207,7 @@ def test_register_copy_ref_number_from_db(qapp) -> None:
         aid = db.add_bank_account("Primary")
         db.insert_manual_transaction(
             aid,
-            "2024-06-01",
+            _TODAY_ISO,
             -1.0,
             description="X",
             ref_number="  1087  ",
@@ -208,7 +224,7 @@ def test_register_copy_ref_number_from_db(qapp) -> None:
                 break
         assert row is not None
         tab._copy_register_row_ref_number(row)
-        assert QGuiApplication.clipboard().text() == "1087"
+        _assert_clip( "1087")
     finally:
         db.close()
 
@@ -221,7 +237,7 @@ def test_register_copy_memo_from_db(qapp) -> None:
         aid = db.add_bank_account("Primary")
         db.insert_manual_transaction(
             aid,
-            "2024-06-01",
+            _TODAY_ISO,
             -1.0,
             description="X",
             memo="  Internal note  ",
@@ -238,7 +254,7 @@ def test_register_copy_memo_from_db(qapp) -> None:
                 break
         assert row is not None
         tab._copy_register_row_memo(row)
-        assert QGuiApplication.clipboard().text() == "Internal note"
+        _assert_clip( "Internal note")
     finally:
         db.close()
 
@@ -253,14 +269,14 @@ def test_register_row_coa_user_data_and_clipboard(qapp) -> None:
         aid = db.add_bank_account("Primary")
         db.insert_manual_transaction(
             aid,
-            "2024-06-01",
+            _TODAY_ISO,
             -1.0,
             description="Coffee",
             coa_account=label,
         )
         db.insert_manual_transaction(
             aid,
-            "2024-06-02",
+            _TODAY_ISO,
             -2.0,
             description="Tea",
         )
@@ -281,9 +297,9 @@ def test_register_row_coa_user_data_and_clipboard(qapp) -> None:
         assert row_labeled is not None
         assert row_empty is not None
         tab._copy_register_row_coa(row_labeled)
-        assert QGuiApplication.clipboard().text() == label
+        _assert_clip( label)
         tab._copy_register_row_coa(row_empty)
-        assert QGuiApplication.clipboard().text() == ""
+        _assert_clip( "")
     finally:
         db.close()
 
@@ -372,7 +388,7 @@ def test_register_apply_line_match_from_import_sets_overlay(qapp) -> None:
         coa = COADatabase(db._conn)
         aid = db.add_bank_account("Primary")
         tid = db.insert_manual_transaction(
-            aid, "2024-06-01", -12.0, description="Coffee", ref_number="", memo=""
+            aid, _TODAY_ISO, -12.0, description="Coffee", ref_number="", memo=""
         )
         tab = RegisterTab(db, coa, None)
         ok = tab.apply_line_match_results_from_import(
@@ -419,7 +435,7 @@ def test_register_apply_line_match_accepts_string_coercible_ids(qapp) -> None:
         coa = COADatabase(db._conn)
         aid = db.add_bank_account("Primary")
         tid = db.insert_manual_transaction(
-            aid, "2024-06-01", -12.0, description="Coffee", ref_number="", memo=""
+            aid, _TODAY_ISO, -12.0, description="Coffee", ref_number="", memo=""
         )
         tab = RegisterTab(db, coa, None)
         ok = tab.apply_line_match_results_from_import(
@@ -582,31 +598,31 @@ def test_bank_import_copy_txn_coa_to_clipboard(qapp) -> None:
         )
         tid_bare = db.insert_manual_transaction(aid, "2024-06-03", -1.0)
         tab._copy_import_txn_id(tid_cat)
-        assert QGuiApplication.clipboard().text() == str(tid_cat)
+        _assert_clip(str(tid_cat))
         tab._copy_import_txn_coa(tid_cat)
-        assert QGuiApplication.clipboard().text() == "6100 — Supplies"
+        _assert_clip( "6100 — Supplies")
         tab._copy_import_txn_date(tid_cat)
-        assert QGuiApplication.clipboard().text() == "2024-06-01"
+        _assert_clip( "2024-06-01")
         tab._copy_import_txn_amount(tid_cat)
-        assert QGuiApplication.clipboard().text() == "-3.00"
+        _assert_clip( "-3.00")
         tab._copy_import_txn_description(tid_cat)
-        assert QGuiApplication.clipboard().text() == "Coffee"
+        _assert_clip( "Coffee")
         tab._copy_import_txn_memo(tid_cat)
-        assert QGuiApplication.clipboard().text() == "Quarterly true-up"
+        _assert_clip( "Quarterly true-up")
         tab._copy_import_txn_ref_number(tid_cat)
-        assert QGuiApplication.clipboard().text() == "CHK-1042"
+        _assert_clip( "CHK-1042")
         tab._copy_import_txn_memo(tid_bare)
-        assert QGuiApplication.clipboard().text() == ""
+        _assert_clip( "")
         tab._copy_import_txn_ref_number(tid_bare)
-        assert QGuiApplication.clipboard().text() == ""
+        _assert_clip( "")
         tab._copy_import_txn_coa(tid_tea)
-        assert QGuiApplication.clipboard().text() == ""
+        _assert_clip( "")
         tab._copy_import_txn_description(tid_tea)
-        assert QGuiApplication.clipboard().text() == "Tea"
+        _assert_clip( "Tea")
         tab._copy_import_txn_description(tid_bare)
-        assert QGuiApplication.clipboard().text() == ""
+        _assert_clip( "")
         tab._copy_import_txn_coa(999_999_999)
-        assert QGuiApplication.clipboard().text() == ""
+        _assert_clip( "")
     finally:
         db.close()
 
@@ -632,5 +648,41 @@ def test_bank_import_forward_line_match_calls_focus_when_register_accepts(qapp) 
             tab._forward_line_match_to_register(3, [])
         warn.assert_not_called()
         focus.assert_called_once()
+    finally:
+        db.close()
+
+
+def test_register_default_window_excludes_old_history(qapp) -> None:
+    from datetime import date, timedelta
+
+    p = Path(tempfile.mkdtemp()) / "reg_90.db"
+    db = BankDatabase(str(p))
+    try:
+        coa = COADatabase(db._conn)
+        aid = db.add_bank_account("Checking")
+        today = date.today()
+        db.insert_manual_transaction(
+            aid, (today - timedelta(days=120)).isoformat(), -10.0, description="old-history"
+        )
+        db.insert_manual_transaction(
+            aid, today.isoformat(), -20.0, description="recent-window"
+        )
+        tab = RegisterTab(db, coa, None)
+        tab.select_bank_account(aid)
+        texts: list[str] = []
+        for r in range(tab._table.rowCount()):
+            it = tab._table.item(r, _COL_PAYEE)
+            if it is not None:
+                texts.append(it.text() or "")
+        blob = "\n".join(texts)
+        assert "recent-window" in blob
+        assert "old-history" not in blob
+        tab._btn_older.click()
+        older_blob = "\n".join(
+            (tab._table.item(r, _COL_PAYEE).text() or "")
+            for r in range(tab._table.rowCount())
+            if tab._table.item(r, _COL_PAYEE) is not None
+        )
+        assert "old-history" in older_blob
     finally:
         db.close()

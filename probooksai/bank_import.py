@@ -702,6 +702,30 @@ class BankDatabase:
             return None
         return str(d).strip()
 
+    def sum_amount_before(self, bank_account_id: int, before_date: str) -> float:
+        """Algebraic sum of amounts with ``txn_date`` strictly before *before_date*."""
+        row = self._conn.execute(
+            """
+            SELECT COALESCE(SUM(amount), 0) AS s
+            FROM bank_transactions
+            WHERE bank_account_id = ? AND txn_date < ?
+            """,
+            (int(bank_account_id), (before_date or "").strip()),
+        ).fetchone()
+        return float(row["s"] if row is not None else 0)
+
+    def sum_amount_for_account(self, bank_account_id: int) -> float:
+        """Algebraic sum of all register amounts for *bank_account_id*."""
+        row = self._conn.execute(
+            """
+            SELECT COALESCE(SUM(amount), 0) AS s
+            FROM bank_transactions
+            WHERE bank_account_id = ?
+            """,
+            (int(bank_account_id),),
+        ).fetchone()
+        return float(row["s"] if row is not None else 0)
+
     def get_batch(self, batch_id: int) -> Optional[sqlite3.Row]:
         return self._conn.execute(
             "SELECT * FROM bank_import_batches WHERE id = ?", (batch_id,)

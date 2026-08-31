@@ -20,6 +20,12 @@ def test_parse_invoice_line_description_segments() -> None:
     assert parse_invoice_line_description("1/1/26 — ABC") == ("1/1/26", "ABC", "", "")
     assert parse_invoice_line_description("d — c — x") == ("d", "c", "x", "")
     assert parse_invoice_line_description("d — c — x — BOL1") == ("d", "c", "x", "BOL1")
+    assert parse_invoice_line_description(" — FS-2 — FLATBED LOAD") == (
+        "",
+        "FS-2",
+        "FLATBED LOAD",
+        "",
+    )
 
 
 def test_parse_invoice_memo_po_job_footer() -> None:

@@ -13,7 +13,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
-EXTENSION_SCHEMA_VERSION = 11
+EXTENSION_SCHEMA_VERSION = 12
 
 _DDL_VERSION = """
 CREATE TABLE IF NOT EXISTS extension_schema_version (
@@ -305,6 +305,12 @@ CREATE TABLE IF NOT EXISTS calendar_todos (
 );
 """
 
+# v12 — QB-style inactive flag on customers and vendors (lists hide inactive; invoices stay).
+_MIGRATION_V12 = """
+ALTER TABLE customers ADD COLUMN is_inactive INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE vendors ADD COLUMN is_inactive INTEGER NOT NULL DEFAULT 0;
+"""
+
 
 def _seed_payroll_tax_items(conn: sqlite3.Connection) -> None:
     """Default federal/state placeholder codes (amounts entered manually per run)."""
@@ -424,6 +430,13 @@ def apply_extensions(conn: sqlite3.Connection) -> None:
             if s:
                 conn.execute(s)
         current = 11
+
+    if current < 12:
+        for stmt in _MIGRATION_V12.strip().split(";"):
+            s = stmt.strip()
+            if s:
+                conn.execute(s)
+        current = 12
 
     conn.execute(
         "UPDATE extension_schema_version SET version = ? WHERE id = 1",

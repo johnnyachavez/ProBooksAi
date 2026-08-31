@@ -16,6 +16,7 @@ from PySide6.QtCore import QSettings, QUrl, Qt, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QKeySequence, QPalette, QShortcut, QShowEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -45,6 +46,7 @@ from desktop_app.qt_mnemonic import (
     escape_ampersand_for_qt,
     message_box_critical_ok,
     message_box_information_ok,
+    message_box_warning_ok,
 )
 from desktop_app.table_clipboard import (
     CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
@@ -79,7 +81,7 @@ _FIELD_HEIGHT_PX = 22
 _TITLE_FONT_PX = 20
 _RIBBON_BTN_HEIGHT_PX = 26
 _LINE_ROW_HEIGHT_PX = 22
-_VENDOR_HEADER_STATE_KEY = "business/ap_vendor_table_header_state"
+_VENDOR_HEADER_STATE_KEY = "business/ap_vendor_table_header_state_v3"
 
 _SHOW_ALL = "All"
 _SHOW_BILLS = "Bills"
@@ -109,7 +111,8 @@ _ROLE_RECORD_ID = Qt.ItemDataRole.UserRole + 2
 _COL_MARK = 0
 _COL_NAME = 1
 _COL_BAL = 2
-_COL_ATTACH = 3
+_LIST_MARK_PX = 28
+_LIST_BAL_MIN_PX = 112
 
 
 def _action_button_qss(*, primary: bool = False) -> str:
@@ -265,6 +268,7 @@ class VendorCenterScreen(QWidget):
         self._conn = conn
         self._vendor_summary_by_id: dict[int, dict] = {}
         self._focused_vendor_id: int | None = None
+        self._applying_detail = False
         self._txn_rows: list[dict] = []
         self.setAutoFillBackground(True)
         self.setPalette(_light_form_palette())
@@ -342,9 +346,9 @@ class VendorCenterScreen(QWidget):
         split.setToolTip("Drag to resize the vendor list versus Vendor Information.")
         split.addWidget(self._build_left_pane())
         split.addWidget(self._build_right_pane())
-        split.setStretchFactor(0, 2)
-        split.setStretchFactor(1, 5)
-        split.setSizes([320, 900])
+        split.setStretchFactor(0, 3)
+        split.setStretchFactor(1, 4)
+        split.setSizes([580, 700])
         outer.addWidget(split, 1)
 
     def _build_toolbar(self) -> QHBoxLayout:
@@ -363,6 +367,21 @@ class VendorCenterScreen(QWidget):
         self._btn_new_vendor.setMenu(nv_menu)
         self._btn_new_vendor.setToolTip("Create a new vendor.")
         row.addWidget(self._btn_new_vendor)
+
+        self._btn_make_inactive = QPushButton("Make Inactive")
+        self._btn_make_inactive.setObjectName("vendorCenterMakeInactive")
+        self._style_push(self._btn_make_inactive)
+        self._btn_make_inactive.setToolTip(
+            "Hide the selected or checked vendor(s) from the Active list. Bills stay."
+        )
+        self._btn_make_inactive.clicked.connect(lambda: self._set_inactive_for_targets(True))
+        row.addWidget(self._btn_make_inactive)
+        self._btn_make_active = QPushButton("Make Active")
+        self._btn_make_active.setObjectName("vendorCenterMakeActive")
+        self._style_push(self._btn_make_active)
+        self._btn_make_active.setToolTip("Show the selected or checked vendor(s) on the Active list.")
+        self._btn_make_active.clicked.connect(lambda: self._set_inactive_for_targets(False))
+        row.addWidget(self._btn_make_active)
 
         self._btn_new_txn = QToolButton()
         self._btn_new_txn.setObjectName("vendorCenterNewTransactions")
@@ -462,21 +481,19 @@ class VendorCenterScreen(QWidget):
         self._left_stack = QStackedWidget()
         self._vendor_tbl = QTableWidget()
         self._vendor_tbl.setObjectName("vendorCenterVendorTable")
-        self._vendor_tbl.setColumnCount(4)
-        self._vendor_tbl.setHorizontalHeaderLabels(["", "NAME", "BALANCE TOTAL", "Att"])
+        self._vendor_tbl.setColumnCount(3)
+        self._vendor_tbl.setHorizontalHeaderLabels(["", "NAME", "BALANCE TOTAL"])
         self._vendor_tbl.verticalHeader().setVisible(False)
         self._vendor_tbl.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._vendor_tbl.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._vendor_tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._vendor_tbl.setAlternatingRowColors(True)
         self._vendor_tbl.setSortingEnabled(True)
-        hdr = self._vendor_tbl.horizontalHeader()
-        hdr.setSectionResizeMode(_COL_MARK, QHeaderView.ResizeMode.Fixed)
-        hdr.resizeSection(_COL_MARK, 22)
-        hdr.setSectionResizeMode(_COL_NAME, QHeaderView.ResizeMode.Stretch)
-        hdr.setSectionResizeMode(_COL_BAL, QHeaderView.ResizeMode.ResizeToContents)
-        hdr.setSectionResizeMode(_COL_ATTACH, QHeaderView.ResizeMode.Fixed)
-        hdr.resizeSection(_COL_ATTACH, 28)
+        self._vendor_tbl.setWordWrap(False)
+        self._vendor_tbl.setTextElideMode(Qt.TextElideMode.ElideNone)
+        self._vendor_tbl.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._vendor_tbl.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self._apply_list_column_layout()
         self._vendor_tbl.setStyleSheet(self._table_qss("vendorCenterVendorTable", selected_green=True))
         self._vendor_tbl.itemSelectionChanged.connect(self._on_vendor_selection_changed)
         self._vendor_tbl.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -600,6 +617,13 @@ QHeaderView::section {{
         details.addLayout(self._info_row("Company Name", self._d_company))
         details.addLayout(self._info_row("Full Name", self._d_full_name))
         details.addLayout(self._info_row("Billed From", self._d_billed))
+        self._chk_inactive = QCheckBox("Vendor is inactive")
+        self._chk_inactive.setObjectName("vendorCenterInactive")
+        self._chk_inactive.setToolTip(
+            "Hide this vendor from the Active list. Bills and payments stay."
+        )
+        self._chk_inactive.toggled.connect(self._on_inactive_checkbox)
+        details.addWidget(self._chk_inactive)
         map_row = QHBoxLayout()
         map_row.addSpacing(118)
         self._btn_map = QPushButton("Map")
@@ -787,11 +811,6 @@ QHeaderView::section {{
             "Contacts for this vendor (name, email, phone from the vendor record).",
         )
         self._right_tabs.addTab(self._contacts_page, "Contacts")
-        self._todos_page = self._placeholder_page(
-            "todos",
-            "No to do's for this vendor.",
-        )
-        self._right_tabs.addTab(self._todos_page, "To Do's")
         notes_page = QWidget()
         notes_lay = QVBoxLayout(notes_page)
         notes_lay.setContentsMargins(8, 8, 8, 8)
@@ -802,11 +821,6 @@ QHeaderView::section {{
         self._notes_body.setToolTip("Internal notes. Use the pencil to edit the vendor record.")
         notes_lay.addWidget(self._notes_body)
         self._right_tabs.addTab(notes_page, "Notes")
-        self._email_page = self._placeholder_page(
-            "email",
-            "No sent email for this vendor.",
-        )
-        self._right_tabs.addTab(self._email_page, "Sent Email")
         lay.addWidget(self._right_tabs, 1)
         return wrap
 
@@ -867,12 +881,37 @@ QHeaderView::section {{
             self._vendor_tbl.horizontalHeader().saveState(),
         )
 
+    def _apply_list_column_layout(self) -> None:
+        hdr = self._vendor_tbl.horizontalHeader()
+        hdr.setStretchLastSection(False)
+        hdr.setSectionResizeMode(_COL_MARK, QHeaderView.ResizeMode.Fixed)
+        hdr.resizeSection(_COL_MARK, _LIST_MARK_PX)
+        hdr.setSectionResizeMode(_COL_BAL, QHeaderView.ResizeMode.Fixed)
+        hdr.resizeSection(_COL_BAL, _LIST_BAL_MIN_PX)
+        hdr.setSectionResizeMode(_COL_NAME, QHeaderView.ResizeMode.Interactive)
+
+    def _fit_list_columns(self) -> None:
+        """Name wide enough to read; balance fits the number. No empty extra columns."""
+        hdr = self._vendor_tbl.horizontalHeader()
+        hdr.setSectionResizeMode(_COL_MARK, QHeaderView.ResizeMode.Fixed)
+        hdr.resizeSection(_COL_MARK, _LIST_MARK_PX)
+        hdr.setSectionResizeMode(_COL_NAME, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(_COL_BAL, QHeaderView.ResizeMode.ResizeToContents)
+        self._vendor_tbl.resizeColumnToContents(_COL_NAME)
+        self._vendor_tbl.resizeColumnToContents(_COL_BAL)
+        bal_w = max(self._vendor_tbl.columnWidth(_COL_BAL), _LIST_BAL_MIN_PX)
+        name_w = max(self._vendor_tbl.columnWidth(_COL_NAME), 240)
+        hdr.setSectionResizeMode(_COL_BAL, QHeaderView.ResizeMode.Fixed)
+        hdr.resizeSection(_COL_BAL, bal_w)
+        leftover = self._vendor_tbl.viewport().width() - _LIST_MARK_PX - bal_w
+        hdr.setSectionResizeMode(_COL_NAME, QHeaderView.ResizeMode.Interactive)
+        hdr.resizeSection(_COL_NAME, max(name_w, leftover, 240))
+
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
-        raw = QSettings().value(_VENDOR_HEADER_STATE_KEY)
-        if raw:
-            self._vendor_tbl.horizontalHeader().restoreState(raw)
+        self._apply_list_column_layout()
         self._refresh()
+        self._fit_list_columns()
 
     def _focused_id(self) -> int:
         return int(self._focused_vendor_id or 0)
@@ -926,6 +965,10 @@ QHeaderView::section {{
             m.addSeparator()
         m.addAction("New Vendor...", self._new_v)
         m.addAction("Edit Vendor...", self._edit_v)
+        if idx.isValid():
+            m.addSeparator()
+            m.addAction("Make Inactive", lambda: self._set_inactive_for_targets(True))
+            m.addAction("Make Active", lambda: self._set_inactive_for_targets(False))
         m.exec(self._vendor_tbl.viewport().mapToGlobal(pos))
 
     def _on_txn_context_menu(self, pos) -> None:
@@ -956,26 +999,14 @@ QHeaderView::section {{
         if self._left_tabs.currentIndex() == 1:
             self._reload_left_txn_table()
 
-    def _vendor_has_attachment(self, vendor_id: int) -> bool:
-        try:
-            row = self._conn.execute(
-                """
-                SELECT 1 FROM bills
-                WHERE vendor_id = ? AND TRIM(COALESCE(attachment_path, '')) != ''
-                LIMIT 1
-                """,
-                (vendor_id,),
-            ).fetchone()
-        except sqlite3.Error:
-            return False
-        return row is not None
-
     def _reload_vendor_table(self) -> None:
         q = (self._search.text() or "").strip().lower()
         mode = self._list_filter.currentText()
         rows = list(self._vendor_summary_by_id.values())
         if q:
             rows = [r for r in rows if q in (r.get("vendor_name") or "").lower()]
+        elif mode == _LIST_ACTIVE:
+            rows = [r for r in rows if not int(r.get("is_inactive") or 0)]
         if mode == _LIST_OPEN:
             rows = [r for r in rows if float(r.get("open_balance") or 0) > 0.005]
         rows.sort(key=lambda r: (r.get("vendor_name") or "").lower())
@@ -985,23 +1016,29 @@ QHeaderView::section {{
             vid = int(r["vendor_id"])
             nm = r.get("vendor_name") or ""
             ob = float(r.get("open_balance") or 0)
-            mark = "◆" if ob > 0.005 else ""
-            it0 = _readonly_item(mark)
+            inactive = bool(int(r.get("is_inactive") or 0))
+            it0 = QTableWidgetItem("")
+            it0.setFlags(
+                Qt.ItemFlag.ItemIsEnabled
+                | Qt.ItemFlag.ItemIsSelectable
+                | Qt.ItemFlag.ItemIsUserCheckable
+            )
+            it0.setCheckState(Qt.CheckState.Unchecked)
             it0.setData(_ROLE_VENDOR_ID, vid)
+            it0.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self._vendor_tbl.setItem(i, _COL_MARK, it0)
-            it1 = _readonly_item(escape_ampersand_for_qt(nm))
+            shown = f"{nm} (Inactive)" if inactive else nm
+            it1 = _readonly_item(escape_ampersand_for_qt(shown))
             it1.setData(_ROLE_VENDOR_ID, vid)
+            if inactive:
+                it1.setForeground(QColor(_VC_EMPTY))
+                it1.setToolTip("Inactive — still on Find; hidden from Active.")
             self._vendor_tbl.setItem(i, _COL_NAME, it1)
             it2 = FloatSortTableItem(_fmt_money(ob), ob)
             it2.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
             it2.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             it2.setData(_ROLE_VENDOR_ID, vid)
             self._vendor_tbl.setItem(i, _COL_BAL, it2)
-            clip = "•" if self._vendor_has_attachment(vid) else ""
-            it3 = _readonly_item(clip)
-            it3.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            it3.setData(_ROLE_VENDOR_ID, vid)
-            self._vendor_tbl.setItem(i, _COL_ATTACH, it3)
         self._vendor_tbl.setSortingEnabled(True)
         ids = {int(r["vendor_id"]) for r in rows}
         if self._focused_vendor_id is not None and self._focused_vendor_id not in ids:
@@ -1014,6 +1051,7 @@ QHeaderView::section {{
             self._vendor_tbl.clearSelection()
         self._apply_detail_from_focus()
         self._reload_txn_table()
+        self._fit_list_columns()
 
     def _select_vendor_row(self, vendor_id: int) -> None:
         self._vendor_tbl.blockSignals(True)
@@ -1024,6 +1062,7 @@ QHeaderView::section {{
                     continue
                 if coerce_combo_int_id(it.data(_ROLE_VENDOR_ID)) == vendor_id:
                     self._vendor_tbl.selectRow(row)
+                    self._vendor_tbl.scrollToItem(it)
                     break
         finally:
             self._vendor_tbl.blockSignals(False)
@@ -1045,10 +1084,17 @@ QHeaderView::section {{
         billed_lines = [name]
         if addr:
             billed_lines.append(addr)
-        self._d_company.setText(escape_ampersand_for_qt(name))
-        self._d_full_name.setText(escape_ampersand_for_qt(name))
-        self._d_billed.setText(escape_ampersand_for_qt("\n".join(billed_lines)))
-        self._d_note.setText(escape_ampersand_for_qt(notes) if notes else "No note available")
+        self._applying_detail = True
+        self._chk_inactive.blockSignals(True)
+        try:
+            self._d_company.setText(escape_ampersand_for_qt(name))
+            self._d_full_name.setText(escape_ampersand_for_qt(name))
+            self._d_billed.setText(escape_ampersand_for_qt("\n".join(billed_lines)))
+            self._d_note.setText(escape_ampersand_for_qt(notes) if notes else "No note available")
+            self._chk_inactive.setChecked(business.vendor_is_inactive(d))
+        finally:
+            self._chk_inactive.blockSignals(False)
+            self._applying_detail = False
         contact_bits = [name]
         if email:
             contact_bits.append(email)
@@ -1062,10 +1108,17 @@ QHeaderView::section {{
         self._notes_body.setPlainText(notes)
 
     def _clear_detail_card(self) -> None:
-        self._d_company.setText("—")
-        self._d_full_name.setText("—")
-        self._d_billed.setText("—")
-        self._d_note.setText("No note available")
+        self._applying_detail = True
+        self._chk_inactive.blockSignals(True)
+        try:
+            self._d_company.setText("—")
+            self._d_full_name.setText("—")
+            self._d_billed.setText("—")
+            self._d_note.setText("No note available")
+            self._chk_inactive.setChecked(False)
+        finally:
+            self._chk_inactive.blockSignals(False)
+            self._applying_detail = False
         self._notes_body.setPlainText("")
         contacts_lbl = self._contacts_page.findChild(QLabel, "vendorCenterTabLabel_contacts")
         if contacts_lbl is not None:
@@ -1336,6 +1389,69 @@ QHeaderView::section {{
             escape_ampersand_for_qt(body),
             ok_tip="Close; double-click a Bill row to open Enter Bills.",
         )
+
+    def _checked_vendor_ids(self) -> list[int]:
+        ids: list[int] = []
+        for row in range(self._vendor_tbl.rowCount()):
+            it = self._vendor_tbl.item(row, _COL_MARK)
+            if it is None or it.checkState() != Qt.CheckState.Checked:
+                continue
+            vid = coerce_combo_int_id(it.data(_ROLE_VENDOR_ID))
+            if vid is not None:
+                ids.append(vid)
+        return ids
+
+    def _target_vendor_ids(self) -> list[int]:
+        checked = self._checked_vendor_ids()
+        if checked:
+            return checked
+        if self._focused_vendor_id is not None:
+            return [int(self._focused_vendor_id)]
+        return []
+
+    def _set_inactive_for_targets(self, inactive: bool) -> None:
+        if self._conn is None:
+            return
+        ids = self._target_vendor_ids()
+        if not ids:
+            message_box_warning_ok(
+                self,
+                "Vendors",
+                "Select a vendor or check rows, then Make Inactive or Make Active.",
+                ok_tip="Close; click a name or check the left column.",
+            )
+            return
+        try:
+            for vid in ids:
+                business.set_vendor_inactive(self._conn, vid, inactive=inactive)
+        except (sqlite3.Error, ValueError) as exc:
+            message_box_warning_ok(
+                self,
+                "Vendors",
+                escape_ampersand_for_qt(str(exc)),
+                ok_tip="Close and try again.",
+            )
+            return
+        self.vendorRecordsChanged.emit()
+        self._refresh()
+
+    def _on_inactive_checkbox(self, checked: bool) -> None:
+        if self._applying_detail or self._conn is None or self._focused_vendor_id is None:
+            return
+        try:
+            business.set_vendor_inactive(
+                self._conn, self._focused_vendor_id, inactive=bool(checked)
+            )
+        except (sqlite3.Error, ValueError) as exc:
+            message_box_warning_ok(
+                self,
+                "Vendors",
+                escape_ampersand_for_qt(str(exc)),
+                ok_tip="Close and try again.",
+            )
+            return
+        self.vendorRecordsChanged.emit()
+        self._refresh()
 
     def _new_v(self) -> None:
         from desktop_app.extra_tabs import run_new_vendor_dialog

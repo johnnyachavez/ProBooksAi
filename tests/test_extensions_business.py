@@ -179,6 +179,8 @@ def test_extension_schema_applied(db):
     db._conn.execute("SELECT * FROM categorization_rules LIMIT 0")
     db._conn.execute("SELECT ship_to, terms FROM invoices LIMIT 0")
     db._conn.execute("SELECT * FROM calendar_todos LIMIT 0")
+    db._conn.execute("SELECT is_inactive FROM customers LIMIT 0")
+    db._conn.execute("SELECT is_inactive FROM vendors LIMIT 0")
 
 
 def test_suggest_coa_matches_respects_priority(db):

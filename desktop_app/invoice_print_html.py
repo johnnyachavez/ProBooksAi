@@ -56,11 +56,16 @@ _GRID_TD_R = (
 
 
 def parse_invoice_line_description(raw: str) -> tuple[str, str, str, str]:
-    """Split stored ``invoice_lines.description`` (em-dash joined segments) into grid fields."""
-    raw = (raw or "").strip()
-    if not raw:
-        return "", "", "", ""
+    """Split stored ``invoice_lines.description`` (em-dash joined segments) into grid fields.
+
+    Do not strip the whole string before splitting: a leading ``" — code — desc"``
+    (empty Serviced On) would otherwise collapse to two parts and put the code in Date.
+    """
+    raw = raw or ""
     if " — " not in raw:
+        raw = raw.strip()
+        if not raw:
+            return "", "", "", ""
         return "", "", raw, ""
     parts = [p.strip() for p in raw.split(" — ")]
     if len(parts) == 2:

@@ -88,6 +88,7 @@ def _seed(conn) -> dict[str, int]:
 def test_income_tracker_qb_chrome_and_live_totals(qapp: QApplication, db: BankDatabase) -> None:
     ids = _seed(db._conn)
     w = IncomeTrackerScreen(ap_conn=db._conn)
+    w.reload()
     labels = [lb.text() for lb in w.findChildren(QLabel)]
     assert "Income Tracker" in labels
     assert "UNBILLED" in labels
@@ -130,9 +131,45 @@ def test_income_tracker_qb_chrome_and_live_totals(qapp: QApplication, db: BankDa
     w.close()
 
 
+def test_income_tracker_default_window_and_older(qapp: QApplication, db: BankDatabase) -> None:
+    from datetime import date, timedelta
+
+    cid = business.add_customer(db._conn, "Window Customer")
+    today = date.today()
+    business.create_invoice(
+        db._conn,
+        cid,
+        "INV-RECENT",
+        today.isoformat(),
+        due_date=(today + timedelta(days=10)).isoformat(),
+        lines=[{"description": "Haul", "qty": 1, "rate": 10.00}],
+    )
+    business.create_invoice(
+        db._conn,
+        cid,
+        "INV-OLD",
+        (today - timedelta(days=120)).isoformat(),
+        due_date=(today - timedelta(days=90)).isoformat(),
+        lines=[{"description": "Haul", "qty": 1, "rate": 20.00}],
+    )
+    w = IncomeTrackerScreen(ap_conn=db._conn)
+    w.reload()
+    tbl = w.findChild(QTableWidget, "incomeTrackerTable")
+    assert tbl is not None
+    nums = {tbl.item(i, 3).text() for i in range(tbl.rowCount()) if tbl.item(i, 3)}
+    assert "INV-RECENT" in nums
+    assert "INV-OLD" not in nums
+    w._btn_older.click()
+    qapp.processEvents()
+    nums2 = {tbl.item(i, 3).text() for i in range(tbl.rowCount()) if tbl.item(i, 3)}
+    assert "INV-OLD" in nums2
+    w.close()
+
+
 def test_income_tracker_filters_and_overdue_tile(qapp: QApplication, db: BankDatabase) -> None:
     _seed(db._conn)
     w = IncomeTrackerScreen(ap_conn=db._conn)
+    w.reload()
     tbl = w.findChild(QTableWidget, "incomeTrackerTable")
     assert tbl is not None
     before = tbl.rowCount()
@@ -154,6 +191,7 @@ def test_income_tracker_double_click_follows_sorted_row(qapp: QApplication, db: 
 
     ids = _seed(db._conn)
     w = IncomeTrackerScreen(ap_conn=db._conn)
+    w.reload()
     tbl = w.findChild(QTableWidget, "incomeTrackerTable")
     assert tbl is not None
     tbl.sortItems(4, Qt.SortOrder.AscendingOrder)
@@ -176,6 +214,7 @@ def test_income_tracker_double_click_follows_sorted_row(qapp: QApplication, db: 
 def test_bill_tracker_qb_chrome_and_pay_bill_action(qapp: QApplication, db: BankDatabase) -> None:
     ids = _seed(db._conn)
     w = BillTrackerScreen(ap_conn=db._conn)
+    w.reload()
     labels = [lb.text() for lb in w.findChildren(QLabel)]
     assert "Bill Tracker" in labels
     assert "UNPAID" in labels
@@ -218,6 +257,7 @@ def test_bill_tracker_group_by_vendor(qapp: QApplication, db: BankDatabase) -> N
     business.create_bill(db._conn, v2, "2026-08-01", 10.0, vendor_invoice_number="W-1")
     _seed(db._conn)
     w = BillTrackerScreen(ap_conn=db._conn)
+    w.reload()
     group = w.findChild(QComboBox, "billTrackerGroupBy")
     assert group is not None
     group.setCurrentText("Vendor")
@@ -230,12 +270,14 @@ def test_bill_tracker_group_by_vendor(qapp: QApplication, db: BankDatabase) -> N
 
 def test_empty_trackers_show_zero_tiles(qapp: QApplication, db: BankDatabase) -> None:
     inc = IncomeTrackerScreen(ap_conn=db._conn)
+    inc.reload()
     assert inc._tile_unbilled._amount.text() == "0.00"
     assert inc._tile_open._amount.text() == "0.00"
     tbl = inc.findChild(QTableWidget, "incomeTrackerTable")
     assert tbl is not None
     assert tbl.rowCount() == 0
     bills = BillTrackerScreen(ap_conn=db._conn)
+    bills.reload()
     assert bills._tile_open._amount.text() == "0.00"
     assert bills._tile_overdue._amount.text() == "0.00"
     assert bills._tile_paid._amount.text() == "0.00"
@@ -260,6 +302,7 @@ def test_bill_tracker_filters_vendor_type_status_date(
         db._conn, v2, "2026-08-02", 25.00, vendor_invoice_number="W-9", due_date="2026-09-02"
     )
     w = BillTrackerScreen(ap_conn=db._conn)
+    w.reload()
     tbl = w.findChild(QTableWidget, "billTrackerTable")
     assert tbl is not None
     assert not tbl.isHidden()

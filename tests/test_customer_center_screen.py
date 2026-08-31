@@ -20,6 +20,8 @@ from PySide6.QtWidgets import (
 
 from desktop_app.customer_center_screen import (
     CustomerCenterScreen,
+    _COL_BAL,
+    _COL_NAME,
     customer_center_empty_sentence,
     customer_center_job_display_name,
 )
@@ -56,8 +58,10 @@ def test_customer_center_empty_sentence() -> None:
 
 
 def test_customer_center_job_display_name() -> None:
-    assert customer_center_job_display_name("Site A").startswith("    :")
-    assert customer_center_job_display_name("Site A").endswith("Site A")
+    shown = customer_center_job_display_name("Site A")
+    assert shown.startswith("    ")
+    assert shown.endswith("Site A")
+    assert not shown.lstrip().startswith(":")
 
 
 def test_customer_center_qb_chrome(qapp: QApplication) -> None:
@@ -94,9 +98,7 @@ def test_customer_center_qb_chrome(qapp: QApplication) -> None:
     assert [right.tabText(i) for i in range(right.count())] == [
         "Transactions",
         "Contacts",
-        "To Do's",
         "Notes",
-        "Sent Email",
     ]
 
     show = w.findChild(QComboBox, "customerCenterShow")
@@ -115,8 +117,9 @@ def test_customer_center_qb_chrome(qapp: QApplication) -> None:
     ctbl = w.findChild(QTableWidget, "customerCenterCustomerTable")
     assert ctbl is not None
     assert ctbl.columnCount() == 3
-    assert ctbl.horizontalHeaderItem(0).text() == "NAME"
-    assert ctbl.horizontalHeaderItem(1).text() == "BALANCE TOTAL"
+    assert ctbl.horizontalHeaderItem(1).text() == "NAME"
+    assert ctbl.horizontalHeaderItem(2).text() == "BALANCE TOTAL"
+    assert w.findChild(QPushButton, "customerCenterMakeInactive") is not None
 
     ttbl = w.findChild(QTableWidget, "customerCenterTxnTable")
     assert ttbl is not None
@@ -185,10 +188,10 @@ def test_customer_center_lists_live_customers_and_invoices(
     w = CustomerCenterScreen(db._conn)
     ctbl = w.findChild(QTableWidget, "customerCenterCustomerTable")
     assert ctbl is not None
-    names = [ctbl.item(r, 0).text() for r in range(ctbl.rowCount())]
+    names = [ctbl.item(r, _COL_NAME).text() for r in range(ctbl.rowCount())]
     assert "Harbor Logistics" in names
     assert "Westside Hauling" in names
-    assert any(n.strip().startswith(":") and "Site A" in n for n in names)
+    assert any(n.startswith("    ") and "Site A" in n and not n.lstrip().startswith(":") for n in names)
     for forbidden in _FORBIDDEN_QB_NAMES:
         assert forbidden not in names
         assert not any(forbidden in n for n in names)
@@ -230,7 +233,7 @@ def test_customer_center_parent_balance_rolls_up_jobs(
     )
     w = CustomerCenterScreen(db._conn)
     names_bals = {
-        w._customer_tbl.item(r, 0).text(): w._customer_tbl.item(r, 1).text()
+        w._customer_tbl.item(r, _COL_NAME).text(): w._customer_tbl.item(r, _COL_BAL).text()
         for r in range(w._customer_tbl.rowCount())
     }
     assert names_bals["Harbor Logistics"] == "150.00"
@@ -256,7 +259,7 @@ def test_customer_center_search_filters_list(qapp: QApplication, db: BankDatabas
     w._search.setText("Westside")
     ctbl = w._customer_tbl
     assert ctbl.rowCount() == 1
-    assert ctbl.item(0, 0).text() == "Westside Hauling"
+    assert ctbl.item(0, _COL_NAME).text() == "Westside Hauling"
 
 
 def test_customer_center_open_balance_emits_aging_summary(
@@ -284,7 +287,7 @@ def test_customer_center_open_balance_filter(qapp: QApplication, db: BankDatabas
     w = CustomerCenterScreen(db._conn)
     w._list_filter.setCurrentText("Customers with Open Balances")
     assert w._customer_tbl.rowCount() == 1
-    assert w._customer_tbl.item(0, 0).text() == "Harbor Logistics"
+    assert w._customer_tbl.item(0, _COL_NAME).text() == "Harbor Logistics"
 
 
 def test_customer_center_double_click_invoice_emits(
@@ -415,3 +418,35 @@ def test_customer_center_main_window_wires_signals(qapp: QApplication, tmp_path:
         assert w._tabs.currentWidget() is w._customers_tab
     finally:
         w.close()
+
+
+def test_customer_center_active_hides_inactive_search_finds_them(
+    qapp: QApplication, db: BankDatabase
+) -> None:
+    parent = business.add_customer(db._conn, "Harbor Logistics")
+    job = business.add_customer(db._conn, "Site A", parent_customer_id=parent)
+    iid = business.create_invoice(
+        db._conn,
+        job,
+        "JOB-KEEP",
+        "2026-08-01",
+        lines=[{"description": "x", "qty": 1, "rate": 40.0}],
+    )
+    business.set_customer_inactive(db._conn, job, inactive=True)
+    w = CustomerCenterScreen(db._conn)
+    names = [w._customer_tbl.item(r, _COL_NAME).text() for r in range(w._customer_tbl.rowCount())]
+    assert "Harbor Logistics" in names
+    assert not any("Site A" in n for n in names)
+    w._search.setText("Site A")
+    names2 = [w._customer_tbl.item(r, _COL_NAME).text() for r in range(w._customer_tbl.rowCount())]
+    assert any("Site A" in n for n in names2)
+    w._search.clear()
+    w._list_filter.setCurrentText("All Customers")
+    names3 = [w._customer_tbl.item(r, _COL_NAME).text() for r in range(w._customer_tbl.rowCount())]
+    assert any("Site A" in n for n in names3)
+    row = db._conn.execute("SELECT id, total FROM invoices WHERE id = ?", (iid,)).fetchone()
+    assert row is not None
+    assert float(row["total"] or 0) == 40.0
+    labels = dict(business.list_bill_to_customer_choices(db._conn))
+    assert "Inactive" in labels[job]
+

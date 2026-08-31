@@ -180,7 +180,10 @@ def test_home_opens_existing_daily_loop_screens(qapp: QApplication, tmp_path: Pa
     w = MainWindow(db_path=str(db_path))
     try:
         tabs = w._tabs
-        assert tabs.tabText(0) == "Home"
+        home_idx = tabs.indexOf(w._dashboard_tab)
+        assert home_idx >= 0
+        assert tabs.tabText(home_idx) == "Home"
+        tabs.setCurrentIndex(home_idx)
         assert tabs.currentWidget() is w._dashboard_tab
         mapping = (
             ("homeShortcut_invoices", w._invoice_screen, InvoiceScreen),

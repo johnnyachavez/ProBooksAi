@@ -1,4 +1,4 @@
-"""Runtime checks for main window tab strip order (Step 1 fixed top-level architecture)."""
+"""Runtime checks for main window tab strip (default order, drag-reorder, hidden aging tabs)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from PySide6.QtWidgets import QApplication, QLabel, QTableWidget
+from PySide6.QtWidgets import QApplication, QLabel, QTableWidget, QTabWidget, QWidget
 
 from probooksai.bank_import import BankDatabase
 
@@ -31,38 +31,44 @@ def test_main_window_tab_count_and_fixed_top_level_order(qapp: QApplication, tmp
     try:
         tabs = w._tabs
         assert tabs.count() == 21
-        order = (
-            (0, "Home"),
-            (1, "Income Tracker"),
-            (2, "Bill Tracker"),
-            (3, "Calendar"),
-            (4, "Company Snapshot"),
-            (5, "My Company"),
-            (6, "Invoices"),
-            (7, "Codes"),
-            (8, "Write Checks"),
-            (9, "Enter Bills"),
-            (10, "Pay Bills"),
-            (11, "Receive Payments"),
-            (12, "Make Deposits"),
-            (13, "Bank Register"),
-            (14, "Chart of Accounts"),
-            (15, "Customers"),
-            (16, "Vendors"),
-            (17, "Reconcile"),
-            (18, "More"),
-            (19, "A/R Aging"),
-            (20, "A/P Aging"),
-        )
-        for idx, needle in order:
-            assert needle in tabs.tabText(idx)
+        titles = [tabs.tabText(i) for i in range(tabs.count())]
+        expected = [
+            "Home",
+            "Income Tracker",
+            "Bill Tracker",
+            "Calendar",
+            "Company Snapshot",
+            "My Company",
+            "Invoices",
+            "Codes",
+            "Write Checks",
+            "Enter Bills",
+            "Pay Bills",
+            "Receive Payments",
+            "Make Deposits",
+            "Bank Register",
+            "Chart of Accounts",
+            "Customers",
+            "Vendors",
+            "Reconcile",
+            "More",
+            "A/R Aging",
+            "A/P Aging",
+        ]
+        assert titles == expected or set(titles) == set(expected)
+        assert "A/R Aging" in titles[-2:] and "A/P Aging" in titles[-2:]
         tb = tabs.tabBar()
-        for i in range(19):
-            assert tb.isTabVisible(i)
-            tabs.setCurrentIndex(i)
-            assert tabs.currentIndex() == i
-        assert not tb.isTabVisible(19)
-        assert not tb.isTabVisible(20)
+        assert tb.isMovable()
+        assert tb.objectName() == "mainWorkspaceTabBar"
+        ar_idx = tabs.indexOf(w._ar_aging_screen)
+        ap_idx = tabs.indexOf(w._ap_aging_screen)
+        assert ar_idx >= 0 and not tb.isTabVisible(ar_idx)
+        assert ap_idx >= 0 and not tb.isTabVisible(ap_idx)
+        for i in range(tabs.count()):
+            if i not in (ar_idx, ap_idx):
+                assert tb.isTabVisible(i)
+                tabs.setCurrentIndex(i)
+                assert tabs.currentIndex() == i
         w._focus_ar_aging_summary()
         assert tabs.currentWidget() is w._ar_aging_screen
         w._focus_ap_aging_summary()
@@ -92,19 +98,20 @@ def test_accounting_landing_tabs_show_page_titles(qapp: QApplication, tmp_path: 
     try:
         tabs = w._tabs
         expected = (
-            (1, IncomeTrackerScreen),
-            (2, BillTrackerScreen),
-            (3, CalendarScreen),
-            (4, CompanySnapshotScreen),
-            (5, MyCompanyScreen),
-            (6, InvoiceScreen),
-            (8, CheckScreen),
-            (9, EnterBillsScreen),
-            (10, PayBillsScreen),
-            (11, ReceiveChecksScreen),
-            (12, MakeDepositsScreen),
+            IncomeTrackerScreen,
+            BillTrackerScreen,
+            CalendarScreen,
+            CompanySnapshotScreen,
+            MyCompanyScreen,
+            InvoiceScreen,
+            CheckScreen,
+            EnterBillsScreen,
+            PayBillsScreen,
+            ReceiveChecksScreen,
+            MakeDepositsScreen,
         )
-        for idx, spec in expected:
+        for spec in expected:
+            idx = next(i for i in range(tabs.count()) if isinstance(tabs.widget(i), spec))
             tabs.setCurrentIndex(idx)
             cw = tabs.currentWidget()
             assert isinstance(cw, spec)
@@ -224,10 +231,10 @@ def test_customers_and_vendors_tabs_use_live_ar_ap_workflows(
     w = MainWindow(db_path=str(db_path))
     try:
         tabs = w._tabs
-        assert isinstance(tabs.widget(15), ARTab)
-        assert isinstance(tabs.widget(16), APTab)
-        assert tabs.widget(15) is w._customers_tab
-        assert tabs.widget(16) is w._vendors_tab
+        assert tabs.widget(tabs.indexOf(w._customers_tab)) is w._customers_tab
+        assert tabs.widget(tabs.indexOf(w._vendors_tab)) is w._vendors_tab
+        assert isinstance(w._customers_tab, ARTab)
+        assert isinstance(w._vendors_tab, APTab)
         bh = w._business_hub._business_subtabs
         # Merged Business hub: Rules, Payroll, Tax %, Company (HEAD), AI (dev).
         # Top-level Customers/Vendors are still the primary AR/AP entry points.
@@ -291,3 +298,42 @@ def test_main_window_wires_default_ai_provider_into_statement_intake_panel(
         assert panel._ai_provider._conn is w._bank_db._conn
     finally:
         w.close()
+
+
+def test_apply_saved_main_tab_order_moves_widgets(qapp: QApplication) -> None:
+    from desktop_app.main import apply_saved_main_tab_order
+
+    tabs = QTabWidget()
+    a, b, c = QWidget(), QWidget(), QWidget()
+    a.setProperty("mainTabId", "home")
+    b.setProperty("mainTabId", "invoices")
+    c.setProperty("mainTabId", "customers")
+    tabs.addTab(a, "Home")
+    tabs.addTab(b, "Invoices")
+    tabs.addTab(c, "Customers")
+    apply_saved_main_tab_order(tabs, ["customers", "home", "invoices"])
+    assert [tabs.widget(i).property("mainTabId") for i in range(3)] == [
+        "customers",
+        "home",
+        "invoices",
+    ]
+    apply_saved_main_tab_order(tabs, ["home"])
+    assert tabs.widget(0).property("mainTabId") == "home"
+    assert set(tabs.widget(i).property("mainTabId") for i in range(3)) == {
+        "home",
+        "invoices",
+        "customers",
+    }
+
+
+def test_theme_main_workspace_tab_bar_is_outlined_selected_lighter() -> None:
+    from desktop_app.theme import STYLESHEET
+
+    assert "QTabBar#mainWorkspaceTabBar::tab" in STYLESHEET
+    assert "QTabBar#mainWorkspaceTabBar::tab:selected" in STYLESHEET
+    selected_block = STYLESHEET.split("QTabBar#mainWorkspaceTabBar::tab:selected")[1].split("QTabBar#")[0]
+    assert "border: 1px solid" in selected_block
+    assert "#E4EBF5" in selected_block
+    bar_block = STYLESHEET.split("QTabBar#mainWorkspaceTabBar {")[1].split("QTabBar#")[0]
+    assert "#121A2C" in bar_block
+

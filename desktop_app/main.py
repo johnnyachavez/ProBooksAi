@@ -123,7 +123,12 @@ from desktop_app.ar_aging_summary_screen import ARAgingSummaryScreen
 from desktop_app.tracker_screens import BillTrackerScreen, IncomeTrackerScreen
 from desktop_app.create_company_file_dialog import CreateCompanyFileDialog
 from desktop_app.hover_messages import install_global_hover_message_suppression
-from desktop_app.theme import apply_dark_theme, STATUS_COLORS as THEME_STATUS_COLORS
+from desktop_app.theme import (
+    MAIN_WORKSPACE_TAB_BAR_OBJECT_NAME,
+    MAIN_WORKSPACE_TABS_OBJECT_NAME,
+    apply_dark_theme,
+    STATUS_COLORS as THEME_STATUS_COLORS,
+)
 from desktop_app.version import application_version
 from desktop_app.local_docs import resolve_local_roadmap_path
 from desktop_app.more_main_tabs_shortcuts import (
@@ -964,10 +969,40 @@ def _menu_action_tip(act: QAction, tip: str) -> None:
     act.setToolTip(tip)
 
 
+def apply_saved_main_tab_order(tabs: QTabWidget, saved: list[str]) -> None:
+    """Move *tabs* to match *saved* mainTabId order. Unknown ids are skipped; extras stay after."""
+    by_id: dict[str, object] = {}
+    for i in range(tabs.count()):
+        widget = tabs.widget(i)
+        if widget is None:
+            continue
+        tab_id = str(widget.property("mainTabId") or "")
+        if tab_id:
+            by_id[tab_id] = widget
+    if not by_id:
+        return
+    final: list[str] = []
+    seen: set[str] = set()
+    for tab_id in saved:
+        if tab_id in by_id and tab_id not in seen:
+            final.append(tab_id)
+            seen.add(tab_id)
+    for tab_id in by_id:
+        if tab_id not in seen:
+            final.append(tab_id)
+    bar = tabs.tabBar()
+    for target, tab_id in enumerate(final):
+        widget = by_id[tab_id]
+        now = tabs.indexOf(widget)
+        if now >= 0 and now != target:
+            bar.moveTab(now, target)
+
+
 class MainWindow(QMainWindow):
     _SETTINGS_ORG = "ProBooksAI"
     _SETTINGS_APP = "ProBooksAI"
     _GEOMETRY_KEY = "mainwindow/geometry"
+    _TAB_ORDER_KEY = "mainwindow/tab_order"
     _MAXIMIZED_KEY = "mainwindow/maximized"
     _DEFAULT_WIDTH = 1100
     _DEFAULT_HEIGHT = 700
@@ -1030,7 +1065,7 @@ class MainWindow(QMainWindow):
         """Step-1 shell for a top-level tab whose full workflow is not migrated yet."""
         w = QWidget()
         w.setToolTip(
-            f"{title}: placeholder shell (fixed top-level tab order). {body} "
+            f"{title}: placeholder shell. {body} "
             "Same company .db (File → Backup / Restore, probooks.backup)."
         )
         outer = QVBoxLayout(w)
@@ -1041,19 +1076,37 @@ class MainWindow(QMainWindow):
 
     def _build_ar_recon_panel(self, conn) -> "QWidget":
         """AR / Invoices subtab in the Reconcile hub — view Open/Sent invoices, receive payment."""
+        from datetime import date, timedelta
+
+        from PySide6.QtGui import QShowEvent
         from PySide6.QtWidgets import (
             QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
             QHeaderView, QPushButton, QLabel, QAbstractItemView,
         )
         from PySide6.QtCore import Qt
 
-        outer = QWidget()
+        class _ArInvoiceList(QWidget):
+            def __init__(self) -> None:
+                super().__init__()
+                self._loaded = False
+                self._lookback_days = 90
+                self._reload_fn = None
+
+            def showEvent(self, event: QShowEvent) -> None:  # noqa: N802
+                super().showEvent(event)
+                if not self._loaded and callable(self._reload_fn):
+                    self._loaded = True
+                    self._reload_fn()
+
+        outer = _ArInvoiceList()
         outer.setToolTip("Open and Sent invoices; receive payment here. Status updates automatically when paid.")
         lay = QVBoxLayout(outer)
         lay.setContentsMargins(8, 8, 8, 8)
         lay.setSpacing(6)
 
-        banner = QLabel("<b>AR / Invoices</b> — Open and Sent invoices awaiting payment.")
+        banner = QLabel(
+            "<b>AR / Invoices</b> — Open and Sent invoices (last 90 days by default)."
+        )
         banner.setTextFormat(Qt.TextFormat.RichText)
         banner.setWordWrap(True)
         banner.setStyleSheet("color:#A0A0B0; font-size:12px;")
@@ -1062,9 +1115,13 @@ class MainWindow(QMainWindow):
         btn_row = QHBoxLayout()
         btn_refresh = QPushButton("↻ Refresh")
         btn_refresh.setToolTip("Reload the invoice list from the company file.")
+        btn_older = QPushButton("Older")
+        btn_older.setObjectName("arInvoiceListOlder")
+        btn_older.setToolTip("Load the previous 90 days of open invoices.")
         btn_receive = QPushButton("Receive Payment…")
         btn_receive.setToolTip("Go to Customers tab → Receive Payments to post a customer payment against open invoices.")
         btn_row.addWidget(btn_refresh)
+        btn_row.addWidget(btn_older)
         btn_row.addWidget(btn_receive)
         btn_row.addStretch(1)
         lay.addLayout(btn_row)
@@ -1083,13 +1140,16 @@ class MainWindow(QMainWindow):
             tbl.setRowCount(0)
             if conn is None:
                 return
+            since = (date.today() - timedelta(days=int(outer._lookback_days))).isoformat()
             try:
                 rows = conn.execute(
                     """SELECT i.invoice_number, i.invoice_date, c.name, i.total, i.balance_due, i.status, i.id
                        FROM invoices i
                        LEFT JOIN customers c ON c.id = i.customer_id
                        WHERE i.status IN ('Open','Sent','Unpaid')
-                       ORDER BY i.invoice_date DESC, i.id DESC"""
+                         AND i.invoice_date >= ?
+                       ORDER BY i.invoice_date DESC, i.id DESC""",
+                    (since,),
                 ).fetchall()
             except Exception:
                 return
@@ -1105,7 +1165,12 @@ class MainWindow(QMainWindow):
                         item.setData(Qt.ItemDataRole.UserRole, row[6])  # invoice id
                     tbl.setItem(r, c_idx, item)
 
+        def _older():
+            outer._lookback_days = int(outer._lookback_days) + 90
+            _reload()
+
         btn_refresh.clicked.connect(_reload)
+        btn_older.clicked.connect(_older)
 
         def _go_receive():
             try:
@@ -1118,7 +1183,7 @@ class MainWindow(QMainWindow):
 
         btn_receive.clicked.connect(_go_receive)
 
-        _reload()
+        outer._reload_fn = _reload
         outer._reload_ar = _reload  # attach for external refresh calls
         return outer
 
@@ -1204,7 +1269,7 @@ class MainWindow(QMainWindow):
         self._intake_widget = intake_widget
 
     def _assemble_main_tabs(self) -> None:
-        """Fixed-order top-level strip + More hub (Reports, Journal, Business, Audit)."""
+        """Default-order top-level strip + More hub (Reports, Journal, Business, Audit). Drag to reorder; order is remembered."""
         conn = self._bank_db._conn
         self._invoice_screen = InvoiceScreen(ap_conn=conn)
         self._income_tracker_screen = IncomeTrackerScreen(ap_conn=conn)
@@ -1358,6 +1423,12 @@ class MainWindow(QMainWindow):
         ap_idx = self._tabs.indexOf(self._ap_aging_screen)
         if ap_idx >= 0:
             self._tabs.tabBar().setTabVisible(ap_idx, False)
+        self._assign_main_tab_ids()
+        self._configure_main_workspace_tab_bar()
+        self._restore_main_tab_order()
+        self._pin_hidden_aging_tabs()
+        self._wire_main_tab_moved()
+        self._apply_main_tab_bar_tooltips()
         self._tabs.currentChanged.connect(self._on_main_tab_changing)
         self._prev_main_tab_index: int = 0
         self._make_deposits_screen.depositPosted.connect(self._on_make_deposit_posted)
@@ -1472,123 +1543,231 @@ class MainWindow(QMainWindow):
             self._invoice_screen.refresh_loaded_invoice_payment_status
         )
 
+    def _main_tab_id_pairs(self) -> tuple[tuple[object, str], ...]:
+        return (
+            (self._dashboard_tab, "home"),
+            (self._income_tracker_screen, "income_tracker"),
+            (self._bill_tracker_screen, "bill_tracker"),
+            (self._calendar_screen, "calendar"),
+            (self._snapshot_screen, "company_snapshot"),
+            (self._my_company_screen, "my_company"),
+            (self._invoice_screen, "invoices"),
+            (self._invoice_codes_screen, "codes"),
+            (self._check_screen, "write_checks"),
+            (self._enter_bills_screen, "enter_bills"),
+            (self._pay_bills_screen, "pay_bills"),
+            (self._receive_payments_screen, "receive_payments"),
+            (self._make_deposits_screen, "make_deposits"),
+            (self._register_tab, "bank_register"),
+            (self._coa_tab, "chart_of_accounts"),
+            (self._customers_tab, "customers"),
+            (self._vendors_tab, "vendors"),
+            (self._reconcile_root, "reconcile"),
+            (self._more_hub, "more"),
+            (self._ar_aging_screen, "ar_aging"),
+            (self._ap_aging_screen, "ap_aging"),
+        )
+
+    def _assign_main_tab_ids(self) -> None:
+        for widget, tab_id in self._main_tab_id_pairs():
+            if widget is not None:
+                widget.setProperty("mainTabId", tab_id)
+
+    def _main_tab_id_at(self, index: int) -> str:
+        widget = self._tabs.widget(index)
+        if widget is None:
+            return ""
+        return str(widget.property("mainTabId") or "")
+
+    def _configure_main_workspace_tab_bar(self) -> None:
+        self._tabs.setObjectName(MAIN_WORKSPACE_TABS_OBJECT_NAME)
+        self._tabs.setDocumentMode(False)
+        bar = self._tabs.tabBar()
+        bar.setObjectName(MAIN_WORKSPACE_TAB_BAR_OBJECT_NAME)
+        bar.setMovable(True)
+        bar.setExpanding(False)
+        bar.setDrawBase(True)
+        bar.setUsesScrollButtons(True)
+        bar.setElideMode(Qt.TextElideMode.ElideNone)
+
+    def _wire_main_tab_moved(self) -> None:
+        bar = self._tabs.tabBar()
+        if getattr(self, "_main_tab_moved_wired", False):
+            return
+        bar.tabMoved.connect(self._on_main_tab_moved)
+        self._main_tab_moved_wired = True
+
+    def _on_main_tab_moved(self, _from: int, _to: int) -> None:
+        self._pin_hidden_aging_tabs()
+        self._save_main_tab_order()
+        self._apply_main_tab_bar_tooltips()
+
+    def _pin_hidden_aging_tabs(self) -> None:
+        bar = self._tabs.tabBar()
+        n = self._tabs.count()
+        if n < 2:
+            return
+        wired = getattr(self, "_main_tab_moved_wired", False)
+        if wired:
+            bar.tabMoved.disconnect(self._on_main_tab_moved)
+            self._main_tab_moved_wired = False
+        try:
+            for widget in (self._ar_aging_screen, self._ap_aging_screen):
+                idx = self._tabs.indexOf(widget)
+                last = self._tabs.count() - 1
+                if idx >= 0 and idx != last:
+                    bar.moveTab(idx, last)
+                idx = self._tabs.indexOf(widget)
+                if idx >= 0:
+                    bar.setTabVisible(idx, False)
+        finally:
+            if wired:
+                bar.tabMoved.connect(self._on_main_tab_moved)
+                self._main_tab_moved_wired = True
+
+    def _current_main_tab_order(self) -> list[str]:
+        return [self._main_tab_id_at(i) for i in range(self._tabs.count()) if self._main_tab_id_at(i)]
+
+    def _save_main_tab_order(self) -> None:
+        order = self._current_main_tab_order()
+        if not order:
+            return
+        settings = QSettings(self._SETTINGS_ORG, self._SETTINGS_APP)
+        settings.setValue(self._TAB_ORDER_KEY, order)
+
+    def _restore_main_tab_order(self) -> None:
+        settings = QSettings(self._SETTINGS_ORG, self._SETTINGS_APP)
+        raw = settings.value(self._TAB_ORDER_KEY)
+        if raw is None:
+            return
+        if isinstance(raw, str):
+            saved = [p.strip() for p in raw.split(",") if p.strip()]
+        elif isinstance(raw, (list, tuple)):
+            saved = [str(p) for p in raw if str(p)]
+        else:
+            return
+        apply_saved_main_tab_order(self._tabs, saved)
+
     def _apply_main_tab_bar_tooltips(self) -> None:
         main_tab_bar = self._tabs.tabBar()
         _main_tab_bar_db_hint = " Same company .db (File → Backup / Restore, probooks.backup)."
         _tab_bar_csv_excel_hint = " CSV: UTF-8 with BOM for Excel."
-        tips = [
-            (
+        tips_by_id = {
+            "home": (
                 "Home: company overview with money-in / money-out shortcuts "
-                "(Create Invoices, Receive Payments, Income Tracker, Enter Bills, Pay Bills, Bill Tracker, Calendar, Company Snapshot, My Company, Write Checks, Make Deposits)."
+                "(Create Invoices, Receive Payments, Income Tracker, Enter Bills, Pay Bills, Bill Tracker, Calendar, Company Snapshot, My Company, Write Checks, Make Deposits). "
+                "Drag tabs to reorder; the order is remembered next launch."
                 + _main_tab_bar_db_hint
             ),
-            (
+            "income_tracker": (
                 "Income Tracker: unbilled time & expenses, open and overdue invoices, "
                 "and payments in the last 30 days. Double-click an invoice to open Create Invoices."
                 + _main_tab_bar_db_hint
             ),
-            (
+            "bill_tracker": (
                 "Bill Tracker: open bills, overdue bills, and vendor payments in the last 30 days. "
                 "Double-click a bill to open Enter Bills; Pay Bill opens Pay Bills."
                 + _main_tab_bar_db_hint
             ),
-            (
+            "calendar": (
                 "Calendar: month grid of Entered and Due invoices and bills. "
                 "Click a day for details; click a due bill or invoice to open Enter Bills, Create Invoices, or Pay Bills."
                 + _main_tab_bar_db_hint
             ),
-            (
+            "company_snapshot": (
                 "Company Snapshot: income and expense charts, customers who owe money, "
                 "account balances, and expense breakdown from the open company file."
                 + _main_tab_bar_db_hint
             ),
-            (
+            "my_company": (
                 "My Company: contact, legal, tax, and product information for this company file. "
                 "Edit pencil saves identity fields; recommended apps are layout-only."
                 + _main_tab_bar_db_hint
             ),
-            (
+            "invoices": (
                 "Invoices: invoice entry workflow (line items, Bill To, print/PDF when connected). "
                 + _main_tab_bar_db_hint
             ),
-            (
+            "codes": (
                 "Codes: Item List of services, discounts, other charges, and subtotals. "
                 "Double-click a row to Edit Item. Saved items fill Create Invoices line Codes."
                 + _main_tab_bar_db_hint
             ),
-            (
+            "write_checks": (
                 "Write Checks: record and print checks against a bank account."
                 + _main_tab_bar_db_hint
             ),
-            (
+            "enter_bills": (
                 "Enter Bills: bill header and expense lines (vendor-backed when connected)."
                 + _main_tab_bar_db_hint
             ),
-            (
+            "pay_bills": (
                 "Pay Bills: unpaid vendor bills, Pay From account, Pay Selected Bills (BILLPMT register)."
                 + _main_tab_bar_db_hint
             ),
-            (
+            "receive_payments": (
                 "Receive Payments: customer payments against open invoices (Undeposited Funds)."
                 + _main_tab_bar_db_hint
             ),
-            (
+            "make_deposits": (
                 "Make Deposits: pick undeposited payments and post them into a bank account "
                 "(Payments to Deposit popup)."
                 + _main_tab_bar_db_hint
             ),
-            (
+            "bank_register": (
                 "Bank Register: check-register grid for one bank account; inline edits where allowed; F5 refresh. "
                 "Reconciliation mode + Match overlay (Bank Import AI line reconciliation can populate it). "
                 "Bulk actions: Recon menu."
                 + _tab_bar_csv_excel_hint
                 + _main_tab_bar_db_hint
             ),
-            (
+            "chart_of_accounts": (
                 "Chart of accounts: add, edit, deactivate; used in journal, reports, and pickers."
                 + _main_tab_bar_db_hint
             ),
-            (
+            "customers": (
                 "Customers: Customer Center — list, jobs, Customer Information, invoices and payments (F5). "
                 "New Customer & Job, New Transactions (Create Invoices / Receive Payments), Excel CSV. "
                 "Invoices and payments use Invoices, Receive Payments, and Reports (Business hub holds Rules, Payroll, Tax % only)."
                 + _tab_bar_csv_excel_hint
                 + _main_tab_bar_db_hint
             ),
-            (
+            "vendors": (
                 "Vendors: Vendor Center — list, Vendor Information, bills and payments (F5). "
                 "New Vendor, New Transactions (Enter Bills / Pay Bills / Write Checks), Excel CSV. "
                 "Bills and payments use Enter Bills, Pay Bills, and Reports (Business hub holds Rules, Payroll, Tax % only)."
                 + _tab_bar_csv_excel_hint
                 + _main_tab_bar_db_hint
             ),
-            (
+            "reconcile": (
                 "Reconcile: Bank statements (CSV/PDF, AI line reconciliation, Match overlay sync) and Documents."
                 + _tab_bar_csv_excel_hint
                 + _main_tab_bar_db_hint
             ),
-            (
+            "more": (
                 "More: Reports, Journal, Business hub, and Audit log."
                 + _tab_bar_csv_excel_hint
                 + _main_tab_bar_db_hint
             ),
-            (
+            "ar_aging": (
                 "A/R Aging Summary: live open invoices by customer and job "
                 "(Current / 1-30 / 31-60 / 61-90 / >90). "
                 "Open from Reports or Customer Center Open Balance."
                 + _tab_bar_csv_excel_hint
                 + _main_tab_bar_db_hint
             ),
-            (
+            "ap_aging": (
                 "A/P Aging Summary: live open bills by vendor "
                 "(Current / 1-30 / 31-60 / 61-90 / >90). "
                 "Open from Reports or Vendor Center Open Balance."
                 + _tab_bar_csv_excel_hint
                 + _main_tab_bar_db_hint
             ),
-        ]
-        for i, tip in enumerate(tips):
-            main_tab_bar.setTabToolTip(i, tip)
+        }
+        for i in range(main_tab_bar.count()):
+            tip = tips_by_id.get(self._main_tab_id_at(i), "")
+            if tip:
+                main_tab_bar.setTabToolTip(i, tip)
 
     def _teardown_main_tabs_for_rebuild(self) -> None:
         """Remove main tabs and dispose widgets except the shared Document Intake root widget.
@@ -1626,7 +1805,8 @@ class MainWindow(QMainWindow):
         # Container: header banner + tab widget
         container = QWidget()
         container.setToolTip(
-            "Main workspace: fixed-order tabs (Home, Income Tracker, Bill Tracker, Calendar, Company Snapshot, My Company, Invoices through More). "
+            "Main workspace: drag tabs to reorder (order is remembered next launch). "
+            "Home, Income Tracker, Bill Tracker, Calendar, Company Snapshot, My Company, Invoices through More. "
             "Bank Import and Register host statement reconciliation, AI line reconciliation, and Register Match overlay. "
             "All tabs share the open SQLite company file (File → Backup / Restore, probooks.backup)."
         )
@@ -1638,6 +1818,8 @@ class MainWindow(QMainWindow):
         container_layout.addWidget(self._header)
 
         self._tabs = QTabWidget()
+        self._tabs.setObjectName(MAIN_WORKSPACE_TABS_OBJECT_NAME)
+        self._tabs.setDocumentMode(False)
         self._tabs.setToolTip(
             "Main workspace: Home, Income Tracker, Bill Tracker, Calendar, Company Snapshot, My Company, Invoices, Codes, Write Checks, Enter Bills, Pay Bills, Receive Payments, "
             "Make Deposits, Bank Register, Chart of Accounts, Customers, Vendors, Reconcile, and More "
@@ -4090,6 +4272,7 @@ class MainWindow(QMainWindow):
         _win_settings = QSettings(self._SETTINGS_ORG, self._SETTINGS_APP)
         _win_settings.setValue(self._GEOMETRY_KEY, self.saveGeometry())
         _win_settings.setValue(self._MAXIMIZED_KEY, self.isMaximized())
+        self._save_main_tab_order()
         self._db.close()
         self._bank_db.close()
         super().closeEvent(event)

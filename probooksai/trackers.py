@@ -28,6 +28,7 @@ DATE_TODAY = "Today"
 DATE_THIS_WEEK = "This Week"
 DATE_THIS_MONTH = "This Month"
 DATE_LAST_30 = "Last 30 Days"
+DATE_LAST_90 = "Last 90 Days"
 DATE_THIS_YEAR = "This Year"
 
 DATE_CHOICES: tuple[str, ...] = (
@@ -36,6 +37,7 @@ DATE_CHOICES: tuple[str, ...] = (
     DATE_THIS_WEEK,
     DATE_THIS_MONTH,
     DATE_LAST_30,
+    DATE_LAST_90,
     DATE_THIS_YEAR,
 )
 
@@ -85,6 +87,8 @@ def days_range(preset: str, today: date) -> Optional[tuple[date, date]]:
         return date(today.year, today.month, 1), today
     if label == DATE_LAST_30:
         return today - timedelta(days=30), today
+    if label == DATE_LAST_90:
+        return today - timedelta(days=90), today
     if label == DATE_THIS_YEAR:
         return date(today.year, 1, 1), today
     return None
@@ -139,19 +143,26 @@ def list_income_tracker_rows(
     conn: sqlite3.Connection,
     *,
     today: Optional[date] = None,
+    since_iso: Optional[str] = None,
 ) -> list[dict]:
-    """Invoice and payment rows for Income Tracker (newest date first)."""
+    """Invoice and payment rows for Income Tracker (newest date first).
+
+    *since_iso* (YYYY-MM-DD) limits both invoices and payments to that date or later.
+    """
     day = today or date.today()
     labels = _customer_job_labels(conn)
     out: list[dict] = []
-    for r in conn.execute(
-        """
+    inv_sql = """
         SELECT i.id, i.customer_id, i.invoice_number, i.invoice_date, i.due_date,
                i.total, i.balance_due, i.status
         FROM invoices i
-        ORDER BY i.invoice_date DESC, i.id DESC
-        """
-    ).fetchall():
+    """
+    inv_params: list = []
+    if since_iso:
+        inv_sql += " WHERE i.invoice_date >= ?"
+        inv_params.append(since_iso)
+    inv_sql += " ORDER BY i.invoice_date DESC, i.id DESC"
+    for r in conn.execute(inv_sql, inv_params).fetchall():
         d = dict(r)
         cid = int(d["customer_id"])
         bal = float(d.get("balance_due") or 0)
@@ -172,13 +183,16 @@ def list_income_tracker_rows(
                 "status": tracker_status(open_balance=bal, due_date=due, today=day),
             }
         )
-    for r in conn.execute(
-        """
+    pay_sql = """
         SELECT p.id, p.customer_id, p.payment_date, p.amount, p.reference
         FROM ar_payments p
-        ORDER BY p.payment_date DESC, p.id DESC
-        """
-    ).fetchall():
+    """
+    pay_params: list = []
+    if since_iso:
+        pay_sql += " WHERE p.payment_date >= ?"
+        pay_params.append(since_iso)
+    pay_sql += " ORDER BY p.payment_date DESC, p.id DESC"
+    for r in conn.execute(pay_sql, pay_params).fetchall():
         d = dict(r)
         cid = int(d["customer_id"])
         out.append(
@@ -249,29 +263,47 @@ def income_tracker_summary(
     """Live tile totals. Unbilled time/expenses stay zero (no T&E table)."""
     day = today or date.today()
     start_30 = (day - timedelta(days=30)).isoformat()
-    rows = list_income_tracker_rows(conn, today=day)
-    open_rows = [r for r in rows if r["kind"] == "invoice" and r["open_balance"] > 0.005]
-    overdue = [r for r in open_rows if r["status"] == STATUS_OVERDUE]
+    open_row = conn.execute(
+        """
+        SELECT COUNT(*), COALESCE(SUM(balance_due), 0)
+        FROM invoices WHERE COALESCE(balance_due, 0) > 0.005
+        """
+    ).fetchone()
+    overdue_row = conn.execute(
+        """
+        SELECT COUNT(*), COALESCE(SUM(balance_due), 0)
+        FROM invoices
+        WHERE COALESCE(balance_due, 0) > 0.005
+          AND due_date IS NOT NULL AND TRIM(due_date) != ''
+          AND due_date < ?
+        """,
+        (day.isoformat(),),
+    ).fetchone()
     paid_ids = _paid_invoice_ids_last_30(conn, start_30)
-    paid_invoices = [
-        r for r in rows if r["kind"] == "invoice" and int(r["record_id"]) in paid_ids
-    ]
-    payments_30 = [
-        r
-        for r in rows
-        if r["kind"] == "payment" and date_in_preset(r["date"], DATE_LAST_30, day)
-    ]
-    paid_total = round(sum(r["amount"] for r in payments_30), 2)
-    paid_count = len(paid_invoices) if paid_invoices else len(payments_30)
-    if paid_invoices:
-        paid_total = round(sum(r["amount"] for r in paid_invoices), 2)
+    paid_total = 0.0
+    paid_count = 0
+    if paid_ids:
+        placeholders = ",".join("?" * len(paid_ids))
+        paid_invoices = conn.execute(
+            f"SELECT total FROM invoices WHERE id IN ({placeholders})",
+            tuple(paid_ids),
+        ).fetchall()
+        paid_count = len(paid_invoices)
+        paid_total = round(sum(float(r[0] or 0) for r in paid_invoices), 2)
+    else:
+        pay_rows = conn.execute(
+            "SELECT amount FROM ar_payments WHERE payment_date >= ?",
+            (start_30,),
+        ).fetchall()
+        paid_count = len(pay_rows)
+        paid_total = round(sum(float(r[0] or 0) for r in pay_rows), 2)
     return {
         "unbilled_total": 0.0,
         "unbilled_count": 0,
-        "open_total": round(sum(r["open_balance"] for r in open_rows), 2),
-        "open_count": len(open_rows),
-        "overdue_total": round(sum(r["open_balance"] for r in overdue), 2),
-        "overdue_count": len(overdue),
+        "open_total": round(float(open_row[1] or 0), 2),
+        "open_count": int(open_row[0] or 0),
+        "overdue_total": round(float(overdue_row[1] or 0), 2),
+        "overdue_count": int(overdue_row[0] or 0),
         "paid_30_total": paid_total,
         "paid_30_count": paid_count,
         "paid_invoice_ids": paid_ids,

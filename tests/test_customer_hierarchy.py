@@ -123,3 +123,25 @@ def test_customer_ids_for_receive_payments_filter_job_is_single(db: BankDatabase
     assert ids_p == [p, j]
     ids_j = business.customer_ids_for_receive_payments_filter(db._conn, j)
     assert ids_j == [j]
+
+
+def test_inactive_customer_keeps_invoices_and_labels(db: BankDatabase) -> None:
+    p = business.add_customer(db._conn, "P")
+    j = business.add_customer(db._conn, "J", parent_customer_id=p)
+    iid = business.create_invoice(
+        db._conn,
+        j,
+        "INV-KEEP",
+        "2024-03-01",
+        lines=[{"description": "x", "qty": 1, "rate": 10.0}],
+    )
+    business.set_customer_inactive(db._conn, j, inactive=True)
+    n = db._conn.execute("SELECT COUNT(*) AS n FROM invoices").fetchone()["n"]
+    assert int(n) == 1
+    assert int(
+        db._conn.execute("SELECT id FROM invoices WHERE id = ?", (iid,)).fetchone()["id"]
+    ) == iid
+    labels = dict(business.list_bill_to_customer_choices(db._conn))
+    assert labels[j].endswith("(Inactive)")
+    rows = business.list_open_invoices_for_ar_payment_customer(db._conn, p)
+    assert len(rows) == 1

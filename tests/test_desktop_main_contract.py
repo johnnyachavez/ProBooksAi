@@ -55,10 +55,10 @@ def test_desktop_main_imports_backup_data_layers_and_tab_widgets() -> None:
     assert "ARTab" in head and "APTab" in head and "BusinessHub" in head
     assert "show_business_keyboard_shortcuts_dialog" in head
     assert "from desktop_app.audit_tab import AuditTab" in head
-    assert (
-        "from desktop_app.theme import apply_dark_theme, STATUS_COLORS as THEME_STATUS_COLORS"
-        in head
-    )
+    assert "from desktop_app.theme import" in head
+    assert "apply_dark_theme" in head
+    assert "MAIN_WORKSPACE_TAB_BAR_OBJECT_NAME" in head
+    assert "STATUS_COLORS as THEME_STATUS_COLORS" in head
     assert "from desktop_app.local_docs import resolve_local_roadmap_path" in head
     assert "from desktop_app.version import application_version" in head
     assert "from desktop_app.more_main_tabs_shortcuts import" in head
@@ -632,12 +632,12 @@ def test_main_window_tab_bar_has_tab_tooltips() -> None:
     assert "main_tab_bar = self._tabs.tabBar()" in text
     assert "main_tab_bar.setTabToolTip" in text
     assert "_apply_main_tab_bar_tooltips" in text
-    tips = text.index("tips = [")
+    tips = text.index("tips_by_id = {")
     assert "Home:" in text[tips : tips + 1200]
     assert "Invoices:" in text[tips : tips + 2800]
     assert "Write Checks:" in text[tips : tips + 2800]
     assert "More:" in text[tips : tips + 5200]
-    assert "for i, tip in enumerate(tips):" in text
+    assert "for i in range(main_tab_bar.count()):" in text
     assert text.count("_main_tab_bar_db_hint") >= 11
     assert "self._tabs.setToolTip(" in text
     assert "Main workspace:" in text
@@ -652,7 +652,7 @@ def test_main_window_tab_bar_has_tab_tooltips() -> None:
     assert "left.setToolTip(" in text
     assert "Document inbox column:" in text
     assert "container.setToolTip(" in text
-    assert "fixed-order tabs" in text
+    assert "drag tabs to reorder" in text
 
 
 def test_main_tab_widgets_have_root_hover_tooltips() -> None:
@@ -985,7 +985,7 @@ def test_main_window_build_ui_tab_tooltips_intake_f5_and_window_drops() -> None:
     end = text.index("def _teardown_main_tabs_for_rebuild(self) -> None:", start)
     chunk_tt = text[start:end]
     assert chunk_tt.count("main_tab_bar.setTabToolTip(") == 1
-    assert chunk_tt.count("for i, tip in enumerate(tips):") == 1
+    assert "for i in range(main_tab_bar.count()):" in chunk_tt
     start_i = text.index("def _build_document_intake_widget(self) -> None:")
     end_i = text.index("def _assemble_main_tabs(self) -> None:", start_i)
     chunk_i = text[start_i:end_i]
@@ -1157,7 +1157,7 @@ def test_main_window_init_wires_databases_build_ui_and_refresh() -> None:
     start = text.index("    def __init__(self, db_path: str | None = None):")
     end = text.index("    # -- UI construction", start)
     chunk = text[start:end]
-    assert chunk.count("super().__init__()") == 1
+    assert chunk.count("super().__init__()") == 2
     # Window geometry is restored from QSettings (maximised on first run)
     assert "restoreGeometry" in chunk or "showMaximized" in chunk
     assert chunk.count("self._db_path = db_path") == 1
@@ -3048,14 +3048,15 @@ def test_main_window_view_menu_enumerates_ctrl_one_through_zero() -> None:
 
 
 def test_main_window_main_tab_bar_set_tab_tooltip_loop_matches_strip() -> None:
-    """``_apply_main_tab_bar_tooltips`` assigns ``tips[i]`` to ``main_tab_bar.setTabToolTip(i, …)`` for each index."""
+    """``_apply_main_tab_bar_tooltips`` assigns tooltips by ``mainTabId`` after drag-reorder."""
     text = _MAIN.read_text(encoding="utf-8")
     start = text.index("def _apply_main_tab_bar_tooltips(self) -> None:")
     end = text.index("def _teardown_main_tabs_for_rebuild(self) -> None:", start)
     chunk = text[start:end]
     assert "main_tab_bar = self._tabs.tabBar()" in chunk
-    assert "for i, tip in enumerate(tips):" in chunk
+    assert "for i in range(main_tab_bar.count()):" in chunk
     assert "main_tab_bar.setTabToolTip(i, tip)" in chunk
+    assert "tips_by_id.get(self._main_tab_id_at(i)" in chunk
 
 
 def test_inbox_widget_context_menu_includes_keyboard_shortcuts_help() -> None:
@@ -5232,7 +5233,7 @@ def test_main_window_banner_tabs_status_bar_and_worker_counts() -> None:
     chunk = text[start:end]
     assert chunk.count("self._header.") == 2
     assert chunk.count("self._status_bar.showMessage(") == 15
-    assert chunk.count("self._tabs.") == 112
+    assert chunk.count("self._tabs.") == 125
     assert chunk.count("self._worker") == 17
 
 

@@ -97,12 +97,19 @@ FONT_SIZE_SMALL  = "11px"
 FONT_SIZE_LARGE  = "15px"
 
 # Main window ``QTabWidget`` tab bar (``MainWindow._build_ui``); compact strip scoped by objectName.
+MAIN_WORKSPACE_TABS_OBJECT_NAME = "mainWorkspaceTabs"
 MAIN_WORKSPACE_TAB_BAR_OBJECT_NAME = "mainWorkspaceTabBar"
-MAIN_WORKSPACE_TAB_MIN_HEIGHT_PX = 32
-MAIN_WORKSPACE_TAB_PADDING = "4px 10px"
-MAIN_WORKSPACE_TAB_FONT_SIZE = "11px"
-MAIN_WORKSPACE_TAB_FONT_WEIGHT = "500"
-MAIN_WORKSPACE_TAB_BAR_WIDGET_MIN_HEIGHT_PX = 32
+MAIN_WORKSPACE_TAB_MIN_HEIGHT_PX = 30
+MAIN_WORKSPACE_TAB_PADDING = "6px 12px"
+MAIN_WORKSPACE_TAB_FONT_SIZE = "12px"
+MAIN_WORKSPACE_TAB_FONT_WEIGHT = "600"
+MAIN_WORKSPACE_TAB_BAR_WIDGET_MIN_HEIGHT_PX = 36
+MAIN_WORKSPACE_TAB_BAR_BG = "#121A2C"
+MAIN_WORKSPACE_TAB_BG = "#2C4468"
+MAIN_WORKSPACE_TAB_FG = "#F4F7FB"
+MAIN_WORKSPACE_TAB_BORDER = "#8AA4C8"
+MAIN_WORKSPACE_TAB_SELECTED_BG = "#E4EBF5"
+MAIN_WORKSPACE_TAB_SELECTED_FG = "#152033"
 
 
 def register_row_band_colors_hex(
@@ -283,12 +290,37 @@ QTabBar::tab:hover:!selected {{
 }}
 
 /* Main workspace tab strip only (objectName set on ``MainWindow`` tab bar). */
+QTabWidget#{MAIN_WORKSPACE_TABS_OBJECT_NAME}::pane {{
+    border-top: 1px solid {MAIN_WORKSPACE_TAB_BORDER};
+}}
+QTabBar#{MAIN_WORKSPACE_TAB_BAR_OBJECT_NAME} {{
+    background-color: {MAIN_WORKSPACE_TAB_BAR_BG};
+    qproperty-drawBase: 1;
+}}
 QTabBar#{MAIN_WORKSPACE_TAB_BAR_OBJECT_NAME}::tab {{
+    background-color: {MAIN_WORKSPACE_TAB_BG};
+    color: {MAIN_WORKSPACE_TAB_FG};
     min-height: {MAIN_WORKSPACE_TAB_MIN_HEIGHT_PX}px;
     padding: {MAIN_WORKSPACE_TAB_PADDING};
     font-size: {MAIN_WORKSPACE_TAB_FONT_SIZE};
     font-weight: {MAIN_WORKSPACE_TAB_FONT_WEIGHT};
-    qproperty-alignment: AlignCenter;
+    border: 1px solid {MAIN_WORKSPACE_TAB_BORDER};
+    border-bottom: none;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    margin-right: 3px;
+    margin-top: 3px;
+}}
+QTabBar#{MAIN_WORKSPACE_TAB_BAR_OBJECT_NAME}::tab:selected {{
+    background-color: {MAIN_WORKSPACE_TAB_SELECTED_BG};
+    color: {MAIN_WORKSPACE_TAB_SELECTED_FG};
+    border: 1px solid {MAIN_WORKSPACE_TAB_BORDER};
+    border-bottom: 1px solid {MAIN_WORKSPACE_TAB_SELECTED_BG};
+    font-weight: 700;
+}}
+QTabBar#{MAIN_WORKSPACE_TAB_BAR_OBJECT_NAME}::tab:hover:!selected {{
+    background-color: #3A5A88;
+    color: #FFFFFF;
 }}
 
 /* ── Tables ──────────────────────────────────────────────────────── */

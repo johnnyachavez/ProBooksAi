@@ -95,6 +95,7 @@ from desktop_app.invoice_preferences import (
     get_invoice_output_folder,
     prompt_invoice_save_as_path,
 )
+from desktop_app.invoice_print_html import parse_invoice_line_description
 from desktop_app.invoice_intake_panel import InvoiceIntakePanel
 from desktop_app.invoice_intake_text_extract import TextIntakeExtraction
 from desktop_app.invoice_pdf import invoice_html_string, save_invoice_pdf
@@ -863,11 +864,11 @@ class InvoiceScreen(QWidget):
         self._btn_reverse = QPushButton("Previous")
         self._btn_forward = QPushButton("Next")
         self._btn_reverse.setToolTip(
-            "Previous invoice by invoice number (stops at the lowest #). "
-            "From an unsaved draft, opens the last saved invoice."
+            "Previous invoice by date, then invoice number (oldest first). "
+            "From an unsaved draft, opens the last invoice in that order."
         )
         self._btn_forward.setToolTip(
-            "Next invoice by invoice number. After the highest saved invoice, opens one blank draft "
+            "Next invoice by date, then invoice number. After the newest saved invoice, opens one blank draft "
             "(stops there — Next does not cycle to the first invoice)."
         )
         self._btn_intake = QPushButton("Intake")
@@ -1961,7 +1962,7 @@ class InvoiceScreen(QWidget):
         if self._ap_conn is None:
             self._browse_ids = []
         else:
-            self._browse_ids = business.list_invoice_ids_by_invoice_number(self._ap_conn)
+            self._browse_ids = business.list_invoice_ids_chronological(self._ap_conn)
         n = len(self._browse_ids)
         cid = self._current_invoice_id
         if cid is not None:
@@ -2387,7 +2388,6 @@ class InvoiceScreen(QWidget):
                 bol_w = self._table.cellWidget(i, 3)
                 rate_w = self._table.cellWidget(i, 4)
                 qty_w = self._table.cellWidget(i, 5)
-                raw_desc = (row.get("description") or "").strip()
                 if isinstance(dt_w, QLineEdit):
                     dt_w.clear()
                 if isinstance(code_w, QLineEdit):
@@ -2396,31 +2396,17 @@ class InvoiceScreen(QWidget):
                     bol_w.clear()
                 if isinstance(desc_w, QLineEdit):
                     desc_w.clear()
-                if raw_desc and " — " in raw_desc:
-                    parts = [p.strip() for p in raw_desc.split(" — ")]
-                    if len(parts) == 2 and isinstance(dt_w, QLineEdit) and isinstance(
-                        code_w, QLineEdit
-                    ):
-                        dt_w.setText(parts[0])
-                        code_w.setText(parts[1])
-                    elif len(parts) == 3:
-                        if isinstance(dt_w, QLineEdit):
-                            dt_w.setText(parts[0])
-                        if isinstance(code_w, QLineEdit):
-                            code_w.setText(parts[1])
-                        if isinstance(desc_w, QLineEdit):
-                            desc_w.setText(parts[2])
-                    elif len(parts) >= 4:
-                        if isinstance(dt_w, QLineEdit):
-                            dt_w.setText(parts[0])
-                        if isinstance(code_w, QLineEdit):
-                            code_w.setText(parts[1])
-                        if isinstance(desc_w, QLineEdit):
-                            desc_w.setText(parts[2])
-                        if isinstance(bol_w, QLineEdit):
-                            bol_w.setText(parts[3])
-                elif isinstance(desc_w, QLineEdit):
-                    desc_w.setText(raw_desc)
+                serviced, code, desc, bol = parse_invoice_line_description(
+                    row.get("description") or ""
+                )
+                if isinstance(dt_w, QLineEdit):
+                    dt_w.setText(serviced)
+                if isinstance(code_w, QLineEdit):
+                    code_w.setText(code)
+                if isinstance(desc_w, QLineEdit):
+                    desc_w.setText(desc)
+                if isinstance(bol_w, QLineEdit):
+                    bol_w.setText(bol)
                 if isinstance(rate_w, QDoubleSpinBox):
                     rate_w.setValue(float(row.get("rate") or 0.0))
                 if isinstance(qty_w, QDoubleSpinBox):

@@ -15,6 +15,7 @@ from PySide6.QtCore import QSettings, Qt, Signal
 from PySide6.QtGui import QColor, QKeySequence, QPalette, QShortcut, QShowEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -78,7 +79,7 @@ _TOP_STRIP_BODY_FONT_PX = 12
 _TITLE_FONT_PX = 20
 _RIBBON_BTN_HEIGHT_PX = 26
 _LINE_ROW_HEIGHT_PX = 22
-_CUSTOMER_HEADER_STATE_KEY = "business/ar_customer_table_header_state"
+_CUSTOMER_HEADER_STATE_KEY = "business/ar_customer_table_header_state_v3"
 
 _SHOW_ALL = "All"
 _SHOW_INVOICES = "Invoices"
@@ -105,9 +106,11 @@ _ROLE_KIND = Qt.ItemDataRole.UserRole + 1
 _ROLE_RECORD_ID = Qt.ItemDataRole.UserRole + 2
 _ROLE_IS_TOTAL = Qt.ItemDataRole.UserRole + 3
 
-_COL_NAME = 0
-_COL_BAL = 1
-_COL_ATTACH = 2
+_COL_MARK = 0
+_COL_NAME = 1
+_COL_BAL = 2
+_LIST_MARK_PX = 28
+_LIST_BAL_MIN_PX = 112
 
 
 def _action_button_qss(*, primary: bool = False) -> str:
@@ -229,9 +232,9 @@ def customer_center_empty_sentence(show: str, filter_by: str, date_range: str) -
 
 
 def customer_center_job_display_name(name: str) -> str:
-    """QB-style job row: colon prefix, indented under the parent customer."""
+    """Job row: indent under the parent. Full job name, no colon stub."""
     raw = (name or "").strip()
-    return f"    :{raw}" if raw else "    :"
+    return f"    {raw}" if raw else "    "
 
 
 class CustomerCenterScreen(QWidget):
@@ -270,6 +273,7 @@ class CustomerCenterScreen(QWidget):
         self._customer_summary_by_id: dict[int, dict] = {}
         self._focused_customer_id: int | None = None
         self._txn_rows: list[dict] = []
+        self._applying_detail = False
         self.setAutoFillBackground(True)
         self.setPalette(_light_form_palette())
         self.setStyleSheet(
@@ -344,9 +348,9 @@ class CustomerCenterScreen(QWidget):
         split.setToolTip("Drag to resize the customer list versus Customer Information.")
         split.addWidget(self._build_left_pane())
         split.addWidget(self._build_right_pane())
-        split.setStretchFactor(0, 2)
-        split.setStretchFactor(1, 5)
-        split.setSizes([320, 900])
+        split.setStretchFactor(0, 3)
+        split.setStretchFactor(1, 4)
+        split.setSizes([580, 700])
         outer.addWidget(split, 1)
 
     def _build_toolbar(self) -> QHBoxLayout:
@@ -368,6 +372,21 @@ class CustomerCenterScreen(QWidget):
         self._btn_new_customer.setMenu(nv_menu)
         self._btn_new_customer.setToolTip("Create a new customer or a job under a customer.")
         row.addWidget(self._btn_new_customer)
+
+        self._btn_make_inactive = QPushButton("Make Inactive")
+        self._btn_make_inactive.setObjectName("customerCenterMakeInactive")
+        self._style_push(self._btn_make_inactive)
+        self._btn_make_inactive.setToolTip(
+            "Hide the selected or checked customer(s) from the Active list. Invoices stay."
+        )
+        self._btn_make_inactive.clicked.connect(lambda: self._set_inactive_for_targets(True))
+        row.addWidget(self._btn_make_inactive)
+        self._btn_make_active = QPushButton("Make Active")
+        self._btn_make_active.setObjectName("customerCenterMakeActive")
+        self._style_push(self._btn_make_active)
+        self._btn_make_active.setToolTip("Show the selected or checked customer(s) on the Active list.")
+        self._btn_make_active.clicked.connect(lambda: self._set_inactive_for_targets(False))
+        row.addWidget(self._btn_make_active)
 
         self._btn_new_txn = QToolButton()
         self._btn_new_txn.setObjectName("customerCenterNewTransactions")
@@ -468,18 +487,18 @@ class CustomerCenterScreen(QWidget):
         self._customer_tbl = QTableWidget()
         self._customer_tbl.setObjectName("customerCenterCustomerTable")
         self._customer_tbl.setColumnCount(3)
-        self._customer_tbl.setHorizontalHeaderLabels(["NAME", "BALANCE TOTAL", "📎"])
+        self._customer_tbl.setHorizontalHeaderLabels(["", "NAME", "BALANCE TOTAL"])
         self._customer_tbl.verticalHeader().setVisible(False)
         self._customer_tbl.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._customer_tbl.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._customer_tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._customer_tbl.setAlternatingRowColors(True)
         self._customer_tbl.setSortingEnabled(False)
-        hdr = self._customer_tbl.horizontalHeader()
-        hdr.setSectionResizeMode(_COL_NAME, QHeaderView.ResizeMode.Stretch)
-        hdr.setSectionResizeMode(_COL_BAL, QHeaderView.ResizeMode.ResizeToContents)
-        hdr.setSectionResizeMode(_COL_ATTACH, QHeaderView.ResizeMode.Fixed)
-        hdr.resizeSection(_COL_ATTACH, 28)
+        self._customer_tbl.setWordWrap(False)
+        self._customer_tbl.setTextElideMode(Qt.TextElideMode.ElideNone)
+        self._customer_tbl.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._customer_tbl.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self._apply_list_column_layout()
         self._customer_tbl.setStyleSheet(self._table_qss("customerCenterCustomerTable", selected_green=True))
         self._customer_tbl.itemSelectionChanged.connect(self._on_customer_selection_changed)
         self._customer_tbl.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -605,6 +624,13 @@ QHeaderView::section {{
         details.addLayout(self._info_row("Company Name", self._d_company))
         details.addLayout(self._info_row("Full Name", self._d_full_name))
         details.addLayout(self._info_row("Bill To", self._d_bill_to))
+        self._chk_inactive = QCheckBox("Customer is inactive")
+        self._chk_inactive.setObjectName("customerCenterInactive")
+        self._chk_inactive.setToolTip(
+            "Hide this customer or job from the Active list. Invoices and payments stay."
+        )
+        self._chk_inactive.toggled.connect(self._on_inactive_checkbox)
+        details.addWidget(self._chk_inactive)
         details.addStretch(1)
         details_w = QWidget()
         details_w.setLayout(details)
@@ -797,11 +823,6 @@ QHeaderView::section {{
             "Contacts for this customer (name, email, phone from the customer record).",
         )
         self._right_tabs.addTab(self._contacts_page, "Contacts")
-        self._todos_page = self._placeholder_page(
-            "todos",
-            "No to do's for this customer.",
-        )
-        self._right_tabs.addTab(self._todos_page, "To Do's")
         notes_page = QWidget()
         notes_lay = QVBoxLayout(notes_page)
         notes_lay.setContentsMargins(8, 8, 8, 8)
@@ -812,11 +833,6 @@ QHeaderView::section {{
         self._notes_body.setToolTip("Internal notes. Use the pencil to edit the customer record.")
         notes_lay.addWidget(self._notes_body)
         self._right_tabs.addTab(notes_page, "Notes")
-        self._email_page = self._placeholder_page(
-            "email",
-            "No sent email for this customer.",
-        )
-        self._right_tabs.addTab(self._email_page, "Sent Email")
         lay.addWidget(self._right_tabs, 1)
         return wrap
 
@@ -874,12 +890,37 @@ QHeaderView::section {{
             self._customer_tbl.horizontalHeader().saveState(),
         )
 
+    def _apply_list_column_layout(self) -> None:
+        hdr = self._customer_tbl.horizontalHeader()
+        hdr.setStretchLastSection(False)
+        hdr.setSectionResizeMode(_COL_MARK, QHeaderView.ResizeMode.Fixed)
+        hdr.resizeSection(_COL_MARK, _LIST_MARK_PX)
+        hdr.setSectionResizeMode(_COL_BAL, QHeaderView.ResizeMode.Fixed)
+        hdr.resizeSection(_COL_BAL, _LIST_BAL_MIN_PX)
+        hdr.setSectionResizeMode(_COL_NAME, QHeaderView.ResizeMode.Interactive)
+
+    def _fit_list_columns(self) -> None:
+        """Name wide enough for parent/job; balance fits the number. No empty extra columns."""
+        hdr = self._customer_tbl.horizontalHeader()
+        hdr.setSectionResizeMode(_COL_MARK, QHeaderView.ResizeMode.Fixed)
+        hdr.resizeSection(_COL_MARK, _LIST_MARK_PX)
+        hdr.setSectionResizeMode(_COL_NAME, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(_COL_BAL, QHeaderView.ResizeMode.ResizeToContents)
+        self._customer_tbl.resizeColumnToContents(_COL_NAME)
+        self._customer_tbl.resizeColumnToContents(_COL_BAL)
+        bal_w = max(self._customer_tbl.columnWidth(_COL_BAL), _LIST_BAL_MIN_PX)
+        name_w = max(self._customer_tbl.columnWidth(_COL_NAME), 240)
+        hdr.setSectionResizeMode(_COL_BAL, QHeaderView.ResizeMode.Fixed)
+        hdr.resizeSection(_COL_BAL, bal_w)
+        leftover = self._customer_tbl.viewport().width() - _LIST_MARK_PX - bal_w
+        hdr.setSectionResizeMode(_COL_NAME, QHeaderView.ResizeMode.Interactive)
+        hdr.resizeSection(_COL_NAME, max(name_w, leftover, 240))
+
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
-        raw = QSettings().value(_CUSTOMER_HEADER_STATE_KEY)
-        if raw:
-            self._customer_tbl.horizontalHeader().restoreState(raw)
+        self._apply_list_column_layout()
         self._refresh()
+        self._fit_list_columns()
 
     def _focused_id(self) -> int:
         return int(self._focused_customer_id or 0)
@@ -967,6 +1008,10 @@ QHeaderView::section {{
         m.addAction("New Customer...", self._new_c)
         m.addAction("Add Job...", self._new_job)
         m.addAction("Edit Customer...", self._edit_c)
+        if idx.isValid():
+            m.addSeparator()
+            m.addAction("Make Inactive", lambda: self._set_inactive_for_targets(True))
+            m.addAction("Make Active", lambda: self._set_inactive_for_targets(False))
         m.exec(self._customer_tbl.viewport().mapToGlobal(pos))
 
     def _on_txn_context_menu(self, pos) -> None:
@@ -1046,7 +1091,10 @@ QHeaderView::section {{
         for r in all_rows:
             cid = int(r["customer_id"])
             name = (r.get("customer_name") or "").lower()
-            if q and q not in name:
+            if q:
+                if q not in name:
+                    continue
+            elif mode == _LIST_ACTIVE and bool(int(r.get("is_inactive") or 0)):
                 continue
             keep.add(cid)
         if q:
@@ -1087,9 +1135,25 @@ QHeaderView::section {{
             cid = int(r["customer_id"])
             nm = r.get("customer_name") or ""
             is_job = r.get("parent_customer_id") is not None
+            inactive = bool(int(r.get("is_inactive") or 0))
             shown = customer_center_job_display_name(nm) if is_job else nm
+            if inactive:
+                shown = f"{shown} (Inactive)"
+            mark = QTableWidgetItem("")
+            mark.setFlags(
+                Qt.ItemFlag.ItemIsEnabled
+                | Qt.ItemFlag.ItemIsSelectable
+                | Qt.ItemFlag.ItemIsUserCheckable
+            )
+            mark.setCheckState(Qt.CheckState.Unchecked)
+            mark.setData(_ROLE_CUSTOMER_ID, cid)
+            mark.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._customer_tbl.setItem(i, _COL_MARK, mark)
             it1 = _readonly_item(escape_ampersand_for_qt(shown))
             it1.setData(_ROLE_CUSTOMER_ID, cid)
+            if inactive:
+                it1.setForeground(QColor(_CC_EMPTY))
+                it1.setToolTip("Inactive — still on Find and invoices; hidden from Active.")
             self._customer_tbl.setItem(i, _COL_NAME, it1)
             bal = self._balance_total_for(cid)
             it2 = FloatSortTableItem(_fmt_money(bal), bal)
@@ -1097,10 +1161,6 @@ QHeaderView::section {{
             it2.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             it2.setData(_ROLE_CUSTOMER_ID, cid)
             self._customer_tbl.setItem(i, _COL_BAL, it2)
-            it3 = _readonly_item("")
-            it3.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            it3.setData(_ROLE_CUSTOMER_ID, cid)
-            self._customer_tbl.setItem(i, _COL_ATTACH, it3)
         ids = {int(r["customer_id"]) for r in rows}
         if self._focused_customer_id is not None and self._focused_customer_id not in ids:
             self._focused_customer_id = None
@@ -1112,6 +1172,7 @@ QHeaderView::section {{
             self._customer_tbl.clearSelection()
         self._apply_detail_from_focus()
         self._reload_txn_table()
+        self._fit_list_columns()
 
     def _select_customer_row(self, customer_id: int) -> None:
         self._customer_tbl.blockSignals(True)
@@ -1122,6 +1183,7 @@ QHeaderView::section {{
                     continue
                 if coerce_combo_int_id(it.data(_ROLE_CUSTOMER_ID)) == customer_id:
                     self._customer_tbl.selectRow(row)
+                    self._customer_tbl.scrollToItem(it)
                     break
         finally:
             self._customer_tbl.blockSignals(False)
@@ -1143,10 +1205,17 @@ QHeaderView::section {{
         billed_lines = [name]
         if addr:
             billed_lines.append(addr)
-        self._d_company.setText(escape_ampersand_for_qt(name))
-        self._d_full_name.setText(escape_ampersand_for_qt(name))
-        self._d_bill_to.setText(escape_ampersand_for_qt("\n".join(billed_lines)))
-        self._d_note.setText(escape_ampersand_for_qt(notes) if notes else "No note available")
+        self._applying_detail = True
+        self._chk_inactive.blockSignals(True)
+        try:
+            self._d_company.setText(escape_ampersand_for_qt(name))
+            self._d_full_name.setText(escape_ampersand_for_qt(name))
+            self._d_bill_to.setText(escape_ampersand_for_qt("\n".join(billed_lines)))
+            self._d_note.setText(escape_ampersand_for_qt(notes) if notes else "No note available")
+            self._chk_inactive.setChecked(business.customer_is_inactive(d))
+        finally:
+            self._chk_inactive.blockSignals(False)
+            self._applying_detail = False
         contact_bits = [name]
         if email:
             contact_bits.append(email)
@@ -1160,10 +1229,17 @@ QHeaderView::section {{
         self._notes_body.setPlainText(notes)
 
     def _clear_detail_card(self) -> None:
-        self._d_company.setText("—")
-        self._d_full_name.setText("—")
-        self._d_bill_to.setText("—")
-        self._d_note.setText("No note available")
+        self._applying_detail = True
+        self._chk_inactive.blockSignals(True)
+        try:
+            self._d_company.setText("—")
+            self._d_full_name.setText("—")
+            self._d_bill_to.setText("—")
+            self._d_note.setText("No note available")
+            self._chk_inactive.setChecked(False)
+        finally:
+            self._chk_inactive.blockSignals(False)
+            self._applying_detail = False
         self._notes_body.setPlainText("")
         contacts_lbl = self._contacts_page.findChild(QLabel, "customerCenterTabLabel_contacts")
         if contacts_lbl is not None:
@@ -1386,6 +1462,69 @@ QHeaderView::section {{
             escape_ampersand_for_qt(body),
             ok_tip="Close; double-click an invoice row to open Create Invoices.",
         )
+
+    def _checked_customer_ids(self) -> list[int]:
+        ids: list[int] = []
+        for row in range(self._customer_tbl.rowCount()):
+            it = self._customer_tbl.item(row, _COL_MARK)
+            if it is None or it.checkState() != Qt.CheckState.Checked:
+                continue
+            cid = coerce_combo_int_id(it.data(_ROLE_CUSTOMER_ID))
+            if cid is not None:
+                ids.append(cid)
+        return ids
+
+    def _target_customer_ids(self) -> list[int]:
+        checked = self._checked_customer_ids()
+        if checked:
+            return checked
+        if self._focused_customer_id is not None:
+            return [int(self._focused_customer_id)]
+        return []
+
+    def _set_inactive_for_targets(self, inactive: bool) -> None:
+        if self._conn is None:
+            return
+        ids = self._target_customer_ids()
+        if not ids:
+            message_box_warning_ok(
+                self,
+                "Customers",
+                "Select a customer or check rows, then Make Inactive or Make Active.",
+                ok_tip="Close; click a name or check the left column.",
+            )
+            return
+        try:
+            for cid in ids:
+                business.set_customer_inactive(self._conn, cid, inactive=inactive)
+        except (sqlite3.Error, ValueError) as exc:
+            message_box_warning_ok(
+                self,
+                "Customers",
+                escape_ampersand_for_qt(str(exc)),
+                ok_tip="Close and try again.",
+            )
+            return
+        self.customerRecordsChanged.emit()
+        self._refresh()
+
+    def _on_inactive_checkbox(self, checked: bool) -> None:
+        if self._applying_detail or self._conn is None or self._focused_customer_id is None:
+            return
+        try:
+            business.set_customer_inactive(
+                self._conn, self._focused_customer_id, inactive=bool(checked)
+            )
+        except (sqlite3.Error, ValueError) as exc:
+            message_box_warning_ok(
+                self,
+                "Customers",
+                escape_ampersand_for_qt(str(exc)),
+                ok_tip="Close and try again.",
+            )
+            return
+        self.customerRecordsChanged.emit()
+        self._refresh()
 
     def _job_parent_id(self) -> int | None:
         if self._focused_customer_id is None:

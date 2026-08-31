@@ -962,6 +962,10 @@ def run_edit_customer_dialog(
         parent_cb.setVisible(is_job)
 
     type_cb.currentIndexChanged.connect(lambda _i=None: sync_parent_visibility())
+    inactive_chk = QCheckBox("Customer is inactive")
+    inactive_chk.setToolTip(
+        "Hide this customer or job from the Active list. Invoices stay."
+    )
 
     def load_customer(_index: int | None = None) -> None:
         cid = coerce_combo_int_id(cb.currentData())
@@ -988,6 +992,7 @@ def run_edit_customer_dialog(
             type_cb.setCurrentIndex(0)
         type_cb.blockSignals(False)
         sync_parent_visibility()
+        inactive_chk.setChecked(business.customer_is_inactive(rd))
 
     def sync_customer_combo() -> None:
         _sync_filtered_entity_combo(
@@ -1015,6 +1020,7 @@ def run_edit_customer_dialog(
     f.addRow("Phone", ph)
     f.addRow("Address", ad)
     f.addRow("Notes", no)
+    f.addRow("", inactive_chk)
     bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
     _tip_dialog_ok_cancel(bb, "Save changes to the selected customer.")
     bb.accepted.connect(d.accept)
@@ -1064,6 +1070,7 @@ def run_edit_customer_dialog(
             notes=no.toPlainText().strip(),
             parent_customer_id=parent_id,
         )
+        business.set_customer_inactive(conn, cid, inactive=inactive_chk.isChecked())
     except ValueError as exc:
         message_box_warning_ok(
             parent,
@@ -1161,6 +1168,8 @@ def run_edit_vendor_dialog(
     no.setToolTip("Internal notes about this vendor (optional).")
     irs = QCheckBox("1099 vendor")
     irs.setToolTip("Mark if this vendor should be included in 1099-style reporting.")
+    inactive_chk = QCheckBox("Vendor is inactive")
+    inactive_chk.setToolTip("Hide this vendor from the Active list. Bills stay.")
 
     def load_vendor(_index: int | None = None) -> None:
         vid = coerce_combo_int_id(cb.currentData())
@@ -1175,6 +1184,7 @@ def run_edit_vendor_dialog(
         ad.setPlainText(row["address"] or "")
         no.setPlainText(row["notes"] or "")
         irs.setChecked(bool(int(row["is_1099"] or 0)))
+        inactive_chk.setChecked(business.vendor_is_inactive(row))
 
     def sync_vendor_combo() -> None:
         _sync_filtered_entity_combo(
@@ -1202,6 +1212,7 @@ def run_edit_vendor_dialog(
     f.addRow("Address", ad)
     f.addRow("Notes", no)
     f.addRow("", irs)
+    f.addRow("", inactive_chk)
     bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
     _tip_dialog_ok_cancel(bb, "Save changes to the selected vendor.")
     bb.accepted.connect(d.accept)
@@ -1231,6 +1242,7 @@ def run_edit_vendor_dialog(
             notes=no.toPlainText().strip(),
             is_1099=irs.isChecked(),
         )
+        business.set_vendor_inactive(conn, vid, inactive=inactive_chk.isChecked())
     except ValueError as exc:
         message_box_warning_ok(
             parent,

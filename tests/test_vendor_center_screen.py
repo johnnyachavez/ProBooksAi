@@ -90,9 +90,7 @@ def test_vendor_center_qb_chrome(qapp: QApplication) -> None:
     assert [right.tabText(i) for i in range(right.count())] == [
         "Transactions",
         "Contacts",
-        "To Do's",
         "Notes",
-        "Sent Email",
     ]
 
     show = w.findChild(QComboBox, "vendorCenterShow")
@@ -110,9 +108,10 @@ def test_vendor_center_qb_chrome(qapp: QApplication) -> None:
 
     vtbl = w.findChild(QTableWidget, "vendorCenterVendorTable")
     assert vtbl is not None
-    assert vtbl.columnCount() == 4
+    assert vtbl.columnCount() == 3
     assert vtbl.horizontalHeaderItem(1).text() == "NAME"
     assert vtbl.horizontalHeaderItem(2).text() == "BALANCE TOTAL"
+    assert w.findChild(QPushButton, "vendorCenterMakeInactive") is not None
 
     ttbl = w.findChild(QTableWidget, "vendorCenterTxnTable")
     assert ttbl is not None
@@ -330,3 +329,23 @@ def test_vendor_center_main_window_wires_signals(qapp: QApplication, tmp_path: P
         assert w._check_screen._fld_payee.currentData() == vid
     finally:
         w.close()
+
+
+def test_vendor_center_active_hides_inactive_search_finds_them(
+    qapp: QApplication, db: BankDatabase
+) -> None:
+    v1 = business.add_vendor(db._conn, "Office Supplies Co")
+    v2 = business.add_vendor(db._conn, "Warehouse Supply")
+    business.set_vendor_inactive(db._conn, v2, inactive=True)
+    w = VendorCenterScreen(db._conn)
+    names = [w._vendor_tbl.item(r, 1).text() for r in range(w._vendor_tbl.rowCount())]
+    assert "Office Supplies Co" in names
+    assert "Warehouse Supply" not in names
+    w._search.setText("Warehouse")
+    names2 = [w._vendor_tbl.item(r, 1).text() for r in range(w._vendor_tbl.rowCount())]
+    assert any("Warehouse Supply" in n for n in names2)
+    w._search.clear()
+    w._list_filter.setCurrentText("All Vendors")
+    names3 = [w._vendor_tbl.item(r, 1).text() for r in range(w._vendor_tbl.rowCount())]
+    assert any("Warehouse Supply (Inactive)" in n for n in names3)
+    assert business.get_vendor(db._conn, v1) is not None

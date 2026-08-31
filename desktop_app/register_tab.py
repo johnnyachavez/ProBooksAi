@@ -46,6 +46,7 @@ import csv
 import hashlib
 import warnings
 import sqlite3
+from datetime import date, timedelta
 from functools import partial
 from pathlib import Path
 from typing import Callable, Optional
@@ -195,6 +196,7 @@ _HEADERS = [
 
 # Visible grid rows when there are fewer saved transactions (editable practice rows, UI-only).
 _REGISTER_MIN_VISIBLE_ROWS = 20
+REGISTER_DEFAULT_RANGE_DAYS = 90
 _REGISTER_HEADERS_FULL = _HEADERS + [""]
 
 # Payee and COA each use this fraction of the viewport slack left after other visible columns
@@ -909,6 +911,7 @@ class RegisterTab(QWidget):
         self._one_line = False
         self._sort_mode = "date_type_ref"
         self._draft_snapshot: dict | None = None
+        self._range_extend_days = 0
         self._build_ui()
 
     def _build_ui(self):
@@ -1057,6 +1060,26 @@ class RegisterTab(QWidget):
         self._restore_register_filter_from_settings()
         self._filter_combo.currentIndexChanged.connect(self._on_register_filter_changed)
         controls.addWidget(self._filter_combo)
+        controls.addSpacing(12)
+        lbl_range = QLabel("Dates:")
+        lbl_range.setToolTip("Default is the last 90 days so this tab opens quickly.")
+        controls.addWidget(lbl_range)
+        self._range_combo = QComboBox()
+        self._range_combo.setObjectName("bankRegisterDateRange")
+        self._range_combo.addItem("Last 90 days", REGISTER_DEFAULT_RANGE_DAYS)
+        self._range_combo.addItem("Last 30 days", 30)
+        self._range_combo.addItem("This year", -1)
+        self._range_combo.addItem("All dates", 0)
+        self._range_combo.setToolTip(
+            "Default last 90 days. Older loads the previous 90 days. All dates loads the full register."
+        )
+        self._range_combo.currentIndexChanged.connect(self._on_register_range_changed)
+        controls.addWidget(self._range_combo)
+        self._btn_older = QPushButton("Older")
+        self._btn_older.setObjectName("bankRegisterOlder")
+        self._btn_older.setToolTip("Load the previous 90 days into this register.")
+        self._btn_older.clicked.connect(self._on_register_older)
+        controls.addWidget(self._btn_older)
         controls.addStretch(1)
         _cw_lay.addLayout(controls)
         layout.addWidget(_controls_wrap)
@@ -1310,10 +1333,11 @@ class RegisterTab(QWidget):
             # while a sibling tab becomes current; ``self._db`` already points at a closed
             # ``BankDatabase``. The new tab built by ``_assemble_main_tabs`` will refresh.
             return
-        try:
-            self._refresh_account_combo()
-        except sqlite3.ProgrammingError:
-            return
+        if self._current_account_id is None:
+            try:
+                self._refresh_account_combo()
+            except sqlite3.ProgrammingError:
+                return
         raw = QSettings().value(self._register_table_header_state_key())
         if raw:
             self._table.horizontalHeader().restoreState(raw)
@@ -1491,6 +1515,32 @@ class RegisterTab(QWidget):
             str(d if d is not None else "all"),
         )
         self._reload_current()
+
+    def _on_register_range_changed(self) -> None:
+        self._range_extend_days = 0
+        self._reload_current()
+
+    def _on_register_older(self) -> None:
+        data = self._range_combo.currentData()
+        if data == 0:
+            return
+        self._range_extend_days += REGISTER_DEFAULT_RANGE_DAYS
+        self._reload_current()
+
+    def _register_statement_start(self) -> Optional[str]:
+        data = self._range_combo.currentData()
+        extra = int(getattr(self, "_range_extend_days", 0) or 0)
+        today = date.today()
+        if data == 0:
+            return None
+        if data == -1:
+            start = date(today.year, 1, 1) - timedelta(days=extra)
+            return start.isoformat()
+        try:
+            days = int(data)
+        except (TypeError, ValueError):
+            days = REGISTER_DEFAULT_RANGE_DAYS
+        return (today - timedelta(days=days + extra)).isoformat()
 
     def _refresh_account_combo(self):
         if not self._is_db_alive():
@@ -2751,8 +2801,11 @@ class RegisterTab(QWidget):
         )
 
     def _load_transactions(self, bank_account_id: int):
+        start = self._register_statement_start()
         rows = self._db.list_transactions(
-            bank_account_id, register_filter=self._register_filter_param()
+            bank_account_id,
+            statement_start=start,
+            register_filter=self._register_filter_param(),
         )
         rec_map = _batch_reconciled_map(self._db._conn, rows)
         self._populating = True
@@ -2782,6 +2835,8 @@ class RegisterTab(QWidget):
         self._table.setRowCount(n_vis)
 
         running = 0.0
+        if start:
+            running = self._db.sum_amount_before(bank_account_id, start)
         total_debits = 0.0
         total_credits = 0.0
 
@@ -3049,8 +3104,13 @@ class RegisterTab(QWidget):
         self._populating = False
         self._table.setSortingEnabled(True)
         net = total_debits - total_credits
-        ending = running if rows else None  # last running balance after all rows
+        try:
+            ending = self._db.sum_amount_for_account(bank_account_id)
+        except sqlite3.Error:
+            ending = running if rows else None
         self._set_footer(total_debits, total_credits, net, ending_balance=ending)
+        all_dates = self._range_combo.currentData() == 0
+        self._btn_older.setEnabled(not all_dates)
 
     def _set_footer(self, debits: float, credits: float, net: float,
                     ending_balance: float | None = None) -> None:

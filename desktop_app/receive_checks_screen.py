@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMenu,
@@ -816,11 +817,33 @@ class ReceiveChecksScreen(QWidget):
         combo = self._customer_filter
         if combo.count() <= 1:
             return
-        idx = combo.currentIndex()
-        if idx <= 1:
-            combo.setCurrentIndex(combo.count() - 1)
-        else:
-            combo.setCurrentIndex(idx - 1)
+        text, ok = QInputDialog.getText(
+            self,
+            "Find customer",
+            "Customer or job name (includes inactive):",
+        )
+        if not ok:
+            return
+        needle = (text or "").strip().lower()
+        if not needle:
+            return
+        hit = None
+        for i in range(combo.count()):
+            if combo.itemData(i) is None:
+                continue
+            label = (combo.itemText(i) or "").lower()
+            if needle in label:
+                hit = i
+                break
+        if hit is None:
+            message_box_information_ok(
+                self,
+                "Find customer",
+                f"No customer or job matches “{needle}”.",
+                ok_tip="Close; try another name (inactive names are included).",
+            )
+            return
+        combo.setCurrentIndex(hit)
 
     def _populate_customer_filter(self) -> None:
         prev = coerce_combo_int_id(self._customer_filter.currentData())
