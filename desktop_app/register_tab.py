@@ -737,8 +737,9 @@ def _register_keyboard_shortcuts_help_text() -> str:
         "Ctrl+Shift+C — Mark cleared (selected rows)\n"
         "Ctrl+Shift+U — Clear cleared (selected rows)\n"
         "\n"
-        "Document Intake:\n"
-        "Help → Document intake shortcuts… (includes File → Backup / Restore via probooks.backup).\n"
+        "Invoice documents:\n"
+        "Create Invoices (print/PDF) and Invoice Intake (dispatch spreadsheet). "
+        "There is no document-AI inbox for invoice PDFs.\n"
         "\n"
         "COA, Journal, Reports, Audit:\n"
         "Help → More tab shortcuts (F5)…\n"
@@ -1099,7 +1100,7 @@ class RegisterTab(QWidget):
         )
         self._recon_banner.setToolTip(
             "Statement line-match overlay is on: second line of **Match** shows Matched / Missing / Extra (demo). "
-            "Use **Bank Import** (View menu) for compare / line reconciliation; **Document Intake** and **Bank Import** tabs appear while this mode is on. "
+            "Use **Reconcile → Bank statements** for compare / line reconciliation. "
             "Turn recon mode off with the **Reconciliation mode** checkbox on the main tab bar (when Bank register is active). "
             "View → Bank Register (Ctrl+7); run/compare from Reconcile → Bank import (Ctrl+Shift+R)."
         )

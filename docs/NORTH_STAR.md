@@ -86,13 +86,13 @@ Build a clean, QuickBooks-style bookkeeping app with:
 ---
 
 ## Recon-only Tabs
-- Document Intake
-- Bank Import
+- Bank Import (CSV / PDF / paste statements under **Reconcile → Bank statements**)
+- Statement intake (review)
 
 **Rules**
-- MUST NOT appear in normal mode
-- ONLY exist when recon mode = ON
-- Must be **added/removed dynamically** (not hidden)
+- MUST NOT appear as a document-AI invoice inbox
+- Bank statement import stays on the Reconcile hub
+- Invoice documents use **Create Invoices** / **Invoice Intake** (dispatch spreadsheet), not Document Intake
 
 ---
 
@@ -173,7 +173,7 @@ Navigation links to:
 ## Known Fixes Required
 1. Remove pop-out editors in register (force inline editing)
 2. Ensure HOME tab exists and is first
-3. Remove Document Intake / Bank Import from normal mode
+3. Document Intake (invoice AI inbox) is removed from the desktop; Bank Import stays under Reconcile
 4. Keep recon toggle always visible (register only)
 5. Fix overlapping text in Bank Import UI
 6. Maintain static tab structure (no dynamic tab swapping)
@@ -200,4 +200,4 @@ There was prior discussion/notes that conflict with this spec (e.g., “no HOME 
 **This document is the current source of truth.** In particular:
 - **HOME tab exists and is first**
 - Reconciliation is an **overlay** on the Bank Register via a toggle
-- Recon-only tabs (**Document Intake**, **Bank Import**) are **dynamic** and appear only when recon mode is ON
+- Recon hub tabs (**Bank Import**, **Statement intake (review)**) stay on **Reconcile**; invoice documents use **Create Invoices** / **Invoice Intake**, not Document Intake

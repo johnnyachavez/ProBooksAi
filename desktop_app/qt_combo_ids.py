@@ -8,25 +8,20 @@ selected row / context-menu **transaction ids** from table ``UserRole``, suggest
 F5 batch re-select; reconciliation tolerance slider re-finds the current batch by id;
 **Match overlay** forward to Register coerces the signal account id; **StatementLineMatchPanel** run uses
 coerced batch ``bank_account_id`` for ``list_transactions`` / emit), **Chart of Accounts**
-and **Journal** list ``UserRole``, **Audit** entity id filter field + log grid column, **Document Intake**
-inbox doc id, **Business** table helpers
+and **Journal** list ``UserRole``, **Audit** entity id filter field + log grid column, **Business** table helpers
 (invoice/bill/rule/pay-run row ids; **Edit** invoice/bill coerces **customer_id** / **vendor_id** from SQLite;
 **Rules** edit matches list rows to SQLite ids; filtered customer/vendor
 combos; AR/AP payment dialogs; allocation row ids; payment bank row), and **Payroll** (new pay run
 employee id; payment bank restore with ``start=1``; GL post matches the run grid row to ``_run_rows`` by id)
 so ``int`` vs ``str`` (or similar) mismatches from SQLite / Qt do not break lookups.
 When building Qt rows from SQLite, invalid ids are **skipped** (row lists / combos omit those rows)
-for **COA**, **Manage bank accounts**, **Document Intake** inbox, **Rules** and **AR/AP/Payroll** grids,
+for **COA**, **Manage bank accounts**, **Rules** and **AR/AP/Payroll** grids,
 **AR/AP** payment bank combos and allocation tables, and **batch reconciled** lookups in the register helper, **Register** bank-account combo reload (skip bad rows),
 per-row **transaction id** on the Date cell and **batch_id** for **Clr** / CSV export, and **Bank Import** register preview **UserRole** on import rows.
 **Journal** entry list items, **Bank Import** top **bank account** combo and **batch** table (full batch list kept for lookups; grid omits invalid ids), **Register** transfer counterparty combo and **Link payment** manual record combo, and **Payroll** new-run employee combo / run tax-line grid use the same coercion.
-**Document Intake** inbox **selected_doc_id** falls back to **coerce_combo_int_id** on visible cell text; **Register** link-payment suggestions omit rows whose **link_id** will not coerce; **Bank Import** stores the table-selected **batch** id as the coerced **bid** and validates account ids on delete/update.
+**Register** link-payment suggestions omit rows whose **link_id** will not coerce; **Bank Import** stores the table-selected **batch** id as the coerced **bid** and validates account ids on delete/update.
 **Business** hub restores **AR/AP** payment bank + customer/vendor combos and the **sub-tab index** from ``QSettings`` via **coerce_combo_int_id** (invalid stored values are ignored or treated as 0).
 AR/AP invoice and bill grids use the same helper in ``_table_row_entity_id`` for ``QTABLE_PLAIN_TEXT_ROLE`` and visible cell text when ``UserRole`` is unset.
-**Document Intake** ``DetailPane.load_document`` coerces the incoming id, then calls ``get_document`` / ``get_approved`` / ``get_latest_extraction`` with the coerced value; invalid or missing rows reset the pane via ``clear_view``.
-**MainWindow** intake slots (**Run AI**, **Approve**, **Posted**, **Reject**, and AI worker **done** / **error**) coerce the signal ``doc_id`` the same way before any ``DocumentDatabase`` writes.
-``MainWindow._refresh_inbox`` repopulates the table then calls ``_on_selection_changed`` so the detail pane matches the current row (or clears when nothing valid is selected); ``_on_ai_done`` runs ``_refresh_inbox`` before ``populate_ai_result`` so that sync does not wipe freshly filled AI fields.
-Clearing the inbox selection calls ``DetailPane.clear_view`` so the right pane does not keep showing a stale document.
 """
 
 from __future__ import annotations

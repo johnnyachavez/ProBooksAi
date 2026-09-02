@@ -1,4 +1,4 @@
-﻿"""
+"""
 ProBooks+ai desktop application
 ===============================
 Run with:
@@ -12,23 +12,19 @@ Requires PySide6:
 
 ``--help`` prints the shared epilog from ``probooks/help_epilog.py`` (Excel COA workbook, backup parity, UTF-8 BOM CSV exports, bank CSV UTF-8 optional BOM read, ``probooks import csv``; see README Desktop + Excel template).
 
-The **central** **QWidget** (banner + tab widget) has a margin hover hint. Document Intake uses **File → Import documents…** (Ctrl+O) and **F5** (when the tab has focus) instead of a main toolbar. Document Intake: **F5** refreshes the inbox; **Help → Document intake shortcuts…** (``message_box_information_ok`` **Ok** tooltip) and inbox **right-click**
-**Keyboard shortcuts…** (including empty area) match that dialog. The **InboxWidget** grid has a hover **tooltip**
-(import, drag-and-drop, F5, shortcuts). The intake **QSplitter** has a resize hint on hover. **DetailPane** (**QScrollArea**) has a window-level hover hint; its inner **QWidget** has a content-area hint; preview, extracted **LineEdit** / spin fields, **Doc Type**,
-**COA Account**, **AI confidence** / **rationale** labels, and action buttons use **tooltips**.
-**Preview** / **Extracted Fields** / **Categorisation** group boxes and the **filename** / **status** labels
-also have hover hints. The banner **AppHeaderWidget** (**QFrame**) right-aligns **ProBooks+ai** and the company **QLabel**s with tooltips; the **ProBooks+ai** label tooltip includes the installed package **version** (matches the window title and **Help → About**).
-**Help → About** uses ``message_box_about_ok`` (rich text + **Ok** hover hint). The **status bar** opens with a **Ready** line (drag/drop, Bank Import pointer, **File → Backup**) plus **ProBooks+ai** and the installed package **version**; **Company:** updates replace that line when a database path exists. The main **QTabWidget** sets a **setToolTip** on the tab strip area; its tab bar sets **setTabToolTip** on each top-level tab (Intake through Audit log). **Document Intake**’s root **QWidget** has a hover hint for the whole tab; the inbox **column** **QWidget** (left splitter pane) has a short margin hint.
+The **central** **QWidget** (banner + tab widget) has a margin hover hint. Invoice PDFs for billing are created from **Create Invoices** (print/export) and dispatch rows on **Invoice Intake**; they are not imported through a document-AI inbox. Bank statement CSV/PDF/paste lives on **Reconcile → Bank statements** and **Statement intake (review)**.
+The banner **AppHeaderWidget** (**QFrame**) right-aligns **ProBooks+ai** and the company **QLabel**s with tooltips; the **ProBooks+ai** label tooltip includes the installed package **version** (matches the window title and **Help → About**).
+**Help → About** uses ``message_box_about_ok`` (rich text + **Ok** hover hint). The **status bar** opens with a **Ready** line (Bank Import pointer, **File → Backup**) plus **ProBooks+ai** and the installed package **version**; **Company:** updates replace that line when a database path exists. The main **QTabWidget** sets a **setToolTip** on the tab strip area; its tab bar sets **setTabToolTip** on each top-level tab.
 Destructive **Yes**/**No** prompts (new company file exists, database restore) use **tip_message_box_buttons** for button hover hints and **QMessageBox.setToolTip** for the dialog window.
 
 Main window **menu bar**: each ``QAction`` uses ``setStatusTip`` for the **status bar** and the same text via ``setToolTip`` for hover (``_menu_action_tip`` helper).
 Top-level menus: **File** (includes **New Company…** — the guided setup wizard that captures identity + new ``.db`` + sibling backup folder; on first launch with no saved company path, a welcome prompt routes here), **View**, **Edit**, **Tools** (e.g. **Invoice…** Ctrl+Shift+I to the **Invoices** tab), **Recon** (bank register bulk actions in submenus), **Help**.
 """
 
+
 from __future__ import annotations
 
 import argparse
-import mimetypes
 import os
 import sqlite3
 import sys
@@ -38,32 +34,22 @@ from pathlib import Path
 from PySide6.QtCore import (
     Qt,
     QEvent,
-    QMimeData,
     QObject,
     QSettings,
-    QThread,
     QTimer,
     QUrl,
-    Signal,
     qInstallMessageHandler,
 )
 from PySide6.QtGui import (
     QAction,
-    QColor,
     QDesktopServices,
-    QDragEnterEvent,
-    QDropEvent,
-    QIcon,
     QKeySequence,
-    QPixmap,
-    QShortcut,
 )
 from PySide6.QtWidgets import (
-    QApplication, QComboBox, QDialog, QDoubleSpinBox, QFileDialog,
-    QFormLayout, QFrame, QGroupBox, QHBoxLayout, QLabel,
-    QLineEdit, QMainWindow, QMenu, QMessageBox, QPlainTextEdit,
-    QPushButton, QScrollArea, QSizePolicy, QSplitter,
-    QStatusBar, QTabWidget, QTableWidget,
+    QApplication, QDialog, QFileDialog,
+    QFrame, QHBoxLayout, QLabel,
+    QMainWindow, QMenu, QMessageBox,
+    QStatusBar, QTabWidget,
     QVBoxLayout, QWidget,
 )
 
@@ -71,8 +57,7 @@ from probooks.backup import backup_database, restore_database
 from probooks.help_epilog import EXCEL_COA_WORKBOOK_ARGPARSE_EPILOG
 from probooks.paths import default_intake_db_path
 from probooksai.database import DocumentDatabase
-from probooksai.html_escape import escape_html_text
-from probooksai.coa import coa_display_list, load_coa
+from probooksai.coa import load_coa
 from probooksai.bank_import import BankDatabase
 from probooksai.coa_db import COADatabase
 from probooksai.extensions_schema import apply_extensions
@@ -91,11 +76,6 @@ from desktop_app.bank_statement_intake_panel import BankStatementIntakePanel
 from probooksai.bank_statement_intake_ai_provider import build_default_ai_provider
 from desktop_app.coa_tab import COATab, is_bank_like_coa
 from desktop_app.use_register_dialog import UseRegisterDialog
-from desktop_app.flexible_date import (
-    attach_line_edit_us_date_normalization,
-    format_iso_to_us_display,
-    line_edit_to_iso_or_raw,
-)
 from desktop_app.register_tab import RegisterTab, show_register_keyboard_shortcuts_dialog
 from desktop_app.reports_tab import ReportsTab
 from desktop_app.journal_tab import JournalTab
@@ -127,734 +107,29 @@ from desktop_app.theme import (
     MAIN_WORKSPACE_TAB_BAR_OBJECT_NAME,
     MAIN_WORKSPACE_TABS_OBJECT_NAME,
     apply_dark_theme,
-    STATUS_COLORS as THEME_STATUS_COLORS,
 )
 from desktop_app.version import application_version
 from desktop_app.local_docs import resolve_local_roadmap_path
 from desktop_app.more_main_tabs_shortcuts import (
     show_more_main_tabs_keyboard_shortcuts_dialog,
 )
-from desktop_app.qt_combo_ids import coerce_combo_int_id
-from desktop_app.table_clipboard import (
-    CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX,
-    IntSortTableItem,
-    VIEW_BANK_REGISTER_KEYS_TOOLTIP,
-    copy_table_row_as_tsv,
-    plain_display_table_item,
-    table_cell_clipboard_text,
-)
 from desktop_app.qt_mnemonic import (
     escape_ampersand_for_qt,
     message_box_about_ok,
     message_box_critical_ok,
     message_box_information_ok,
-    message_box_question_yes_no,
     message_box_warning_ok,
     tip_message_box_buttons,
 )
 
 
-def _document_intake_keyboard_shortcuts_help_text() -> str:
-    """Plain text for **Help → Document intake shortcuts…** (aligned with **F5** / **InboxWidget**)."""
-    return (
-        "These shortcuts apply when Document Intake or its controls have focus:\n\n"
-        "Menu bar: hover File, View, Edit, Tools, Recon, Reports, Help to see shortcut and action hints "
-        "in the status bar and on hover for each menu item.\n\n"
-        "F5 — Refresh the document list when Document Intake has focus.\n\n"
-        "Detail pane: Run AI, Approve, Mark Posted, and Reject have short descriptions on hover.\n\n"
-        "File menu:\n"
-        "Ctrl+O — Import documents… (PDF/images; same command as File menu).\n"
-        "Backup company file… / Restore from backup… — SQLite online backup (probooks.backup), "
-        "same path as the CLI; no default shortcuts — hover each action for status-bar tips.\n\n"
-        "View menu:\n"
-        "Ctrl+1 Invoices, Ctrl+2 Codes, Ctrl+3 Write Checks, Ctrl+4–Ctrl+0 other main tabs, Ctrl+Shift+R Reconcile, Ctrl+Shift+M More "
-        "(Reports, Journal, Business, Audit log) — all tabs share the open "
-        "company SQLite file (File → Backup / Restore, probooks.backup). "
-        "Use **Reconcile** (Ctrl+Shift+R) → **Bank statements** for statement import and **Bank Register** (Ctrl+7) for the Match overlay.\n\n"
-        "**Recon** menu — **Bank register** bulk row actions (add transaction, post to GL, export CSV, cleared, "
-        "attachments, splits, transfer, link payment, open linked Business record, receipt flags) when you use Bank Register (Ctrl+7). "
-        "**Tools** menu — open **Invoice…** (Ctrl+Shift+I; top-level Invoices tab).\n\n"
-        "CSV exports on Bank Import (reconciliation report and line-compare), Register, Reports, Journal, Business, "
-        "and Audit use UTF-8 with BOM for Excel.\n"
-        "Bank Import Import CSV… reads bank statement CSV as UTF-8 with optional BOM.\n\n"
-        "Right-click the inbox grid (including empty area) for Keyboard shortcuts… "
-        "(same as this dialog).\n\n"
-        "COA, Journal, Reports, Audit:\n"
-        "Help → More tab shortcuts (F5)…\n\n"
-        "Business:\n"
-        "Help → Business shortcuts…\n\n"
-        "Bank workflows:\n"
-        "Help → Bank import shortcuts… (batch preview, AI line reconciliation).\n"
-        "Help → Bank register keyboard shortcuts…\n"
-    )
-
-
-def show_document_intake_keyboard_shortcuts_dialog(parent: QWidget) -> None:
-    message_box_information_ok(
-        parent,
-        "Document intake shortcuts",
-        _document_intake_keyboard_shortcuts_help_text(),
-        ok_tip="Close; shortcuts apply when Document Intake has focus. "
-        "Bank CSV/PDF and AI line reconciliation: Ctrl+Shift+R Reconcile → Bank statements; "
-        "Register Match overlay: Ctrl+7 Bank Register; register bulk actions: Recon menu. "
-        "Company .db: File → Backup / Restore (probooks.backup).",
-    )
-
-
-# Accepted MIME types / file extensions
-ACCEPTED_MIMES = {"application/pdf", "image/jpeg", "image/png"}
-ACCEPTED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png"}
-
-STATUS_COLORS = THEME_STATUS_COLORS
-
-INBOX_HEADER_COLOR = "#1F3864"  # dark navy – matches ProBooks+ai branding
-
-# Intake-adjacent tooltips: bank import lives under the Reconcile top-level tab (View Ctrl+Shift+R).
-_BANK_IMPORT_VIEW_POINTER = (
-    "Bank CSV/PDF and AI line reconciliation: Reconcile tab → Bank statements (View → Reconcile, Ctrl+Shift+R). "
-)
+# Navy banner colour – matches ProBooks+ai branding
+INBOX_HEADER_COLOR = "#1F3864"
 
 # Temporary status bar duration after Bank Import → Register **Match overlay** sync.
 _STMT_MATCH_SYNC_STATUS_MS = 8000
 
 COMPANY_NAME = ""  # blank-safe placeholder until a company database is opened
-
-
-# ---------------------------------------------------------------------------
-# Background worker – runs AI extraction off the UI thread
-# ---------------------------------------------------------------------------
-
-class AIWorker(QThread):
-    finished = Signal(object, object)   # (ExtractionResult, CategorySuggestions | None)
-    error    = Signal(str)
-
-    def __init__(self, doc_id: int, path: str, mimetype: str, coa: list):
-        super().__init__()
-        self._doc_id  = doc_id
-        self._path    = path
-        self._mimetype = mimetype
-        self._coa     = coa
-
-    def run(self):
-        try:
-            from ai.extractor import extract_document
-            from ai.categorizer import suggest_categories
-
-            result = extract_document(self._path, self._mimetype)
-            if result.error:
-                self.error.emit(result.error)
-                return
-
-            suggestions = suggest_categories(result, self._coa)
-            self.finished.emit(result, suggestions)
-        except Exception as exc:  # noqa: BLE001
-            self.error.emit(str(exc))
-
-
-# ---------------------------------------------------------------------------
-# Inbox list (left panel)
-# ---------------------------------------------------------------------------
-
-class InboxWidget(QTableWidget):
-    """Displays imported documents with their statuses.
-
-    Context menu actions set **setToolTip** for **Keyboard shortcuts…** and **Copy row**.
-    """
-
-    COLUMNS = ["#", "Filename", "Type", "Status", "Date"]
-
-    filesDropped = Signal(list)
-    deleteRequested = Signal(int)   # emitted with doc_id when user confirms delete
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setColumnCount(len(self.COLUMNS))
-        self.setHorizontalHeaderLabels(self.COLUMNS)
-        self.horizontalHeader().setStretchLastSection(False)
-        self.horizontalHeader().setDefaultSectionSize(110)
-        self.setColumnWidth(0, 40)
-        self.setColumnWidth(1, 220)
-        self.setColumnWidth(2, 80)
-        self.setColumnWidth(3, 110)
-        self.setColumnWidth(4, 120)
-        self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.setAlternatingRowColors(True)
-        self.verticalHeader().setVisible(False)
-        self.setAcceptDrops(True)
-        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.customContextMenuRequested.connect(self._on_context_menu)
-        self.setSortingEnabled(True)
-        self.setToolTip(
-            "Imported documents: click a row to open it in the detail pane. "
-            "Drag PDF or image files here to import. F5 refreshes the list. "
-            + _BANK_IMPORT_VIEW_POINTER
-            + "Right-click for Keyboard shortcuts… (including on empty area). "
-            "Rows live in the company SQLite file (File → Backup / probooks backup)."
-        )
-
-    def _on_context_menu(self, pos):
-        idx = self.indexAt(pos)
-        m = QMenu(self)
-        act_keys = m.addAction(
-            "Keyboard shortcuts…",
-            lambda: show_document_intake_keyboard_shortcuts_dialog(self),
-        )
-        act_keys.setToolTip(
-            "Same summary as Help → Document intake shortcuts… "
-            "(F5, Ctrl+O, View chords, UTF-8 BOM CSV notes, Bank import pointers in Help). "
-            + VIEW_BANK_REGISTER_KEYS_TOOLTIP
-            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
-        )
-        if not idx.isValid():
-            m.exec(self.viewport().mapToGlobal(pos))
-            return
-        row = idx.row()
-        it = self.item(row, 0)
-        doc_id = (
-            coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole)) if it is not None else None
-        )
-        m.addSeparator()
-        act_copy = m.addAction("Copy row", partial(copy_table_row_as_tsv, self, row))
-        act_copy.setToolTip(
-            "Copy this inbox row as tab-separated text for pasting into a spreadsheet or editor. "
-            + CLIPBOARD_DB_BACKUP_TOOLTIP_SUFFIX
-        )
-        m.addSeparator()
-        act_delete = m.addAction("🗑  Delete document…")
-        act_delete.setToolTip(
-            "Permanently delete this document and its extraction data from the company file. "
-            "The original file on disk is NOT removed. Use File → Backup first if unsure."
-        )
-        if doc_id is None:
-            act_delete.setEnabled(False)
-        chosen = m.exec(self.viewport().mapToGlobal(pos))
-        if chosen == act_delete and doc_id is not None:
-            self.deleteRequested.emit(doc_id)
-
-    # -- drag & drop ---------------------------------------------------------
-
-    def dragEnterEvent(self, event: QDragEnterEvent):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-        else:
-            event.ignore()
-
-    def dragMoveEvent(self, event):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-
-    def dropEvent(self, event: QDropEvent):
-        urls = event.mimeData().urls()
-        paths = [u.toLocalFile() for u in urls if u.isLocalFile()]
-        if paths:
-            self.filesDropped.emit(paths)
-
-    # -- population ----------------------------------------------------------
-
-    def populate(self, rows: list):
-        packed = [
-            (did, row)
-            for row in rows
-            if (did := coerce_combo_int_id(row["id"])) is not None
-        ]
-        self.setSortingEnabled(False)
-        self.setRowCount(len(packed))
-        for r, (did, row) in enumerate(packed):
-            id_cell = IntSortTableItem(str(did), did)
-            id_cell.setData(Qt.ItemDataRole.UserRole, did)
-            self.setItem(r, 0, id_cell)
-            fn = row["filename"] or ""
-            self.setItem(r, 1, plain_display_table_item(fn))
-            mime = row["mimetype"] or ""
-            doc_type = "PDF" if "pdf" in mime else "Image"
-            self.setItem(r, 2, plain_display_table_item(doc_type))
-            status = row["status"]
-            status_item = plain_display_table_item(str(status or ""))
-            color = STATUS_COLORS.get(status, "#000000")
-            status_item.setForeground(QColor(color))
-            self.setItem(r, 3, status_item)
-            date_str = (row["import_date"] or "")[:10]
-            self.setItem(r, 4, plain_display_table_item(date_str))
-        self.setSortingEnabled(True)
-
-    def selected_doc_id(self) -> int | None:
-        rows = self.selectedItems()
-        if not rows:
-            return None
-        r = self.currentRow()
-        it = self.item(r, 0)
-        if it is not None:
-            eid = coerce_combo_int_id(it.data(Qt.ItemDataRole.UserRole))
-            if eid is not None:
-                return eid
-        raw = table_cell_clipboard_text(self, r, 0).strip()
-        if not raw:
-            return None
-        return coerce_combo_int_id(raw)
-
-
-# ---------------------------------------------------------------------------
-# Detail pane (right panel)
-# ---------------------------------------------------------------------------
-
-_COA_SELECT_LABEL = "– select –"
-
-
-class DetailPane(QScrollArea):
-    """Shows document preview + extracted fields + action buttons."""
-
-    runAI         = Signal(int)    # doc_id
-    approve       = Signal(int)
-    markPosted    = Signal(int)
-    reject        = Signal(int)
-    routeToInvoice = Signal(dict)  # extracted field values
-    routeToBill    = Signal(dict)
-
-    def __init__(self, coa_list: list[str], parent=None):
-        super().__init__(parent)
-        self._doc_id: int | None = None
-        self._coa_list = coa_list
-
-        inner = QWidget()
-        inner.setToolTip(
-            "Preview, extracted fields, categorization, and action buttons for the selected inbox row (scroll when content is tall). "
-            "Bank statement CSV/PDF import is on Bank Import (View menu). "
-            "Approve/Posted values write to the company SQLite file (File → Backup / probooks backup)."
-        )
-        self.setWidget(inner)
-        self.setWidgetResizable(True)
-        self.setToolTip(
-            "Scroll the detail pane: preview, extracted fields, categorization, and workflow actions for the selected inbox row. "
-            "Bank statement CSV/PDF import is on Bank Import (View menu). "
-            "Same company .db as the rest of the app (File → Backup / Restore)."
-        )
-
-        layout = QVBoxLayout(inner)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(10)
-
-        # -- Document info ---------------------------------------------------
-        self._lbl_filename = QLabel("No document selected")
-        self._lbl_filename.setTextFormat(Qt.TextFormat.PlainText)
-        self._lbl_filename.setStyleSheet("font-weight: bold; font-size: 14px;")
-        self._lbl_filename.setToolTip(
-            "File name of the document selected in the inbox (left list)."
-        )
-        layout.addWidget(self._lbl_filename)
-
-        self._lbl_status = QLabel("")
-        self._lbl_status.setToolTip(
-            "Workflow status for the selected document (e.g. new, approved, posted)."
-        )
-        layout.addWidget(self._lbl_status)
-
-        # -- Preview ---------------------------------------------------------
-        preview_group = QGroupBox("Preview")
-        preview_group.setToolTip(
-            "Visual preview of the selected document (first page or image) when available."
-        )
-        preview_layout = QVBoxLayout(preview_group)
-        self._preview_label = QLabel("(Select a document to preview)")
-        self._preview_label.setTextFormat(Qt.TextFormat.PlainText)
-        self._preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._preview_label.setMinimumHeight(180)
-        self._preview_label.setStyleSheet("background: #f0f0f0; border: 1px solid #ccc;")
-        self._preview_label.setToolTip(
-            "First-page or image preview for the selected document when available."
-        )
-        preview_layout.addWidget(self._preview_label)
-        layout.addWidget(preview_group)
-
-        # -- Extracted fields ------------------------------------------------
-        fields_group = QGroupBox("Extracted Fields")
-        fields_group.setToolTip(
-            "Values from AI extraction or prior approval; edit before Approve or Run AI again."
-        )
-        form = QFormLayout(fields_group)
-
-        self._f_vendor   = QLineEdit()
-        self._f_vendor.setToolTip(
-            "Counterparty name from the document (editable; Approve saves with other fields)."
-        )
-        self._f_doctype  = QComboBox()
-        self._f_doctype.addItems(["invoice", "bill", "receipt", "credit_note", "other"])
-        self._f_doctype.setToolTip(
-            "Document kind for workflow and fields (invoice, bill, receipt, etc.)."
-        )
-        self._f_inv_num  = QLineEdit()
-        self._f_inv_num.setToolTip("Invoice, bill, or reference number from extraction.")
-        self._f_date     = QLineEdit()
-        self._f_date.setPlaceholderText("MM/DD/YYYY")
-        self._f_date.setToolTip(
-            "Document date: type flexibly (e.g. 5/21/26, 05.21.26, 052126); "
-            "normalized to MM/DD/YYYY on commit. Stored as YYYY-MM-DD."
-        )
-        attach_line_edit_us_date_normalization(self._f_date)
-        self._f_due_date = QLineEdit()
-        self._f_due_date.setPlaceholderText("MM/DD/YYYY (optional)")
-        self._f_due_date.setToolTip(
-            "Due or pay-by date if present on the document: type flexibly "
-            "(e.g. 5/21/26, 05.21.26, 052126); normalized to MM/DD/YYYY on commit."
-        )
-        attach_line_edit_us_date_normalization(self._f_due_date)
-        self._f_subtotal = QDoubleSpinBox()
-        self._f_subtotal.setMaximum(9_999_999)
-        self._f_subtotal.setDecimals(2)
-        self._f_subtotal.setToolTip("Amount before tax.")
-        self._f_tax      = QDoubleSpinBox()
-        self._f_tax.setMaximum(9_999_999)
-        self._f_tax.setDecimals(2)
-        self._f_tax.setToolTip("Tax amount for this document (not the percentage rate).")
-        self._f_total    = QDoubleSpinBox()
-        self._f_total.setMaximum(9_999_999)
-        self._f_total.setDecimals(2)
-        self._f_total.setToolTip("Grand total including tax.")
-        self._f_currency = QLineEdit()
-        self._f_currency.setMaxLength(3)
-        self._f_currency.setFixedWidth(55)
-        self._f_currency.setToolTip("ISO-style three-letter code (e.g. USD).")
-        self._f_notes    = QPlainTextEdit()
-        self._f_notes.setFixedHeight(60)
-        self._f_notes.setToolTip("Memo or notes from extraction; editable before Approve.")
-
-        form.addRow("Vendor / Customer:", self._f_vendor)
-        form.addRow("Doc Type:", self._f_doctype)
-        form.addRow("Invoice #:", self._f_inv_num)
-        form.addRow("Date:", self._f_date)
-        form.addRow("Due Date:", self._f_due_date)
-        form.addRow("Subtotal:", self._f_subtotal)
-        form.addRow("Tax:", self._f_tax)
-        form.addRow("Total:", self._f_total)
-        form.addRow("Currency:", self._f_currency)
-        form.addRow("Notes:", self._f_notes)
-
-        layout.addWidget(fields_group)
-
-        # -- Categorisation --------------------------------------------------
-        cat_group = QGroupBox("Categorisation Suggestions")
-        cat_group.setToolTip(
-            "Suggested chart-of-accounts line and tax label from Run AI; confidence and rationale update here."
-        )
-        cat_layout = QFormLayout(cat_group)
-
-        self._f_coa      = QComboBox()
-        self._fill_coa_combo(coa_list)
-        self._f_coa.setEditable(True)
-        self._f_coa.setToolTip(
-            "Chart of accounts line for this document; choose from the list or type to match."
-        )
-        self._f_tax_cat  = QLineEdit()
-        self._f_tax_cat.setToolTip("Optional tax bucket or category label when your workflow uses it.")
-        self._f_confidence = QLabel("–")
-        self._f_confidence.setToolTip(
-            "Model-reported confidence for the suggested COA and tax category (after Run AI)."
-        )
-
-        cat_layout.addRow("COA Account:", self._f_coa)
-        cat_layout.addRow("Tax Category:", self._f_tax_cat)
-        cat_layout.addRow("AI Confidence:", self._f_confidence)
-
-        self._lbl_rationale = QLabel("")
-        self._lbl_rationale.setTextFormat(Qt.TextFormat.PlainText)
-        self._lbl_rationale.setWordWrap(True)
-        self._lbl_rationale.setStyleSheet("color: #555; font-style: italic;")
-        self._lbl_rationale.setToolTip(
-            "Short explanation from the categorization model for the suggested accounts."
-        )
-        cat_layout.addRow("Rationale:", self._lbl_rationale)
-
-        layout.addWidget(cat_group)
-
-        # -- Action buttons --------------------------------------------------
-        btn_layout = QHBoxLayout()
-        self._btn_run     = QPushButton("\u26a1 Run AI")
-        self._btn_approve = QPushButton("\u2705 Approve")
-        self._btn_post    = QPushButton("\U0001f4e4 Mark Posted")
-        self._btn_reject  = QPushButton("\u274c Reject")
-
-        self._btn_run.setToolTip(
-            "Run AI extraction and categorisation for the selected document."
-        )
-        self._btn_approve.setToolTip(
-            "Save the current fields and COA account as approved values."
-        )
-        self._btn_post.setToolTip("Mark this document as posted in the workflow.")
-        self._btn_reject.setToolTip("Mark this document as needing review.")
-
-        for btn in (self._btn_run, self._btn_approve, self._btn_post, self._btn_reject):
-            btn.setMinimumHeight(32)
-            btn_layout.addWidget(btn)
-
-        self._btn_run.setStyleSheet("background: #2196F3; color: white; font-weight: bold;")
-        self._btn_approve.setStyleSheet("background: #4CAF50; color: white; font-weight: bold;")
-        self._btn_post.setStyleSheet("background: #607D8B; color: white; font-weight: bold;")
-        self._btn_reject.setStyleSheet("background: #F44336; color: white; font-weight: bold;")
-
-        self._btn_run.clicked.connect(self._on_run_ai)
-        self._btn_approve.clicked.connect(self._on_approve)
-        self._btn_post.clicked.connect(self._on_post)
-        self._btn_reject.clicked.connect(self._on_reject)
-
-        layout.addLayout(btn_layout)
-
-        # Route buttons \u2014 push extracted fields directly to Invoice or Bills screen
-        route_layout = QHBoxLayout()
-        self._btn_route_invoice = QPushButton("\U0001f4c4 Create Invoice")
-        self._btn_route_invoice.setMinimumHeight(32)
-        self._btn_route_invoice.setToolTip(
-            "Pre-fill the Invoices tab with extracted fields and switch to it."
-        )
-        self._btn_route_invoice.setStyleSheet(
-            "background: #1565C0; color: white; font-weight: bold;"
-        )
-        self._btn_route_invoice.clicked.connect(self._on_route_invoice)
-
-        self._btn_route_bill = QPushButton("\U0001f4e5 Enter as Bill")
-        self._btn_route_bill.setMinimumHeight(32)
-        self._btn_route_bill.setToolTip(
-            "Pre-fill the Enter Bills tab with extracted fields and switch to it."
-        )
-        self._btn_route_bill.setStyleSheet(
-            "background: #6A1B9A; color: white; font-weight: bold;"
-        )
-        self._btn_route_bill.clicked.connect(self._on_route_bill)
-
-        route_layout.addWidget(self._btn_route_invoice)
-        route_layout.addWidget(self._btn_route_bill)
-        layout.addLayout(route_layout)
-        layout.addStretch()
-
-        self._set_buttons_enabled(False)
-
-    # -- public interface ----------------------------------------------------
-
-    def load_document(self, doc_id: int, db: DocumentDatabase):
-        did = coerce_combo_int_id(doc_id)
-        if did is None:
-            self.clear_view()
-            return
-        self._doc_id = did
-        row = db.get_document(did)
-        if not row:
-            self.clear_view()
-            return
-        self._lbl_filename.setText(escape_ampersand_for_qt(row["filename"]))
-        status = row["status"]
-        color  = STATUS_COLORS.get(status, "#000")
-        safe_status = escape_html_text(status)
-        self._lbl_status.setTextFormat(Qt.TextFormat.RichText)
-        self._lbl_status.setText(f"Status: <b style='color:{color}'>{safe_status}</b>")
-
-        self._show_preview(row["stored_path"], row["mimetype"], row["page_count"])
-
-        # Fill from approved values if present, else from extraction
-        approved = db.get_approved(did)
-        extraction = db.get_latest_extraction(did)
-        src = approved or extraction
-        self._populate_fields(src)
-
-        # Categorisation
-        if approved:
-            self._set_coa_combo_raw(approved["coa_account"])
-            self._f_tax_cat.setText(approved["tax_category"] or "")
-
-        self._set_buttons_enabled(True)
-
-    def populate_ai_result(self, result, suggestions=None):
-        """Fill the form with AI extraction + categorisation results."""
-        self._populate_fields_from_extraction(result)
-        if suggestions and not suggestions.error:
-            s_coa = (suggestions.coa_account or "").strip()
-            if s_coa:
-                idx = self._f_coa.findData(s_coa, Qt.ItemDataRole.UserRole)
-                if idx >= 0:
-                    self._f_coa.setCurrentIndex(idx)
-                else:
-                    self._f_coa.setCurrentIndex(-1)
-                    self._f_coa.setEditText(s_coa)
-            else:
-                self._f_coa.setCurrentIndex(0)
-            self._f_tax_cat.setText(suggestions.tax_category or "")
-            conf = suggestions.confidence
-            self._f_confidence.setText(f"{conf:.0%}")
-            self._lbl_rationale.setText(suggestions.rationale or "")
-
-    def collect_approved_values(self) -> dict:
-        """Return the current form values as a dict for saving."""
-        return {
-            "vendor":         self._f_vendor.text().strip() or None,
-            "doc_type":       self._f_doctype.currentText(),
-            "invoice_number": self._f_inv_num.text().strip() or None,
-            "doc_date":       (line_edit_to_iso_or_raw(self._f_date) or None),
-            "due_date":       (line_edit_to_iso_or_raw(self._f_due_date) or None),
-            "subtotal":       self._f_subtotal.value() or None,
-            "tax":            self._f_tax.value() or None,
-            "total":          self._f_total.value() or None,
-            "currency":       self._f_currency.text().strip() or "USD",
-            "notes":          self._f_notes.toPlainText().strip() or None,
-            "coa_account":    self._coa_combo_raw_value(),
-            "tax_category":   self._f_tax_cat.text().strip() or None,
-        }
-
-    # -- private helpers -----------------------------------------------------
-
-    def _show_preview(self, stored_path: str, mimetype: str, page_count):
-        if mimetype and mimetype.startswith("image/"):
-            pix = QPixmap(stored_path)
-            if not pix.isNull():
-                pix = pix.scaled(
-                    400, 300,
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
-                )
-                self._preview_label.setPixmap(pix)
-                self._preview_label.setText("")
-                return
-        elif mimetype == "application/pdf":
-            pages = page_count or "?"
-            self._preview_label.setPixmap(QPixmap())
-            self._preview_label.setText(
-                "\U0001f4c4 PDF document\n"
-                f"{escape_ampersand_for_qt(Path(stored_path).name)}\n{pages} page(s)"
-            )
-            return
-        self._preview_label.setPixmap(QPixmap())
-        self._preview_label.setText("(No preview available)")
-
-    def _populate_fields(self, row):
-        if not row:
-            return
-        self._f_vendor.setText(row["vendor"] or "")
-        idx = self._f_doctype.findText(row["doc_type"] or "")
-        if idx >= 0:
-            self._f_doctype.setCurrentIndex(idx)
-        self._f_inv_num.setText(row["invoice_number"] or "")
-        self._f_date.setText(format_iso_to_us_display(row["doc_date"] or ""))
-        self._f_due_date.setText(format_iso_to_us_display(row["due_date"] or ""))
-        self._f_subtotal.setValue(float(row["subtotal"] or 0))
-        self._f_tax.setValue(float(row["tax"] or 0))
-        self._f_total.setValue(float(row["total"] or 0))
-        self._f_currency.setText(row["currency"] or "USD")
-        self._f_notes.setPlainText(row["notes"] or "")
-
-    def _populate_fields_from_extraction(self, result):
-        self._f_vendor.setText(result.vendor or "")
-        idx = self._f_doctype.findText(result.doc_type or "")
-        if idx >= 0:
-            self._f_doctype.setCurrentIndex(idx)
-        self._f_inv_num.setText(result.invoice_number or "")
-        self._f_date.setText(format_iso_to_us_display(result.doc_date or ""))
-        self._f_due_date.setText(format_iso_to_us_display(result.due_date or ""))
-        self._f_subtotal.setValue(float(result.subtotal or 0))
-        self._f_tax.setValue(float(result.tax or 0))
-        self._f_total.setValue(float(result.total or 0))
-        self._f_currency.setText(result.currency or "USD")
-        self._f_notes.setPlainText(result.notes or "")
-        self._f_confidence.setText(f"{result.confidence:.0%}")
-
-    def _set_buttons_enabled(self, enabled: bool):
-        for btn in (
-            self._btn_run, self._btn_approve, self._btn_post, self._btn_reject,
-            self._btn_route_invoice, self._btn_route_bill,
-        ):
-            btn.setEnabled(enabled)
-
-    # -- button slots --------------------------------------------------------
-
-    def _on_run_ai(self):
-        if self._doc_id is not None:
-            self.runAI.emit(self._doc_id)
-
-    def _on_approve(self):
-        if self._doc_id is not None:
-            self.approve.emit(self._doc_id)
-
-    def _on_post(self):
-        if self._doc_id is not None:
-            self.markPosted.emit(self._doc_id)
-
-    def _on_reject(self):
-        if self._doc_id is not None:
-            self.reject.emit(self._doc_id)
-
-    def _on_route_invoice(self):
-        if self._doc_id is not None:
-            self.routeToInvoice.emit(self.collect_approved_values())
-
-    def _on_route_bill(self):
-        if self._doc_id is not None:
-            self.routeToBill.emit(self.collect_approved_values())
-
-    def update_coa(self, coa_list: list[str]):
-        """Refresh the COA dropdown with an updated list."""
-        current = self._coa_combo_raw_value()
-        self._fill_coa_combo(coa_list)
-        self._set_coa_combo_raw(current)
-
-    def _fill_coa_combo(self, coa_list: list[str]) -> None:
-        self._f_coa.clear()
-        self._f_coa.addItem(
-            escape_ampersand_for_qt(_COA_SELECT_LABEL), ""
-        )
-        for coa in coa_list:
-            c = (coa or "").strip()
-            if not c:
-                continue
-            self._f_coa.addItem(escape_ampersand_for_qt(c), c)
-
-    def _coa_combo_raw_value(self) -> str | None:
-        i = self._f_coa.currentIndex()
-        if i == 0:
-            return None
-        if i > 0:
-            data = self._f_coa.itemData(i, Qt.ItemDataRole.UserRole)
-            if data is not None and str(data).strip():
-                return str(data).strip()
-        t = self._f_coa.currentText().strip()
-        if not t or t == _COA_SELECT_LABEL:
-            return None
-        return t
-
-    def _set_coa_combo_raw(self, raw: str | None) -> None:
-        if self._f_coa.count() == 0:
-            return
-        if not (raw or "").strip():
-            self._f_coa.setCurrentIndex(0)
-            return
-        r = raw.strip()
-        idx = self._f_coa.findData(r, Qt.ItemDataRole.UserRole)
-        if idx >= 0:
-            self._f_coa.setCurrentIndex(idx)
-        else:
-            self._f_coa.setCurrentIndex(-1)
-            self._f_coa.setEditText(r)
-
-    def clear_view(self):
-        """Reset the detail pane when switching company database."""
-        self._doc_id = None
-        self._lbl_filename.setText("No document selected")
-        self._lbl_status.setTextFormat(Qt.TextFormat.PlainText)
-        self._lbl_status.setText("")
-        self._preview_label.setPixmap(QPixmap())
-        self._preview_label.setText("(Select a document to preview)")
-        self._f_vendor.clear()
-        if self._f_doctype.count() > 0:
-            self._f_doctype.setCurrentIndex(0)
-        self._f_inv_num.clear()
-        self._f_date.clear()
-        self._f_due_date.clear()
-        self._f_subtotal.setValue(0.0)
-        self._f_tax.setValue(0.0)
-        self._f_total.setValue(0.0)
-        self._f_currency.setText("USD")
-        self._f_notes.clear()
-        self._f_tax_cat.clear()
-        self._f_confidence.setText("\u2013")
-        self._lbl_rationale.clear()
-        if self._f_coa.count() > 0:
-            self._f_coa.setCurrentIndex(0)
-        self._set_buttons_enabled(False)
 
 
 # ---------------------------------------------------------------------------
@@ -894,8 +169,8 @@ class AppHeaderWidget(QFrame):
         )
         _ver = application_version()
         lbl_app.setToolTip(
-            "ProBooks+ai — document intake, bank workflows (Bank Import: AI line reconciliation, "
-            "Match overlay sync to Register), ledger, and business tools. "
+            "ProBooks+ai — bank workflows (Bank Import: AI line reconciliation, "
+            "Match overlay sync to Register), Create Invoices / Invoice Intake, ledger, and business tools. "
             f"Version {_ver} (window title and Help → About). "
             "File → Backup copies the open company .db (probooks.backup / probooks backup)."
         )
@@ -1025,7 +300,6 @@ class MainWindow(QMainWindow):
         self._coa_db = COADatabase(self._bank_db._conn)
         self._coa_db.seed_from_workbook()
         self._coa = load_coa()
-        self._worker: AIWorker | None = None
         # Set True for the duration of ``_switch_company_database`` so any
         # ``showEvent`` fired on an old tab during ``_teardown_main_tabs_for_rebuild``
         # can short-circuit before querying the just-closed ``BankDatabase``.
@@ -1045,7 +319,6 @@ class MainWindow(QMainWindow):
             pass  # non-fatal — journal entries will be created on next save
 
         self._build_ui()
-        self._refresh_inbox()
         self._update_company_status()
 
     def _restore_main_window_geometry(self) -> None:
@@ -1187,87 +460,6 @@ class MainWindow(QMainWindow):
         outer._reload_ar = _reload  # attach for external refresh calls
         return outer
 
-    def _build_document_intake_widget(self) -> None:
-        """Build the Document Intake UI (hosted under Reconcile → Documents)."""
-        intake_widget = QWidget()
-        intake_widget.setToolTip(
-            "Document Intake: import files, pick an inbox row, then review extraction and categorization on the right. "
-            "F5 refreshes the list when this tab has focus. "
-            "Bank CSV/PDF and AI line reconciliation: Reconcile → Bank statements. "
-            "Help → Document intake shortcuts lists File → Backup/Restore (probooks.backup)."
-        )
-        intake_layout = QVBoxLayout(intake_widget)
-        intake_layout.setContentsMargins(0, 0, 0, 0)
-        intake_layout.setSpacing(0)
-
-        doc_guidance = QLabel(
-            "<b>Documents</b> — import PDFs or images (File → Import or drag-and-drop), then review extraction on the right. "
-            "For <b>bank CSV/PDF statements</b> and register reconciliation, use the <b>Bank statements</b> subtab."
-        )
-        doc_guidance.setTextFormat(Qt.TextFormat.RichText)
-        doc_guidance.setWordWrap(True)
-        doc_guidance.setStyleSheet("color: #A0A0B0; font-size: 12px; padding: 0 0 8px 0;")
-        doc_guidance.setToolTip(
-            "Same document pipeline as before; statement workflows stay on Bank statements so intake feels unified."
-        )
-
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-
-        left = QWidget()
-        left.setToolTip(
-            "Document inbox column: header and file list for the selected company; drag the splitter to resize against the detail pane. "
-            + _BANK_IMPORT_VIEW_POINTER
-            + "Same company .db as other tabs; File → Backup / Restore (probooks.backup)."
-        )
-        left_layout = QVBoxLayout(left)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(0)
-
-        lbl_inbox = QLabel("  Document Inbox")
-        lbl_inbox.setStyleSheet(
-            f"background: {INBOX_HEADER_COLOR}; color: white; font-weight: bold; "
-            "font-size: 13px; padding: 6px;"
-        )
-        lbl_inbox.setToolTip(
-            "Imported documents: pick a row to load extraction and categorization in the detail pane. "
-            "Bank statement files: Reconcile → Bank statements (View → Reconcile, Ctrl+Shift+R). "
-            "Back up the company file from File → Backup / probooks backup before bulk deletes or experiments."
-        )
-        left_layout.addWidget(lbl_inbox)
-
-        self._inbox = InboxWidget()
-        self._inbox.filesDropped.connect(self._on_files_dropped)
-        self._inbox.itemSelectionChanged.connect(self._on_selection_changed)
-        self._inbox.deleteRequested.connect(self._on_delete_document)
-        left_layout.addWidget(self._inbox)
-
-        splitter.addWidget(left)
-
-        coa_display = coa_display_list(self._coa)
-        self._detail = DetailPane(coa_display)
-        self._detail.runAI.connect(self._on_run_ai)
-        self._detail.approve.connect(self._on_approve)
-        self._detail.markPosted.connect(self._on_mark_posted)
-        self._detail.reject.connect(self._on_reject)
-        self._detail.routeToInvoice.connect(self._on_route_to_invoice)
-        self._detail.routeToBill.connect(self._on_route_to_bill)
-        splitter.addWidget(self._detail)
-
-        splitter.setSizes([380, 720])
-        splitter.setToolTip(
-            "Drag the handle to resize the document inbox and the extraction detail pane. "
-            "Bank workflows (CSV/PDF, AI line reconciliation) use Reconcile → Bank statements. "
-            "Both sides use the same company SQLite file (File → Backup / probooks backup)."
-        )
-        intake_layout.addWidget(doc_guidance)
-        intake_layout.addWidget(splitter)
-
-        sc_intake_f5 = QShortcut(QKeySequence("F5"), intake_widget)
-        sc_intake_f5.setContext(Qt.WidgetWithChildrenShortcut)
-        sc_intake_f5.activated.connect(self._refresh_inbox)
-
-        self._intake_widget = intake_widget
-
     def _assemble_main_tabs(self) -> None:
         """Default-order top-level strip + More hub (Reports, Journal, Business, Audit). Drag to reorder; order is remembered."""
         conn = self._bank_db._conn
@@ -1339,11 +531,10 @@ class MainWindow(QMainWindow):
 
         self._reconcile_hub = QTabWidget()
         self._reconcile_hub.setToolTip(
-            "Reconcile: bank statement import, AI line reconciliation, and document intake. "
+            "Reconcile: bank statement import, AI line reconciliation, and AR invoices. "
             "Same company .db (File → Backup / Restore, probooks.backup)."
         )
         self._reconcile_hub.addTab(self._bank_tab, "Bank statements")
-        self._reconcile_hub.addTab(self._intake_widget, "Documents")
         self._ar_recon_widget = self._build_ar_recon_panel(conn)
         self._reconcile_hub.addTab(self._ar_recon_widget, "AR / Invoices")
         self._reconcile_hub.addTab(
@@ -1352,21 +543,22 @@ class MainWindow(QMainWindow):
 
         self._reconcile_root = QWidget()
         self._reconcile_root.setToolTip(
-            "Reconcile: intake (statements or documents), then review and match against Bank Register. "
+            "Reconcile: bank statement CSV/PDF/paste, then review and match against Bank Register. "
             "Same company .db (File → Backup / Restore, probooks.backup)."
         )
         reconcile_root_layout = QVBoxLayout(self._reconcile_root)
         reconcile_root_layout.setContentsMargins(8, 8, 8, 0)
         reconcile_root_layout.setSpacing(6)
         reconcile_banner = QLabel(
-            "<b>Reconcile</b> — Bank statements (import/match), Documents (intake), and <b>AR / Invoices</b> (receive payment)."
+            "<b>Reconcile</b> — Bank statements (CSV/PDF/paste import and match), Statement intake (review), and <b>AR / Invoices</b> (receive payment)."
         )
         reconcile_banner.setTextFormat(Qt.TextFormat.RichText)
         reconcile_banner.setWordWrap(True)
         reconcile_banner.setStyleSheet("color: #A0A0B0; font-size: 12px;")
         reconcile_banner.setToolTip(
-            "Bank statements: CSV/PDF/paste and AI line reconciliation. Documents: inbox and extraction. "
-            "No change to import or reconciliation logic."
+            "Bank statements: CSV/PDF/paste and AI line reconciliation. "
+            "Invoice PDFs are printed from Create Invoices; dispatch rows use Invoice Intake. "
+            "No document-AI inbox."
         )
         reconcile_root_layout.addWidget(reconcile_banner)
         reconcile_root_layout.addWidget(self._reconcile_hub, stretch=1)
@@ -1740,7 +932,7 @@ class MainWindow(QMainWindow):
                 + _main_tab_bar_db_hint
             ),
             "reconcile": (
-                "Reconcile: Bank statements (CSV/PDF, AI line reconciliation, Match overlay sync) and Documents."
+                "Reconcile: Bank statements (CSV/PDF/paste, AI line reconciliation, Match overlay sync) and Statement intake (review)."
                 + _tab_bar_csv_excel_hint
                 + _main_tab_bar_db_hint
             ),
@@ -1770,7 +962,7 @@ class MainWindow(QMainWindow):
                 main_tab_bar.setTabToolTip(i, tip)
 
     def _teardown_main_tabs_for_rebuild(self) -> None:
-        """Remove main tabs and dispose widgets except the shared Document Intake root widget.
+        """Remove main tabs and dispose their widgets.
 
         No explicit signal disconnect is needed: ``RegisterTab`` is destroyed
         below via ``deleteLater`` and Qt drops its signal connections on
@@ -1779,17 +971,10 @@ class MainWindow(QMainWindow):
         ``main.py`` — calling ``disconnect()`` with nothing connected produces
         a ``RuntimeWarning`` in PySide6, which only added noise.
         """
-        rh = getattr(self, "_reconcile_hub", None)
-        iw = getattr(self, "_intake_widget", None)
-        if rh is not None and iw is not None:
-            ix = rh.indexOf(iw)
-            if ix >= 0:
-                rh.removeTab(ix)
-            iw.setParent(None)
         while self._tabs.count() > 0:
             w = self._tabs.widget(0)
             self._tabs.removeTab(0)
-            if w is not None and w is not iw:
+            if w is not None:
                 # Detach from the QTabWidget hierarchy *before* deleteLater so
                 # the next ``removeTab(0)`` cannot mark this widget visible and
                 # fire a stray ``showEvent`` against a now-closed DB connection
@@ -1808,6 +993,7 @@ class MainWindow(QMainWindow):
             "Main workspace: drag tabs to reorder (order is remembered next launch). "
             "Home, Income Tracker, Bill Tracker, Calendar, Company Snapshot, My Company, Invoices through More. "
             "Bank Import and Register host statement reconciliation, AI line reconciliation, and Register Match overlay. "
+            "Invoice documents are created on Create Invoices / Invoice Intake (dispatch), not a document-AI inbox. "
             "All tabs share the open SQLite company file (File → Backup / Restore, probooks.backup)."
         )
         container_layout = QVBoxLayout(container)
@@ -1827,7 +1013,6 @@ class MainWindow(QMainWindow):
             "(CLI: probooks backup / restore)."
         )
 
-        self._build_document_intake_widget()
         self._assemble_main_tabs()
         self._apply_main_tab_bar_tooltips()
         self._wire_register_bank_match_navigation()
@@ -1841,14 +1026,11 @@ class MainWindow(QMainWindow):
         _boot_ver = application_version()
         self._status_bar.showMessage(
             escape_ampersand_for_qt(
-                "Ready \u2013 drag & drop or use Import; bank CSV/PDF and AI line reconciliation: "
+                "Ready \u2013 bank CSV/PDF/paste and AI line reconciliation: "
                 "Reconcile → Bank statements (Ctrl+Shift+R); File → Backup saves the company .db."
             )
             + f" ProBooks+ai v{_boot_ver}."
         )
-
-        # Drag & drop on the main window itself
-        self.setAcceptDrops(True)
 
     # -- menu bar ------------------------------------------------------------
 
@@ -1889,19 +1071,6 @@ class MainWindow(QMainWindow):
         )
         act_company_info.triggered.connect(self._on_company_info)
         file_menu.addAction(act_company_info)
-
-        file_menu.addSeparator()
-
-        act_import_docs = QAction("&Import documents\u2026", self)
-        act_import_docs.setShortcut("Ctrl+O")
-        _menu_action_tip(
-            act_import_docs,
-            "Import PDF or images into the document inbox (Ctrl+O). "
-            + _BANK_IMPORT_VIEW_POINTER
-            + "Back up the company .db from File → Backup / probooks backup before risky changes.",
-        )
-        act_import_docs.triggered.connect(self._on_import)
-        file_menu.addAction(act_import_docs)
 
         file_menu.addSeparator()
 
@@ -1973,7 +1142,7 @@ class MainWindow(QMainWindow):
             14: " Chart of Accounts editor.",
             15: " AR: customers, invoices, payments (primary route; Business hub is Rules/Payroll/Tax %).",
             16: " AP: vendors, bills, payments (primary route; Business hub is Rules/Payroll/Tax %).",
-            17: " Reconcile: Bank statements + Documents (intake → review/match).",
+            17: " Reconcile: Bank statements, Statement intake (review), AR / Invoices.",
             18: " Reports, Journal, Business, Audit log.",
         }
         for tab_idx, (sc, label) in [
@@ -2277,19 +1446,6 @@ class MainWindow(QMainWindow):
         )
         act_roadmap.triggered.connect(self._on_help_roadmap)
         help_menu.addAction(act_roadmap)
-        act_intake_keys = QAction("Document &intake shortcuts…", self)
-        _menu_action_tip(
-            act_intake_keys,
-            "F5 refresh, Ctrl+O import, File → Backup/Restore (probooks.backup), View chords; "
-            "the dialog summarizes UTF-8 BOM CSV exports on Bank Import (batch preview + AI line reconciliation), "
-            "Register, Reports, Journal, Business, and Audit; "
-            "Bank Import Import CSV… reads UTF-8 optional BOM; links to other Help topics. "
-            "View → Bank Import and Register status tips mention AI line reconciliation and Match overlay.",
-        )
-        act_intake_keys.triggered.connect(
-            lambda: show_document_intake_keyboard_shortcuts_dialog(self)
-        )
-        help_menu.addAction(act_intake_keys)
         act_bank_import_keys = QAction("Bank &import shortcuts…", self)
         _menu_action_tip(
             act_bank_import_keys,
@@ -2297,7 +1453,7 @@ class MainWindow(QMainWindow):
             "line-reconciliation grid: statement/register date, amount, description, register txn id, open linked Business when Reg # has a complete bank link, double-click when Reg # is set for the same prompts; "
             "Ctrl+Shift+B on preview or line grid when focused); "
             "Import CSV reads UTF-8 with optional BOM; reconciliation / line-compare CSV uses UTF-8 BOM for Excel. "
-            "Document intake help lists File backup/restore.",
+            "File → Backup / Restore uses probooks.backup.",
         )
         act_bank_import_keys.triggered.connect(
             lambda: show_bank_import_keyboard_shortcuts_dialog(self)
@@ -2311,7 +1467,7 @@ class MainWindow(QMainWindow):
             "Recon menu lists Register Actions, Reconciliation, Attachments, Transaction Tools, and Flags (same handlers as the old register buttons). "
             "Link payment dialog includes Open linked Business when the stored link is complete. "
             "Help dialog links to Bank import for AI line-reconciliation field copies. "
-            "Document intake help lists File backup/restore.",
+            "File → Backup / Restore uses probooks.backup.",
         )
         act_register_keys.triggered.connect(
             lambda: show_register_keyboard_shortcuts_dialog(self)
@@ -2321,7 +1477,7 @@ class MainWindow(QMainWindow):
         _menu_action_tip(
             act_business_keys,
             "F5, Tax % Ctrl+S, and Business tab context menus; CSV exports use UTF-8 BOM for Excel. "
-            "Document intake help lists File backup/restore.",
+            "File → Backup / Restore uses probooks.backup.",
         )
         act_business_keys.triggered.connect(
             lambda: show_business_keyboard_shortcuts_dialog(self)
@@ -2333,7 +1489,7 @@ class MainWindow(QMainWindow):
             "F5 refresh and View chords for COA, Journal, Reports, and Audit; "
             "the dialog summarizes UTF-8 BOM CSV exports, row copy menus on Bank register / Import preview "
             "and the Bank Import line-reconciliation grid, and cross-links Register, Business, and Bank Import. "
-            "Document intake shortcuts summarizes File → Backup/Restore.",
+            "File → Backup / Restore uses probooks.backup.",
         )
         act_more_tab_keys.triggered.connect(
             lambda: show_more_main_tabs_keyboard_shortcuts_dialog(self)
@@ -2359,17 +1515,6 @@ class MainWindow(QMainWindow):
         )
         act_about.triggered.connect(self._on_about)
         help_menu.addAction(act_about)
-
-    # -- drag & drop on window -----------------------------------------------
-
-    def dragEnterEvent(self, event: QDragEnterEvent):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-
-    def dropEvent(self, event: QDropEvent):
-        paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
-        if paths:
-            self._import_files(paths)
 
     # -- slots ---------------------------------------------------------------
 
@@ -2409,229 +1554,6 @@ class MainWindow(QMainWindow):
             "status bar lists ProBooks+ai with the package version (banner name tooltip matches); "
             "File → Backup/Restore uses probooks.backup (same as CLI).",
         )
-
-    def _on_import(self):
-        paths, _ = QFileDialog.getOpenFileNames(
-            self,
-            "Import Documents",
-            "",
-            "Documents (*.pdf *.jpg *.jpeg *.png);;All Files (*.*)",
-        )
-        if paths:
-            self._import_files(paths)
-
-    def _on_files_dropped(self, paths: list[str]):
-        self._import_files(paths)
-
-    def _import_files(self, paths: list[str]):
-        imported = 0
-        skipped  = []
-        for path in paths:
-            ext = Path(path).suffix.lower()
-            if ext not in ACCEPTED_EXTENSIONS:
-                skipped.append(Path(path).name)
-                continue
-            mime, _ = mimetypes.guess_type(path)
-            mime = mime or ("application/pdf" if ext == ".pdf" else "image/jpeg")
-            try:
-                self._db.add_document(path, mime, store=True)
-                imported += 1
-            except Exception as exc:
-                self._status_bar.showMessage(
-                    f"Error importing {escape_ampersand_for_qt(Path(path).name)}: "
-                    f"{escape_ampersand_for_qt(str(exc))}"
-                )
-
-        self._refresh_inbox()
-        if skipped:
-            message_box_warning_ok(
-                self,
-                "Skipped Files",
-                "The following files were skipped (unsupported type):\n"
-                + "\n".join(escape_ampersand_for_qt(s) for s in skipped),
-                ok_tip="Close; use PDF or supported images only for Intake import.",
-            )
-        if imported:
-            self._status_bar.showMessage(f"Imported {imported} document(s).")
-
-    def _on_selection_changed(self):
-        doc_id = self._inbox.selected_doc_id()
-        if doc_id is not None:
-            self._detail.load_document(doc_id, self._db)
-        else:
-            self._detail.clear_view()
-
-    def _on_run_ai(self, doc_id: int):
-        did = coerce_combo_int_id(doc_id)
-        if did is None:
-            return
-        if self._worker and self._worker.isRunning():
-            message_box_information_ok(
-                self,
-                "AI Running",
-                "Please wait \u2013 AI extraction is already in progress.",
-                ok_tip="Close; wait for the current extraction to finish before running again.",
-            )
-            return
-
-        row = self._db.get_document(did)
-        if not row:
-            return
-
-        # Check API key
-        if not os.environ.get("OPENAI_API_KEY"):
-            message_box_warning_ok(
-                self,
-                "API Key Missing",
-                "OPENAI_API_KEY is not set.\n\n"
-                "Set the environment variable before starting the application:\n"
-                "  set OPENAI_API_KEY=sk-...",
-                ok_tip="Close; set the key, restart the app, then run AI again.",
-            )
-            return
-
-        self._status_bar.showMessage(
-            f"Running AI extraction on {escape_ampersand_for_qt(row['filename'])}\u2026"
-        )
-        self._db.set_status(did, "Extracted")
-
-        self._worker = AIWorker(did, row["stored_path"], row["mimetype"], self._coa)
-        self._worker.finished.connect(lambda res, sug: self._on_ai_done(did, res, sug))
-        self._worker.error.connect(lambda err: self._on_ai_error(did, err))
-        self._worker.start()
-
-    def _on_ai_done(self, doc_id: int, result, suggestions):
-        did = coerce_combo_int_id(doc_id)
-        if did is None:
-            return
-        self._db.save_extraction(did, result)
-        self._db.set_status(did, "Needs Review")
-        self._refresh_inbox()
-        self._detail.populate_ai_result(result, suggestions)
-        doc = self._db.get_document(did)
-        name = doc["filename"] if doc else str(did)
-        self._status_bar.showMessage(
-            f"AI extraction complete for {escape_ampersand_for_qt(name)}."
-        )
-
-    def _on_ai_error(self, doc_id: int, error: str):
-        did = coerce_combo_int_id(doc_id)
-        if did is None:
-            return
-        self._db.set_status(did, "Error")
-        self._refresh_inbox()
-        message_box_critical_ok(
-            self,
-            "AI Extraction Failed",
-            f"Error:\n{escape_ampersand_for_qt(error)}",
-            ok_tip="Close; check network, API key, and document format, then retry.",
-        )
-        self._status_bar.showMessage("AI extraction failed.")
-
-    def _on_approve(self, doc_id: int):
-        did = coerce_combo_int_id(doc_id)
-        if did is None:
-            return
-        values = self._detail.collect_approved_values()
-        self._db.save_approved(did, values)
-        self._db.set_status(did, "Approved")
-        self._refresh_inbox()
-        self._status_bar.showMessage("Document approved and values saved.")
-
-    def _on_mark_posted(self, doc_id: int):
-        did = coerce_combo_int_id(doc_id)
-        if did is None:
-            return
-        row = self._db.get_document(did)
-        if row and row["status"] != "Approved":
-            message_box_warning_ok(
-                self,
-                "Not Yet Approved",
-                "Please approve the document before marking it as Posted.",
-                ok_tip="Close; use Approve in the detail pane first.",
-            )
-            return
-        self._db.set_status(did, "Posted")
-        self._refresh_inbox()
-        self._status_bar.showMessage("Document marked as Posted.")
-
-    def _on_reject(self, doc_id: int):
-        did = coerce_combo_int_id(doc_id)
-        if did is None:
-            return
-        self._db.set_status(did, "Needs Review")
-        self._refresh_inbox()
-        self._status_bar.showMessage("Document flagged \u2013 Needs Review.")
-
-    def _on_route_to_invoice(self, values: dict) -> None:
-        """Switch to Invoices tab and pre-fill header fields from extracted document."""
-        self._invoice_screen.prefill_from_document(values)
-        idx = self._tabs.indexOf(self._invoice_screen)
-        if idx >= 0:
-            self._tabs.setCurrentIndex(idx)
-        vendor = (values.get("vendor") or "").strip()
-        total = values.get("total")
-        hint = f"Routed to Invoices"
-        if vendor:
-            hint += f" \u2014 {vendor}"
-        if total is not None:
-            hint += f", total ${total:,.2f}"
-        self._status_bar.showMessage(hint)
-
-    def _on_route_to_bill(self, values: dict) -> None:
-        """Switch to Enter Bills tab and pre-fill header fields from extracted document."""
-        self._enter_bills_screen.prefill_from_document(values)
-        idx = self._tabs.indexOf(self._enter_bills_screen)
-        if idx >= 0:
-            self._tabs.setCurrentIndex(idx)
-        vendor = (values.get("vendor") or "").strip()
-        total = values.get("total")
-        hint = f"Routed to Enter Bills"
-        if vendor:
-            hint += f" \u2014 {vendor}"
-        if total is not None:
-            hint += f", total ${total:,.2f}"
-        self._status_bar.showMessage(hint)
-
-    # -- helpers -------------------------------------------------------------
-
-    def _refresh_inbox(self):
-        docs = self._db.list_documents()
-        self._inbox.populate(docs)
-        self._on_selection_changed()
-
-    def _on_delete_document(self, doc_id: int) -> None:
-        """Confirm and permanently delete a document from the inbox."""
-        if not hasattr(self, "_db") or self._db is None:
-            return
-        row = self._db.get_document(doc_id)
-        if row is None:
-            return
-        filename = (dict(row).get("filename") or f"document #{doc_id}")
-        confirmed = message_box_question_yes_no(
-            self,
-            "Delete Document",
-            f"Permanently delete <b>{escape_ampersand_for_qt(filename)}</b> and all its "
-            f"extraction data from the company file?<br><br>"
-            "The original file on disk is <b>not</b> removed. "
-            "Use <b>File → Backup</b> first if unsure.",
-            yes_tip="Delete this document and its extraction data permanently.",
-            no_tip="Cancel — keep the document.",
-        )
-        if not confirmed:
-            return
-        try:
-            self._db.delete_document(doc_id)
-        except Exception as exc:
-            message_box_critical_ok(
-                self, "Delete failed",
-                f"Could not delete document: {exc}",
-                ok_tip="Close; try File → Backup then retry.",
-            )
-            return
-        self._detail.clear_view()
-        self._refresh_inbox()
-        self._status_bar.showMessage(f"Deleted document: {filename}")
 
     def _sync_coa_assets_to_bank_accounts(self) -> None:
         """
@@ -2987,10 +1909,8 @@ class MainWindow(QMainWindow):
         # Sync COA asset accounts → bank_accounts; heal any duplicates from a rename
         self._sync_coa_assets_to_bank_accounts()
         self._heal_duplicate_bank_accounts()
-        # Refresh the dropdown list used in the document intake detail pane
         self._coa = load_coa()
         coa_display = self._coa_db.display_list()
-        self._detail.update_coa(coa_display)
         self._register_tab.refresh_coa_choices()
         self._register_tab.refresh_bank_accounts()
         if hasattr(self, "_asset_register_tab"):
@@ -3738,6 +2658,8 @@ class MainWindow(QMainWindow):
             return
         self._open_use_register_dialog()
 
+    # -- helpers -------------------------------------------------------------
+
     def _sync_window_title(self) -> None:
         ver = application_version()
         p = getattr(self._bank_db, "_db_path", None) or self._db_path or ""
@@ -3755,7 +2677,7 @@ class MainWindow(QMainWindow):
         _sv = application_version()
         self._status_bar.showMessage(
             escape_ampersand_for_qt(
-                f"Company: {p}  \u2013  drag & drop or Import; bank CSV/PDF and AI line reconciliation: "
+                f"Company: {p}  \u2013  bank CSV/PDF/paste and AI line reconciliation: "
                 f"Reconcile → Bank statements (Ctrl+Shift+R); File → Backup copies this .db."
             )
             + f" ProBooks+ai v{_sv}."
@@ -3774,14 +2696,14 @@ class MainWindow(QMainWindow):
         self._sync_window_title()
 
     def _rebuild_bank_related_tabs(self):
-        """Replace main tabs after switching SQLite company file (reuses Document Intake widget)."""
+        """Replace main tabs after switching SQLite company file."""
         self._teardown_main_tabs_for_rebuild()
         self._assemble_main_tabs()
         self._apply_main_tab_bar_tooltips()
         self._wire_register_bank_match_navigation()
 
     def _load_company_at_path(self, resolved: str) -> None:
-        """Open SQLite at *resolved* and rebuild bank-side tabs + intake COA."""
+        """Open SQLite at *resolved* and rebuild bank-side tabs."""
         self._db_path = resolved
         QSettings().setValue("company_database_path", resolved)
         self._db = DocumentDatabase(resolved)
@@ -3799,9 +2721,6 @@ class MainWindow(QMainWindow):
         # Seed bank_transactions for any existing GL opening-balance entries
         self._migrate_opening_balances_to_bank_register()
         self._rebuild_bank_related_tabs()
-        self._detail.clear_view()
-        self._detail.update_coa(self._coa_db.display_list())
-        self._refresh_inbox()
         self._update_company_status()
         if hasattr(self, "_dashboard_tab"):
             self._dashboard_tab.set_connection(self._bank_db._conn)
@@ -3824,15 +2743,6 @@ class MainWindow(QMainWindow):
         self._add_to_recent_companies(resolved, _co_name)
 
     def _switch_company_database(self, path: str, *, create_new: bool = False) -> None:
-        if self._worker and self._worker.isRunning():
-            message_box_warning_ok(
-                self,
-                "Busy",
-                "Wait for AI extraction to finish before switching company files.",
-                ok_tip="Close; wait for AI, then switch; consider File → Backup / probooks backup before replacing the .db.",
-            )
-            return
-
         p = Path(path)
         if create_new:
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -3883,14 +2793,6 @@ class MainWindow(QMainWindow):
             self._switching_database = False
 
     def _on_backup_company(self):
-        if self._worker and self._worker.isRunning():
-            message_box_warning_ok(
-                self,
-                "Busy",
-                "Wait for AI extraction to finish before backing up.",
-                ok_tip="Close; wait for AI, then File → Backup again (same engine as probooks backup).",
-            )
-            return
         src = Path(self._bank_db._db_path).resolve()
         path, _ = QFileDialog.getSaveFileName(
             self,
@@ -3929,14 +2831,6 @@ class MainWindow(QMainWindow):
         )
 
     def _on_restore_company(self):
-        if self._worker and self._worker.isRunning():
-            message_box_warning_ok(
-                self,
-                "Busy",
-                "Wait for AI extraction to finish before restoring.",
-                ok_tip="Close; wait for AI, then File → Restore again (same engine as probooks restore).",
-            )
-            return
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Warning)
         box.setWindowTitle("Restore company database (probooks restore)")
@@ -4133,14 +3027,6 @@ class MainWindow(QMainWindow):
             self._switch_company_database(path, create_new=False)
 
     def _on_create_company_file(self) -> None:
-        if self._worker and self._worker.isRunning():
-            message_box_warning_ok(
-                self,
-                "Busy",
-                "Wait for AI extraction to finish before creating a company file.",
-                ok_tip="Close; wait for AI, then try again.",
-            )
-            return
         dlg = CreateCompanyFileDialog(self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
@@ -4201,14 +3087,6 @@ class MainWindow(QMainWindow):
 
     def _on_company_info(self) -> None:
         """Edit identity for the open company file (no .db creation/switching)."""
-        if self._worker and self._worker.isRunning():
-            message_box_warning_ok(
-                self,
-                "Busy",
-                "Wait for AI extraction to finish before editing company info.",
-                ok_tip="Close; wait for AI, then try again.",
-            )
-            return
         conn = getattr(self._bank_db, "_conn", None)
         if conn is None:
             message_box_information_ok(

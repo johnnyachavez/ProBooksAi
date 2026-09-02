@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/build_desktop.sh
 # Build a standalone ProBooks+ai desktop executable on macOS / Linux (output: ProBooksPlusAi).
-# Bundles ai/ (Document Intake Run AI), probooks/, probooksai/, desktop_app/, docs/ (ROADMAP.md),
+# Bundles ai/ (OpenAI extract for API + bank-statement helpers), probooks/, probooksai/, desktop_app/, docs/ (ROADMAP.md),
 # pyproject.toml; hidden-import generate_workbook (COA seed); openai + pydantic + httpx stack (httpx/httpcore/h11/anyio); hidden-import pypdf (ai.extractor).
 #
 # Usage:

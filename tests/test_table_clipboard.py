@@ -198,40 +198,6 @@ def test_copy_table_row_as_tsv_mixed(qapp):
     assert QGuiApplication.clipboard().text() == "id-1\t\t99.00\ttail"
 
 
-def test_inbox_selected_doc_id_prefers_user_role(qapp):
-    """Intake ``#`` column: ``UserRole`` holds doc id; copy still uses plain-display role."""
-    from desktop_app.main import InboxWidget
-
-    w = InboxWidget()
-    w.populate(
-        [
-            {
-                "id": 42,
-                "filename": " Stmt & Co.pdf",
-                "mimetype": "application/pdf",
-                "status": "imported",
-                "import_date": "2025-06-01",
-            }
-        ]
-    )
-    w.selectRow(0)
-    assert w.selected_doc_id() == 42
-    assert isinstance(w.item(0, 0), IntSortTableItem)
-
-
-def test_inbox_selected_doc_id_falls_back_to_plain_cell_text(qapp):
-    """If ``UserRole`` is unset, id still parses from ``QTABLE_PLAIN_TEXT_ROLE`` / display."""
-    from desktop_app.main import InboxWidget
-
-    w = InboxWidget()
-    w.setRowCount(1)
-    w.setColumnCount(5)
-    w.setHorizontalHeaderLabels(InboxWidget.COLUMNS)
-    w.setItem(0, 0, plain_display_table_item("7"))
-    w.selectRow(0)
-    assert w.selected_doc_id() == 7
-
-
 def test_coa_account_number_table_item(qapp):
     from desktop_app.coa_tab import _CoaAccountNumberTableItem
 

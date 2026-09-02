@@ -246,12 +246,12 @@ def test_customers_and_vendors_tabs_use_live_ar_ap_workflows(
         w.close()
 
 
-def test_reconcile_hub_hosts_bank_import_document_intake_and_statement_intake(
+def test_reconcile_hub_hosts_bank_import_ar_and_statement_intake(
     qapp: QApplication, tmp_path: Path
 ) -> None:
-    """Reconcile hub hosts the existing Bank statements + Documents tabs and the
-    new phase-1 Bank Statement Intake (review-first) sub-tab as the rightmost
-    option. Top-level tabs are unaffected (still eleven, locked elsewhere)."""
+    """Reconcile hub hosts Bank statements, AR / Invoices, and Statement intake
+    (review). Document Intake is not a hub tab. Top-level tabs stay locked
+    elsewhere."""
     from desktop_app.main import MainWindow
 
     db_path = tmp_path / "reconcile_hub.db"
@@ -259,17 +259,16 @@ def test_reconcile_hub_hosts_bank_import_document_intake_and_statement_intake(
     w = MainWindow(db_path=str(db_path))
     try:
         rh = w._reconcile_hub
-        # Merged Reconcile hub: Bank statements, Documents, AR / Invoices (HEAD),
-        # Statement intake (review) (dev).
-        assert rh.count() == 4
+        assert rh.count() == 3
         assert rh.widget(0) is w._bank_tab
-        assert rh.widget(1) is w._intake_widget
         assert rh.tabText(0) == "Bank statements"
-        assert rh.tabText(1) == "Documents"
-        assert rh.tabText(2) == "AR / Invoices"
-        assert rh.widget(2) is w._ar_recon_widget
-        assert rh.widget(3) is w._statement_intake_panel
-        assert rh.tabText(3) == "Statement intake (review)"
+        assert rh.tabText(1) == "AR / Invoices"
+        assert rh.widget(1) is w._ar_recon_widget
+        assert rh.widget(2) is w._statement_intake_panel
+        assert rh.tabText(2) == "Statement intake (review)"
+        assert not hasattr(w, "_intake_widget")
+        titles = [rh.tabText(i) for i in range(rh.count())]
+        assert "Documents" not in titles
     finally:
         w.close()
 
