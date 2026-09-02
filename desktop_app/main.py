@@ -1142,7 +1142,7 @@ class MainWindow(QMainWindow):
             14: " Chart of Accounts editor.",
             15: " AR: customers, invoices, payments (primary route; Business hub is Rules/Payroll/Tax %).",
             16: " AP: vendors, bills, payments (primary route; Business hub is Rules/Payroll/Tax %).",
-            17: " Reconcile: Bank statements, Statement intake (review), AR / Invoices.",
+            17: " Reconcile: Bank statements (AI line reconciliation), Statement intake (review), AR / Invoices.",
             18: " Reports, Journal, Business, Audit log.",
         }
         for tab_idx, (sc, label) in [

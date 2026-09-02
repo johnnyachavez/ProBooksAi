@@ -2009,7 +2009,7 @@ def test_main_menu_bar_sets_status_tips_for_shortcut_actions() -> None:
     assert "\n            act_more_tab_keys,\n" in chunk
     assert chunk.count("_view_tab_tip_suffix") == 4
     assert "_view_tab_tip_extra" in chunk
-    assert " Reconcile: Bank statements, Statement intake (review), AR / Invoices." in chunk
+    assert " Reconcile: Bank statements (AI line reconciliation), Statement intake (review), AR / Invoices." in chunk
     assert "AI line reconciliation" in chunk and "Match overlay" in chunk
     assert 'f"Show this main tab ({sc}).{extra}{_view_tab_tip_suffix}"' in chunk
 
@@ -2698,25 +2698,13 @@ _DETAIL_APPROVED_VALUE_KEYS = (
 )
 
 
-def test_desktop_main_coa_select_placeholder_and_combo_refresh() -> None:
-    """``_fill_coa_combo`` adds placeholder + non-empty COA rows; ``update_coa`` rebuilds and restores selection."""
+def test_desktop_main_has_no_document_intake_coa_combo() -> None:
+    """Document Intake DetailPane COA combo helpers are not in ``main.py``."""
     text = _MAIN.read_text(encoding="utf-8")
-    start = text.index("_COA_SELECT_LABEL = ")
-    end = text.index("    def clear_view(self):", start)
-    chunk = text[start:end]
-    assert "select" in chunk.split("_COA_SELECT_LABEL = ", 1)[1].split("\n", 1)[0]
-    assert chunk.count("escape_ampersand_for_qt(_COA_SELECT_LABEL)") == 1
-    assert chunk.count("def update_coa(self, coa_list: list[str]):") == 1
-    assert "Refresh the COA dropdown with an updated list." in chunk
-    assert chunk.count("def _fill_coa_combo(self, coa_list: list[str]) -> None:") == 1
-    assert chunk.count('escape_ampersand_for_qt(_COA_SELECT_LABEL), ""') == 1
-    assert chunk.count("for coa in coa_list:") == 1
-    assert chunk.count("if not c:") == 1
-    assert chunk.count("self._f_coa.addItem(escape_ampersand_for_qt(c), c)") == 1
-    assert chunk.count("self._f_coa.clear()") == 1
-    assert chunk.count("self._set_coa_combo_raw(current)") == 1
-    assert chunk.count("def _coa_combo_raw_value(self) -> str | None:") == 1
-    assert chunk.count("def _set_coa_combo_raw(self, raw: str | None) -> None:") == 1
+    assert "_COA_SELECT_LABEL" not in text
+    assert "def _fill_coa_combo" not in text
+    assert "def update_coa(self, coa_list: list[str]):" not in text
+    assert "self._f_coa" not in text
 
 
 def test_extra_tabs_business_csv_export_tooltips_append_excel_bom_hint() -> None:
