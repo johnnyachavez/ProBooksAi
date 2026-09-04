@@ -178,7 +178,7 @@ def test_api_invoice_pdf_route(tmp_path):
     text = " ".join(" ".join((page.extract_text() or "").split()) for page in reader.pages)
     assert "INVOICE" in text
     assert "SERVICED ON" in text
-    assert "JL #" in text
+    assert "JL#" in text
     assert "BOL#" in text
     assert "QTY RATE AMOUNT" in text
     assert "Terms: NET 30" in text

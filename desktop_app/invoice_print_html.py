@@ -1,4 +1,4 @@
-"""Shared HTML layout for invoice print / PDF (Chavan-style grid, black & white).
+"""Shared HTML layout for invoice print / PDF (locked paper template).
 
 Plain-text inputs are escaped. Used by :class:`desktop_app.invoice_screen.InvoiceScreen` (Print)
 and :func:`desktop_app.invoice_pdf.save_invoice_pdf` (programmatic PDF to a known path).
@@ -9,15 +9,17 @@ and are not rendered or OCR'd here.
 
 Layout (top → bottom)
 ----------------------
-1. Header: company from My Company (logo or text, incl. MC / DOT) | "INVOICE" + Date + Invoice #
-2. BILL TO (left) | PO/CONTRACT# and NAME/JOB# (right)
-3. Line-items grid: Serviced On, JL #, Description, BOL#, Qty, Rate, Amount
-4. Subtotal, then a CO / compliance-fee line (percent or amount)
-5. Total
-6. Footer: Terms (NET 30) then THANK YOU FOR YOUR BUSINESS - JOHNNY and the company phone
+1. Text header: company name + My Company contact / MC / DOT | INVOICE + Date + Invoice #
+2. BILL TO (left) | PO and Job (right)
+3. Line-items grid: Serviced On, JL#, Description, BOL#, Qty, Rate, Amount
+4. Subtotal, optional CO / compliance-fee line, Total
+5. Terms NET 30
+6. Footer: THANK YOU FOR YOUR BUSINESS - JOHNNY and the company phone
 """
 
 from __future__ import annotations
+
+import re
 
 from probooksai.html_escape import escape_html_text as _he
 
@@ -25,11 +27,13 @@ from probooksai.html_escape import escape_html_text as _he
 DEFAULT_MIN_LINE_ROWS = 16
 
 DEFAULT_THANK_YOU = "THANK YOU FOR YOUR BUSINESS - JOHNNY"
-
-# Printed payment terms when the invoice row has none saved.
 DEFAULT_TERMS = "NET 30"
 
 _FEE_TOKENS = frozenset({"CO", "C.O.", "C.O", "C/O", "CO."})
+_DATE_RE = re.compile(
+    r"^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$"
+    r"|^\d{4}[./-]\d{1,2}[./-]\d{1,2}$"
+)
 
 _TH = (
     "text-align:center; font-weight:bold; padding:4px 6px; "
@@ -58,13 +62,21 @@ _GRID_TD_R = (
 )
 
 
-def parse_invoice_line_description(raw: str) -> tuple[str, str, str, str]:
-    """Split stored ``invoice_lines.description`` (em-dash joined segments) into grid fields.
+def _looks_like_date(value: str) -> bool:
+    return bool(_DATE_RE.match((value or "").strip()))
 
-    Do not strip the whole string before splitting: a leading ``" — code — desc"``
-    (empty Serviced On) would otherwise collapse to two parts and put the code in Date.
+
+def parse_invoice_line_description(raw: str) -> tuple[str, str, str, str]:
+    """Split stored ``invoice_lines.description`` into print/grid fields.
+
+    Segments are ``serviced_on — item_code — item_name — bol``. Do not strip the
+    whole string before splitting: a leading ``" — code — desc"`` (empty Serviced On)
+    would otherwise collapse to two parts and put the code in Date.
+
+    Two-segment rows are ambiguous. A date-shaped first part is Serviced On + JL#;
+    otherwise it is JL# (item code) + Description (item name), e.g. ``FS-1 — FLATBED TRUCKING``.
     """
-    raw = raw or ""
+    raw = (raw or "").replace("\u2013", "\u2014")
     if " — " not in raw:
         raw = raw.strip()
         if not raw:
@@ -72,7 +84,9 @@ def parse_invoice_line_description(raw: str) -> tuple[str, str, str, str]:
         return "", "", raw, ""
     parts = [p.strip() for p in raw.split(" — ")]
     if len(parts) == 2:
-        return parts[0], parts[1], "", ""
+        if _looks_like_date(parts[0]):
+            return parts[0], parts[1], "", ""
+        return "", parts[0], parts[1], ""
     if len(parts) == 3:
         return parts[0], parts[1], parts[2], ""
     return parts[0], parts[1], parts[2], parts[3]
@@ -188,42 +202,6 @@ def _esc_cell(raw: str) -> str:
     return _he(t).replace("\n", "<br/>")
 
 
-def _logo_block_html(
-    logo_data_uri: str,
-    company_block_plain: str,
-    logo_display_w: int = 400,
-    logo_display_h: int = 180,
-) -> str:
-    """Return the top-left cell content: logo image (no border) or fallback company text.
-
-    ``logo_display_w`` / ``logo_display_h`` must be explicit pixel integers because
-    Qt's QTextDocument HTML renderer does not honour CSS ``max-width`` / ``max-height``
-    on ``<img>`` tags — only literal ``width``/``height`` attributes work.
-    """
-    if logo_data_uri:
-        logo_img = (
-            f'<img src="{logo_data_uri}" '
-            f'width="{logo_display_w}" height="{logo_display_h}" '
-            'style="border:none; display:block;" />'
-        )
-        contact = ""
-        if company_block_plain:
-            lines = [ln.strip() for ln in company_block_plain.splitlines() if ln.strip()]
-            if len(lines) > 1:
-                contact_text = "<br/>".join(_he(x) for x in lines[1:])
-                contact = (
-                    f'<div style="font-size:8.5pt;color:#333;line-height:1.35;margin-top:5px;">'
-                    f"{contact_text}</div>"
-                )
-        return logo_img + contact
-    return (
-        '<table width="100%" cellspacing="0" cellpadding="8" '
-        'style="border:none; border-collapse:collapse;">'
-        f'<tr><td valign="top" style="min-height:88px;">{_company_html(company_block_plain)}</td></tr>'
-        "</table>"
-    )
-
-
 def _line_tr(cells: list[str]) -> str:
     bits: list[str] = []
     for j, c in enumerate(cells):
@@ -254,7 +232,7 @@ def build_invoice_print_html(
     logo_display_h: int = 180,
 ) -> str:
     """
-    Chavan-style invoice layout for QTextDocument print/PDF.
+    Locked paper invoice layout for QTextDocument print/PDF.
 
     ``line_rows`` tuples are
     ``(serviced_on, jl_num, description, bol, qty, rate, amount)`` — caller supplies
@@ -267,16 +245,14 @@ def build_invoice_print_html(
 
     ``terms_plain`` prints above the thank-you footer (``NET 30`` by default).
 
-    ``ship_to_plain`` is accepted but not printed (Chavan invoices have BILL TO only).
+    ``ship_to_plain`` is accepted but not printed (paper template is BILL TO only).
 
-    ``logo_data_uri`` — base64 data URI (``data:image/png;base64,...``) for the company
-    logo.  When supplied the logo is rendered top-left with no border; the company block
-    text is shown below it as contact details.  When omitted the company text block from
-    My Company is used instead.
+    ``logo_data_uri`` is ignored: this template is text letterhead only (no green logo).
 
     Ticket images are not included; extra pages for them can be appended later.
     """
     del ship_to_plain  # printed invoices are BILL TO only
+    del logo_data_uri, logo_display_w, logo_display_h
     rows = list(line_rows or [])
     n = max(len(rows), max(0, min_body_rows))
     body_html: list[str] = []
@@ -317,14 +293,19 @@ def build_invoice_print_html(
         _esc_cell(fee_amt),
     ]
 
-    top_left = _logo_block_html(logo_data_uri, company_block_plain, logo_display_w, logo_display_h)
+    top_left = (
+        '<table width="100%" cellspacing="0" cellpadding="8" '
+        'style="border:none; border-collapse:collapse;">'
+        f'<tr><td valign="top" style="min-height:88px;">{_company_html(company_block_plain)}</td></tr>'
+        "</table>"
+    )
 
     parts = [
         "<html><head><meta charset=\"utf-8\"/></head><body "
         "style=\"margin:0.5in; font-family: Arial, Helvetica, sans-serif; "
         "font-size:10pt; color:#000;\">",
 
-        # ── Row 1: Company (left) + INVOICE title / Date / Invoice # (right) ──
+        # ── Row 1: Company text (left) + INVOICE / Date / Invoice # (right) ──
         "<table width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border:none;\">",
         "<tr>",
         '<td width="55%" valign="top" style="border:none; padding:0 16px 0 0;">',
@@ -332,7 +313,7 @@ def build_invoice_print_html(
         "</td>",
         '<td width="45%" valign="top" style="border:none; padding:0;">',
         '<div style="font-size:22pt; font-weight:bold; text-align:right; '
-        'letter-spacing:0.02em; line-height:1.1; margin-bottom:8px;">INVOICE</div>',
+        'letter-spacing:0.08em; line-height:1.1; margin-bottom:8px;">INVOICE</div>',
         '<table width="100%" cellspacing="0" cellpadding="0" '
         'style="border-collapse:collapse; margin-left:auto;">',
         "<tr>",
@@ -348,7 +329,7 @@ def build_invoice_print_html(
         "</tr>",
         "</table>",
 
-        # ── Row 2: BILL TO + PO/CONTRACT# / NAME/JOB# ──
+        # ── Row 2: BILL TO + PO / Job ──
         '<table width="100%" cellspacing="0" cellpadding="0" '
         'style="border:none; margin-top:14px;">',
         "<tr>",
@@ -367,11 +348,11 @@ def build_invoice_print_html(
         '<table width="100%" cellspacing="0" cellpadding="0" '
         'style="border-collapse:collapse;">',
         "<tr>",
-        f'<th style="{_META_LABEL}">PO / CONTRACT #</th>',
+        f'<th style="{_META_LABEL}">PO</th>',
         f'<td style="{_META_VAL}">{po}</td>',
         "</tr>",
         "<tr>",
-        f'<th style="{_META_LABEL}">NAME / JOB #</th>',
+        f'<th style="{_META_LABEL}">Job</th>',
         f'<td style="{_META_VAL}">{nj}</td>',
         "</tr>",
         "</table>",
@@ -384,13 +365,13 @@ def build_invoice_print_html(
         'style="border-collapse:collapse; margin-top:14px; border:1px solid #000; '
         'table-layout:fixed;">',
         "<colgroup>",
-        '<col style="width:11%;"/><col style="width:9%;"/><col style="width:28%;"/>',
-        '<col style="width:11%;"/><col style="width:10%;"/><col style="width:13%;"/>',
-        '<col style="width:18%;"/>',
+        '<col style="width:12%;"/><col style="width:9%;"/><col style="width:28%;"/>',
+        '<col style="width:11%;"/><col style="width:10%;"/><col style="width:14%;"/>',
+        '<col style="width:16%;"/>',
         "</colgroup>",
         "<thead><tr>",
         f'<th style="{_GRID_TH}">Serviced On</th>',
-        f'<th style="{_GRID_TH}">JL #</th>',
+        f'<th style="{_GRID_TH}">JL#</th>',
         f'<th style="{_GRID_TH}">Description</th>',
         f'<th style="{_GRID_TH}">BOL#</th>',
         f'<th style="{_GRID_TH}">Qty</th>',
@@ -420,7 +401,7 @@ def build_invoice_print_html(
         "</tr>",
         "</tbody></table>",
 
-        # ── Footer ────────────────────────────────────────────────────────────
+        # ── Terms + Footer ────────────────────────────────────────────────────
         '<table width="100%" cellspacing="0" cellpadding="0" style="border:none; margin-top:18px;">',
         '<tr><td valign="top" style="border:none; padding:4px 0; font-size:9.5pt; '
         'line-height:1.45; color:#222;">'

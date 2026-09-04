@@ -19,6 +19,18 @@ def test_parse_invoice_line_description_segments() -> None:
     assert parse_invoice_line_description("  ") == ("", "", "", "")
     assert parse_invoice_line_description("Widget only") == ("", "", "Widget only", "")
     assert parse_invoice_line_description("1/1/26 — ABC") == ("1/1/26", "ABC", "", "")
+    assert parse_invoice_line_description("FS-1 — FLATBED TRUCKING") == (
+        "",
+        "FS-1",
+        "FLATBED TRUCKING",
+        "",
+    )
+    assert parse_invoice_line_description("CO — Compliance fee") == (
+        "",
+        "CO",
+        "Compliance fee",
+        "",
+    )
     assert parse_invoice_line_description("d — c — x") == ("d", "c", "x", "")
     assert parse_invoice_line_description("d — c — x — BOL1") == ("d", "c", "x", "BOL1")
     assert parse_invoice_line_description(" — FS-2 — FLATBED LOAD") == (
@@ -76,13 +88,22 @@ def test_build_invoice_print_html_structure_and_escaping() -> None:
         min_body_rows=2,
     )
     assert "Serviced On" in html
-    assert "JL #" in html
+    assert "JL#" in html
     assert "BOL#" in html
-    assert "PO" in html and "CONTRACT" in html
-    assert "NAME" in html and "JOB" in html
-    assert "Total" in html
+    so = html.find("Serviced On")
+    assert so < html.find(">JL#<") < html.find("Description") < html.find("BOL#")
+    assert html.find(">Qty<") < html.find(">Rate<") < html.find("Amount")
+    assert "PO" in html
+    assert "Job" in html
+    assert "CONTRACT" not in html
     assert "Subtotal" in html
+    assert ">Total<" in html
+    assert "Balance Due" not in html
+    assert "Terms:" in html
+    assert "NET 30" in html
+    assert "INVOICE" in html
     assert "BILL TO" in html
+    assert "<img" not in html
     assert "SHIP TO" not in html
     assert "Yard" not in html
     assert "Sender &amp; Co." in html
@@ -117,11 +138,11 @@ def test_build_invoice_print_html_fee_amount_mode() -> None:
 
 
 def test_build_invoice_print_html_column_order_qty_before_rate() -> None:
-    """Paper template order: Serviced On, JL #, Description, BOL#, Qty, Rate, Amount."""
+    """Paper template order: Serviced On, JL#, Description, BOL#, Qty, Rate, Amount."""
     html = build_invoice_print_html(min_body_rows=0)
     order = [
         html.index("Serviced On"),
-        html.index("JL #"),
+        html.index("JL#"),
         html.index("Description"),
         html.index("BOL#"),
         html.index(">Qty<"),

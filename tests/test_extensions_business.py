@@ -1384,18 +1384,71 @@ def test_invoice_html_string_chavan_layout_footer_and_no_ship_to(db) -> None:
     assert "Should not print" not in html
     assert "Harbor LLC" in html
     assert "Serviced On" in html
-    assert "JL #" in html
+    assert "JL#" in html
     assert "BOL#" in html
     assert ">Qty<" in html
-    assert ">Rate<" in html
+    assert html.find(">Qty<") < html.find(">Rate<")
     assert ">Total<" in html
     assert "Balance Due" not in html
+    assert "Terms:" in html
     assert "CT-88" in html
     assert "JOB-12" in html
     assert "Terms: NET 30" in html
     assert DEFAULT_THANK_YOU in html
     assert "661-555-0144" in html
     assert "ignored on print" not in html
+    assert "<img" not in html
+
+
+def test_invoice_html_string_maps_item_code_name_qty_rate(db) -> None:
+    """Print columns: JL# = item code, Description = item name, Qty before Rate."""
+    from desktop_app.invoice_pdf import invoice_html_string
+
+    business.replace_invoice_item_codes(
+        db._conn,
+        [
+            {
+                "code": "FS-1",
+                "description": "FLATBED TRUCKING",
+                "item_type": "Service",
+                "coa_account": "Trucking Income",
+                "rate_value": 145.0,
+                "rate_kind": "amount",
+                "sort_order": 0,
+            }
+        ],
+    )
+    cid = business.add_customer(db._conn, "Lowbed Co", address="11408 Cactus")
+    iid = business.create_invoice(
+        db._conn,
+        cid,
+        "12614-T",
+        "2026-08-26",
+        memo="PO: P-9\nJob: SITE-A",
+        terms="NET 30 DAYS",
+        lines=[{"description": "FS-1 — FLATBED TRUCKING", "qty": 12.5, "rate": 145.0}],
+        tax_rate_pct=0,
+    )
+    business.set_setting(db._conn, "company_name", "Setup Trucking Corp")
+    business.set_setting(db._conn, "company_phone", "555-0100")
+    business.set_setting(db._conn, "company_mc_number", "123456")
+    business.set_setting(db._conn, "company_dot_number", "654321")
+    db._conn.commit()
+    html = invoice_html_string(db._conn, iid)
+    assert "Setup Trucking Corp" in html
+    assert "MC# 123456" in html
+    assert "DOT# 654321" in html
+    assert "Houston" not in html
+    assert "<img" not in html
+    assert "FS-1" in html
+    assert "FLATBED TRUCKING" in html
+    assert "12.50" in html
+    assert "145.00" in html
+    assert "1,812.50" in html
+    assert "P-9" in html
+    assert "SITE-A" in html
+    assert "NET 30 DAYS" in html
+    assert html.find("FS-1") < html.find("FLATBED TRUCKING") < html.find("12.50") < html.find("145.00")
 
 
 def test_invoice_html_string_compliance_fee_percent_from_item_code(db) -> None:

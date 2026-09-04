@@ -4,19 +4,16 @@
 
 - **Invoices** tab uses ``invoice_html_string`` for print preview HTML and ``save_invoice_pdf`` for
   PDF files; **Print…** opens ``QPrintDialog`` (user may pick a physical printer or a “Print to PDF” driver).
-- Print and Save PDF share the Chavan layout in ``invoice_print_html`` (BILL TO, Date, Invoice #,
-  PO/CONTRACT#, NAME/JOB#, line grid, CO/compliance-fee line, Subtotal, Total, Terms + JOHNNY
-  footer + phone).
+- Print and Save PDF share the locked paper template in ``invoice_print_html`` (text letterhead,
+  INVOICE + Date + Invoice #, Bill To, PO, Job, line grid, Subtotal, Total, Terms, thank-you footer).
 - ``save_invoice_pdf`` / ``invoice_html_string`` are also used from tests, CLI helpers, and
   ``probooksai.invoice_pdf.render_invoice_pdf`` (the API / bot PDF download), so every PDF in the
   product comes off this one template.
 
 ``save_invoice_pdf`` creates ``QPrinter`` in PDF mode and calls ``QTextDocument.print_``.
 
-Company letterhead comes from **More → Business → Company** (``company_setup_*`` keys in
-``company_settings``), falling back to **My Company** identity keys, with optional
-``invoice_company_block`` override and legacy ``invoice_company_*`` fallback. MC / DOT numbers
-come from ``company_mc_number`` / ``company_dot_number`` (My Company) and are never hardcoded.
+Company letterhead is text from My Company / Company Setup (never a logo, never a hardcoded
+address). MC / DOT numbers come from ``company_mc_number`` / ``company_dot_number``.
 """
 
 from __future__ import annotations
@@ -77,6 +74,30 @@ def _authority_numbers_line(conn: sqlite3.Connection) -> str:
     return "    ".join(parts)
 
 
+def _company_file_display_name(conn: sqlite3.Connection) -> str:
+    """Human name from the open ``.db`` filename when identity name is unset."""
+    try:
+        rows = conn.execute("PRAGMA database_list").fetchall()
+    except sqlite3.Error:
+        return ""
+    path = ""
+    for row in rows:
+        db_name = str(row[1] if not isinstance(row, sqlite3.Row) else row["name"])
+        db_file = str(row[2] if not isinstance(row, sqlite3.Row) else row["file"])
+        if db_name == "main":
+            path = (db_file or "").strip()
+            break
+    if not path:
+        return ""
+    lowered = path.lower()
+    if lowered in {":memory:", "memory"} or lowered.startswith("file:"):
+        return ""
+    stem = Path(path).stem.strip()
+    if not stem or stem.startswith(":"):
+        return ""
+    return " ".join(stem.replace("-", " ").replace("_", " ").split())
+
+
 def _letterhead_body_plain(conn: sqlite3.Connection) -> str:
     """Company name / address / phone / email for the header, without MC-DOT."""
     from probooksai import business
@@ -118,7 +139,9 @@ def _letterhead_body_plain(conn: sqlite3.Connection) -> str:
     leg_addr = (business.get_setting(conn, "invoice_company_address", "") or "").strip()
     leg_phone = (business.get_setting(conn, "invoice_company_phone", "") or "").strip()
     legacy = [p for p in (leg_name, leg_addr, leg_phone) if p]
-    return "\n".join(legacy)
+    if legacy:
+        return "\n".join(legacy)
+    return _company_file_display_name(conn)
 
 
 def _letterhead_plain_from_company_settings(conn: sqlite3.Connection) -> str:
@@ -130,84 +153,6 @@ def _letterhead_plain_from_company_settings(conn: sqlite3.Connection) -> str:
     if authority in body:
         return body
     return f"{body}\n{authority}" if body else authority
-
-
-def _logo_display_dimensions(logo_path: str, max_w: int = 400, max_h: int = 180) -> tuple[int, int]:
-    """Return (display_w, display_h) scaled to fit within max_w×max_h, preserving aspect ratio.
-
-    Reads only the image header — no PIL/Qt dependency.  Falls back to (max_w, max_h) on
-    any parse error so the caller always gets usable integers.
-    """
-    import struct
-
-    try:
-        with open(logo_path, "rb") as fh:
-            header = fh.read(26)
-        w: int = 0
-        h: int = 0
-        # PNG: 8-byte signature + IHDR chunk (4 len + 4 "IHDR" + 4 width + 4 height)
-        if header[:8] == b"\x89PNG\r\n\x1a\n" and len(header) >= 24:
-            w, h = struct.unpack(">II", header[16:24])
-        # JPEG: scan for SOF0/SOF1/SOF2 markers (0xFF C0/C1/C2)
-        elif header[:2] == b"\xff\xd8":
-            with open(logo_path, "rb") as fh:
-                data = fh.read()
-            i = 2
-            while i + 8 < len(data):
-                if data[i] != 0xFF:
-                    break
-                marker = data[i + 1]
-                seg_len = struct.unpack(">H", data[i + 2 : i + 4])[0]
-                if marker in (0xC0, 0xC1, 0xC2):
-                    h, w = struct.unpack(">HH", data[i + 5 : i + 9])
-                    break
-                i += 2 + seg_len
-        if w > 0 and h > 0:
-            scale = min(max_w / w, max_h / h, 1.0)
-            return max(1, int(w * scale)), max(1, int(h * scale))
-    except Exception:
-        pass
-    return max_w, max_h
-
-
-def _logo_data_uri_from_settings(conn: sqlite3.Connection) -> str:
-    """Return a base64 data URI for the company logo, or '' if not configured / file missing."""
-    import base64
-    import os
-    from probooksai import business
-
-    logo_path = (business.get_setting(conn, "company_logo_path", "") or "").strip()
-    if not logo_path or not os.path.isfile(logo_path):
-        return ""
-    try:
-        with open(logo_path, "rb") as fh:
-            raw = fh.read()
-        lower = logo_path.lower()
-        if lower.endswith(".png"):
-            mime = "image/png"
-        elif lower.endswith((".jpg", ".jpeg")):
-            mime = "image/jpeg"
-        elif lower.endswith(".gif"):
-            mime = "image/gif"
-        elif lower.endswith(".svg"):
-            mime = "image/svg+xml"
-        else:
-            mime = "image/png"
-        b64 = base64.b64encode(raw).decode("ascii")
-        return f"data:{mime};base64,{b64}"
-    except Exception:
-        return ""
-
-
-def _logo_dimensions_from_settings(conn: sqlite3.Connection) -> tuple[int, int]:
-    """Return (display_w, display_h) for the configured logo, or (220, 80) if not set."""
-    import os
-    from probooksai import business
-
-    logo_path = (business.get_setting(conn, "company_logo_path", "") or "").strip()
-    if not logo_path or not os.path.isfile(logo_path):
-        return 400, 180
-    return _logo_display_dimensions(logo_path)
 
 
 def _company_phone_from_settings(conn: sqlite3.Connection) -> str:
@@ -270,6 +215,10 @@ def invoice_html_string(conn: sqlite3.Connection, invoice_id: int) -> str:
     for ln in lines:
         d = dict(ln)
         so, jl, desc, bol = parse_invoice_line_description(d.get("description") or "")
+        if not (desc or "").strip() and (jl or "").strip():
+            item = business.get_invoice_item_code_by_code(conn, jl)
+            if item is not None:
+                desc = (dict(item).get("description") or "").strip()
         qty = float(d.get("qty") or 0)
         rate = float(d.get("rate") or 0)
         lt = float(d.get("line_total") or 0)
@@ -309,16 +258,10 @@ def invoice_html_string(conn: sqlite3.Connection, invoice_id: int) -> str:
         total = float(inv_d.get("balance_due") or 0)
     total_plain = f"${total:,.2f}"
     terms = (inv_d.get("terms") or "").strip() or DEFAULT_TERMS
-
-    logo_uri = _logo_data_uri_from_settings(conn)
-    logo_w, logo_h = _logo_dimensions_from_settings(conn) if logo_uri else (220, 80)
     phone = _company_phone_from_settings(conn)
 
     return build_invoice_print_html(
         company_block_plain=_letterhead_plain_from_company_settings(conn),
-        logo_data_uri=logo_uri,
-        logo_display_w=logo_w,
-        logo_display_h=logo_h,
         invoice_date=inv_date,
         invoice_number=(inv_d.get("invoice_number") or "").strip(),
         bill_to_plain=bill_to_plain,
