@@ -44,20 +44,31 @@ from desktop_app.qt_mnemonic import (
     message_box_information_ok,
     tip_qdialog_button_box,
 )
+from desktop_app.theme import (
+    FG_SECONDARY,
+    WORKFLOW_CAPTION,
+    WORKFLOW_CONTROL_FACE,
+    WORKFLOW_GRID,
+    WORKFLOW_PAGE_BG,
+    WORKFLOW_PANEL_BG,
+    WORKFLOW_TEXT,
+)
 from desktop_app.version import application_version
 from probooksai import business
 from probooksai.company_identity import get_company_identity, save_company_identity
 
-_MC_CANVAS = "#E8ECF1"
-_MC_PAPER = "#FFFFFF"
-_MC_PANEL = "#F4F7FA"
-_MC_BORDER = "#C5CDD6"
-_MC_LINE = "#D8DEE6"
-_MC_TEXT = "#1A1A1A"
-_MC_CAPTION = "#4A5560"
-_MC_TITLE = "#5B6770"
-_MC_ACCENT = "#2563A8"
-_MC_MUTED = "#8A94A0"
+# Dark workflow panel + light type (global QWidget/QFrame fills are navy;
+# dark caption/value colors on that panel are unreadable).
+_MC_CANVAS = WORKFLOW_PAGE_BG
+_MC_PAPER = WORKFLOW_PANEL_BG
+_MC_PANEL = WORKFLOW_CONTROL_FACE
+_MC_BORDER = WORKFLOW_GRID
+_MC_LINE = WORKFLOW_GRID
+_MC_TEXT = WORKFLOW_TEXT
+_MC_CAPTION = WORKFLOW_CAPTION
+_MC_TITLE = WORKFLOW_TEXT
+_MC_ACCENT = "#7EB8FF"
+_MC_MUTED = FG_SECONDARY
 
 PLACEHOLDER_COMPANY_NAME = "COMPANY NAME"
 PRODUCT_DISPLAY_NAME = "ProBooks+ai Desktop"
@@ -82,12 +93,12 @@ _FIELD_KEYS = (
     ("payroll_contact", "company_payroll_contact"),
 )
 
-def _light_palette() -> QPalette:
+def _page_palette() -> QPalette:
     pal = QPalette()
     pal.setColor(QPalette.ColorRole.Window, QColor(_MC_CANVAS))
     pal.setColor(QPalette.ColorRole.WindowText, QColor(_MC_TEXT))
-    pal.setColor(QPalette.ColorRole.Base, QColor(_MC_PAPER))
-    pal.setColor(QPalette.ColorRole.AlternateBase, QColor(_MC_PANEL))
+    pal.setColor(QPalette.ColorRole.Base, QColor(_MC_PANEL))
+    pal.setColor(QPalette.ColorRole.AlternateBase, QColor(_MC_PAPER))
     pal.setColor(QPalette.ColorRole.Text, QColor(_MC_TEXT))
     pal.setColor(QPalette.ColorRole.Button, QColor(_MC_PAPER))
     pal.setColor(QPalette.ColorRole.ButtonText, QColor(_MC_TEXT))
@@ -97,6 +108,22 @@ def _light_palette() -> QPalette:
     pal.setColor(QPalette.ColorRole.ToolTipBase, QColor(_MC_PANEL))
     pal.setColor(QPalette.ColorRole.ToolTipText, QColor(_MC_TEXT))
     return pal
+
+
+def _page_qss() -> str:
+    return (
+        f"QWidget#myCompanyPage {{ background: {_MC_CANVAS}; color: {_MC_TEXT}; }}"
+        f"QWidget#myCompanyCanvas {{ background: {_MC_CANVAS}; color: {_MC_TEXT}; }}"
+        f"QScrollArea#myCompanyScroll {{ background: {_MC_CANVAS}; border: none; color: {_MC_TEXT}; }}"
+        f"QScrollArea#myCompanyScroll QWidget {{ background: {_MC_CANVAS}; color: {_MC_TEXT}; }}"
+        f"QFrame#myCompanyMainCard {{ background: {_MC_PAPER}; "
+        f"border: 1px solid {_MC_BORDER}; border-radius: 4px; }}"
+        f"QFrame#myCompanyProductBox {{ background: {_MC_PANEL}; "
+        f"border: 1px solid {_MC_BORDER}; border-radius: 4px; }}"
+        f"QWidget#myCompanyPage QLabel {{ color: {_MC_TEXT}; background: transparent; border: none; }}"
+        f"QDialog#myCompanyEditDialog {{ background: {_MC_CANVAS}; color: {_MC_TEXT}; }}"
+        f"QDialog#myCompanyEditDialog QLabel {{ color: {_MC_TEXT}; background: transparent; }}"
+    )
 
 
 def _label_qss(*, size: str = "11px", weight: str = "400", color: str = _MC_CAPTION) -> str:
@@ -200,7 +227,7 @@ def _pencil_icon(size: int = 18) -> QIcon:
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     p.setPen(QPen(QColor(_MC_ACCENT), 1.6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-    p.setBrush(QColor("#E8F1FA"))
+    p.setBrush(QColor(_MC_PANEL))
     p.drawLine(QPointF(3, size - 4), QPointF(size - 5, 4))
     p.drawRect(QRectF(size - 7, 2, 4, 4))
     p.setBrush(QColor(_MC_ACCENT))
@@ -262,6 +289,9 @@ class MyCompanyEditDialog(QDialog):
         self.setModal(True)
         self.setObjectName("myCompanyEditDialog")
         self.setMinimumWidth(520)
+        self.setAutoFillBackground(True)
+        self.setPalette(_page_palette())
+        self.setStyleSheet(_page_qss())
         self.setToolTip(
             "Edit name, address, phone, email, and EIN/tax ID for this company file. "
             "Save writes the same keys as File → Company Setup."
@@ -378,8 +408,8 @@ class MyCompanyScreen(QWidget):
         self._conn = ap_conn
         self.setObjectName("myCompanyPage")
         self.setAutoFillBackground(True)
-        self.setPalette(_light_palette())
-        self.setStyleSheet(f"QWidget#myCompanyPage {{ background: {_MC_CANVAS}; }}")
+        self.setPalette(_page_palette())
+        self.setStyleSheet(_page_qss())
         self.setToolTip(
             "My Company: contact, legal, and product information for this company file. "
             "Same company .db (File → Backup / Restore, probooks.backup)."
@@ -404,15 +434,15 @@ class MyCompanyScreen(QWidget):
         scroll.setObjectName("myCompanyScroll")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet(f"QScrollArea {{ background: {_MC_CANVAS}; border: none; }}")
+        scroll.setStyleSheet(
+            f"QScrollArea {{ background: {_MC_CANVAS}; border: none; color: {_MC_TEXT}; }}"
+        )
         outer.addWidget(scroll)
 
         content = QWidget()
         content.setObjectName("myCompanyCanvas")
         content.setAutoFillBackground(True)
-        pal = content.palette()
-        pal.setColor(QPalette.ColorRole.Window, QColor(_MC_CANVAS))
-        content.setPalette(pal)
+        content.setPalette(_page_palette())
         board = QVBoxLayout(content)
         board.setContentsMargins(20, 16, 20, 18)
         board.setSpacing(14)

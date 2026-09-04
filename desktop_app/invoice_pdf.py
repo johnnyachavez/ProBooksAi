@@ -12,8 +12,9 @@
 
 ``save_invoice_pdf`` creates ``QPrinter`` in PDF mode and calls ``QTextDocument.print_``.
 
-Company letterhead is text from My Company / Company Setup (never a logo, never a hardcoded
-address). MC / DOT numbers come from ``company_mc_number`` / ``company_dot_number``.
+Company letterhead is text from saved My Company fields (name, address, phone, email, MC, DOT).
+Empty fields are omitted. Never a logo, never a hardcoded address. Company Setup / legacy
+keys are used only when My Company identity is empty.
 """
 
 from __future__ import annotations
@@ -34,7 +35,7 @@ from desktop_app.invoice_print_html import (
 from probooksai.company_identity import (
     KEY_DOT_NUMBER,
     KEY_MC_NUMBER,
-    company_identity_plain_block,
+    company_identity_print_fields,
 )
 
 
@@ -98,6 +99,25 @@ def _company_file_display_name(conn: sqlite3.Connection) -> str:
     return " ".join(stem.replace("-", " ").replace("_", " ").split())
 
 
+def _my_company_letterhead_body(conn: sqlite3.Connection) -> str:
+    """Name / address / phone / email from My Company keys; empty fields omitted."""
+    fields = company_identity_print_fields(conn)
+    lines: list[str] = []
+    name = (fields.get("name") or "").strip()
+    if name:
+        lines.append(name)
+    addr = (fields.get("address") or "").strip()
+    if addr:
+        lines.extend(part.strip() for part in addr.splitlines() if part.strip())
+    phone = (fields.get("phone") or "").strip()
+    if phone:
+        lines.append(phone)
+    email = (fields.get("email") or "").strip()
+    if email:
+        lines.append(email)
+    return "\n".join(lines)
+
+
 def _letterhead_body_plain(conn: sqlite3.Connection) -> str:
     """Company name / address / phone / email for the header, without MC-DOT."""
     from probooksai import business
@@ -105,6 +125,9 @@ def _letterhead_body_plain(conn: sqlite3.Connection) -> str:
     block = (business.get_setting(conn, "invoice_company_block", "") or "").strip()
     if block:
         return block
+    my_company = _my_company_letterhead_body(conn)
+    if my_company:
+        return my_company
     name = (business.get_setting(conn, "company_setup_name", "") or "").strip()
     addr1 = (business.get_setting(conn, "company_setup_addr1", "") or "").strip()
     addr2 = (business.get_setting(conn, "company_setup_addr2", "") or "").strip()
@@ -130,10 +153,6 @@ def _letterhead_body_plain(conn: sqlite3.Connection) -> str:
         parts.append(email)
     if parts:
         return "\n".join(parts)
-    # My Company (File → New Company / My Company tab) identity keys
-    identity = company_identity_plain_block(conn).strip()
-    if identity:
-        return identity
     # Legacy keys (older builds or manual SQL)
     leg_name = (business.get_setting(conn, "invoice_company_name", "") or "").strip()
     leg_addr = (business.get_setting(conn, "invoice_company_address", "") or "").strip()
@@ -159,7 +178,7 @@ def _company_phone_from_settings(conn: sqlite3.Connection) -> str:
     """Phone for the printed footer (My Company / letterhead keys)."""
     from probooksai import business
 
-    for key in ("company_setup_phone", "invoice_company_phone", "company_phone"):
+    for key in ("company_phone", "company_setup_phone", "invoice_company_phone"):
         val = (business.get_setting(conn, key, "") or "").strip()
         if val:
             return val

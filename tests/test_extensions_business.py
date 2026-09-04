@@ -1278,7 +1278,7 @@ def test_invoice_html_string_invoice_company_block_overrides_setup(db) -> None:
 
 
 def test_invoice_html_string_my_company_identity_fallback(db) -> None:
-    """With no company_setup_* keys the header uses My Company identity."""
+    """With no company_setup_* keys the header uses saved My Company identity."""
     from desktop_app.invoice_pdf import invoice_html_string
     from probooksai.company_identity import save_company_identity
 
@@ -1304,6 +1304,53 @@ def test_invoice_html_string_my_company_identity_fallback(db) -> None:
     assert "77 Yard Rd" in html
     assert "661-555-0101" in html
     assert "office@example.com" in html
+    assert "Houston" not in html
+
+
+def test_invoice_html_string_prefers_my_company_over_company_setup(db) -> None:
+    """Saved My Company name/address/phone/email/MC/DOT win over Company Setup."""
+    from desktop_app.invoice_pdf import invoice_html_string
+    from probooksai.company_identity import KEY_DOT_NUMBER, KEY_MC_NUMBER, save_company_identity
+
+    cid = business.add_customer(db._conn, "CustMC", address="")
+    iid = business.create_invoice(
+        db._conn,
+        cid,
+        "L-H-4B",
+        "2024-06-04",
+        lines=[{"description": "x", "qty": 1, "rate": 1.0}],
+        tax_rate_pct=0,
+    )
+    save_company_identity(
+        db._conn,
+        name="Saved My Company Co",
+        address="10 File Ave\nSan Diego, CA 92115",
+        phone="555-0142",
+        email="office@saved.example",
+    )
+    business.set_setting(db._conn, KEY_MC_NUMBER, "111111")
+    business.set_setting(db._conn, KEY_DOT_NUMBER, "222222")
+    business.set_setting(db._conn, "company_setup_name", "Ignored Setup Name")
+    business.set_setting(db._conn, "company_setup_addr1", "Ignored Setup Addr")
+    business.set_setting(db._conn, "company_setup_city", "Houston")
+    business.set_setting(db._conn, "company_setup_state", "TX")
+    business.set_setting(db._conn, "company_setup_zip", "77001")
+    business.set_setting(db._conn, "company_setup_phone", "000-000-0000")
+    business.set_setting(db._conn, "company_setup_email", "setup@ignored.example")
+    db._conn.commit()
+    html = invoice_html_string(db._conn, iid)
+    assert "Saved My Company Co" in html
+    assert "10 File Ave" in html
+    assert "San Diego, CA 92115" in html
+    assert "555-0142" in html
+    assert "office@saved.example" in html
+    assert "MC# 111111" in html
+    assert "DOT# 222222" in html
+    assert "Ignored Setup Name" not in html
+    assert "Ignored Setup Addr" not in html
+    assert "Houston" not in html
+    assert "000-000-0000" not in html
+    assert "setup@ignored.example" not in html
 
 
 def test_invoice_html_string_prints_mc_and_dot_from_company_file(db) -> None:

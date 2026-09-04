@@ -21,6 +21,9 @@ from desktop_app.my_company_screen import (
     SSN_PLACEHOLDER,
     MyCompanyEditDialog,
     MyCompanyScreen,
+    _MC_CANVAS,
+    _MC_CAPTION,
+    _MC_TEXT,
     company_file_display_name,
     load_my_company_fields,
     save_my_company_fields,
@@ -182,8 +185,10 @@ def test_my_company_main_window_tab_and_home_shortcut(
     w = MainWindow(db_path=str(db_path))
     try:
         tabs = w._tabs
-        assert "My Company" in tabs.tabText(5)
-        assert isinstance(tabs.widget(5), MyCompanyScreen)
+        mc_index = next(
+            i for i in range(tabs.count()) if tabs.tabText(i) == "My Company"
+        )
+        assert isinstance(tabs.widget(mc_index), MyCompanyScreen)
         tabs.setCurrentIndex(0)
         qapp.processEvents()
         btn = w._dashboard_tab.findChild(QToolButton, "homeShortcut_my_company")
@@ -197,6 +202,17 @@ def test_my_company_main_window_tab_and_home_shortcut(
         assert PRODUCT_DISPLAY_NAME in titles
     finally:
         w.close()
+
+
+def _hex_luminance(hex_color: str) -> float:
+    raw = hex_color.lstrip("#")
+    r, g, b = int(raw[0:2], 16), int(raw[2:4], 16), int(raw[4:6], 16)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def test_my_company_labels_use_light_text_on_dark_panel() -> None:
+    assert _hex_luminance(_MC_TEXT) > _hex_luminance(_MC_CANVAS)
+    assert _hex_luminance(_MC_CAPTION) > _hex_luminance(_MC_CANVAS)
 
 
 def test_my_company_source_has_no_live_company_identity() -> None:
