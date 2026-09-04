@@ -244,3 +244,46 @@ class TestInvoiceSavePersistsAcrossReopen:
             assert round(float(hit[0]["total"]), 2) == 250.00
         finally:
             db2.close()
+
+
+class TestUnsavedInvoicePrompt:
+    """A draft the Customer Center prefilled is not an unsaved invoice.
+
+    Under ``QT_QPA_PLATFORM=offscreen`` a stray prompt hangs the suite instead of
+    failing, so this guards the dirty check rather than the dialog.
+    """
+
+    def test_customer_center_draft_is_not_dirty(
+        self, qapp: QApplication, tmp_path: Path
+    ) -> None:
+        db, ids = _seed_company(tmp_path)
+        w = InvoiceScreen(ap_conn=db._conn)
+        try:
+            w.prepare_new_invoice_for_customer(ids["harbor"])
+            assert w.selected_bill_to_customer_id() == ids["harbor"]
+            assert w._is_form_dirty() is False
+        finally:
+            w.deleteLater()
+            db.close()
+
+    def test_typing_a_line_makes_the_draft_dirty(
+        self, qapp: QApplication, tmp_path: Path
+    ) -> None:
+        db, ids = _seed_company(tmp_path)
+        w = InvoiceScreen(ap_conn=db._conn)
+        try:
+            w.prepare_new_invoice_for_customer(ids["harbor"])
+            w._table.cellWidget(0, 2).setText("Haul to yard")
+            assert w._is_form_dirty() is True
+        finally:
+            w.deleteLater()
+            db.close()
+
+    def test_empty_draft_is_not_dirty(self, qapp: QApplication, tmp_path: Path) -> None:
+        db, _ids = _seed_company(tmp_path)
+        w = InvoiceScreen(ap_conn=db._conn)
+        try:
+            assert w._is_form_dirty() is False
+        finally:
+            w.deleteLater()
+            db.close()

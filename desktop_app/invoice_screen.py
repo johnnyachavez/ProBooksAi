@@ -627,6 +627,9 @@ class InvoiceScreen(QWidget):
         if customer_id and self._ap_conn is not None:
             self._bill_customer_panel.reload_customers()
             self._bill_customer_panel.select_customer_by_id(int(customer_id))
+        # A draft holding only the Bill To the Customer Center picked has nothing worth
+        # saving, so navigating away again must not stop on "Save invoice?".
+        self._mark_form_clean()
 
     def _line_edit_header_style(self) -> str:
         return (
@@ -2668,8 +2671,8 @@ class InvoiceScreen(QWidget):
         """Used by the main window when leaving the Invoice tab."""
         if self._ap_conn is None:
             return False
-        if self._current_invoice_id is None:
-            return self._form_has_user_content()
+        if self._current_invoice_id is None and not self._form_has_user_content():
+            return False
         return self._invoice_form_fingerprint() != self._clean_fingerprint
 
     def _write_pdf_if_folder_already_set(self, inv_id: int) -> None:
