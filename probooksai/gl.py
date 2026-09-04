@@ -347,6 +347,50 @@ class GLDatabase:
         except sqlite3.OperationalError:
             return []
 
+    # AP link types whose journal entry already books the bank side of the line.
+    _AP_LINK_TYPES = ("ap_payment", "ap_bill")
+
+    def linked_ap_entry_id(self, txn_id: int) -> Optional[int]:
+        """Journal entry that already books *txn_id* through an AP match link.
+
+        Enter Bills debits the expense and Pay Bills credits the bank, so a bank line
+        matched to that AP activity must not be posted again — doing so would count the
+        expense twice (once accrued, once from the bank).
+        """
+        try:
+            link = self._conn.execute(
+                "SELECT link_type, link_id FROM bank_match_links "
+                "WHERE bank_transaction_id = ?",
+                (int(txn_id),),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return None
+        if link is None:
+            return None
+        link_type = (link["link_type"] or "").strip()
+        if link_type not in self._AP_LINK_TYPES:
+            return None
+        try:
+            row = self._conn.execute(
+                "SELECT id FROM journal_entries WHERE source = ?",
+                (f"{link_type}:{int(link['link_id'])}",),
+            ).fetchone()
+        except (sqlite3.OperationalError, TypeError, ValueError):
+            return None
+        return int(row["id"]) if row else None
+
+    def _attach_to_entry(self, txn_id: int, entry_id: int) -> int:
+        self._conn.execute(
+            """
+            UPDATE bank_transactions
+            SET is_posted = 1, journal_entry_id = ?
+            WHERE id = ?
+            """,
+            (int(entry_id), int(txn_id)),
+        )
+        self._conn.commit()
+        return int(entry_id)
+
     def _bank_gl_display(self, bank_account_id: int) -> str:
         row = self._conn.execute(
             "SELECT gl_display_account FROM bank_accounts WHERE id = ?",
@@ -515,6 +559,10 @@ class GLDatabase:
         """
         Post a single bank transaction to the GL.
 
+        When the transaction is matched to a bill or bill payment, no new entry is
+        created: the transaction is attached to the AP entry that already books it and
+        that entry's id is returned.
+
         When ``bank_txn_splits`` rows exist for this transaction, posts one bank
         line and one line per split (``category_account`` is ignored).
 
@@ -531,11 +579,17 @@ class GLDatabase:
         ).fetchone()
         if txn is None:
             raise ValueError(f"Transaction id={txn_id} not found")
-        posted = int(dict(txn).get("is_posted") or 0)
-        if posted:
+        td = dict(txn)
+        current_entry_id = td.get("journal_entry_id")
+        ap_entry_id = self.linked_ap_entry_id(txn_id)
+        if ap_entry_id is not None:
+            if current_entry_id is not None and int(current_entry_id) != ap_entry_id:
+                raise ValueError(f"Transaction id={txn_id} is already posted")
+            return self._attach_to_entry(txn_id, ap_entry_id)
+
+        if int(td.get("is_posted") or 0):
             raise ValueError(f"Transaction id={txn_id} is already posted")
 
-        td = dict(txn)
         transfer_to = td.get("transfer_to_bank_account_id")
         splits = self._fetch_txn_splits(txn_id)
         if transfer_to is not None:
@@ -622,9 +676,11 @@ class GLDatabase:
                 (txn_id,),
             ).fetchone()
             has_transfer = row is not None and row["transfer_to_bank_account_id"] is not None
+            has_ap_entry = self.linked_ap_entry_id(txn_id) is not None
             if (
                 not has_splits
                 and not has_transfer
+                and not has_ap_entry
                 and txn_id not in category_account_map
             ):
                 skipped.append(txn_id)

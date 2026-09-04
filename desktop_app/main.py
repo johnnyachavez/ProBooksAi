@@ -62,7 +62,7 @@ from probooksai.bank_import import BankDatabase
 from probooksai.coa_db import COADatabase
 from probooksai.extensions_schema import apply_extensions
 from probooksai.gl import GLDatabase
-from probooksai.business import backfill_ar_invoice_journals
+from probooksai.business import backfill_ap_journals, backfill_ar_invoice_journals
 from probooksai.company_identity import (
     get_company_identity,
     is_company_setup_complete,
@@ -315,6 +315,11 @@ class MainWindow(QMainWindow):
         # Back-fill AR journal entries for any invoices that don't have one yet
         try:
             backfill_ar_invoice_journals(self._bank_db._conn)
+        except Exception:
+            pass  # non-fatal — journal entries will be created on next save
+        # Same for bills and bill payments entered before AP posted to the GL
+        try:
+            backfill_ap_journals(self._bank_db._conn)
         except Exception:
             pass  # non-fatal — journal entries will be created on next save
 

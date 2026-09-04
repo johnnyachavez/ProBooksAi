@@ -8,16 +8,23 @@ totals using ``coa_accounts.account_type`` and posted journal lines.
 from __future__ import annotations
 
 import csv
+import re
 import sqlite3
 from typing import Optional
 
 from probooksai.coa_db import coa_type_report_bucket
 from probooksai.gl import GLDatabase
 
+# Leading account number in labels such as "6100 – Rent Expense" or "6100 Rent Expense".
+_GL_LABEL_NUMBER_RE = re.compile(r"^\s*(\d[\w.]*)\b")
+
 
 def _account_number_from_gl_label(account_label: str) -> str:
     if "–" in account_label:
         return account_label.split("–", 1)[0].strip()
+    match = _GL_LABEL_NUMBER_RE.match(account_label)
+    if match:
+        return match.group(1)
     return account_label.strip()
 
 

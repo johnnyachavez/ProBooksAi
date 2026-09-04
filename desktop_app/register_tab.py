@@ -3332,7 +3332,10 @@ class RegisterTab(QWidget):
                 continue
             td = dict(txn)
             splits = business.list_splits(self._db._conn, tid)
-            if splits:
+            if self._gl.linked_ap_entry_id(tid) is not None:
+                # Already booked by Enter Bills / Pay Bills; posting attaches to that entry.
+                coa_for_post = ""
+            elif splits:
                 missing = [s for s in splits if not (s["coa_account"] or "").strip()]
                 if missing:
                     errors.append(f"Txn {tid}: split line(s) missing COA account")

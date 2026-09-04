@@ -887,6 +887,472 @@ def backfill_ar_invoice_journals(conn: sqlite3.Connection) -> int:
     return created
 
 
+# ---------------------------------------------------------------------------
+# AP journal wiring (Enter Bills / Pay Bills → GL)
+# ---------------------------------------------------------------------------
+
+AP_CONTROL_ACCOUNT_NUMBER = "2000"
+DEFAULT_BILL_EXPENSE_ACCOUNT_NUMBER = "6900"
+DEFAULT_CASH_ACCOUNT_NUMBER = "1000"
+
+AP_BILL_SOURCE_PREFIX = "ap_bill"
+AP_PAYMENT_SOURCE_PREFIX = "ap_payment"
+
+#: ``bank_match_links.link_type`` values whose AP journal entry already books the
+#: bank side of the transaction, so the register must not post its own entry.
+AP_BANK_LINK_TYPES: tuple[str, ...] = (AP_PAYMENT_SOURCE_PREFIX, AP_BILL_SOURCE_PREFIX)
+
+#: Journal entry sources the register generates on its own. Only these may be
+#: discarded in favour of an AP entry when a bank line turns out to be AP activity.
+_AUTO_BANK_JOURNAL_SOURCES = ("bank_import", "bank_transfer")
+
+_COA_LABEL_HEAD_RE = re.compile(r"^[^\s\-–—:]+")
+
+
+def _coa_gl_label(conn: sqlite3.Connection, account_number: str) -> str:
+    """``'NNNN – Account Name'`` for *account_number*, matching the COA dropdowns.
+
+    Falls back to the bare number when the account is not in the chart, so posting
+    still balances on a company file with a trimmed COA.
+    """
+    row = conn.execute(
+        "SELECT account_number, account_name FROM coa_accounts WHERE account_number = ?",
+        (str(account_number),),
+    ).fetchone()
+    if row:
+        return f"{row['account_number']} – {row['account_name']}"
+    return str(account_number)
+
+
+def _resolve_coa_label(conn: sqlite3.Connection, text) -> str:
+    """Normalize free-form account text to a COA label, or ``''`` when unknown.
+
+    Accepts ``'6100'``, ``'6100 Rent Expense'``, ``'6100 – Rent Expense'``, and a bare
+    account name.
+    """
+    s = " ".join(str(text or "").split())
+    if not s:
+        return ""
+    head_match = _COA_LABEL_HEAD_RE.match(s)
+    head = head_match.group(0) if head_match else s
+    for number in (head, s):
+        row = conn.execute(
+            "SELECT account_number, account_name FROM coa_accounts WHERE account_number = ?",
+            (number,),
+        ).fetchone()
+        if row:
+            return f"{row['account_number']} – {row['account_name']}"
+    row = conn.execute(
+        "SELECT account_number, account_name FROM coa_accounts "
+        "WHERE account_name = ? COLLATE NOCASE",
+        (s,),
+    ).fetchone()
+    if row:
+        return f"{row['account_number']} – {row['account_name']}"
+    return ""
+
+
+def _item_code_coa_account(conn: sqlite3.Connection, code: str) -> str:
+    s = (code or "").strip()
+    if not s:
+        return ""
+    try:
+        row = conn.execute(
+            "SELECT coa_account FROM invoice_item_codes WHERE code = ? COLLATE NOCASE LIMIT 1",
+            (s,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return ""
+    return (row["coa_account"] or "").strip() if row else ""
+
+
+def resolve_bill_expense_account_label(conn: sqlite3.Connection, line) -> str:
+    """COA label a bill line debits.
+
+    Enter Bills stores the Expenses-tab account and the Items-tab code in the same
+    ``ticket_ref`` column, so resolution order is the explicit ``coa_account``, then
+    ``ticket_ref`` read as an account, then ``ticket_ref`` read as an item code.
+    Unresolvable lines fall back to Miscellaneous Expense rather than blocking the post.
+    """
+    d = line if isinstance(line, dict) else dict(line)
+    for key in ("coa_account", "ticket_ref"):
+        label = _resolve_coa_label(conn, d.get(key))
+        if label:
+            return label
+    label = _resolve_coa_label(conn, _item_code_coa_account(conn, d.get("ticket_ref")))
+    if label:
+        return label
+    return _coa_gl_label(conn, DEFAULT_BILL_EXPENSE_ACCOUNT_NUMBER)
+
+
+def journal_entry_id_for_source(
+    conn: sqlite3.Connection, source_tag: str
+) -> Optional[int]:
+    """Journal entry id for a ``source`` tag such as ``'ap_bill:12'``, else ``None``."""
+    try:
+        row = conn.execute(
+            "SELECT id FROM journal_entries WHERE source = ?", (source_tag,)
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    return int(row["id"]) if row else None
+
+
+def ap_bill_journal_entry_id(conn: sqlite3.Connection, bill_id: int) -> Optional[int]:
+    return journal_entry_id_for_source(conn, f"{AP_BILL_SOURCE_PREFIX}:{int(bill_id)}")
+
+
+def ap_payment_journal_entry_id(
+    conn: sqlite3.Connection, payment_id: int
+) -> Optional[int]:
+    return journal_entry_id_for_source(
+        conn, f"{AP_PAYMENT_SOURCE_PREFIX}:{int(payment_id)}"
+    )
+
+
+def _delete_journal_entry_for_source(
+    conn: sqlite3.Connection, source_tag: str
+) -> bool:
+    """Drop any entry for *source_tag*. Returns ``False`` when the GL tables are absent."""
+    try:
+        old = conn.execute(
+            "SELECT id FROM journal_entries WHERE source = ?", (source_tag,)
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return False
+    if old:
+        conn.execute("DELETE FROM journal_entry_lines WHERE entry_id = ?", (old["id"],))
+        conn.execute("DELETE FROM journal_entries WHERE id = ?", (old["id"],))
+    return True
+
+
+def _insert_journal_lines(
+    conn: sqlite3.Connection, entry_id: int, lines: list[dict]
+) -> None:
+    for ln in lines:
+        conn.execute(
+            """
+            INSERT INTO journal_entry_lines (entry_id, account, debit, credit, description)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                entry_id,
+                ln["account"],
+                round(float(ln.get("debit") or 0.0), 2),
+                round(float(ln.get("credit") or 0.0), 2),
+                ln.get("description", ""),
+            ),
+        )
+
+
+def _post_ap_bill_journal(
+    conn: sqlite3.Connection, bill_id: int
+) -> Optional[int]:
+    """Post (or re-post) the accrual entry for one bill.
+
+    Entry::
+
+        DR  expense account(s)         line amounts
+        CR  2000 Accounts Payable      bill total
+
+    Keyed by ``source = 'ap_bill:<id>'`` so editing a bill replaces its entry instead
+    of stacking a second one. Returns the entry id, or ``None`` when nothing was posted
+    (zero-value bill, missing bill, or a company file without GL tables).
+    """
+    bill = conn.execute(
+        "SELECT bill_date, total, vendor_invoice_number, vendor_id FROM bills WHERE id = ?",
+        (int(bill_id),),
+    ).fetchone()
+    if bill is None:
+        return None
+    source_tag = f"{AP_BILL_SOURCE_PREFIX}:{int(bill_id)}"
+    if not _delete_journal_entry_for_source(conn, source_tag):
+        return None
+
+    total = round(float(bill["total"] or 0), 2)
+    if abs(total) < 0.005:
+        conn.commit()
+        return None
+
+    ref = (bill["vendor_invoice_number"] or "").strip()
+    vendor_name = ""
+    vrow = conn.execute(
+        "SELECT name FROM vendors WHERE id = ?", (bill["vendor_id"],)
+    ).fetchone()
+    if vrow is not None:
+        vendor_name = (vrow["name"] or "").strip()
+    memo = f"Bill {ref}" if ref else f"Bill #{int(bill_id)}"
+    if vendor_name:
+        memo = f"{vendor_name} — {memo}"
+    bill_date = (bill["bill_date"] or "").strip() or _now()[:10]
+
+    order: list[str] = []
+    amounts: dict[str, float] = {}
+    descriptions: dict[str, str] = {}
+    for row in list_bill_expense_lines(conn, int(bill_id)):
+        d = dict(row)
+        amount = round(float(d.get("amount") or 0), 2)
+        if abs(amount) < 0.005:
+            continue
+        label = resolve_bill_expense_account_label(conn, d)
+        if label not in amounts:
+            amounts[label] = 0.0
+            order.append(label)
+            descriptions[label] = (d.get("memo") or "").strip() or memo
+        amounts[label] = round(amounts[label] + amount, 2)
+
+    # Header-only bills (and bills whose lines do not foot to the header) still have to
+    # balance against the AP control account.
+    residual = round(total - round(sum(amounts.values()), 2), 2)
+    if abs(residual) >= 0.005:
+        label = _coa_gl_label(conn, DEFAULT_BILL_EXPENSE_ACCOUNT_NUMBER)
+        if label not in amounts:
+            amounts[label] = 0.0
+            order.append(label)
+            descriptions[label] = memo
+        amounts[label] = round(amounts[label] + residual, 2)
+
+    lines: list[dict] = []
+    for label in order:
+        amount = amounts[label]
+        if abs(amount) < 0.005:
+            continue
+        lines.append(
+            {
+                "account": label,
+                "debit": amount if amount > 0 else 0.0,
+                "credit": -amount if amount < 0 else 0.0,
+                "description": descriptions.get(label, memo),
+            }
+        )
+    ap_label = _coa_gl_label(conn, AP_CONTROL_ACCOUNT_NUMBER)
+    lines.append(
+        {
+            "account": ap_label,
+            "debit": -total if total < 0 else 0.0,
+            "credit": total if total > 0 else 0.0,
+            "description": memo,
+        }
+    )
+
+    cur = conn.execute(
+        """
+        INSERT INTO journal_entries (entry_date, memo, source, created_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        (bill_date, memo, source_tag, _now()),
+    )
+    entry_id = int(cur.lastrowid)
+    _insert_journal_lines(conn, entry_id, lines)
+    conn.commit()
+    _sync_bank_links_for_ap(conn, AP_BILL_SOURCE_PREFIX, int(bill_id))
+    return entry_id
+
+
+def _ap_payment_cash_label(
+    conn: sqlite3.Connection, bank_account_id: Optional[int]
+) -> str:
+    """Account credited when a bill is paid: the bank's GL cash account, else 1000 Cash."""
+    if bank_account_id is None:
+        return _coa_gl_label(conn, DEFAULT_CASH_ACCOUNT_NUMBER)
+    return _bank_gl_label(conn, bank_account_id)
+
+
+def _post_ap_payment_journal(
+    conn: sqlite3.Connection, payment_id: int
+) -> Optional[int]:
+    """Post (or re-post) the cash disbursement entry for one AP payment.
+
+    Entry::
+
+        DR  2000 Accounts Payable      amount
+        CR  bank GL cash account       amount
+
+    The expense already hit the P&L when the bill was entered, so this entry is
+    balance-sheet only. Keyed by ``source = 'ap_payment:<id>'``.
+    """
+    pay = conn.execute(
+        "SELECT payment_date, amount, reference, bank_account_id, vendor_id "
+        "FROM ap_payments WHERE id = ?",
+        (int(payment_id),),
+    ).fetchone()
+    if pay is None:
+        return None
+    source_tag = f"{AP_PAYMENT_SOURCE_PREFIX}:{int(payment_id)}"
+    if not _delete_journal_entry_for_source(conn, source_tag):
+        return None
+
+    amount = round(float(pay["amount"] or 0), 2)
+    if amount <= 0.005:
+        conn.commit()
+        return None
+
+    ref = (pay["reference"] or "").strip()
+    vendor_name = ""
+    vrow = conn.execute(
+        "SELECT name FROM vendors WHERE id = ?", (pay["vendor_id"],)
+    ).fetchone()
+    if vrow is not None:
+        vendor_name = (vrow["name"] or "").strip()
+    memo = f"Bill payment {ref}" if ref else f"Bill payment #{int(payment_id)}"
+    if vendor_name:
+        memo = f"{vendor_name} — {memo}"
+    pay_date = (pay["payment_date"] or "").strip() or _now()[:10]
+
+    ap_label = _coa_gl_label(conn, AP_CONTROL_ACCOUNT_NUMBER)
+    cash_label = _ap_payment_cash_label(conn, pay["bank_account_id"])
+    cur = conn.execute(
+        """
+        INSERT INTO journal_entries (entry_date, memo, source, created_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        (pay_date, memo, source_tag, _now()),
+    )
+    entry_id = int(cur.lastrowid)
+    _insert_journal_lines(
+        conn,
+        entry_id,
+        [
+            {"account": ap_label, "debit": amount, "credit": 0.0, "description": memo},
+            {"account": cash_label, "debit": 0.0, "credit": amount, "description": memo},
+        ],
+    )
+    conn.commit()
+    _sync_bank_links_for_ap(conn, AP_PAYMENT_SOURCE_PREFIX, int(payment_id))
+    return entry_id
+
+
+def bank_transaction_ap_journal_entry_id(
+    conn: sqlite3.Connection, bank_transaction_id: int
+) -> Optional[int]:
+    """AP journal entry that already books *bank_transaction_id*, if any.
+
+    A bank line matched to a bill payment (or a bill paid directly from the register)
+    is the cash side of an entry that has already been posted from AP, so the register
+    must attach to that entry instead of writing a second one.
+    """
+    try:
+        bm = get_bank_match(conn, int(bank_transaction_id))
+    except sqlite3.OperationalError:
+        return None
+    link = bank_match_link_tuple_from_row(bm)
+    if link is None:
+        return None
+    link_type, link_id = link
+    if link_type not in AP_BANK_LINK_TYPES:
+        return None
+    return journal_entry_id_for_source(conn, f"{link_type}:{link_id}")
+
+
+def attach_bank_transaction_to_ap_journal(
+    conn: sqlite3.Connection, bank_transaction_id: int
+) -> Optional[int]:
+    """Point an AP-matched bank line at its AP journal entry.
+
+    Returns the entry id the bank line now carries, or ``None`` when there is no AP
+    entry to attach to. A stand-in entry the register posted for this line
+    (``bank_import`` / ``bank_transfer`` source) is deleted first so the expense is not
+    counted twice; a hand-written entry is left alone and this returns ``None``.
+    """
+    tid = int(bank_transaction_id)
+    entry_id = bank_transaction_ap_journal_entry_id(conn, tid)
+    if entry_id is None:
+        return None
+    try:
+        row = conn.execute(
+            "SELECT is_posted, journal_entry_id FROM bank_transactions WHERE id = ?",
+            (tid,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    if row is None:
+        return None
+    current = row["journal_entry_id"]
+    if current is not None and int(current) != entry_id:
+        src_row = conn.execute(
+            "SELECT source FROM journal_entries WHERE id = ?", (int(current),)
+        ).fetchone()
+        if src_row is not None:
+            if (src_row["source"] or "") not in _AUTO_BANK_JOURNAL_SOURCES:
+                return None
+            conn.execute(
+                "DELETE FROM journal_entry_lines WHERE entry_id = ?", (int(current),)
+            )
+            conn.execute("DELETE FROM journal_entries WHERE id = ?", (int(current),))
+    conn.execute(
+        "UPDATE bank_transactions SET is_posted = 1, journal_entry_id = ? WHERE id = ?",
+        (entry_id, tid),
+    )
+    conn.commit()
+    return entry_id
+
+
+def detach_bank_transaction_from_ap_journal(
+    conn: sqlite3.Connection, bank_transaction_id: int, entry_id: Optional[int]
+) -> bool:
+    """Clear the posted flag when a bank line stops being carried by *entry_id*."""
+    if entry_id is None:
+        return False
+    tid = int(bank_transaction_id)
+    try:
+        row = conn.execute(
+            "SELECT journal_entry_id FROM bank_transactions WHERE id = ?", (tid,)
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return False
+    if row is None or row["journal_entry_id"] is None:
+        return False
+    if int(row["journal_entry_id"]) != int(entry_id):
+        return False
+    conn.execute(
+        "UPDATE bank_transactions SET is_posted = 0, journal_entry_id = NULL WHERE id = ?",
+        (tid,),
+    )
+    conn.commit()
+    return True
+
+
+def _sync_bank_links_for_ap(
+    conn: sqlite3.Connection, link_type: str, link_id: int
+) -> None:
+    """Re-attach bank lines matched to an AP record after its entry is (re-)posted."""
+    try:
+        rows = conn.execute(
+            "SELECT bank_transaction_id FROM bank_match_links "
+            "WHERE link_type = ? AND link_id = ?",
+            (link_type, int(link_id)),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return
+    for r in rows:
+        attach_bank_transaction_to_ap_journal(conn, int(r["bank_transaction_id"]))
+
+
+def backfill_ap_journals(conn: sqlite3.Connection) -> int:
+    """Post AP entries for bills and bill payments that do not have one yet.
+
+    Returns the number of entries created. Safe to call at startup — records that
+    already posted are skipped, so opening a file does not restate the ledger.
+    """
+    created = 0
+    try:
+        bills = conn.execute("SELECT id FROM bills ORDER BY id").fetchall()
+        payments = conn.execute("SELECT id FROM ap_payments ORDER BY id").fetchall()
+    except sqlite3.OperationalError:
+        return 0
+    for r in bills:
+        bill_id = int(r["id"])
+        if ap_bill_journal_entry_id(conn, bill_id) is None:
+            if _post_ap_bill_journal(conn, bill_id) is not None:
+                created += 1
+    for r in payments:
+        payment_id = int(r["id"])
+        if ap_payment_journal_entry_id(conn, payment_id) is None:
+            if _post_ap_payment_journal(conn, payment_id) is not None:
+                created += 1
+    return created
+
+
 def list_invoices(conn: sqlite3.Connection) -> list:
     return conn.execute(
         """
@@ -1959,8 +2425,9 @@ def _replace_bill_expense_lines(
         conn.execute(
             """
             INSERT INTO bill_expense_lines (
-                bill_id, line_date, ticket_ref, amount, memo, customer_job, sort_order
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                bill_id, line_date, ticket_ref, amount, memo, customer_job, sort_order,
+                coa_account
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 bill_id,
@@ -1970,6 +2437,7 @@ def _replace_bill_expense_lines(
                 (ln.get("memo") or "").strip(),
                 (ln.get("customer_job") or "").strip(),
                 i,
+                (ln.get("coa_account") or "").strip(),
             ),
         )
 
@@ -2076,6 +2544,7 @@ def create_bill(
     if expense_lines is not None:
         _replace_bill_expense_lines(conn, bid, expense_lines)
     conn.commit()
+    _post_ap_bill_journal(conn, bid)
     return bid
 
 
@@ -2137,6 +2606,7 @@ def update_bill(
     if expense_lines is not None:
         _replace_bill_expense_lines(conn, bill_id, expense_lines)
     conn.commit()
+    _post_ap_bill_journal(conn, bill_id)
 
 
 def list_bills(conn: sqlite3.Connection) -> list:
@@ -2244,6 +2714,7 @@ def record_ap_payment(
             (max(0.0, new_bal), st, bill_id),
         )
     conn.commit()
+    _post_ap_payment_journal(conn, pid)
     return pid
 
 
@@ -2877,6 +3348,7 @@ def link_bank_transaction(
         (bank_transaction_id, link_type, link_id, _now()),
     )
     conn.commit()
+    attach_bank_transaction_to_ap_journal(conn, bank_transaction_id)
     if old_s != new_s:
         try:
             from probooksai.audit_log import append_audit
@@ -2958,6 +3430,13 @@ def unlink_bank_transaction(conn: sqlite3.Connection, bank_transaction_id: int) 
     old_s = ""
     if prev is not None:
         old_s = f"{prev['link_type']}:{int(prev['link_id'])}"
+    # Dropping the match means the AP entry no longer covers this line, so it becomes
+    # postable again rather than staying flagged against someone else's entry.
+    detach_bank_transaction_from_ap_journal(
+        conn,
+        bank_transaction_id,
+        bank_transaction_ap_journal_entry_id(conn, bank_transaction_id),
+    )
     conn.execute(
         "DELETE FROM bank_match_links WHERE bank_transaction_id = ?",
         (bank_transaction_id,),

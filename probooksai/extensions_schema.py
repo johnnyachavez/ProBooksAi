@@ -13,7 +13,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
-EXTENSION_SCHEMA_VERSION = 12
+EXTENSION_SCHEMA_VERSION = 13
 
 _DDL_VERSION = """
 CREATE TABLE IF NOT EXISTS extension_schema_version (
@@ -311,6 +311,13 @@ ALTER TABLE customers ADD COLUMN is_inactive INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE vendors ADD COLUMN is_inactive INTEGER NOT NULL DEFAULT 0;
 """
 
+# v13 — AP posting: the expense account a bill line debits.
+# Enter Bills historically parked the account label in ``ticket_ref`` (and the item
+# code for Items rows), so posting falls back to resolving that text when this is blank.
+_MIGRATION_V13 = """
+ALTER TABLE bill_expense_lines ADD COLUMN coa_account TEXT NOT NULL DEFAULT '';
+"""
+
 
 def _seed_payroll_tax_items(conn: sqlite3.Connection) -> None:
     """Default federal/state placeholder codes (amounts entered manually per run)."""
@@ -437,6 +444,13 @@ def apply_extensions(conn: sqlite3.Connection) -> None:
             if s:
                 conn.execute(s)
         current = 12
+
+    if current < 13:
+        for stmt in _MIGRATION_V13.strip().split(";"):
+            s = stmt.strip()
+            if s:
+                conn.execute(s)
+        current = 13
 
     conn.execute(
         "UPDATE extension_schema_version SET version = ? WHERE id = 1",

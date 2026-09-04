@@ -1117,6 +1117,7 @@ class EnterBillsScreen(QWidget):
                 {
                     "line_date": bill_iso,
                     "ticket_ref": account,
+                    "coa_account": account,
                     "amount": amt,
                     "memo": memo,
                     "customer_job": job,
@@ -1141,12 +1142,28 @@ class EnterBillsScreen(QWidget):
                 {
                     "line_date": bill_iso,
                     "ticket_ref": item,
+                    "coa_account": self._item_coa_account(item),
                     "amount": amt,
                     "memo": desc if desc else item,
                     "customer_job": job,
                 }
             )
         return rows
+
+    def _item_coa_account(self, code: str) -> str:
+        """Income/expense account an Items-tab code posts to, for the AP journal entry."""
+        conn = self._ap_conn
+        if conn is None or not (code or "").strip():
+            return ""
+        try:
+            row = conn.execute(
+                "SELECT coa_account FROM invoice_item_codes "
+                "WHERE code = ? COLLATE NOCASE LIMIT 1",
+                (code.strip(),),
+            ).fetchone()
+        except sqlite3.Error:
+            return ""
+        return (row["coa_account"] or "").strip() if row else ""
 
     def _clear_expense_grid(self) -> None:
         self._suppress_line_recalc = True
