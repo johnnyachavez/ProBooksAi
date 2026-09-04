@@ -9,12 +9,12 @@ and are not rendered or OCR'd here.
 
 Layout (top → bottom)
 ----------------------
-1. Header: company from My Company (logo or text) | "Invoice" + Date + Invoice #
+1. Header: company from My Company (logo or text, incl. MC / DOT) | "INVOICE" + Date + Invoice #
 2. BILL TO (left) | PO/CONTRACT# and NAME/JOB# (right)
-3. Line-items grid: Serviced On, JL #, Description, BOL#, Rate, Quantity, Amount
+3. Line-items grid: Serviced On, JL #, Description, BOL#, Qty, Rate, Amount
 4. Subtotal, then a CO / compliance-fee line (percent or amount)
-5. Balance Due
-6. Footer: THANK YOU FOR YOUR BUSINESS - JOHNNY and the company phone
+5. Total
+6. Footer: Terms (NET 30) then THANK YOU FOR YOUR BUSINESS - JOHNNY and the company phone
 """
 
 from __future__ import annotations
@@ -25,6 +25,9 @@ from probooksai.html_escape import escape_html_text as _he
 DEFAULT_MIN_LINE_ROWS = 16
 
 DEFAULT_THANK_YOU = "THANK YOU FOR YOUR BUSINESS - JOHNNY"
+
+# Printed payment terms when the invoice row has none saved.
+DEFAULT_TERMS = "NET 30"
 
 _FEE_TOKENS = frozenset({"CO", "C.O.", "C.O", "C/O", "CO."})
 
@@ -162,8 +165,11 @@ def _company_html(plain: str) -> str:
     )
 
 
-def _footer_html(plain: str, phone: str = "") -> str:
+def _footer_html(plain: str, phone: str = "", terms: str = "") -> str:
     lines: list[str] = []
+    tm = (terms or "").strip()
+    if tm:
+        lines.append(f'<b>Terms: {_he(tm)}</b>')
     t = (plain or "").strip()
     if t:
         lines.append(_he(t).replace("\n", "<br/>"))
@@ -235,12 +241,13 @@ def build_invoice_print_html(
     ship_to_plain: str = "",
     po_contract: str = "",
     name_job: str = "",
+    terms_plain: str = DEFAULT_TERMS,
     footer_plain: str = DEFAULT_THANK_YOU,
     footer_phone: str = "",
     line_rows: list[tuple[str, str, str, str, str, str, str]] | None = None,
     fee_row: tuple[str, str, str, str, str] | None = None,
     subtotal_plain: str = "",
-    balance_due_plain: str = "",
+    total_plain: str = "",
     min_body_rows: int = DEFAULT_MIN_LINE_ROWS,
     logo_data_uri: str = "",
     logo_display_w: int = 400,
@@ -250,12 +257,15 @@ def build_invoice_print_html(
     Chavan-style invoice layout for QTextDocument print/PDF.
 
     ``line_rows`` tuples are
-    ``(serviced_on, jl_num, description, bol, rate, qty, amount)`` — caller supplies
-    display strings (already formatted numbers where needed).
+    ``(serviced_on, jl_num, description, bol, qty, rate, amount)`` — caller supplies
+    display strings (already formatted numbers where needed), in the same order as the
+    printed columns.
 
-    ``fee_row`` is ``(jl, description, rate, qty, amount)`` for the CO / compliance-fee
+    ``fee_row`` is ``(jl, description, qty, rate, amount)`` for the CO / compliance-fee
     line. Rate may be a percent (``3%``) or an amount. Omit or pass empty strings for
     a blank fee row (still printed so the sheet matches the paper form).
+
+    ``terms_plain`` prints above the thank-you footer (``NET 30`` by default).
 
     ``ship_to_plain`` is accepted but not printed (Chavan invoices have BILL TO only).
 
@@ -272,14 +282,14 @@ def build_invoice_print_html(
     body_html: list[str] = []
     for i in range(n):
         if i < len(rows):
-            so, jl, desc, bol, rate, qty, amt = rows[i]
+            so, jl, desc, bol, qty, rate, amt = rows[i]
             cells = [
                 _esc_cell(so),
                 _esc_cell(jl),
                 _esc_cell(desc),
                 _esc_cell(bol),
-                _esc_cell(rate),
                 _esc_cell(qty),
+                _esc_cell(rate),
                 _esc_cell(amt),
             ]
         else:
@@ -291,19 +301,19 @@ def build_invoice_print_html(
     po = _esc_cell(po_contract)
     nj = _esc_cell(name_job)
     sub = _esc_cell(subtotal_plain)
-    bal = _esc_cell(balance_due_plain)
+    tot = _esc_cell(total_plain)
 
     if fee_row:
-        fee_jl, fee_desc, fee_rate, fee_qty, fee_amt = fee_row
+        fee_jl, fee_desc, fee_qty, fee_rate, fee_amt = fee_row
     else:
-        fee_jl = fee_desc = fee_rate = fee_qty = fee_amt = ""
+        fee_jl = fee_desc = fee_qty = fee_rate = fee_amt = ""
     fee_cells = [
         "&#160;",
         _esc_cell(fee_jl),
         _esc_cell(fee_desc),
         "&#160;",
-        _esc_cell(fee_rate),
         _esc_cell(fee_qty),
+        _esc_cell(fee_rate),
         _esc_cell(fee_amt),
     ]
 
@@ -314,7 +324,7 @@ def build_invoice_print_html(
         "style=\"margin:0.5in; font-family: Arial, Helvetica, sans-serif; "
         "font-size:10pt; color:#000;\">",
 
-        # ── Row 1: Company (left) + Invoice title / Date / Invoice # (right) ──
+        # ── Row 1: Company (left) + INVOICE title / Date / Invoice # (right) ──
         "<table width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border:none;\">",
         "<tr>",
         '<td width="55%" valign="top" style="border:none; padding:0 16px 0 0;">',
@@ -322,7 +332,7 @@ def build_invoice_print_html(
         "</td>",
         '<td width="45%" valign="top" style="border:none; padding:0;">',
         '<div style="font-size:22pt; font-weight:bold; text-align:right; '
-        'letter-spacing:0.02em; line-height:1.1; margin-bottom:8px;">Invoice</div>',
+        'letter-spacing:0.02em; line-height:1.1; margin-bottom:8px;">INVOICE</div>',
         '<table width="100%" cellspacing="0" cellpadding="0" '
         'style="border-collapse:collapse; margin-left:auto;">',
         "<tr>",
@@ -375,16 +385,16 @@ def build_invoice_print_html(
         'table-layout:fixed;">',
         "<colgroup>",
         '<col style="width:11%;"/><col style="width:9%;"/><col style="width:28%;"/>',
-        '<col style="width:11%;"/><col style="width:12%;"/><col style="width:13%;"/>',
-        '<col style="width:16%;"/>',
+        '<col style="width:11%;"/><col style="width:10%;"/><col style="width:13%;"/>',
+        '<col style="width:18%;"/>',
         "</colgroup>",
         "<thead><tr>",
         f'<th style="{_GRID_TH}">Serviced On</th>',
         f'<th style="{_GRID_TH}">JL #</th>',
         f'<th style="{_GRID_TH}">Description</th>',
         f'<th style="{_GRID_TH}">BOL#</th>',
+        f'<th style="{_GRID_TH}">Qty</th>',
         f'<th style="{_GRID_TH}">Rate</th>',
-        f'<th style="{_GRID_TH}">Quantity</th>',
         f'<th style="{_GRID_TH}">Amount</th>',
         "</tr></thead><tbody>",
         *body_html,
@@ -398,15 +408,15 @@ def build_invoice_print_html(
         "</tr>",
         # CO / compliance-fee line
         _line_tr(fee_cells),
-        # Balance Due
+        # Total
         "<tr>",
         '<td colspan="5" style="border:1px solid #000; border-top:2px solid #000;">&#160;</td>',
         '<td style="border:2px solid #000; font-weight:700; '
         'text-align:right; text-transform:uppercase; font-size:9pt; padding:8px 6px; '
-        'vertical-align:middle;">Balance Due</td>',
+        'vertical-align:middle;">Total</td>',
         f'<td style="border:2px solid #000; font-weight:700; '
         f'text-align:right; font-size:12pt; padding:8px 6px; vertical-align:middle; '
-        f'font-variant-numeric:tabular-nums;">{bal}</td>',
+        f'font-variant-numeric:tabular-nums;">{tot}</td>',
         "</tr>",
         "</tbody></table>",
 
@@ -414,7 +424,7 @@ def build_invoice_print_html(
         '<table width="100%" cellspacing="0" cellpadding="0" style="border:none; margin-top:18px;">',
         '<tr><td valign="top" style="border:none; padding:4px 0; font-size:9.5pt; '
         'line-height:1.45; color:#222;">'
-        f"{_footer_html(footer_plain, footer_phone)}</td></tr>",
+        f"{_footer_html(footer_plain, footer_phone, terms_plain)}</td></tr>",
         "</table>",
         "</body></html>",
     ]

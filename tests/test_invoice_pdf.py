@@ -1,19 +1,24 @@
 """
-Tests for probooksai.invoice_pdf — reportlab-based PDF generation.
-Skipped if reportlab is not installed.
+Tests for probooksai.invoice_pdf — the headless (API / bot) wrapper around the desktop
+Print / Save As PDF path. Skipped if Qt print support is not installed.
 """
 
 from __future__ import annotations
 
 import os
 import sqlite3
-import tempfile
+import sys
 
 import pytest
 
-reportlab = pytest.importorskip("reportlab", reason="reportlab not installed")
+pytest.importorskip("PySide6.QtPrintSupport", reason="PySide6 not installed")
 
 from probooksai.invoice_pdf import render_invoice_pdf
+
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="QPrinter PDF can abort the Qt process on some Windows builds (0xC0000409); Linux CI runs this.",
+)
 
 
 @pytest.fixture()
@@ -88,6 +93,28 @@ def test_render_to_temp_file(company_db):
     os.unlink(result_path)
 
 
+def test_render_uses_shared_print_template(company_db, monkeypatch, tmp_path):
+    """The API/bot renderer must go through the desktop Print/Save-As-PDF path."""
+    db_file, inv_id = company_db
+    conn = sqlite3.connect(db_file)
+    conn.row_factory = sqlite3.Row
+    calls: list[tuple[int, str]] = []
+
+    import desktop_app.invoice_pdf as desktop_invoice_pdf
+
+    def _fake_save(_conn, invoice_id, file_path):
+        calls.append((invoice_id, file_path))
+        with open(file_path, "wb") as fh:
+            fh.write(b"%PDF-1.4 stub")
+
+    monkeypatch.setattr(desktop_invoice_pdf, "save_invoice_pdf", _fake_save)
+    out = str(tmp_path / "shared.pdf")
+    render_invoice_pdf(conn, inv_id, output_path=out)
+    conn.close()
+
+    assert calls == [(inv_id, out)]
+
+
 def test_render_invalid_invoice_id(company_db):
     db_file, _ = company_db
     conn = sqlite3.connect(db_file)
@@ -142,3 +169,16 @@ def test_api_invoice_pdf_route(tmp_path):
     assert r.status_code == 200
     assert r.headers["content-type"] == "application/pdf"
     assert r.content[:4] == b"%PDF"
+
+    # Bot / API downloads come off the same paper template as desktop Print.
+    pypdf = pytest.importorskip("pypdf")
+    import io
+
+    reader = pypdf.PdfReader(io.BytesIO(r.content))
+    text = " ".join(" ".join((page.extract_text() or "").split()) for page in reader.pages)
+    assert "INVOICE" in text
+    assert "SERVICED ON" in text
+    assert "JL #" in text
+    assert "BOL#" in text
+    assert "QTY RATE AMOUNT" in text
+    assert "Terms: NET 30" in text

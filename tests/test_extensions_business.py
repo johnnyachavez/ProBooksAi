@@ -1277,6 +1277,87 @@ def test_invoice_html_string_invoice_company_block_overrides_setup(db) -> None:
     assert "Ignored Name" not in html
 
 
+def test_invoice_html_string_my_company_identity_fallback(db) -> None:
+    """With no company_setup_* keys the header uses My Company identity."""
+    from desktop_app.invoice_pdf import invoice_html_string
+    from probooksai.company_identity import save_company_identity
+
+    cid = business.add_customer(db._conn, "Cust4", address="")
+    iid = business.create_invoice(
+        db._conn,
+        cid,
+        "L-H-4",
+        "2024-06-04",
+        lines=[{"description": "x", "qty": 1, "rate": 1.0}],
+        tax_rate_pct=0,
+    )
+    save_company_identity(
+        db._conn,
+        name="My Company Identity Co",
+        address="77 Yard Rd\nBakersfield, CA 93301",
+        phone="661-555-0101",
+        email="office@example.com",
+    )
+    db._conn.commit()
+    html = invoice_html_string(db._conn, iid)
+    assert "My Company Identity Co" in html
+    assert "77 Yard Rd" in html
+    assert "661-555-0101" in html
+    assert "office@example.com" in html
+
+
+def test_invoice_html_string_prints_mc_and_dot_from_company_file(db) -> None:
+    """MC / DOT come from the company file — never hardcoded in the template."""
+    from desktop_app.invoice_pdf import invoice_html_string
+    from probooksai.company_identity import KEY_DOT_NUMBER, KEY_MC_NUMBER
+
+    cid = business.add_customer(db._conn, "Cust5", address="")
+    iid = business.create_invoice(
+        db._conn,
+        cid,
+        "L-H-5",
+        "2024-06-05",
+        lines=[{"description": "x", "qty": 1, "rate": 1.0}],
+        tax_rate_pct=0,
+    )
+    blank = invoice_html_string(db._conn, iid)
+    assert "MC#" not in blank and "DOT#" not in blank
+
+    business.set_setting(db._conn, "company_setup_name", "Carrier Co")
+    business.set_setting(db._conn, KEY_MC_NUMBER, "1234567")
+    business.set_setting(db._conn, KEY_DOT_NUMBER, "7654321")
+    db._conn.commit()
+    html = invoice_html_string(db._conn, iid)
+    assert "MC# 1234567" in html
+    assert "DOT# 7654321" in html
+
+
+def test_invoice_html_string_prints_saved_terms_else_net_30(db) -> None:
+    from desktop_app.invoice_pdf import invoice_html_string
+
+    cid = business.add_customer(db._conn, "TermsCo")
+    default_id = business.create_invoice(
+        db._conn,
+        cid,
+        "T-1",
+        "2024-06-06",
+        lines=[{"description": "x", "qty": 1, "rate": 1.0}],
+        tax_rate_pct=0,
+    )
+    saved_id = business.create_invoice(
+        db._conn,
+        cid,
+        "T-2",
+        "2024-06-07",
+        lines=[{"description": "x", "qty": 1, "rate": 1.0}],
+        tax_rate_pct=0,
+        terms="Due on receipt",
+    )
+    db._conn.commit()
+    assert "Terms: NET 30" in invoice_html_string(db._conn, default_id)
+    assert "Terms: Due on receipt" in invoice_html_string(db._conn, saved_id)
+
+
 def test_invoice_html_string_chavan_layout_footer_and_no_ship_to(db) -> None:
     from desktop_app.invoice_pdf import invoice_html_string
     from desktop_app.invoice_print_html import DEFAULT_THANK_YOU
@@ -1305,10 +1386,13 @@ def test_invoice_html_string_chavan_layout_footer_and_no_ship_to(db) -> None:
     assert "Serviced On" in html
     assert "JL #" in html
     assert "BOL#" in html
-    assert "Quantity" in html
-    assert "Balance Due" in html
+    assert ">Qty<" in html
+    assert ">Rate<" in html
+    assert ">Total<" in html
+    assert "Balance Due" not in html
     assert "CT-88" in html
     assert "JOB-12" in html
+    assert "Terms: NET 30" in html
     assert DEFAULT_THANK_YOU in html
     assert "661-555-0144" in html
     assert "ignored on print" not in html

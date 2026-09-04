@@ -5,14 +5,18 @@
 - **Invoices** tab uses ``invoice_html_string`` for print preview HTML and ``save_invoice_pdf`` for
   PDF files; **Print…** opens ``QPrintDialog`` (user may pick a physical printer or a “Print to PDF” driver).
 - Print and Save PDF share the Chavan layout in ``invoice_print_html`` (BILL TO, Date, Invoice #,
-  PO/CONTRACT#, NAME/JOB#, line grid, CO/compliance-fee line, Balance Due, JOHNNY footer + phone).
-- ``save_invoice_pdf`` / ``invoice_html_string`` are also used from tests and CLI helpers.
+  PO/CONTRACT#, NAME/JOB#, line grid, CO/compliance-fee line, Subtotal, Total, Terms + JOHNNY
+  footer + phone).
+- ``save_invoice_pdf`` / ``invoice_html_string`` are also used from tests, CLI helpers, and
+  ``probooksai.invoice_pdf.render_invoice_pdf`` (the API / bot PDF download), so every PDF in the
+  product comes off this one template.
 
 ``save_invoice_pdf`` creates ``QPrinter`` in PDF mode and calls ``QTextDocument.print_``.
 
 Company letterhead comes from **More → Business → Company** (``company_setup_*`` keys in
-``company_settings``), with optional ``invoice_company_block`` override and legacy
-``invoice_company_*`` fallback.
+``company_settings``), falling back to **My Company** identity keys, with optional
+``invoice_company_block`` override and legacy ``invoice_company_*`` fallback. MC / DOT numbers
+come from ``company_mc_number`` / ``company_dot_number`` (My Company) and are never hardcoded.
 """
 
 from __future__ import annotations
@@ -22,12 +26,18 @@ from pathlib import Path
 
 from desktop_app.flexible_date import format_iso_to_us_display
 from desktop_app.invoice_print_html import (
+    DEFAULT_TERMS,
     DEFAULT_THANK_YOU,
     build_invoice_print_html,
     compliance_fee_display_fields,
     is_compliance_fee_line,
     parse_invoice_line_description,
     parse_invoice_memo_po_job_footer,
+)
+from probooksai.company_identity import (
+    KEY_DOT_NUMBER,
+    KEY_MC_NUMBER,
+    company_identity_plain_block,
 )
 
 
@@ -44,8 +54,31 @@ def _format_city_state_zip_line(city: str, state: str, zip_code: str) -> str:
     return f"{state} {zip_code}".strip() if state or zip_code else ""
 
 
-def _letterhead_plain_from_company_settings(conn: sqlite3.Connection) -> str:
-    """Sender block for the PDF from ``company_settings`` (no hardcoded business identity)."""
+def _first_setting(conn: sqlite3.Connection, *keys: str) -> str:
+    """First non-empty ``company_settings`` value across *keys* (empty string when none)."""
+    from probooksai import business
+
+    for key in keys:
+        val = (business.get_setting(conn, key, "") or "").strip()
+        if val:
+            return val
+    return ""
+
+
+def _authority_numbers_line(conn: sqlite3.Connection) -> str:
+    """``MC# … DOT# …`` line from the company file, or '' when neither is saved."""
+    mc = _first_setting(conn, KEY_MC_NUMBER, "company_setup_mc_number")
+    dot = _first_setting(conn, KEY_DOT_NUMBER, "company_setup_dot_number")
+    parts: list[str] = []
+    if mc:
+        parts.append(mc if mc.upper().startswith("MC") else f"MC# {mc}")
+    if dot:
+        parts.append(dot if dot.upper().startswith(("DOT", "USDOT")) else f"DOT# {dot}")
+    return "    ".join(parts)
+
+
+def _letterhead_body_plain(conn: sqlite3.Connection) -> str:
+    """Company name / address / phone / email for the header, without MC-DOT."""
     from probooksai import business
 
     block = (business.get_setting(conn, "invoice_company_block", "") or "").strip()
@@ -76,12 +109,27 @@ def _letterhead_plain_from_company_settings(conn: sqlite3.Connection) -> str:
         parts.append(email)
     if parts:
         return "\n".join(parts)
+    # My Company (File → New Company / My Company tab) identity keys
+    identity = company_identity_plain_block(conn).strip()
+    if identity:
+        return identity
     # Legacy keys (older builds or manual SQL)
     leg_name = (business.get_setting(conn, "invoice_company_name", "") or "").strip()
     leg_addr = (business.get_setting(conn, "invoice_company_address", "") or "").strip()
     leg_phone = (business.get_setting(conn, "invoice_company_phone", "") or "").strip()
     legacy = [p for p in (leg_name, leg_addr, leg_phone) if p]
     return "\n".join(legacy)
+
+
+def _letterhead_plain_from_company_settings(conn: sqlite3.Connection) -> str:
+    """Sender block for the PDF from ``company_settings`` (no hardcoded business identity)."""
+    body = _letterhead_body_plain(conn)
+    authority = _authority_numbers_line(conn)
+    if not authority:
+        return body
+    if authority in body:
+        return body
+    return f"{body}\n{authority}" if body else authority
 
 
 def _logo_display_dimensions(logo_path: str, max_w: int = 400, max_h: int = 180) -> tuple[int, int]:
@@ -232,11 +280,11 @@ def invoice_html_string(conn: sqlite3.Connection, invoice_id: int) -> str:
             pct = _lookup_percent_fee_rate(conn, fee_jl, jl, so, desc, fee_desc)
             rate_disp = pct if pct else f"{rate:,.2f}"
             qty_disp = "" if pct else f"{qty:.2f}"
-            fee_row = (fee_jl, fee_desc, rate_disp, qty_disp, f"{lt:,.2f}")
+            fee_row = (fee_jl, fee_desc, qty_disp, rate_disp, f"{lt:,.2f}")
             continue
         haul_subtotal += lt
         line_rows.append(
-            (so, jl, desc, bol, f"{rate:,.2f}", f"{qty:.2f}", f"{lt:,.2f}")
+            (so, jl, desc, bol, f"{qty:.2f}", f"{rate:,.2f}", f"{lt:,.2f}")
         )
 
     tax_total = float(inv_d.get("tax_total") or 0)
@@ -248,7 +296,7 @@ def invoice_html_string(conn: sqlite3.Connection, invoice_id: int) -> str:
         pct_disp = ""
         if base:
             pct_disp = f"{round(tax_total / base * 100.0, 4):g}%"
-        fee_row = ("CO", "Compliance fee", pct_disp, "", f"{tax_total:,.2f}")
+        fee_row = ("CO", "Compliance fee", "", pct_disp, f"{tax_total:,.2f}")
         subtotal_plain = f"{base:,.2f}"
     elif fee_row is not None:
         subtotal_plain = f"{haul_subtotal:,.2f}"
@@ -256,10 +304,11 @@ def invoice_html_string(conn: sqlite3.Connection, invoice_id: int) -> str:
         subtotal_plain = f"{(stored_sub if stored_sub else haul_subtotal):,.2f}"
 
     try:
-        balance = float(inv_d.get("balance_due") if inv_d.get("balance_due") is not None else inv_d.get("total") or 0)
+        total = float(inv_d.get("total") if inv_d.get("total") is not None else inv_d.get("balance_due") or 0)
     except (TypeError, ValueError):
-        balance = float(inv_d.get("total") or 0)
-    balance_plain = f"${balance:,.2f}"
+        total = float(inv_d.get("balance_due") or 0)
+    total_plain = f"${total:,.2f}"
+    terms = (inv_d.get("terms") or "").strip() or DEFAULT_TERMS
 
     logo_uri = _logo_data_uri_from_settings(conn)
     logo_w, logo_h = _logo_dimensions_from_settings(conn) if logo_uri else (220, 80)
@@ -275,12 +324,13 @@ def invoice_html_string(conn: sqlite3.Connection, invoice_id: int) -> str:
         bill_to_plain=bill_to_plain,
         po_contract=po,
         name_job=job,
+        terms_plain=terms,
         footer_plain=DEFAULT_THANK_YOU,
         footer_phone=phone,
         line_rows=line_rows,
         fee_row=fee_row,
         subtotal_plain=subtotal_plain,
-        balance_due_plain=balance_plain,
+        total_plain=total_plain,
     )
 
 
@@ -289,15 +339,20 @@ def save_invoice_pdf(conn: sqlite3.Connection, invoice_id: int, file_path: str) 
     Render an invoice as HTML and print it to a PDF file using Qt.
 
     IMPORTANT: Qt requires an application instance (Q(Core/Gui)Application)
-    to exist before constructing QPrinter. In CLI/subprocess contexts (like pytest),
-    there usually isn't one yet, so we create it if needed.
+    to exist before constructing QPrinter. In CLI/subprocess/server contexts (like pytest
+    or the FastAPI PDF download), there usually isn't one yet, so we create it if needed —
+    offscreen when the process has no display.
     """
+    import os
+
     from PySide6.QtGui import QTextDocument
     from PySide6.QtPrintSupport import QPrinter
     from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance()
     if app is None:
+        if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+            os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         app = QApplication([])
 
     html = invoice_html_string(conn, invoice_id)

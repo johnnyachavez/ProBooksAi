@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from desktop_app.invoice_print_html import (
+    DEFAULT_TERMS,
     DEFAULT_THANK_YOU,
     build_invoice_print_html,
     compliance_fee_display_fields,
@@ -68,10 +69,10 @@ def test_build_invoice_print_html_structure_and_escaping() -> None:
         po_contract="PO1",
         name_job="J1",
         footer_plain="Note <tag>",
-        line_rows=[("d", "jl", "desc & co", "b", "1.00", "2.00", "2.00")],
-        fee_row=("CO", "Compliance fee", "3%", "", "0.06"),
+        line_rows=[("d", "jl", "desc & co", "b", "2.00", "1.00", "2.00")],
+        fee_row=("CO", "Compliance fee", "", "3%", "0.06"),
         subtotal_plain="2.00",
-        balance_due_plain="$2.06",
+        total_plain="$2.06",
         min_body_rows=2,
     )
     assert "Serviced On" in html
@@ -79,7 +80,7 @@ def test_build_invoice_print_html_structure_and_escaping() -> None:
     assert "BOL#" in html
     assert "PO" in html and "CONTRACT" in html
     assert "NAME" in html and "JOB" in html
-    assert "Balance Due" in html
+    assert "Total" in html
     assert "Subtotal" in html
     assert "BILL TO" in html
     assert "SHIP TO" not in html
@@ -108,8 +109,45 @@ def test_build_invoice_print_html_default_thank_you_and_phone() -> None:
 
 def test_build_invoice_print_html_fee_amount_mode() -> None:
     html = build_invoice_print_html(
-        fee_row=("CO", "Compliance fee", "25.00", "1.00", "25.00"),
+        fee_row=("CO", "Compliance fee", "1.00", "25.00", "25.00"),
         min_body_rows=0,
     )
     assert "25.00" in html
     assert "Compliance fee" in html
+
+
+def test_build_invoice_print_html_column_order_qty_before_rate() -> None:
+    """Paper template order: Serviced On, JL #, Description, BOL#, Qty, Rate, Amount."""
+    html = build_invoice_print_html(min_body_rows=0)
+    order = [
+        html.index("Serviced On"),
+        html.index("JL #"),
+        html.index("Description"),
+        html.index("BOL#"),
+        html.index(">Qty<"),
+        html.index(">Rate<"),
+        html.index(">Amount<"),
+    ]
+    assert order == sorted(order)
+    assert "Quantity" not in html
+
+
+def test_build_invoice_print_html_title_terms_and_totals() -> None:
+    html = build_invoice_print_html(
+        subtotal_plain="100.00",
+        total_plain="$103.00",
+        min_body_rows=0,
+    )
+    assert ">INVOICE<" in html
+    assert DEFAULT_TERMS == "NET 30"
+    assert "Terms: NET 30" in html
+    assert "Subtotal" in html
+    assert ">Total<" in html
+    assert "$103.00" in html
+    assert "Balance Due" not in html
+
+
+def test_build_invoice_print_html_terms_override() -> None:
+    html = build_invoice_print_html(terms_plain="DUE ON RECEIPT", min_body_rows=0)
+    assert "Terms: DUE ON RECEIPT" in html
+    assert "NET 30" not in html

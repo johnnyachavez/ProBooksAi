@@ -1,9 +1,10 @@
 """My Company — company information for the open company file.
 
-Loads name, address, phone, email, and EIN/tax ID from ``company_settings``
-(same keys as File → Company Setup). If the file has no saved name, the
-header uses the company ``.db`` filename. Edit + Save writes those fields
-back to the same open file. This page does not sell apps or services.
+Loads name, address, phone, email, EIN/tax ID, and MC / DOT numbers from
+``company_settings`` (same keys as File → Company Setup). If the file has no
+saved name, the header uses the company ``.db`` filename. Edit + Save writes
+those fields back to the same open file. MC / DOT feed the invoice print/PDF
+letterhead (``desktop_app.invoice_pdf``). This page does not sell apps or services.
 """
 
 from __future__ import annotations
@@ -72,6 +73,8 @@ _FIELD_KEYS = (
     ("fax", "company_fax"),
     ("email", "company_email"),
     ("website", "company_website"),
+    ("mc_number", "company_mc_number"),
+    ("dot_number", "company_dot_number"),
     ("legal_address", "company_legal_name_address"),
     ("ein", "company_tax_id"),
     ("ssn", "company_ssn"),
@@ -282,6 +285,8 @@ class MyCompanyEditDialog(QDialog):
         self._fax = _line("myCompanyEditFax")
         self._email = _line("myCompanyEditEmail")
         self._website = _line("myCompanyEditWebsite")
+        self._mc = _line("myCompanyEditMcNumber")
+        self._dot = _line("myCompanyEditDotNumber")
         self._legal = QPlainTextEdit()
         self._legal.setObjectName("myCompanyEditLegal")
         self._legal.setFixedHeight(72)
@@ -296,6 +301,8 @@ class MyCompanyEditDialog(QDialog):
         form.addRow("Fax", self._fax)
         form.addRow("Email", self._email)
         form.addRow("Website", self._website)
+        form.addRow("MC #", self._mc)
+        form.addRow("DOT #", self._dot)
         form.addRow("Legal Name && Address", self._legal)
         form.addRow("EIN", self._ein)
         form.addRow("SSN", self._ssn)
@@ -330,6 +337,8 @@ class MyCompanyEditDialog(QDialog):
         self._fax.setText(values.get("fax") or "")
         self._email.setText(values.get("email") or "")
         self._website.setText(values.get("website") or "")
+        self._mc.setText(values.get("mc_number") or "")
+        self._dot.setText(values.get("dot_number") or "")
         self._legal.setPlainText(values.get("legal_address") or "")
         self._ein.setText(values.get("ein") or "")
         self._ssn.setText(values.get("ssn") or "")
@@ -345,6 +354,8 @@ class MyCompanyEditDialog(QDialog):
             "fax": self._fax.text().strip(),
             "email": self._email.text().strip(),
             "website": self._website.text().strip(),
+            "mc_number": self._mc.text().strip(),
+            "dot_number": self._dot.text().strip(),
             "legal_address": self._legal.toPlainText().strip(),
             "ein": self._ein.text().strip(),
             "ssn": self._ssn.text().strip(),
@@ -469,12 +480,16 @@ class MyCompanyScreen(QWidget):
         self._row_fax = _InfoRow("Fax", "myCompanyFax")
         self._row_email = _InfoRow("Email", "myCompanyEmail")
         self._row_website = _InfoRow("Website", "myCompanyWebsite")
+        self._row_mc = _InfoRow("MC #", "myCompanyMcNumber")
+        self._row_dot = _InfoRow("DOT #", "myCompanyDotNumber")
         for row in (
             self._row_contact,
             self._row_phone,
             self._row_fax,
             self._row_email,
             self._row_website,
+            self._row_mc,
+            self._row_dot,
         ):
             left.addWidget(row)
         left.addStretch(1)
@@ -552,6 +567,8 @@ class MyCompanyScreen(QWidget):
         self._row_fax.set_value(data["fax"])
         self._row_email.set_value(data["email"])
         self._row_website.set_value(data["website"])
+        self._row_mc.set_value(data["mc_number"])
+        self._row_dot.set_value(data["dot_number"])
         self._row_legal.set_value(data["legal_address"])
         self._row_ein.set_value(data["ein"])
         self._row_ssn.set_value(data["ssn"], placeholder=SSN_PLACEHOLDER)

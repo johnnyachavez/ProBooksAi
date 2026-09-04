@@ -351,8 +351,10 @@ def get_invoice(invoice_id: int):
 )
 def download_invoice_pdf(invoice_id: int):
     """
-    Generate and download a professional PDF for the given invoice.
-    Requires reportlab: pip install reportlab
+    Generate and download a PDF for the given invoice.
+
+    Uses the same Print / Save As PDF template as the desktop app, so bot downloads and
+    printed invoices are identical. Requires PySide6: pip install PySide6
     """
     from fastapi.responses import FileResponse
     from probooksai.invoice_pdf import render_invoice_pdf

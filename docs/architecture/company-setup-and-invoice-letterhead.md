@@ -71,6 +71,25 @@ This is the same path used by:
   - If `invoice_company_block` exists (if ever used), it **still overrides** the structured Company Setup fields.
 - Other documents (non-invoice) do **not** use this Company screen yet.
 
+## Update (2026-09-04) — paper template lock + MC / DOT
+
+The print/PDF template now matches the Chavan paper invoice exactly, and every PDF in the
+product comes off it:
+
+- Letterhead precedence gained a step: `invoice_company_block` → `company_setup_*` →
+  **My Company identity** (`company_name`, `company_address`, `company_phone`,
+  `company_email`, `company_tax_id`) → legacy `invoice_company_*`.
+- MC / DOT are appended to whichever block wins, from `company_mc_number` /
+  `company_dot_number` (fallback `company_setup_mc_number` / `company_setup_dot_number`).
+  They are entered on **My Company → Edit** (MC # / DOT #) and are never hardcoded.
+- Grid columns are `Serviced On, JL #, Description, BOL#, Qty, Rate, Amount`; the totals
+  block is `Subtotal` → CO/compliance-fee line → `Total`; the footer prints the invoice's
+  saved terms (default `NET 30`) above the thank-you line.
+- `probooksai.invoice_pdf.render_invoice_pdf` (FastAPI `GET /invoices/{id}/pdf`, used for
+  bot downloads) is a wrapper around `desktop_app.invoice_pdf.save_invoice_pdf` instead of
+  a separate reportlab layout. Server worker threads cannot start Qt, so a file-backed
+  company DB is rendered in a child process.
+
 ## Tests run and results
 
 Commands executed:

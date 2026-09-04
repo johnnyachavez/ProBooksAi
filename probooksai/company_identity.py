@@ -20,6 +20,10 @@ KEY_COMPANY_EMAIL = "company_email"
 KEY_COMPANY_TAX_ID = "company_tax_id"
 KEY_BUSINESS_TYPE = "company_business_type"
 KEY_TAX_STRUCTURE = "company_tax_structure"
+# Motor-carrier authority numbers (printed on the invoice letterhead). Written by the
+# My Company page, not by ``save_company_identity`` — that call replaces every key it owns.
+KEY_MC_NUMBER = "company_mc_number"
+KEY_DOT_NUMBER = "company_dot_number"
 
 # Suggested values; UI dialog picks from these but the column accepts any free text.
 BUSINESS_TYPES = (
@@ -103,6 +107,8 @@ def company_identity_print_fields(conn: sqlite3.Connection) -> dict[str, str]:
         "phone": get_setting(conn, KEY_COMPANY_PHONE, "").strip(),
         "email": get_setting(conn, KEY_COMPANY_EMAIL, "").strip(),
         "tax_id": get_setting(conn, KEY_COMPANY_TAX_ID, "").strip(),
+        "mc_number": get_setting(conn, KEY_MC_NUMBER, "").strip(),
+        "dot_number": get_setting(conn, KEY_DOT_NUMBER, "").strip(),
     }
 
 
