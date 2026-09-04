@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -50,30 +51,39 @@ def db(tmp_path: Path) -> BankDatabase:
     b.close()
 
 
+def _ago(days: int) -> str:
+    return (date.today() - timedelta(days=days)).isoformat()
+
+
 def _seed(conn) -> dict[str, int]:
+    """One open and one overdue document on each side.
+
+    Income Tracker only lists the last 90 days, so these dates are relative — fixed ones
+    silently drop out of the window as the calendar moves past them.
+    """
     cid = business.add_customer(conn, "Harbor Logistics")
     open_inv = business.create_invoice(
         conn,
         cid,
         "INV-2101",
-        "2026-08-10",
-        due_date="2026-09-10",
+        _ago(25),
+        due_date=_ago(-5),
         lines=[{"description": "Haul", "qty": 1, "rate": 400.00}],
     )
     overdue_inv = business.create_invoice(
         conn,
         cid,
         "INV-0888",
-        "2026-06-01",
-        due_date="2026-07-01",
+        _ago(80),
+        due_date=_ago(50),
         lines=[{"description": "Haul", "qty": 1, "rate": 150.00}],
     )
     vid = business.add_vendor(conn, "Office Supplies Co")
     open_bill = business.create_bill(
-        conn, vid, "2026-08-01", 450.00, vendor_invoice_number="OS-1042", due_date="2026-09-01"
+        conn, vid, _ago(34), 450.00, vendor_invoice_number="OS-1042", due_date=_ago(-3)
     )
     overdue_bill = business.create_bill(
-        conn, vid, "2026-06-15", 96.40, vendor_invoice_number="OS-12", due_date="2026-07-15"
+        conn, vid, _ago(81), 96.40, vendor_invoice_number="OS-12", due_date=_ago(51)
     )
     return {
         "customer": cid,
