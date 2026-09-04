@@ -430,6 +430,78 @@ def test_invoice_screen_update_existing_does_not_duplicate_row(
     db.close()
 
 
+def test_invoice_screen_reloads_fs1_lines_not_print_pad(
+    qapp: QApplication, tmp_path
+) -> None:
+    """Create Invoices loads ``invoice_lines`` onto the data-entry grid, not the 16-row print pad."""
+    from desktop_app.invoice_print_html import DEFAULT_MIN_LINE_ROWS
+    from desktop_app.theme import apply_dark_theme
+
+    apply_dark_theme(qapp)
+    assert InvoiceScreen._N_LINE_ROWS != DEFAULT_MIN_LINE_ROWS
+    db_path = tmp_path / "inv_fs1_grid.db"
+    db = BankDatabase(str(db_path))
+    apply_extensions(db._conn)
+    business.replace_invoice_item_codes(
+        db._conn,
+        [
+            {
+                "code": "FS-1",
+                "description": "FLATBED TRUCKING",
+                "item_type": "Service",
+                "coa_account": "Trucking Income",
+                "rate_value": 145.0,
+                "rate_kind": "amount",
+                "sort_order": 0,
+            }
+        ],
+    )
+    cid = business.add_customer(db._conn, "Lowbed Co")
+    business.create_invoice(
+        db._conn,
+        cid,
+        "12590",
+        "2026-08-20",
+        lines=[{"description": "FS-1 — FLATBED TRUCKING", "qty": 8.0, "rate": 135.0}],
+    )
+    business.create_invoice(
+        db._conn,
+        cid,
+        "12614",
+        "2026-08-26",
+        lines=[{"description": "FS-1 — FLATBED TRUCKING", "qty": 12.5, "rate": 145.0}],
+    )
+    db._conn.commit()
+    w = InvoiceScreen(ap_conn=db._conn)
+    assert w._table.rowCount() == InvoiceScreen._N_LINE_ROWS
+    assert w.open_invoice_by_number("12590") is True
+    qapp.processEvents()
+    code = w._table.cellWidget(0, 1)
+    desc = w._table.cellWidget(0, 2)
+    rate = w._table.cellWidget(0, 4)
+    qty = w._table.cellWidget(0, 5)
+    amt = w._table.cellWidget(0, 6)
+    assert isinstance(code, QLineEdit) and code.text() == "FS-1"
+    assert isinstance(desc, QLineEdit) and desc.text() == "FLATBED TRUCKING"
+    assert isinstance(rate, QDoubleSpinBox) and rate.value() == 135.0
+    assert isinstance(qty, QDoubleSpinBox) and qty.value() == 8.0
+    assert isinstance(amt, QDoubleSpinBox) and amt.value() == 1080.0
+    assert w.open_invoice_by_number("12614") is True
+    qapp.processEvents()
+    code = w._table.cellWidget(0, 1)
+    desc = w._table.cellWidget(0, 2)
+    rate = w._table.cellWidget(0, 4)
+    qty = w._table.cellWidget(0, 5)
+    amt = w._table.cellWidget(0, 6)
+    assert isinstance(code, QLineEdit) and code.text() == "FS-1"
+    assert isinstance(desc, QLineEdit) and desc.text() == "FLATBED TRUCKING"
+    assert isinstance(rate, QDoubleSpinBox) and rate.value() == 145.0
+    assert isinstance(qty, QDoubleSpinBox) and qty.value() == 12.5
+    assert isinstance(amt, QDoubleSpinBox) and amt.value() == 1812.5
+    w.close()
+    db.close()
+
+
 def test_get_invoice_id_by_number_matches_db(qapp: QApplication, tmp_path) -> None:
     db_path = tmp_path / "inv_by_num.db"
     db = BankDatabase(str(db_path))

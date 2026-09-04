@@ -281,12 +281,44 @@ def invoice_pdf_basename(invoice_number: str) -> str:
     return f"{_safe_invoice_pdf_stem(invoice_number)}.pdf"
 
 
+def _line_edit_cell_qss() -> str:
+    """Line-grid editors: dark type on white, `!important` so global dark QSS cannot hide values."""
+    return (
+        f"QLineEdit {{ background: {WORKFLOW_INPUT_BG} !important; "
+        f"border: 1px solid {_INV_GRID}; padding: 1px 4px; "
+        f"color: {_INV_TEXT} !important; }}"
+    )
+
+
+def _spin_cell_qss() -> str:
+    return (
+        f"QDoubleSpinBox {{ background: {WORKFLOW_INPUT_BG} !important; "
+        f"border: 1px solid {_INV_GRID}; padding: 1px 4px; "
+        f"color: {_INV_TEXT} !important; }}"
+    )
+
+
+def _db_row_as_dict(row: object) -> dict:
+    """Coerce ``sqlite3.Row`` / mapping / sequence into a dict for invoice_lines."""
+    if row is None:
+        return {}
+    if isinstance(row, dict):
+        return row
+    keys = getattr(row, "keys", None)
+    if callable(keys):
+        try:
+            return {str(k): row[k] for k in row.keys()}
+        except Exception:
+            pass
+    if isinstance(row, (tuple, list)):
+        names = ("id", "invoice_id", "description", "qty", "rate", "line_total")
+        return {names[i]: row[i] for i in range(min(len(names), len(row)))}
+    return {}
+
+
 def _cell_line() -> QLineEdit:
     le = QLineEdit()
-    le.setStyleSheet(
-        f"QLineEdit {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_INV_GRID}; "
-        f"padding: 1px 4px; color: {_INV_TEXT}; }}"
-    )
+    le.setStyleSheet(_line_edit_cell_qss())
     return le
 
 
@@ -320,10 +352,7 @@ class _InvoiceCodeLineEdit(QLineEdit):
 def _cell_line_invoice_code() -> _InvoiceCodeLineEdit:
     """Manual Invoice line **Code** column widget (dropdown + type-ahead, same styling as ``_cell_line``)."""
     le = _InvoiceCodeLineEdit()
-    le.setStyleSheet(
-        f"QLineEdit {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_INV_GRID}; "
-        f"padding: 1px 4px; color: {_INV_TEXT}; }}"
-    )
+    le.setStyleSheet(_line_edit_cell_qss())
     return le
 
 
@@ -345,10 +374,7 @@ def _qty_spin() -> QDoubleSpinBox:
     s.setRange(0.0, 999_999.99)
     s.setDecimals(2)
     s.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
-    s.setStyleSheet(
-        f"QDoubleSpinBox {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_INV_GRID}; "
-        f"padding: 1px 4px; color: {_INV_TEXT}; }}"
-    )
+    s.setStyleSheet(_spin_cell_qss())
     return _blank_zero_spin(s)
 
 
@@ -358,10 +384,7 @@ def _money_spin() -> QDoubleSpinBox:
     s.setDecimals(2)
     s.setPrefix("$ ")
     s.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
-    s.setStyleSheet(
-        f"QDoubleSpinBox {{ background: {WORKFLOW_INPUT_BG}; border: 1px solid {_INV_GRID}; "
-        f"padding: 1px 4px; color: {_INV_TEXT}; }}"
-    )
+    s.setStyleSheet(_spin_cell_qss())
     return _blank_zero_spin(s)
 
 
@@ -1271,15 +1294,19 @@ class InvoiceScreen(QWidget):
 
         self._table.setStyleSheet(
             f"QTableWidget#invoiceLinesTable {{"
-            f" background-color: {_INV_PANEL};"
+            f" background-color: {_INV_PANEL} !important;"
             f" alternate-background-color: {_INV_STRIPE};"
-            f" color: {_INV_TEXT};"
+            f" color: {_INV_TEXT} !important;"
             f" gridline-color: {_INV_GRID};"
             f" border: 1px solid {_INV_GRID};"
             " }"
+            f"QTableWidget#invoiceLinesTable QLineEdit, "
+            f"QTableWidget#invoiceLinesTable QDoubleSpinBox {{"
+            f" background: {WORKFLOW_INPUT_BG} !important; color: {_INV_TEXT} !important;"
+            " }"
             f"QHeaderView::section {{"
             f" background-color: {_INV_HEADER};"
-            f" color: {_INV_TEXT};"
+            f" color: {_INV_TEXT} !important;"
             f" padding: 4px; border: 1px solid {_INV_GRID};"
             " font-weight: 600;"
             " text-align: left;"
@@ -2006,6 +2033,54 @@ class InvoiceScreen(QWidget):
             self._suppress_invoice_line_recalc = False
         self._recalc_invoice_footer_from_grid()
 
+    def _put_saved_invoice_line(self, row_idx: int, ln: object) -> None:
+        """Write one ``invoice_lines`` row onto the data-entry grid (not the 16-row print pad)."""
+        row = _db_row_as_dict(ln)
+        raw_desc = str(row.get("description") or "")
+        serviced, code, desc, bol = parse_invoice_line_description(raw_desc)
+        if not (serviced or code or desc or bol) and raw_desc.strip():
+            desc = raw_desc.strip()
+        dt_w = self._table.cellWidget(row_idx, 0)
+        code_w = self._table.cellWidget(row_idx, 1)
+        desc_w = self._table.cellWidget(row_idx, 2)
+        bol_w = self._table.cellWidget(row_idx, 3)
+        rate_w = self._table.cellWidget(row_idx, 4)
+        qty_w = self._table.cellWidget(row_idx, 5)
+        if isinstance(dt_w, QLineEdit):
+            dt_w.setText(serviced)
+        if isinstance(code_w, QLineEdit):
+            code_w.setText(code)
+        if isinstance(desc_w, QLineEdit):
+            desc_w.setText(desc)
+        if isinstance(bol_w, QLineEdit):
+            bol_w.setText(bol)
+        if isinstance(rate_w, QDoubleSpinBox):
+            rate_w.setValue(float(row.get("rate") or 0.0))
+        if isinstance(qty_w, QDoubleSpinBox):
+            qty_w.setValue(float(row.get("qty") or 0.0))
+        self._invoice_line_code_committed[row_idx] = (
+            code_w.text().strip() if isinstance(code_w, QLineEdit) else ""
+        )
+
+    def _fill_line_grid_from_saved_lines(self, lines: list) -> None:
+        """Load saved ``invoice_lines`` into the Create Invoices grid.
+
+        Screen stays a data-entry table (``_N_LINE_ROWS``), not the print template's
+        16 padded body rows. Qty/rate come from the file; Codes auto-fill must not
+        overwrite them after hydrate.
+        """
+        self._suppress_invoice_line_recalc = True
+        try:
+            for i, ln in enumerate(lines):
+                if i >= self._N_LINE_ROWS:
+                    break
+                self._put_saved_invoice_line(i, ln)
+        finally:
+            self._suppress_invoice_line_recalc = False
+        for r in range(self._N_LINE_ROWS):
+            self._sync_invoice_line_row_total(r)
+        self._recalc_invoice_footer_from_grid()
+
     def _set_totals_labels(self, subtotal: float, tax: float, total: float) -> None:
         self._lbl_sub.setText(f"Subtotal: ${subtotal:,.2f}")
         self._lbl_tax.setText(f"Tax: ${tax:,.2f}")
@@ -2339,7 +2414,7 @@ class InvoiceScreen(QWidget):
         if inv is None:
             return
         self._hide_invoice_intake_handoff_banner()
-        d = dict(inv)
+        d = _db_row_as_dict(inv)
         num = (d.get("invoice_number") or "").strip()
         self._inv_number.setText(num)
         self._invoice_number_autofill_value = num
@@ -2379,51 +2454,7 @@ class InvoiceScreen(QWidget):
         finally:
             self._suppress_invoice_header_autofill = False
         self._clear_line_grid()
-        self._suppress_invoice_line_recalc = True
-        try:
-            for i, ln in enumerate(lines):
-                if i >= self._N_LINE_ROWS:
-                    break
-                row = dict(ln)
-                dt_w = self._table.cellWidget(i, 0)
-                code_w = self._table.cellWidget(i, 1)
-                desc_w = self._table.cellWidget(i, 2)
-                bol_w = self._table.cellWidget(i, 3)
-                rate_w = self._table.cellWidget(i, 4)
-                qty_w = self._table.cellWidget(i, 5)
-                if isinstance(dt_w, QLineEdit):
-                    dt_w.clear()
-                if isinstance(code_w, QLineEdit):
-                    code_w.clear()
-                if isinstance(bol_w, QLineEdit):
-                    bol_w.clear()
-                if isinstance(desc_w, QLineEdit):
-                    desc_w.clear()
-                serviced, code, desc, bol = parse_invoice_line_description(
-                    row.get("description") or ""
-                )
-                if isinstance(dt_w, QLineEdit):
-                    dt_w.setText(serviced)
-                if isinstance(code_w, QLineEdit):
-                    code_w.setText(code)
-                if isinstance(desc_w, QLineEdit):
-                    desc_w.setText(desc)
-                if isinstance(bol_w, QLineEdit):
-                    bol_w.setText(bol)
-                if isinstance(rate_w, QDoubleSpinBox):
-                    rate_w.setValue(float(row.get("rate") or 0.0))
-                if isinstance(qty_w, QDoubleSpinBox):
-                    qty_w.setValue(float(row.get("qty") or 0.0))
-        finally:
-            self._suppress_invoice_line_recalc = False
-        for r in range(self._N_LINE_ROWS):
-            self._sync_invoice_line_row_total(r)
-        self._recalc_invoice_footer_from_grid()
-        for i in range(self._N_LINE_ROWS):
-            cw = self._table.cellWidget(i, 1)
-            self._invoice_line_code_committed[i] = (
-                cw.text().strip() if isinstance(cw, QLineEdit) else ""
-            )
+        self._fill_line_grid_from_saved_lines(lines)
         self._current_invoice_id = invoice_id
         try:
             tot = float(d.get("total") or 0.0)
